@@ -1,0 +1,26 @@
+{
+  "name": "hive-ai",
+  "version": "0.1.0",
+  "description": "Command your AI coding fleet from your phone",
+  "main": "src/index.js",
+  "bin": {
+    "hive": "src/index.js"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "keywords": [
+    "ai",
+    "claude",
+    "tmux",
+    "fleet",
+    "telegram",
+    "automation",
+    "coding-agents"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "node-telegram-bot-api": "^0.66.0"
+  }
+}
