@@ -54,9 +54,13 @@ Each tmux session runs Claude Code in a pane. hive reads terminal content via `t
 ## Requirements
 
 - **Node.js** 18+
-- **tmux** with numbered sessions (e.g., `1-Reviews`, `2-Ideas`, `3-Urgent`, ...)
+- **tmux** 3.2+ with numbered sessions
+- **tmuxinator** for session templates
 - **Claude Code** running in a pane within each tmux session
+- **gh** CLI for PR/CI data (optional)
 - Optional: Telegram bot token for the Telegram integration
+
+> **New to this?** See the **[full setup guide](docs/setup-guide.md)** for step-by-step instructions covering tmux configuration, session templates, background daemons, and phone access.
 
 ## Quick start
 
