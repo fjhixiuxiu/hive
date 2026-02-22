@@ -74,7 +74,7 @@ function capturePaneAnsi(target) {
  * @param {TaskQueue} taskQueue - task queue instance
  * @returns {{ app, server, wss }}
  */
-function createWebServer(config, watcher, taskQueue) {
+function createWebServer(config, watcher, taskQueue, pmManager) {
   const port = parseInt(process.env.WEB_PORT) || 3000;
   const token = process.env.WEB_TOKEN;
 
@@ -137,6 +137,10 @@ function createWebServer(config, watcher, taskQueue) {
             const feedData = taskQueue.getFeed(null, 50);
             ws.send(JSON.stringify({ type: 'feed:entries', entries: feedData.entries, hasMore: feedData.hasMore }));
             ws.send(JSON.stringify({ type: 'rules:list', rules: taskQueue.getRules() }));
+            ws.send(JSON.stringify({ type: 'designations:status', designations: taskQueue.getDesignations() }));
+          }
+          if (pmManager) {
+            ws.send(JSON.stringify({ type: 'pm:list', pms: pmManager.getAll() }));
           }
         } else {
           ws.send(JSON.stringify({ type: 'auth', ok: false }));
@@ -298,7 +302,7 @@ function createWebServer(config, watcher, taskQueue) {
       // ── Task queue messages ──────────────────────────
       case 'task:create': {
         if (!taskQueue) break;
-        const task = taskQueue.createTask(msg.text, msg.mode, msg.targetSession);
+        const task = taskQueue.createTask(msg.text, msg.mode, msg.targetSession, msg.designation);
         ws.send(JSON.stringify({ type: 'task:created', task }));
         break;
       }
@@ -349,6 +353,77 @@ function createWebServer(config, watcher, taskQueue) {
       case 'rule:toggle': {
         if (!taskQueue) break;
         taskQueue.toggleRule(msg.ruleId);
+        break;
+      }
+
+      // ── Designation messages ─────────────────────────
+      case 'designation:set': {
+        if (!taskQueue) break;
+        taskQueue.setDesignation(msg.session, msg.designation);
+        break;
+      }
+
+      // ── Spawn messages ──────────────────────────────
+      case 'spawn:slots': {
+        if (!taskQueue) break;
+        ws.send(JSON.stringify({ type: 'spawn:slots', slots: taskQueue.getAvailableSlots() }));
+        break;
+      }
+
+      case 'spawn': {
+        if (!taskQueue) break;
+        taskQueue.spawnSession({
+          num: msg.num,
+          baseDir: msg.baseDir,
+          name: msg.name,
+          gitUrl: msg.gitUrl,
+        }).then((result) => {
+          if (ws.readyState === 1) {
+            ws.send(JSON.stringify({ type: 'spawn:done', success: true, num: result.num, repoDir: result.repoDir }));
+          }
+          // Refresh fleet for all clients after a delay
+          setTimeout(broadcastFleetStatus, 3000);
+        }).catch((err) => {
+          if (ws.readyState === 1) {
+            ws.send(JSON.stringify({ type: 'spawn:done', success: false, error: err.message }));
+          }
+        });
+        break;
+      }
+
+      // ── PM messages ─────────────────────────────────
+      case 'pm:create': {
+        if (!pmManager) break;
+        const pm = pmManager.create(msg.config);
+        ws.send(JSON.stringify({ type: 'pm:created', pm }));
+        broadcast({ type: 'pm:list', pms: pmManager.getAll() });
+        break;
+      }
+
+      case 'pm:update': {
+        if (!pmManager) break;
+        pmManager.update(msg.id, msg.updates);
+        broadcast({ type: 'pm:list', pms: pmManager.getAll() });
+        break;
+      }
+
+      case 'pm:delete': {
+        if (!pmManager) break;
+        pmManager.remove(msg.id);
+        broadcast({ type: 'pm:list', pms: pmManager.getAll() });
+        break;
+      }
+
+      case 'pm:toggle': {
+        if (!pmManager) break;
+        pmManager.toggle(msg.id);
+        broadcast({ type: 'pm:list', pms: pmManager.getAll() });
+        break;
+      }
+
+      case 'pm:list': {
+        if (!pmManager) break;
+        ws.send(JSON.stringify({ type: 'pm:list', pms: pmManager.getAll() }));
         break;
       }
     }
@@ -467,6 +542,12 @@ function createWebServer(config, watcher, taskQueue) {
     taskQueue.on('approval:new', (approval) => broadcast({ type: 'approval:new', approval }));
     taskQueue.on('approval:resolved', (approval) => broadcast({ type: 'approval:resolved', approval }));
     taskQueue.on('rules:changed', (rules) => broadcast({ type: 'rules:list', rules }));
+    taskQueue.on('designations:changed', (designations) => broadcast({ type: 'designations:status', designations }));
+  }
+
+  if (pmManager) {
+    pmManager.on('pm:error', (data) => broadcast({ type: 'pm:error', id: data.id, error: data.error }));
+    pmManager.on('pm:changed', () => broadcast({ type: 'pm:list', pms: pmManager.getAll() }));
   }
 
   // ── Start server ────────────────────────────────────

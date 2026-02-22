@@ -43,8 +43,10 @@ function capturePane(target, { lines } = {}) {
  * @param {boolean} enter - whether to press Enter after
  */
 function sendKeys(target, keys, enter = true) {
+  // Replace newlines with " — " so the entire message is sent as one line
+  const oneLine = keys.replace(/\r?\n+/g, ' — ');
   // Escape single quotes in the message
-  const escaped = keys.replace(/'/g, "'\\''");
+  const escaped = oneLine.replace(/'/g, "'\\''");
   // Use -l for literal text (prevents key name interpretation)
   exec(`tmux send-keys -t "${target}" -l '${escaped}'`);
   if (enter) exec(`tmux send-keys -t "${target}" Enter`);

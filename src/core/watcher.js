@@ -2,6 +2,10 @@ const EventEmitter = require('events');
 const fleet = require('./fleet');
 const tmux = require('./tmux');
 
+// Lines that look like Claude presenting choices to the user
+const OPTION_PATTERN = /^[-–•]\s+.{5,}/;
+const NUMBERED_OPTION_PATTERN = /^\d+[.)]\s+.{5,}/;
+
 /**
  * Watches fleet sessions for state changes and emits events.
  *
@@ -31,6 +35,7 @@ class Watcher extends EventEmitter {
     this.interval = null;
     this.approvalInterval = null;
     this.prevStates = new Map();   // num → 'idle'|'working'|'off'
+    this.notifiedIdle = new Set(); // nums we've already emitted idle for
     this.prevCI = new Map();       // num → CI result string
     this.prevReview = new Map();   // num → review status string
     this.detectedApprovals = new Set(); // session nums with active approval prompts
@@ -62,6 +67,8 @@ class Watcher extends EventEmitter {
     const sessions = fleet.getFleetStatus(this.config);
     for (const s of sessions) {
       this.prevStates.set(s.num, s.state);
+      // Mark already-idle sessions so we don't spam notifications on startup
+      if (s.state === 'idle') this.notifiedIdle.add(s.num);
       if (s.pr) this.prevCI.set(s.num, s.pr.ciResult);
     }
   }
@@ -73,9 +80,21 @@ class Watcher extends EventEmitter {
       const prevState = this.prevStates.get(s.num);
       const currState = s.state;
 
-      // State transition: working → idle
-      if (prevState === 'working' && currState === 'idle') {
-        this.emit('session:idle', { session: s, name: s.name, num: s.num });
+      // Detect idle: emit if session is idle and we haven't notified yet.
+      // This catches working→idle transitions AND cases where the exact
+      // transition was missed between polls (e.g., cache race, fast cycles).
+      if (currState === 'idle' && !this.notifiedIdle.has(s.num)) {
+        this.notifiedIdle.add(s.num);
+        // Capture terminal preview so the feed entry can show context
+        let preview = '';
+        try { preview = fleet.peekSession(this.config, s.name); } catch {}
+        this.emit('session:idle', { session: s, name: s.name, num: s.num, preview });
+      }
+
+      // Clear notified flag when session leaves idle — so next time it
+      // returns to idle, we'll notify again.
+      if (currState !== 'idle') {
+        this.notifiedIdle.delete(s.num);
       }
 
       // State transition: idle/off → working
@@ -122,6 +141,9 @@ class Watcher extends EventEmitter {
         this.detectedApprovals.delete(s.num);
       }
     }
+
+    // Emit poll event with all session states for task completion checks
+    this.emit('poll', sessions);
   }
 
   _checkApprovals() {

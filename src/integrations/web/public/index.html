@@ -199,6 +199,22 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 #quick-send:disabled { opacity: 0.3; cursor: default; }
 
 /* ── Tasks panel ─────────────────────── */
+.tasks-panes { display: flex; flex-direction: column; height: 100%; }
+.tasks-list-pane { flex: 1; display: flex; flex-direction: column; min-height: 0; order: 1; }
+.tasks-entry-pane {
+  order: 2; flex-shrink: 0; display: flex; gap: 6px; padding: 8px 10px;
+  background: var(--bg2); border-top: 1px solid var(--bg3); flex-wrap: wrap; align-items: center;
+}
+.tasks-entry-title { display: none; }
+.tasks-stats { display: none; }
+.tasks-tabs { display: flex; gap: 4px; padding: 8px 10px 0; flex-shrink: 0; }
+.tasks-tab {
+  background: var(--bg3); border: none; color: var(--dim); font-size: 12px;
+  font-weight: 700; padding: 6px 16px; border-radius: 16px; cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.tasks-tab:hover { color: var(--fg); }
+.tasks-tab.active { background: var(--purple); color: var(--bg); }
 .tasks-scroll { flex: 1; overflow-y: auto; padding: 8px 10px; -webkit-overflow-scrolling: touch; }
 .task-section-label {
   font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;
@@ -221,17 +237,14 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   margin-left: auto; background: none; border: none; color: var(--red);
   font-size: 11px; font-weight: 600; cursor: pointer; padding: 2px 6px;
 }
-#task-bar {
-  display: flex; gap: 6px; padding: 8px 10px;
-  background: var(--bg2); border-top: 1px solid var(--bg3); flex-shrink: 0;
-  flex-wrap: wrap;
-}
 #task-input {
   flex: 1; background: var(--bg); border: 1px solid var(--bg3); color: var(--fg);
   padding: 8px 12px; border-radius: 6px; font-size: 15px; outline: none; min-width: 0;
+  resize: none; font-family: inherit;
 }
 #task-input:focus { border-color: var(--purple); }
 #task-input::placeholder { color: var(--dim); }
+.tasks-mode-row { display: flex; gap: 6px; }
 .task-mode-btn {
   background: var(--bg3); border: none; color: var(--fg); font-size: 12px;
   font-weight: 700; padding: 8px 12px; border-radius: 6px; cursor: pointer;
@@ -255,25 +268,155 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .picker-btn.selected { background: var(--purple); color: var(--bg); }
 .picker-btn:active { background: var(--purple); color: var(--bg); }
 
+/* ── Tasks desktop layout (≥900px) ──── */
+@media (min-width: 900px) {
+  .tasks-panes { flex-direction: row; }
+  .tasks-list-pane { flex: 7; order: 1; }
+  .tasks-entry-pane {
+    flex: 3; order: 2; flex-direction: column; align-items: stretch;
+    gap: 12px; padding: 16px; border-top: none;
+    border-left: 1px solid var(--bg3); flex-wrap: nowrap;
+    overflow-y: auto;
+  }
+  .tasks-entry-title {
+    display: block; font-size: 15px; font-weight: 700; color: var(--fg);
+  }
+  .tasks-stats {
+    display: flex; flex-direction: column; gap: 6px; margin-top: auto;
+    padding-top: 12px; border-top: 1px solid var(--bg3);
+    font-size: 13px; color: var(--dim);
+  }
+  .tasks-stats .stat-row { display: flex; justify-content: space-between; }
+  .tasks-stats .stat-val { font-weight: 700; color: var(--fg); }
+  #task-send { width: 100%; padding: 10px; }
+  #session-picker { width: auto; flex-wrap: wrap; }
+  #task-designation { width: 100%; max-width: none; }
+  .tasks-mode-row { width: 100%; }
+  .tasks-mode-row .task-mode-btn { flex: 1; }
+}
+
 /* ── Feed panel ──────────────────────── */
+.feed-header {
+  display: flex; align-items: center; gap: 8px; padding: 8px 10px;
+  background: var(--bg2); border-bottom: 1px solid var(--bg3); flex-shrink: 0;
+}
+.feed-tabs { display: flex; gap: 4px; flex: 1; }
+.feed-tab {
+  background: var(--bg3); border: none; color: var(--dim); font-size: 12px;
+  font-weight: 700; padding: 6px 16px; border-radius: 16px; cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.feed-tab:hover { color: var(--fg); }
+.feed-tab.active { background: var(--purple); color: var(--bg); }
+.feed-clear-btn {
+  background: var(--bg3); border: none; color: var(--dim); font-size: 11px;
+  font-weight: 600; padding: 5px 10px; border-radius: 4px; cursor: pointer;
+}
+.feed-clear-btn:hover { color: var(--fg); }
+.feed-clear-btn:active { background: var(--red); color: #fff; }
 .feed-scroll {
-  flex: 1; overflow-y: auto; padding: 8px 10px; -webkit-overflow-scrolling: touch;
+  flex: 1; overflow-y: auto; padding: 0; -webkit-overflow-scrolling: touch;
   display: flex; flex-direction: column;
 }
-.feed-entry { padding: 8px 10px; border-bottom: 1px solid var(--bg3); font-size: 13px; line-height: 1.5; }
-.feed-time { color: var(--dim); font-size: 11px; font-weight: 600; margin-bottom: 2px; }
-.feed-detail { color: var(--fg); }
+.feed-entry {
+  padding: 10px 12px; border-bottom: 1px solid var(--bg3); font-size: 13px;
+  line-height: 1.5; cursor: pointer; transition: background 0.1s; position: relative;
+}
+.feed-entry:hover { background: rgba(255,255,255,0.02); }
+.feed-entry.expanded { background: var(--bg2); }
+.feed-top { display: flex; align-items: center; gap: 8px; }
+.feed-type-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+}
+.feed-entry.type-state .feed-type-dot { background: var(--cyan); }
+.feed-entry.type-task .feed-type-dot { background: var(--purple); }
+.feed-entry.type-ci .feed-type-dot { background: var(--yellow); }
+.feed-entry.type-approval .feed-type-dot { background: var(--orange); }
+.feed-entry.type-broadcast .feed-type-dot { background: var(--pink); }
+.feed-summary { flex: 1; min-width: 0; }
+.feed-time { color: var(--dim); font-size: 11px; font-weight: 600; }
+.feed-detail {
+  color: var(--fg); white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis;
+}
+.feed-entry.expanded .feed-detail {
+  white-space: normal; overflow: visible;
+}
 .feed-entry.type-state .feed-detail { color: var(--cyan); }
 .feed-entry.type-task .feed-detail { color: var(--purple); }
 .feed-entry.type-ci .feed-detail { color: var(--yellow); }
 .feed-entry.type-approval .feed-detail { color: var(--orange); }
 .feed-entry.type-broadcast .feed-detail { color: var(--pink); }
-.approval-actions { display: flex; gap: 8px; margin-top: 6px; }
-.approval-btn { font-size: 12px; font-weight: 700; padding: 6px 16px; border-radius: 6px; border: none; cursor: pointer; }
-.approval-btn.approve { background: var(--green); color: var(--bg); }
-.approval-btn.deny { background: var(--red); color: #fff; }
-.approval-btn:active { opacity: 0.7; }
-.feed-load-more { background: var(--bg3); border: none; color: var(--dim); font-size: 12px; padding: 8px; border-radius: 6px; cursor: pointer; margin: 8px auto; width: 100%; }
+.feed-session-badge {
+  font-size: 11px; font-weight: 800; background: var(--bg3); color: var(--fg);
+  min-width: 22px; height: 22px; border-radius: 4px; display: flex;
+  align-items: center; justify-content: center; flex-shrink: 0;
+}
+.feed-dismiss {
+  background: none; border: none; color: var(--dim); font-size: 14px;
+  cursor: pointer; padding: 2px 4px; flex-shrink: 0; opacity: 0;
+  transition: opacity 0.15s;
+}
+.feed-entry:hover .feed-dismiss { opacity: 1; }
+.feed-dismiss:hover { color: var(--red); }
+.feed-actions {
+  display: none; flex-wrap: wrap; gap: 6px; margin-top: 8px;
+  padding-top: 8px; border-top: 1px solid var(--bg3);
+}
+.feed-entry.expanded .feed-actions { display: flex; }
+.feed-action {
+  background: var(--bg3); border: none; color: var(--fg); font-size: 11px;
+  font-weight: 600; padding: 5px 10px; border-radius: 4px; cursor: pointer;
+}
+.feed-action:active { opacity: 0.7; }
+.feed-action.primary { background: var(--purple); color: var(--bg); }
+.feed-action.approve { background: var(--green); color: var(--bg); }
+.feed-action.deny { background: var(--red); color: #fff; }
+.feed-action.open { background: rgba(139,233,253,0.15); color: var(--cyan); }
+.feed-reply-row {
+  display: none; gap: 6px; margin-top: 8px; align-items: center;
+}
+.feed-entry.expanded .feed-reply-row.visible { display: flex; }
+.feed-reply-input {
+  flex: 1; background: var(--bg); border: 1px solid var(--bg3); color: var(--fg);
+  padding: 6px 10px; border-radius: 6px; font-size: 12px; outline: none; min-width: 0;
+}
+.feed-reply-input:focus { border-color: var(--purple); }
+.feed-reply-input::placeholder { color: var(--dim); }
+.feed-reply-send {
+  background: var(--purple); border: none; color: var(--bg); font-size: 11px;
+  font-weight: 700; padding: 6px 10px; border-radius: 6px; cursor: pointer;
+}
+.feed-unread-divider {
+  display: flex; align-items: center; gap: 8px; padding: 4px 12px;
+  font-size: 10px; font-weight: 700; color: var(--purple); text-transform: uppercase;
+  letter-spacing: 1px;
+}
+.feed-unread-divider::before, .feed-unread-divider::after {
+  content: ''; flex: 1; height: 1px; background: var(--purple); opacity: 0.3;
+}
+.feed-preview {
+  display: none; margin-top: 8px; padding: 8px 10px; background: var(--bg);
+  border-radius: 6px; font-family: 'SF Mono', 'Menlo', monospace;
+  font-size: 11px; line-height: 1.5; color: #7a80a0; white-space: pre-wrap;
+  word-break: break-word; max-height: 200px; overflow-y: auto;
+}
+.feed-entry.expanded .feed-preview { display: block; }
+.feed-options {
+  display: none; flex-wrap: wrap; gap: 6px; margin-top: 10px;
+  padding-top: 10px; border-top: 1px solid var(--bg3);
+}
+.feed-entry.expanded .feed-options { display: flex; }
+.feed-option-btn {
+  background: var(--purple); border: none;
+  color: var(--bg); font-size: 12px; font-weight: 700; padding: 10px 16px;
+  border-radius: 8px; cursor: pointer; text-align: left; transition: all 0.1s;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+.feed-option-btn:hover { filter: brightness(1.15); transform: translateY(-1px); }
+.feed-option-btn:active { transform: scale(0.97); filter: brightness(0.9); }
+.feed-option-btn.sent { background: var(--green); opacity: 0.7; pointer-events: none; }
+.feed-load-more { background: var(--bg3); border: none; color: var(--dim); font-size: 12px; padding: 8px; border-radius: 6px; cursor: pointer; margin: 8px 10px; }
 .feed-empty { color: var(--dim); text-align: center; padding: 40px 20px; font-size: 14px; }
 
 /* ── More panel ──────────────────────── */
@@ -330,10 +473,10 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 #cmd-bar { display: flex; gap: 4px; padding: 6px 10px; background: var(--bg2); border-top: 1px solid var(--bg3); flex-shrink: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .cmd-btn { background: rgba(189,147,249,0.12); border: 1px solid rgba(189,147,249,0.25); color: var(--purple); font-size: 12px; font-weight: 600; padding: 6px 10px; border-radius: 6px; cursor: pointer; white-space: nowrap; flex-shrink: 0; font-family: 'SF Mono', 'Menlo', monospace; }
 .cmd-btn:active { background: var(--purple); color: var(--bg); }
-#input-bar { display: flex; gap: 8px; padding: 8px 12px; background: var(--bg2); border-top: 1px solid var(--bg3); flex-shrink: 0; }
+#input-bar { display: flex; gap: 8px; padding: 8px 12px; background: var(--bg2); border-top: 1px solid var(--bg3); flex-shrink: 0; align-items: flex-end; }
 #mode-toggle { background: var(--bg3); border: none; color: var(--green); font-size: 12px; font-weight: 700; padding: 8px 12px; border-radius: 6px; cursor: pointer; min-width: 48px; text-transform: uppercase; }
 #mode-toggle.tell { color: var(--orange); }
-#msg-input { flex: 1; background: var(--bg); border: 1px solid var(--bg3); color: var(--fg); padding: 8px 12px; border-radius: 6px; font-size: 14px; outline: none; }
+#msg-input { flex: 1; background: var(--bg); border: 1px solid var(--bg3); color: var(--fg); padding: 8px 12px; border-radius: 6px; font-size: 14px; outline: none; resize: none; font-family: inherit; line-height: 1.4; height: 4.6em; }
 #msg-input:focus { border-color: var(--purple); }
 #msg-input::placeholder { color: var(--dim); }
 #msg-input:disabled { opacity: 0.5; }
@@ -354,6 +497,124 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
 .toast.out { animation: slideOut 0.2s ease-in forwards; }
 @keyframes slideOut { to { transform: translateX(100%); opacity: 0; } }
+
+/* ── Designation badge on fleet cards ── */
+.card-designation {
+  position: absolute; bottom: 6px; right: 58px;
+  font-size: 9px; font-weight: 700; padding: 2px 5px; border-radius: 3px;
+  letter-spacing: 0.5px; text-transform: uppercase; pointer-events: none;
+  background: rgba(255,184,108,0.2); color: var(--orange);
+}
+
+/* ── Task designation badge ────────── */
+.task-designation {
+  font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 3px;
+  background: rgba(255,184,108,0.2); color: var(--orange); text-transform: uppercase;
+}
+
+/* ── Designation selector in task bar ─ */
+#task-designation {
+  background: var(--bg3); border: none; color: var(--orange); font-size: 12px;
+  font-weight: 700; padding: 8px 8px; border-radius: 6px; cursor: pointer;
+  max-width: 110px;
+}
+
+/* ── Designation manager in More tab ── */
+.desig-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; }
+.desig-item { display: flex; align-items: center; gap: 8px; background: var(--bg); padding: 8px 10px; border-radius: 6px; }
+.desig-num { font-size: 16px; font-weight: 800; min-width: 28px; color: var(--fg); }
+.desig-select {
+  flex: 1; background: var(--bg3); border: none; color: var(--fg); font-size: 12px;
+  padding: 6px 8px; border-radius: 4px; outline: none;
+}
+
+/* ── Spawn button + dialog ─────────── */
+#spawn-btn {
+  position: fixed; bottom: 80px; right: 16px; z-index: 50;
+  width: 52px; height: 52px; border-radius: 50%;
+  background: var(--green); border: none; color: var(--bg);
+  font-size: 28px; font-weight: 700; cursor: pointer;
+  box-shadow: 0 4px 12px rgba(80,250,123,0.3);
+  display: none; align-items: center; justify-content: center;
+}
+#spawn-btn.visible { display: flex; }
+#spawn-btn:active { transform: scale(0.92); }
+.dialog-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 100;
+  display: none; align-items: center; justify-content: center; padding: 24px;
+}
+.dialog-overlay.visible { display: flex; }
+.dialog {
+  background: var(--bg2); border-radius: 12px; padding: 20px; width: 100%;
+  max-width: 360px; border: 1px solid var(--bg3);
+}
+.dialog-title { font-size: 16px; font-weight: 700; margin-bottom: 16px; }
+.slot-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 16px; }
+.slot-btn {
+  background: var(--bg3); border: none; color: var(--fg); font-size: 16px;
+  font-weight: 700; height: 44px; border-radius: 8px; cursor: pointer;
+}
+.slot-btn:active { background: var(--purple); color: var(--bg); }
+.slot-btn.occupied { opacity: 0.25; cursor: default; pointer-events: none; }
+.dialog-actions { display: flex; gap: 8px; }
+.dialog-btn {
+  flex: 1; background: var(--bg3); border: none; color: var(--fg); font-size: 14px;
+  font-weight: 600; padding: 10px; border-radius: 8px; cursor: pointer;
+}
+.dialog-btn.primary { background: var(--green); color: var(--bg); }
+.dialog-btn:active { opacity: 0.8; }
+.spawn-form-field { margin-bottom: 12px; }
+.spawn-form-label { font-size: 12px; font-weight: 600; color: var(--dim); margin-bottom: 4px; display: block; }
+.spawn-form-input {
+  background: var(--bg); border: 1px solid var(--bg3); color: var(--fg);
+  padding: 8px 10px; border-radius: 6px; font-size: 14px; width: 100%; outline: none;
+}
+.spawn-form-input:focus { border-color: var(--purple); }
+.spawn-form-input::placeholder { color: var(--dim); }
+.slot-btn.selected { background: var(--purple); color: var(--bg); }
+
+/* ── PM cards ──────────────────────── */
+.pm-scroll { flex: 1; overflow-y: auto; padding: 8px 10px; -webkit-overflow-scrolling: touch; }
+.pm-card {
+  background: var(--bg2); border-radius: 8px; padding: 12px; margin-bottom: 8px;
+  border-left: 3px solid var(--cyan);
+}
+.pm-card.disabled { opacity: 0.5; border-left-color: var(--dim); }
+.pm-card.has-error { border-left-color: var(--red); }
+.pm-top { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.pm-name { font-size: 14px; font-weight: 700; flex: 1; }
+.pm-toggle { width: 40px; height: 22px; border-radius: 11px; border: none; background: var(--bg3); cursor: pointer; position: relative; transition: background 0.2s; flex-shrink: 0; }
+.pm-toggle.on { background: var(--green); }
+.pm-toggle::after { content: ''; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: var(--fg); transition: transform 0.2s; }
+.pm-toggle.on::after { transform: translateX(18px); }
+.pm-meta { font-size: 12px; color: var(--dim); display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.pm-actions { display: flex; gap: 6px; margin-top: 8px; }
+.pm-action-btn { background: var(--bg3); border: none; color: var(--fg); font-size: 11px; font-weight: 600; padding: 5px 10px; border-radius: 4px; cursor: pointer; }
+.pm-action-btn.delete { color: var(--red); }
+.pm-action-btn:active { opacity: 0.7; }
+.pm-error { font-size: 11px; color: var(--red); margin-top: 4px; }
+#pm-bar {
+  padding: 8px 10px; background: var(--bg2); border-top: 1px solid var(--bg3); flex-shrink: 0;
+}
+#pm-create-btn {
+  background: var(--cyan); border: none; color: var(--bg); font-size: 13px;
+  font-weight: 700; padding: 10px; border-radius: 8px; cursor: pointer; width: 100%;
+}
+#pm-create-btn:active { opacity: 0.8; }
+
+/* ── PM form dialog ────────────────── */
+.pm-form-field { margin-bottom: 12px; }
+.pm-form-label { font-size: 12px; font-weight: 600; color: var(--dim); margin-bottom: 4px; display: block; }
+.pm-form-input {
+  background: var(--bg); border: 1px solid var(--bg3); color: var(--fg);
+  padding: 8px 10px; border-radius: 6px; font-size: 14px; width: 100%;
+  outline: none;
+}
+.pm-form-input:focus { border-color: var(--purple); }
+.pm-form-select {
+  background: var(--bg3); border: none; color: var(--fg); font-size: 13px;
+  padding: 8px 10px; border-radius: 6px; width: 100%; outline: none;
+}
 </style>
 </head>
 <body>
@@ -384,6 +645,9 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       <span class="nav-icon">&#9679;</span>Feed
       <span class="nav-badge" id="feed-badge"></span>
     </button>
+    <button class="nav-btn" data-tab="pm-panel">
+      <span class="nav-icon">&#9881;</span>PMs
+    </button>
     <button class="nav-btn" data-tab="more-panel">
       <span class="nav-icon">&#8943;</span>More
     </button>
@@ -405,18 +669,38 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 
     <!-- Tasks panel -->
     <div id="tasks-panel" class="panel">
-      <div class="tasks-scroll" id="tasks-scroll"></div>
-      <div id="task-bar">
-        <input id="task-input" type="text" placeholder="Enter task description..." autocomplete="off">
-        <button class="task-mode-btn selected" data-mode="auto" id="task-auto-btn">Auto</button>
-        <button class="task-mode-btn" data-mode="manual" id="task-manual-btn">Manual</button>
-        <button id="task-send">Send</button>
-        <div id="session-picker"></div>
+      <div class="tasks-panes">
+        <div class="tasks-list-pane">
+          <div class="tasks-tabs">
+            <button class="tasks-tab active" data-tab="pending">Pending</button>
+            <button class="tasks-tab" data-tab="completed">Completed</button>
+          </div>
+          <div class="tasks-scroll" id="tasks-scroll"></div>
+        </div>
+        <div class="tasks-entry-pane">
+          <div class="tasks-entry-title">Create Task</div>
+          <textarea id="task-input" rows="4" placeholder="Enter task description..." autocomplete="off"></textarea>
+          <select id="task-designation"><option value="">Any</option></select>
+          <div class="tasks-mode-row">
+            <button class="task-mode-btn selected" data-mode="auto" id="task-auto-btn">Auto</button>
+            <button class="task-mode-btn" data-mode="manual" id="task-manual-btn">Manual</button>
+          </div>
+          <div id="session-picker"></div>
+          <button id="task-send">Send</button>
+          <div class="tasks-stats" id="tasks-stats"></div>
+        </div>
       </div>
     </div>
 
     <!-- Feed panel -->
     <div id="feed-panel" class="panel">
+      <div class="feed-header">
+        <div class="feed-tabs">
+          <button class="feed-tab active" data-feed-tab="new">New</button>
+          <button class="feed-tab" data-feed-tab="cleared">Cleared</button>
+        </div>
+        <button class="feed-clear-btn" id="feed-clear-btn">Clear All</button>
+      </div>
       <div class="feed-scroll" id="feed-scroll"></div>
     </div>
 
@@ -452,6 +736,18 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
           <div class="more-section-title">Auto-Pilot Rules</div>
           <div id="rules-list"></div>
         </div>
+        <div class="more-section">
+          <div class="more-section-title">Designations</div>
+          <div class="desig-grid" id="desig-grid"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PMs panel -->
+    <div id="pm-panel" class="panel">
+      <div class="pm-scroll" id="pm-scroll"></div>
+      <div id="pm-bar">
+        <button id="pm-create-btn">+ New PM</button>
       </div>
     </div>
 
@@ -480,9 +776,134 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       <div id="cmd-bar"></div>
       <div id="input-bar">
         <button id="mode-toggle">Ask</button>
-        <input id="msg-input" type="text" placeholder="Message Claude..." autocomplete="off">
+        <textarea id="msg-input" rows="3" placeholder="Message Claude..." autocomplete="off"></textarea>
         <button id="send-btn">Send</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- Spawn button (fleet panel only) -->
+<button id="spawn-btn">+</button>
+
+<!-- Spawn dialog -->
+<div class="dialog-overlay" id="spawn-dialog">
+  <div class="dialog">
+    <div class="dialog-title">Spawn Agent</div>
+    <div class="spawn-form-field">
+      <label class="spawn-form-label">Base Directory</label>
+      <input class="spawn-form-input" id="spawn-base-dir" type="text" value="~/ai-dev" autocomplete="off">
+    </div>
+    <div class="spawn-form-field">
+      <label class="spawn-form-label">Name <span style="color:var(--red)">*</span></label>
+      <input class="spawn-form-input" id="spawn-name" type="text" placeholder="e.g. ios, backend" autocomplete="off">
+    </div>
+    <div class="spawn-form-field">
+      <label class="spawn-form-label">Git URL <span style="color:var(--dim)">(optional)</span></label>
+      <input class="spawn-form-input" id="spawn-git-url" type="text" placeholder="git@github.com:org/repo.git" autocomplete="off">
+    </div>
+    <div class="spawn-form-field">
+      <label class="spawn-form-label">Select Slot</label>
+      <div class="slot-grid" id="slot-grid"></div>
+    </div>
+    <div class="dialog-actions">
+      <button class="dialog-btn primary" id="spawn-next">Next Available</button>
+      <button class="dialog-btn" id="spawn-cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- PM form dialog -->
+<div class="dialog-overlay" id="pm-dialog">
+  <div class="dialog" style="max-width:400px">
+    <div class="dialog-title" id="pm-dialog-title">New Project Manager</div>
+    <div class="pm-form-field">
+      <label class="pm-form-label">Name</label>
+      <input class="pm-form-input" id="pm-form-name" type="text" placeholder="e.g. Frontend Bugs" autocomplete="off">
+    </div>
+    <div class="pm-form-field">
+      <label class="pm-form-label">Source Type</label>
+      <select class="pm-form-select" id="pm-form-source">
+        <option value="jira">JIRA</option>
+        <option value="github-issues">GitHub Issues</option>
+        <option value="github-prs">GitHub PRs</option>
+        <option value="manual">Manual</option>
+        <option value="jenkins">Jenkins (Tests)</option>
+        <option value="zoho">Zoho (Support)</option>
+      </select>
+    </div>
+    <div class="pm-form-field pm-fields-jira">
+      <label class="pm-form-label">JQL Query</label>
+      <input class="pm-form-input" id="pm-form-jql" type="text" placeholder="project = DEV AND status = Open" autocomplete="off">
+    </div>
+    <div class="pm-form-field pm-fields-github" style="display:none">
+      <label class="pm-form-label">Repo (owner/name)</label>
+      <input class="pm-form-input" id="pm-form-gh-repo" type="text" placeholder="mavencare/webplatform" autocomplete="off">
+    </div>
+    <div class="pm-form-field pm-fields-github" style="display:none">
+      <label class="pm-form-label">Labels <span style="color:var(--dim)">(comma-separated, optional)</span></label>
+      <input class="pm-form-input" id="pm-form-gh-labels" type="text" placeholder="bug,help wanted" autocomplete="off">
+    </div>
+    <div class="pm-form-field pm-fields-github" style="display:none">
+      <label class="pm-form-label">State</label>
+      <select class="pm-form-select" id="pm-form-gh-state">
+        <option value="open">Open</option>
+        <option value="closed">Closed</option>
+        <option value="all">All</option>
+      </select>
+    </div>
+    <div class="pm-form-field pm-fields-manual" style="display:none">
+      <label class="pm-form-label">Task Instructions</label>
+      <textarea class="pm-form-input" id="pm-form-manual-text" rows="4" placeholder="Describe the task..." style="resize:vertical;font-family:inherit"></textarea>
+    </div>
+    <div class="pm-form-field pm-fields-jenkins" style="display:none">
+      <label class="pm-form-label">Job Path</label>
+      <input class="pm-form-input" id="pm-form-jenkins-path" type="text" placeholder="webplatform/job/PR-123" autocomplete="off">
+    </div>
+    <div class="pm-form-field pm-fields-zoho" style="display:none">
+      <label class="pm-form-label">Department ID</label>
+      <input class="pm-form-input" id="pm-form-zoho-dept" type="text" placeholder="Department ID" autocomplete="off">
+    </div>
+    <div class="pm-form-field pm-fields-zoho" style="display:none">
+      <label class="pm-form-label">Status Filter</label>
+      <input class="pm-form-input" id="pm-form-zoho-status" type="text" placeholder="Open" autocomplete="off">
+    </div>
+    <div class="pm-form-field pm-fields-zoho" style="display:none">
+      <label class="pm-form-label">Search Query <span style="color:var(--dim)">(optional)</span></label>
+      <input class="pm-form-input" id="pm-form-zoho-query" type="text" placeholder="keyword search" autocomplete="off">
+    </div>
+    <div class="pm-form-field">
+      <label class="pm-form-label">Designation</label>
+      <select class="pm-form-select" id="pm-form-designation">
+        <option value="">None</option>
+        <option value="frontend">frontend</option>
+        <option value="backend">backend</option>
+        <option value="tests">tests</option>
+        <option value="reviews">reviews</option>
+        <option value="devops">devops</option>
+        <option value="support">support</option>
+      </select>
+    </div>
+    <div class="pm-form-field">
+      <label class="pm-form-label">Instructions <span style="color:var(--dim)">(included with each task)</span></label>
+      <textarea class="pm-form-input" id="pm-form-instructions" rows="3" placeholder="e.g. Post a review comment on the PR — DO NOT approve" style="resize:vertical;font-family:inherit"></textarea>
+    </div>
+    <div class="pm-form-field">
+      <label class="pm-form-label">Auto Threshold (story points)</label>
+      <input class="pm-form-input" id="pm-form-threshold" type="number" value="3" min="0" max="100">
+    </div>
+    <div class="pm-form-field">
+      <label class="pm-form-label">Poll Interval</label>
+      <select class="pm-form-select" id="pm-form-interval">
+        <option value="30000">30 seconds</option>
+        <option value="60000" selected>1 minute</option>
+        <option value="300000">5 minutes</option>
+        <option value="900000">15 minutes</option>
+      </select>
+    </div>
+    <div class="dialog-actions">
+      <button class="dialog-btn primary" id="pm-form-save">Save</button>
+      <button class="dialog-btn" id="pm-form-cancel">Cancel</button>
     </div>
   </div>
 </div>
@@ -510,6 +931,10 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   let autoSessions = new Set();
   let feedEntries = [];
   let feedHasMore = false;
+  let dismissedFeedIds = new Set();
+  let clearedFeedEntries = []; // in-memory only, lost on reload
+  let activeFeedTab = 'new';
+  let lastSeenFeedId = null;
   let pendingApprovals = [];
   let rules = [];
   let unreadFeedCount = 0;
@@ -517,6 +942,10 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   let previousTab = 'fleet-panel'; // remember which tab was active before session view
   let taskMode = 'auto';
   let manualTarget = null;
+  let activeTaskTab = 'pending';
+  let designations = {};  // { num: string }
+  let pmList = [];        // PM objects from server
+  let editingPmId = null; // PM being edited (null = creating new)
 
   // ── DOM refs ──────────────────────────────────────
   const $ = (s) => document.querySelector(s);
@@ -588,12 +1017,51 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     reconnectTimer = setTimeout(() => { reconnectTimer = null; if (token) connect(); }, 3000);
   }
 
+  // ── URL routing ─────────────────────────────────
+  const TAB_TO_HASH = {
+    'fleet-panel': '/fleet', 'tasks-panel': '/tasks', 'feed-panel': '/feed',
+    'pm-panel': '/pm', 'more-panel': '/more', 'session-panel': '/session',
+  };
+  const HASH_TO_TAB = {};
+  for (const [tab, hash] of Object.entries(TAB_TO_HASH)) HASH_TO_TAB[hash] = tab;
+
+  function hashFromState() {
+    if (activeTab === 'session-panel' && currentSession) return `/session/${currentSession}`;
+    return TAB_TO_HASH[activeTab] || '/fleet';
+  }
+
+  function pushHash() {
+    const h = '#' + hashFromState();
+    if (location.hash !== h) history.pushState(null, '', h);
+  }
+
+  function applyHash() {
+    const raw = (location.hash || '#/fleet').slice(1); // strip '#'
+    const sessionMatch = raw.match(/^\/session\/(\d+)$/);
+    if (sessionMatch) {
+      const num = sessionMatch[1];
+      const s = fleetData.find(x => String(x.num) === num);
+      if (s) { openSession(s, true); return; }
+      // Session not found yet — store pending, will apply after fleet data arrives
+      pendingRouteSession = num;
+      switchTab('fleet-panel', true);
+      return;
+    }
+    const tab = HASH_TO_TAB[raw];
+    if (tab) { switchTab(tab, true); }
+    else { switchTab('fleet-panel', true); }
+  }
+
+  let pendingRouteSession = null;
+
+  window.addEventListener('popstate', () => { if (authenticated) applyHash(); });
+
   // ── Navigation ────────────────────────────────────
   $$('.nav-btn').forEach(btn => {
     btn.addEventListener('click', () => switchTab(btn.dataset.tab));
   });
 
-  function switchTab(tab) {
+  function switchTab(tab, fromRoute) {
     activeTab = tab;
     // Hide session panel if switching away
     if (tab !== 'session-panel' && currentSession) {
@@ -608,11 +1076,20 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         p.classList.toggle('active', p.id === tab);
       }
     });
-    if (tab === 'feed-panel') { unreadFeedCount = 0; updateFeedBadge(); }
+    if (tab === 'feed-panel') {
+      // Mark current newest as seen before rendering
+      const visible = feedEntries.filter(e => !dismissedFeedIds.has(e.id));
+      if (visible.length) lastSeenFeedId = visible[visible.length - 1].id;
+      unreadFeedCount = 0; updateFeedBadge();
+    }
     if (tab === 'fleet-panel') renderGrid();
+    if (tab === 'more-panel') renderDesignationGrid();
+    const spawnBtn = document.getElementById('spawn-btn');
+    if (spawnBtn) spawnBtn.classList.toggle('visible', tab === 'fleet-panel');
     if (tab === 'session-panel' && term && fitAddon) {
       requestAnimationFrame(() => fitAddon.fit());
     }
+    if (!fromRoute) pushHash();
   }
 
   function updateFeedBadge() {
@@ -636,6 +1113,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
           authenticated = true; connBar.className = 'connected';
           authScreen.style.display = 'none'; mainView.style.display = 'flex';
           if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
+          applyHash();
         } else {
           token = null; localStorage.removeItem(TOKEN_KEY);
           authScreen.style.display = 'flex'; mainView.style.display = 'none';
@@ -650,6 +1128,11 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         renderSessionPicker();
         renderAutoGrid();
         updateSidebarSummary();
+        // Apply pending session route from URL
+        if (pendingRouteSession) {
+          const s = fleetData.find(x => String(x.num) === pendingRouteSession);
+          if (s) { pendingRouteSession = null; openSession(s, true); }
+        }
         break;
       case 'terminal:data':
         if (term && currentSession === String(msg.session)) {
@@ -682,14 +1165,32 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       case 'feed:entries': feedEntries = msg.entries || []; feedHasMore = msg.hasMore || false; renderFeed(); break;
       case 'feed:new':
         feedEntries.push(msg.entry); if (feedEntries.length > 200) feedEntries.shift();
-        renderFeedEntry(msg.entry, true);
-        if (activeTab !== 'feed-panel') { unreadFeedCount++; updateFeedBadge(); }
+        if (activeTab === 'feed-panel' && activeFeedTab === 'new') {
+          renderFeedEntry(msg.entry, true, false);
+          updateFeedTabCounts();
+        } else if (activeTab !== 'feed-panel') {
+          unreadFeedCount++; updateFeedBadge();
+        }
         break;
       case 'approval:new': pendingApprovals.push(msg.approval); renderFeed(); nativeNotify('Approval Required', `Session ${msg.approval.session}: ${msg.approval.prompt}`); break;
       case 'approval:resolved': { const ai = pendingApprovals.findIndex(a => a.id === msg.approval.id); if (ai >= 0) pendingApprovals.splice(ai, 1); renderFeed(); break; }
       case 'approvals:list': pendingApprovals = msg.approvals || []; break;
       case 'broadcast:done': showToast('Broadcast', `${msg.sent} sent, ${msg.failed} failed`, msg.failed ? 'error' : 'success'); break;
       case 'rules:list': rules = msg.rules || []; renderRules(); break;
+      case 'designations:status':
+        designations = msg.designations || {};
+        renderDesignationGrid(); updateDesignationSelector();
+        if (activeTab === 'fleet-panel') renderGrid();
+        break;
+      case 'spawn:slots': renderSpawnSlots(msg.slots || []); break;
+      case 'spawn:done':
+        if (msg.success) showToast('Spawned', `Session ${msg.num} at ${msg.repoDir || ''}`, 'success');
+        else showToast('Spawn failed', msg.error || 'Unknown error', 'error');
+        closeSpawnDialog();
+        break;
+      case 'pm:list': pmList = msg.pms || []; renderPMs(); break;
+      case 'pm:created': showToast('PM Created', msg.pm.name, 'success'); break;
+      case 'pm:error': showToast('PM Error', `${msg.id}: ${msg.error}`, 'error'); break;
     }
   }
 
@@ -732,8 +1233,10 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 
       const isAuto = autoSessions.has(s.num);
       const modeHtml = `<span class="card-mode ${isAuto ? 'auto' : 'manual'}">${isAuto ? 'Auto' : 'Manual'}</span>`;
+      const desig = designations[s.num];
+      const desigHtml = desig ? `<span class="card-designation">${esc(desig)}</span>` : '';
 
-      card.innerHTML = `${modeHtml}
+      card.innerHTML = `${modeHtml}${desigHtml}
         <div class="card-top"><span class="card-num">${s.num}</span><span class="card-state ${stateCls}">${s.state}</span>${prHtml}${badgesHtml ? `<span class="card-badges">${badgesHtml}</span>` : ''}</div>
         <div class="card-branch">${esc(branch)}</div>
         <div class="card-preview">${esc(s.preview || '')}</div>`;
@@ -752,7 +1255,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   let pendingContent = null;
   let lastContent = '';
 
-  function openSession(s) {
+  function openSession(s, fromRoute) {
     currentSession = String(s.num);
     sessionTitle.textContent = `Session ${s.num}`;
     sessionBranch.textContent = shortBranch(s.branch);
@@ -777,7 +1280,8 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     }
 
     // Show session panel
-    switchTab('session-panel');
+    switchTab('session-panel', fromRoute);
+    if (!fromRoute) pushHash();
     requestAnimationFrame(() => { fitAddon.fit(); term.clear(); });
 
     if (ws && ws.readyState === 1) {
@@ -820,7 +1324,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     }
     currentSession = null;
     askPending = false; msgInput.disabled = false; sendBtn.disabled = false; msgInput.value = '';
-    switchTab(previousTab);
+    switchTab(previousTab); // switchTab pushes hash
   }
 
   backBtn.addEventListener('click', closeSession);
@@ -876,7 +1380,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   }
 
   sendBtn.addEventListener('click', sendMessage);
-  msgInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendMessage(); });
+  msgInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } });
 
   // ── Quick send from grid ─────────────────────────
   function selectQuickSession(num) {
@@ -914,6 +1418,14 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   quickInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') quickSendMessage(); });
 
   // ── Tasks panel ───────────────────────────────────
+  $$('.tasks-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      activeTaskTab = tab.dataset.tab;
+      $$('.tasks-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === activeTaskTab));
+      renderTasks();
+    });
+  });
+
   $('#task-auto-btn').addEventListener('click', () => { taskMode = 'auto'; $('#task-auto-btn').classList.add('selected'); $('#task-manual-btn').classList.remove('selected'); sessionPicker.classList.remove('visible'); manualTarget = null; });
   $('#task-manual-btn').addEventListener('click', () => { taskMode = 'manual'; $('#task-manual-btn').classList.add('selected'); $('#task-auto-btn').classList.remove('selected'); sessionPicker.classList.add('visible'); renderSessionPicker(); });
 
@@ -932,24 +1444,29 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     const text = taskInput.value.trim();
     if (!text || !ws || ws.readyState !== 1) return;
     if (taskMode === 'manual' && !manualTarget) { showToast('Select session', 'Tap an idle session number', 'error'); return; }
-    ws.send(JSON.stringify({ type: 'task:create', text, mode: taskMode, targetSession: taskMode === 'manual' ? manualTarget : undefined }));
+    const desig = document.getElementById('task-designation').value || undefined;
+    ws.send(JSON.stringify({ type: 'task:create', text, mode: taskMode, targetSession: taskMode === 'manual' ? manualTarget : undefined, designation: desig }));
     taskInput.value = ''; manualTarget = null;
     sessionPicker.querySelectorAll('.picker-btn').forEach(b => b.classList.remove('selected'));
     showToast('Task created', text.substring(0, 40), 'success');
   }
 
   taskSendBtn.addEventListener('click', sendTask);
-  taskInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendTask(); });
+  taskInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendTask(); } });
 
   function renderTasks() {
     const queued = tasks.filter(t => t.status === 'queued');
     const dispatched = tasks.filter(t => t.status === 'dispatched');
     const completed = tasks.filter(t => t.status === 'completed' || t.status === 'failed');
     let html = '';
-    if (queued.length) { html += '<div class="task-section-label">Queued</div>'; for (const t of queued) html += taskCardHtml(t); }
-    if (dispatched.length) { html += '<div class="task-section-label">In Progress</div>'; for (const t of dispatched) html += taskCardHtml(t); }
-    if (completed.length) { html += '<div class="task-section-label">Completed</div>'; for (const t of completed.slice(0, 20)) html += taskCardHtml(t); }
-    if (!tasks.length) html = '<div class="feed-empty">No tasks yet. Create one below.</div>';
+    if (activeTaskTab === 'pending') {
+      if (queued.length) { html += '<div class="task-section-label">Queued</div>'; for (const t of queued) html += taskCardHtml(t); }
+      if (dispatched.length) { html += '<div class="task-section-label">In Progress</div>'; for (const t of dispatched) html += taskCardHtml(t); }
+      if (!queued.length && !dispatched.length) html = '<div class="feed-empty">No pending tasks.</div>';
+    } else {
+      if (completed.length) { for (const t of completed) html += taskCardHtml(t); }
+      else html = '<div class="feed-empty">No completed tasks yet.</div>';
+    }
     tasksScroll.innerHTML = html;
     tasksScroll.querySelectorAll('.task-cancel').forEach(btn => { btn.addEventListener('click', (e) => { e.stopPropagation(); if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'task:cancel', taskId: btn.dataset.id })); }); });
     tasksScroll.querySelectorAll('.task-card').forEach(card => {
@@ -959,6 +1476,22 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         else if ((task.status === 'completed' || task.status === 'failed') && task.result) { showToast(task.status === 'completed' ? 'Result' : 'Error', task.result.substring(0, 100), task.status === 'completed' ? 'success' : 'error'); }
       });
     });
+    renderTaskStats();
+  }
+
+  function renderTaskStats() {
+    const statsEl = document.getElementById('tasks-stats');
+    if (!statsEl) return;
+    const queued = tasks.filter(t => t.status === 'queued').length;
+    const dispatched = tasks.filter(t => t.status === 'dispatched').length;
+    const completed = tasks.filter(t => t.status === 'completed').length;
+    const failed = tasks.filter(t => t.status === 'failed').length;
+    statsEl.innerHTML = `
+      <div class="stat-row"><span>Queued</span><span class="stat-val">${queued}</span></div>
+      <div class="stat-row"><span>In progress</span><span class="stat-val">${dispatched}</span></div>
+      <div class="stat-row"><span>Completed</span><span class="stat-val">${completed}</span></div>
+      ${failed ? `<div class="stat-row"><span>Failed</span><span class="stat-val">${failed}</span></div>` : ''}
+    `;
   }
 
   function taskCardHtml(t) {
@@ -967,39 +1500,279 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     if (t.status === 'dispatched' && t.dispatchedAt) meta += ` · ${timeAgo(t.dispatchedAt)}`;
     if (t.status === 'completed' && t.dispatchedAt && t.completedAt) { meta += ` · done in ${Math.round((t.completedAt - t.dispatchedAt) / 60000)}m`; }
     if (t.status === 'failed') meta += ' · failed';
+    const desigBadge = t.designation ? `<span class="task-designation">${esc(t.designation)}</span>` : '';
     const cancelBtn = (t.status === 'queued' || t.status === 'dispatched') ? `<button class="task-cancel" data-id="${t.id}">Cancel</button>` : '';
-    return `<div class="task-card ${t.status}" data-id="${t.id}"><div class="task-text">${esc(t.text)}</div><div class="task-meta"><span>${meta} · ${ago}</span>${cancelBtn}</div></div>`;
+    return `<div class="task-card ${t.status}" data-id="${t.id}"><div class="task-text">${esc(t.text)}</div><div class="task-meta"><span>${meta} · ${ago}</span>${desigBadge}${cancelBtn}</div></div>`;
   }
 
   // ── Feed panel ────────────────────────────────────
+  $$('.feed-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      activeFeedTab = tab.dataset.feedTab;
+      $$('.feed-tab').forEach(t => t.classList.toggle('active', t.dataset.feedTab === activeFeedTab));
+      renderFeed();
+    });
+  });
+
+  $('#feed-clear-btn').addEventListener('click', () => {
+    const pending = feedEntries.filter(e => !dismissedFeedIds.has(e.id));
+    for (const e of pending) {
+      dismissedFeedIds.add(e.id);
+      clearedFeedEntries.push(e);
+    }
+    // Cap cleared entries in memory
+    if (clearedFeedEntries.length > 500) clearedFeedEntries = clearedFeedEntries.slice(-500);
+    renderFeed();
+    updateFeedTabCounts();
+  });
+
   function renderFeed() {
     feedScroll.innerHTML = '';
-    if (!feedEntries.length) { feedScroll.innerHTML = '<div class="feed-empty">No activity yet.</div>'; return; }
-    if (feedHasMore) {
-      const loadBtn = document.createElement('button'); loadBtn.className = 'feed-load-more'; loadBtn.textContent = 'Load older entries';
-      loadBtn.addEventListener('click', () => { if (ws && ws.readyState === 1 && feedEntries.length) ws.send(JSON.stringify({ type: 'feed:get', before: feedEntries[0].id, limit: 50 })); });
-      feedScroll.appendChild(loadBtn);
+
+    if (activeFeedTab === 'new') {
+      const visible = feedEntries.filter(e => !dismissedFeedIds.has(e.id));
+      if (!visible.length) {
+        feedScroll.innerHTML = '<div class="feed-empty">All clear. New activity will appear here.</div>';
+        updateFeedTabCounts();
+        return;
+      }
+      // Reverse: newest first
+      const reversed = [...visible].reverse();
+      let unreadDividerPlaced = false;
+      for (const entry of reversed) {
+        if (!unreadDividerPlaced && lastSeenFeedId && entry.id === lastSeenFeedId && reversed.indexOf(entry) > 0) {
+          const divider = document.createElement('div');
+          divider.className = 'feed-unread-divider';
+          divider.textContent = 'new';
+          feedScroll.appendChild(divider);
+          unreadDividerPlaced = true;
+        }
+        renderFeedEntry(entry, false, false);
+      }
+      // Load older at bottom
+      if (feedHasMore) {
+        const loadBtn = document.createElement('button'); loadBtn.className = 'feed-load-more'; loadBtn.textContent = 'Load older entries';
+        loadBtn.addEventListener('click', () => { if (ws && ws.readyState === 1 && feedEntries.length) ws.send(JSON.stringify({ type: 'feed:get', before: feedEntries[0].id, limit: 50 })); });
+        feedScroll.appendChild(loadBtn);
+      }
+    } else {
+      // Cleared tab
+      if (!clearedFeedEntries.length) {
+        feedScroll.innerHTML = '<div class="feed-empty">No cleared entries.</div>';
+        updateFeedTabCounts();
+        return;
+      }
+      const reversed = [...clearedFeedEntries].reverse();
+      for (const entry of reversed) renderFeedEntry(entry, false, true);
     }
-    for (const entry of feedEntries) renderFeedEntry(entry, false);
+    updateFeedTabCounts();
   }
 
-  function renderFeedEntry(entry, append) {
-    const el = document.createElement('div'); el.className = `feed-entry type-${entry.type}`;
+  // Parse terminal preview for actionable options (bullets/numbered lists)
+  function parseFeedOptions(preview) {
+    if (!preview) return [];
+    const lines = preview.split('\n');
+    const options = [];
+    for (const line of lines) {
+      const trimmed = line.trim();
+      // Match "- Option text" or "– Option text"
+      const bullet = trimmed.match(/^[-–•]\s+(.{5,})/);
+      if (bullet) { options.push(bullet[1].trim()); continue; }
+      // Match "1. Option text" or "1) Option text"
+      const numbered = trimmed.match(/^\d+[.)]\s+(.{5,})/);
+      if (numbered) { options.push(numbered[1].trim()); continue; }
+    }
+    return options;
+  }
+
+  function renderFeedEntry(entry, prepend, isCleared) {
+    const el = document.createElement('div');
+    el.className = `feed-entry type-${entry.type}`;
+    el.dataset.id = entry.id;
     const time = new Date(entry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    let detailHtml = esc(entry.detail);
-    const approval = pendingApprovals.find(a => a.session === entry.session && entry.type === 'approval' && entry.detail.includes('requested'));
-    if (approval) { detailHtml += `<div class="approval-actions"><button class="approval-btn approve" data-id="${approval.id}">Approve</button><button class="approval-btn deny" data-id="${approval.id}">Deny</button></div>`; }
-    el.innerHTML = `<div class="feed-time">${time}${entry.session ? ` · Session ${entry.session}` : ''}</div><div class="feed-detail">${detailHtml}</div>`;
-    el.querySelectorAll('.approval-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        if (!ws || ws.readyState !== 1) return;
-        const approved = btn.classList.contains('approve');
-        ws.send(JSON.stringify({ type: 'approval:respond', approvalId: btn.dataset.id, approved }));
-        btn.closest('.approval-actions').innerHTML = `<span style="color:var(--dim);font-size:12px">${approved ? 'Approved' : 'Denied'}</span>`;
+    const sessionBadge = entry.session ? `<span class="feed-session-badge">${entry.session}</span>` : '';
+
+    // Build actions based on type (only for new tab)
+    let actionsHtml = '';
+    let replyHtml = '';
+    let previewHtml = '';
+    let optionsHtml = '';
+
+    // Parse options from preview (for state entries with preview)
+    const hasPreview = entry.preview && entry.type === 'state' && entry.detail.includes('idle');
+    const parsedOptions = hasPreview ? parseFeedOptions(entry.preview) : [];
+
+    if (hasPreview) {
+      // Show truncated preview (last few lines, skip option lines themselves)
+      const previewLines = entry.preview.split('\n');
+      const contextLines = previewLines.slice(-15).join('\n').trim();
+      if (contextLines) {
+        previewHtml = `<div class="feed-preview">${esc(contextLines)}</div>`;
+      }
+      // Render parsed options as buttons
+      if (parsedOptions.length && !isCleared) {
+        optionsHtml = '<div class="feed-options">';
+        for (let i = 0; i < parsedOptions.length; i++) {
+          optionsHtml += `<button class="feed-option-btn" data-session="${entry.session}" data-opt-idx="${i}">${esc(parsedOptions[i])}</button>`;
+        }
+        optionsHtml += '</div>';
+      }
+    }
+
+    if (!isCleared) {
+      const approval = pendingApprovals.find(a => a.session === entry.session && entry.type === 'approval' && entry.detail.includes('requested'));
+      if (approval) {
+        actionsHtml = `<button class="feed-action approve" data-approval="${approval.id}">Approve</button><button class="feed-action deny" data-approval="${approval.id}">Deny</button>`;
+        if (entry.session) actionsHtml += `<button class="feed-action open" data-session="${entry.session}">Open Session</button>`;
+      } else if (entry.type === 'state' && entry.session) {
+        actionsHtml = `<button class="feed-action open" data-session="${entry.session}">Open Session</button><button class="feed-action primary" data-reply="${entry.session}">Send Message</button>`;
+        replyHtml = `<div class="feed-reply-row"><input class="feed-reply-input" type="text" placeholder="Message session ${entry.session}..." autocomplete="off"><button class="feed-reply-send" data-session="${entry.session}">Send</button></div>`;
+      } else if (entry.type === 'task') {
+        const taskMatch = entry.detail.match(/Task (\S+)/);
+        const taskId = taskMatch ? taskMatch[1] : null;
+        if (entry.detail.includes('dispatched') && entry.session) {
+          actionsHtml = `<button class="feed-action open" data-session="${entry.session}">Open Session</button>`;
+          if (taskId) actionsHtml += `<button class="feed-action deny" data-cancel-task="${taskId}">Cancel</button>`;
+        } else if (entry.session) {
+          actionsHtml = `<button class="feed-action open" data-session="${entry.session}">Open Session</button>`;
+        }
+      } else if (entry.session) {
+        actionsHtml = `<button class="feed-action open" data-session="${entry.session}">Open Session</button>`;
+      }
+    }
+
+    // Dismiss button: clears entry on New tab, no dismiss on Cleared tab
+    const dismissBtn = isCleared ? '' : `<button class="feed-dismiss" title="Clear">&times;</button>`;
+
+    // For idle entries with options, auto-expand so user sees them immediately
+    const autoExpand = (parsedOptions.length && !isCleared) ? ' expanded' : '';
+
+    el.innerHTML = `
+      <div class="feed-top">
+        <span class="feed-type-dot"></span>
+        <div class="feed-summary">
+          <div class="feed-detail">${esc(entry.detail)}</div>
+          <div class="feed-time">${time}</div>
+        </div>
+        ${sessionBadge}
+        ${dismissBtn}
+      </div>
+      ${previewHtml}
+      ${optionsHtml}
+      ${actionsHtml ? `<div class="feed-actions">${actionsHtml}</div>` : ''}
+      ${replyHtml}
+    `;
+
+    if (autoExpand) el.classList.add('expanded');
+
+    // Toggle expand on click (but not on buttons)
+    el.addEventListener('click', (e) => {
+      if (e.target.closest('button, input')) return;
+      el.classList.toggle('expanded');
+      const rr = el.querySelector('.feed-reply-row');
+      if (rr) rr.classList.toggle('visible', el.classList.contains('expanded'));
+    });
+
+    // Dismiss → move to cleared
+    if (!isCleared) {
+      el.querySelector('.feed-dismiss').addEventListener('click', (e) => {
+        e.stopPropagation();
+        dismissedFeedIds.add(entry.id);
+        clearedFeedEntries.push(entry);
+        if (clearedFeedEntries.length > 500) clearedFeedEntries = clearedFeedEntries.slice(-500);
+        el.style.opacity = '0'; el.style.transform = 'translateX(100%)'; el.style.transition = 'all 0.2s';
+        setTimeout(() => { el.remove(); updateFeedTabCounts(); }, 200);
+      });
+    }
+
+    // Action buttons
+    el.querySelectorAll('.feed-action.open[data-session]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const s = fleetData.find(x => x.num === parseInt(btn.dataset.session));
+        if (s) openSession(s);
       });
     });
-    feedScroll.appendChild(el);
-    if (append) { const scrollEl = feedScroll; if (scrollEl.scrollTop + scrollEl.clientHeight >= scrollEl.scrollHeight - 80) el.scrollIntoView({ behavior: 'smooth', block: 'end' }); }
+
+    el.querySelectorAll('.feed-action[data-reply]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        el.classList.add('expanded');
+        const rr = el.querySelector('.feed-reply-row');
+        if (rr) { rr.classList.add('visible'); rr.querySelector('.feed-reply-input').focus(); }
+      });
+    });
+
+    el.querySelectorAll('.feed-action[data-approval]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (!ws || ws.readyState !== 1) return;
+        const approved = btn.classList.contains('approve');
+        ws.send(JSON.stringify({ type: 'approval:respond', approvalId: btn.dataset.approval, approved }));
+        btn.closest('.feed-actions').innerHTML = `<span style="color:var(--dim);font-size:12px">${approved ? 'Approved' : 'Denied'}</span>`;
+      });
+    });
+
+    el.querySelectorAll('.feed-action[data-cancel-task]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'task:cancel', taskId: btn.dataset.cancelTask }));
+        btn.textContent = 'Cancelled'; btn.disabled = true; btn.style.opacity = '0.5';
+      });
+    });
+
+    // Option buttons — send the option text as a tell to the session
+    el.querySelectorAll('.feed-option-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const session = btn.dataset.session;
+        const idx = parseInt(btn.dataset.optIdx);
+        const option = parsedOptions[idx];
+        if (!session || !option || !ws || ws.readyState !== 1) return;
+        ws.send(JSON.stringify({ type: 'tell', session: String(session), message: option }));
+        btn.classList.add('sent');
+        btn.textContent = option + ' (sent)';
+        // Dim other option buttons
+        el.querySelectorAll('.feed-option-btn').forEach(b => { if (b !== btn) b.style.opacity = '0.3'; });
+        showToast('Sent', `"${option.substring(0, 40)}" → session ${session}`, 'success');
+      });
+    });
+
+    // Reply send
+    const replyRow = el.querySelector('.feed-reply-row');
+    if (replyRow) {
+      const input = replyRow.querySelector('.feed-reply-input');
+      const sBtn = replyRow.querySelector('.feed-reply-send');
+      const doSend = () => {
+        const text = input.value.trim();
+        if (!text || !ws || ws.readyState !== 1) return;
+        ws.send(JSON.stringify({ type: 'tell', session: String(entry.session), message: text }));
+        input.value = '';
+        showToast('Sent', `Message → session ${entry.session}`, 'success');
+      };
+      sBtn.addEventListener('click', (e) => { e.stopPropagation(); doSend(); });
+      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.stopPropagation(); doSend(); } });
+      input.addEventListener('click', (e) => e.stopPropagation());
+    }
+
+    if (prepend) {
+      feedScroll.insertBefore(el, feedScroll.firstChild);
+    } else {
+      feedScroll.appendChild(el);
+    }
+  }
+
+  function updateFeedTabCounts() {
+    const newCount = feedEntries.filter(e => !dismissedFeedIds.has(e.id)).length;
+    const clearedCount = clearedFeedEntries.length;
+    const tabs = document.querySelectorAll('.feed-tab');
+    tabs.forEach(t => {
+      if (t.dataset.feedTab === 'new') t.textContent = newCount ? `New (${newCount})` : 'New';
+      if (t.dataset.feedTab === 'cleared') t.textContent = clearedCount ? `Cleared (${clearedCount})` : 'Cleared';
+    });
+    // Also hide/show clear button based on tab
+    const clearBtn = document.getElementById('feed-clear-btn');
+    if (clearBtn) clearBtn.style.display = activeFeedTab === 'new' && newCount ? '' : 'none';
   }
 
   // ── More panel ────────────────────────────────────
@@ -1055,6 +1828,239 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       list.appendChild(row);
     }
   }
+
+  // ── Designation manager (More tab) ──────────────
+  const PREDEF_DESIGNATIONS = ['', 'frontend', 'backend', 'tests', 'reviews', 'devops', 'support'];
+
+  function renderDesignationGrid() {
+    const grid = document.getElementById('desig-grid');
+    if (!grid) return;
+    grid.innerHTML = '';
+    for (const s of fleetData) {
+      const item = document.createElement('div'); item.className = 'desig-item';
+      const cur = designations[s.num] || '';
+      let opts = PREDEF_DESIGNATIONS.map(d => `<option value="${d}"${d === cur ? ' selected' : ''}>${d || '—'}</option>`).join('');
+      // Add current value if custom
+      if (cur && !PREDEF_DESIGNATIONS.includes(cur)) {
+        opts += `<option value="${esc(cur)}" selected>${esc(cur)}</option>`;
+      }
+      item.innerHTML = `<span class="desig-num">${s.num}</span><select class="desig-select" data-num="${s.num}">${opts}</select>`;
+      item.querySelector('.desig-select').addEventListener('change', (e) => {
+        if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'designation:set', session: s.num, designation: e.target.value }));
+      });
+      grid.appendChild(item);
+    }
+  }
+
+  function updateDesignationSelector() {
+    const sel = document.getElementById('task-designation');
+    if (!sel) return;
+    const unique = [...new Set(Object.values(designations))].filter(Boolean).sort();
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">Any</option>';
+    for (const d of unique) {
+      sel.innerHTML += `<option value="${esc(d)}"${d === cur ? ' selected' : ''}>${esc(d)}</option>`;
+    }
+  }
+
+  // ── Spawn dialog ───────────────────────────────
+  const spawnDialog = document.getElementById('spawn-dialog');
+  const spawnBtn = document.getElementById('spawn-btn');
+  let selectedSpawnSlot = null;
+
+  spawnBtn.addEventListener('click', () => {
+    if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'spawn:slots' }));
+    document.getElementById('spawn-name').value = '';
+    document.getElementById('spawn-git-url').value = '';
+    document.getElementById('spawn-base-dir').value = '~/ai-dev';
+    selectedSpawnSlot = null;
+    spawnDialog.classList.add('visible');
+  });
+
+  document.getElementById('spawn-cancel').addEventListener('click', closeSpawnDialog);
+  spawnDialog.addEventListener('click', (e) => { if (e.target === spawnDialog) closeSpawnDialog(); });
+
+  function getSpawnParams(slotNum) {
+    const name = document.getElementById('spawn-name').value.trim();
+    if (!name) { showToast('Error', 'Agent name is required', 'error'); return null; }
+    const baseDir = document.getElementById('spawn-base-dir').value.trim() || '~/ai-dev';
+    const gitUrl = document.getElementById('spawn-git-url').value.trim() || undefined;
+    return { num: slotNum, baseDir, name, gitUrl };
+  }
+
+  document.getElementById('spawn-next').addEventListener('click', () => {
+    const params = getSpawnParams(selectedSpawnSlot || undefined);
+    if (!params) return;
+    if (ws && ws.readyState === 1) {
+      ws.send(JSON.stringify({ type: 'spawn', ...params }));
+      showToast('Spawning', `Agent "${params.name}"...`, 'success');
+    }
+  });
+
+  function closeSpawnDialog() { spawnDialog.classList.remove('visible'); selectedSpawnSlot = null; }
+
+  function renderSpawnSlots(available) {
+    const grid = document.getElementById('slot-grid');
+    grid.innerHTML = '';
+    const avSet = new Set(available);
+    selectedSpawnSlot = null;
+    for (let i = 17; i <= 32; i++) {
+      const btn = document.createElement('button');
+      btn.className = `slot-btn${avSet.has(i) ? '' : ' occupied'}`;
+      btn.textContent = i;
+      if (avSet.has(i)) {
+        btn.addEventListener('click', () => {
+          selectedSpawnSlot = i;
+          grid.querySelectorAll('.slot-btn').forEach(b => b.classList.remove('selected'));
+          btn.classList.add('selected');
+        });
+      }
+      grid.appendChild(btn);
+    }
+  }
+
+  // ── PMs panel ──────────────────────────────────
+  function renderPMs() {
+    const scroll = document.getElementById('pm-scroll');
+    if (!scroll) return;
+    scroll.innerHTML = '';
+    if (!pmList.length) {
+      scroll.innerHTML = '<div class="feed-empty">No project managers yet.</div>';
+      return;
+    }
+    for (const pm of pmList) {
+      const card = document.createElement('div');
+      card.className = `pm-card${pm.enabled ? '' : ' disabled'}${pm.lastError ? ' has-error' : ''}`;
+      const desigBadge = pm.designation ? `<span class="task-designation">${esc(pm.designation)}</span>` : '';
+      const lastPoll = pm.lastPoll ? timeAgo(pm.lastPoll) : 'never';
+      card.innerHTML = `
+        <div class="pm-top">
+          <span class="pm-name">${esc(pm.name)}</span>
+          ${desigBadge}
+          <button class="pm-toggle${pm.enabled ? ' on' : ''}" data-id="${pm.id}"></button>
+        </div>
+        <div class="pm-meta">
+          <span>${pm.source.type}</span>
+          <span>${pm.tasksCreated || 0} tasks</span>
+          <span>polled ${lastPoll}</span>
+        </div>
+        ${pm.lastError ? `<div class="pm-error">${esc(pm.lastError)}</div>` : ''}
+        <div class="pm-actions">
+          <button class="pm-action-btn edit" data-id="${pm.id}">Edit</button>
+          <button class="pm-action-btn delete" data-id="${pm.id}">Delete</button>
+        </div>
+      `;
+      card.querySelector('.pm-toggle').addEventListener('click', () => {
+        if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'pm:toggle', id: pm.id }));
+      });
+      card.querySelector('.pm-action-btn.edit').addEventListener('click', () => openPmDialog(pm));
+      card.querySelector('.pm-action-btn.delete').addEventListener('click', () => {
+        if (confirm(`Delete PM "${pm.name}"?`)) {
+          if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'pm:delete', id: pm.id }));
+        }
+      });
+      scroll.appendChild(card);
+    }
+  }
+
+  // PM form dialog
+  const pmDialog = document.getElementById('pm-dialog');
+
+  document.getElementById('pm-create-btn').addEventListener('click', () => openPmDialog(null));
+  document.getElementById('pm-form-cancel').addEventListener('click', closePmDialog);
+  pmDialog.addEventListener('click', (e) => { if (e.target === pmDialog) closePmDialog(); });
+
+  document.getElementById('pm-form-source').addEventListener('change', togglePmSourceFields);
+
+  function togglePmSourceFields() {
+    const type = document.getElementById('pm-form-source').value;
+    const isGithub = type === 'github-issues' || type === 'github-prs';
+    const types = ['jira', 'github', 'manual', 'jenkins', 'zoho'];
+    for (const t of types) {
+      const show = t === type || (t === 'github' && isGithub);
+      const els = document.querySelectorAll(`.pm-fields-${t}`);
+      els.forEach(el => el.style.display = show ? '' : 'none');
+    }
+    // Hide poll interval and threshold for manual (no polling)
+    const pollField = document.getElementById('pm-form-interval').closest('.pm-form-field');
+    const threshField = document.getElementById('pm-form-threshold').closest('.pm-form-field');
+    if (pollField) pollField.style.display = type === 'manual' ? 'none' : '';
+    if (threshField) threshField.style.display = type === 'manual' ? 'none' : '';
+  }
+
+  document.getElementById('pm-form-save').addEventListener('click', () => {
+    const sourceType = document.getElementById('pm-form-source').value;
+    let source = { type: sourceType };
+    switch (sourceType) {
+      case 'jira':
+        source.jql = document.getElementById('pm-form-jql').value.trim();
+        if (!source.jql) { showToast('Error', 'JQL required', 'error'); return; }
+        break;
+      case 'github-issues':
+      case 'github-prs':
+        source.repo = document.getElementById('pm-form-gh-repo').value.trim();
+        source.labels = document.getElementById('pm-form-gh-labels').value.trim();
+        source.state = document.getElementById('pm-form-gh-state').value;
+        if (!source.repo) { showToast('Error', 'Repo required', 'error'); return; }
+        break;
+      case 'manual':
+        source.text = document.getElementById('pm-form-manual-text').value.trim();
+        if (!source.text) { showToast('Error', 'Task text required', 'error'); return; }
+        break;
+      case 'jenkins':
+        source.jobPath = document.getElementById('pm-form-jenkins-path').value.trim();
+        if (!source.jobPath) { showToast('Error', 'Job path required', 'error'); return; }
+        break;
+      case 'zoho':
+        source.department = document.getElementById('pm-form-zoho-dept').value.trim();
+        source.status = document.getElementById('pm-form-zoho-status').value.trim();
+        source.query = document.getElementById('pm-form-zoho-query').value.trim();
+        break;
+    }
+    const cfg = {
+      name: document.getElementById('pm-form-name').value.trim(),
+      source,
+      designation: document.getElementById('pm-form-designation').value || null,
+      instructions: document.getElementById('pm-form-instructions').value.trim(),
+      autoThreshold: parseInt(document.getElementById('pm-form-threshold').value) || 3,
+      pollInterval: parseInt(document.getElementById('pm-form-interval').value) || 60000,
+    };
+    if (!cfg.name) { showToast('Error', 'Name required', 'error'); return; }
+    if (ws && ws.readyState === 1) {
+      if (editingPmId) {
+        ws.send(JSON.stringify({ type: 'pm:update', id: editingPmId, updates: cfg }));
+      } else {
+        ws.send(JSON.stringify({ type: 'pm:create', config: cfg }));
+      }
+    }
+    closePmDialog();
+  });
+
+  function openPmDialog(pm) {
+    editingPmId = pm ? pm.id : null;
+    document.getElementById('pm-dialog-title').textContent = pm ? 'Edit Project Manager' : 'New Project Manager';
+    document.getElementById('pm-form-name').value = pm ? pm.name : '';
+    document.getElementById('pm-form-source').value = pm ? pm.source.type : 'jira';
+    // Populate source-specific fields
+    const src = pm ? pm.source : {};
+    document.getElementById('pm-form-jql').value = src.jql || '';
+    document.getElementById('pm-form-gh-repo').value = src.repo || '';
+    document.getElementById('pm-form-gh-labels').value = src.labels || '';
+    document.getElementById('pm-form-gh-state').value = src.state || 'open';
+    document.getElementById('pm-form-manual-text').value = src.text || '';
+    document.getElementById('pm-form-jenkins-path').value = src.jobPath || '';
+    document.getElementById('pm-form-zoho-dept').value = src.department || '';
+    document.getElementById('pm-form-zoho-status').value = src.status || '';
+    document.getElementById('pm-form-zoho-query').value = src.query || '';
+    document.getElementById('pm-form-designation').value = pm ? (pm.designation || '') : '';
+    document.getElementById('pm-form-instructions').value = pm ? (pm.instructions || '') : '';
+    document.getElementById('pm-form-threshold').value = pm ? pm.autoThreshold : 3;
+    document.getElementById('pm-form-interval').value = pm ? pm.pollInterval : 60000;
+    togglePmSourceFields();
+    pmDialog.classList.add('visible');
+  }
+
+  function closePmDialog() { pmDialog.classList.remove('visible'); editingPmId = null; }
 
   // ── Notifications ─────────────────────────────────
   function handleNotify(msg) {

@@ -39,19 +39,41 @@ const TaskQueue = require('./core/taskqueue');
 const taskQueue = new TaskQueue(config, watcher);
 console.log('Task queue initialized');
 
+// Patch config.sessions.repoDir to check spawned agents first
+const originalRepoDir = config.sessions.repoDir;
+config.sessions.repoDir = (n) => {
+  const spawned = taskQueue.getSpawnedAgent(n);
+  if (spawned) return spawned.repoDir;
+  return originalRepoDir(n);
+};
+
+// Start project managers
+const ProjectManager = require('./core/pm');
+const pmManager = new ProjectManager(taskQueue);
+// Load PM state from the state file (taskQueue already loaded it)
+try {
+  const stateFile = path.join(__dirname, '..', '.hive-state.json');
+  const state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+  if (state.pms) pmManager.loadState(state.pms);
+} catch {
+  // No PM state yet
+}
+
 // Start Web dashboard
 const { createWebServer } = require('./integrations/web/server');
-const webServer = createWebServer(config, watcher, taskQueue);
+const webServer = createWebServer(config, watcher, taskQueue, pmManager);
 
 // Graceful shutdown
 process.on('SIGINT', () => {
   console.log('\nShutting down...');
+  pmManager.stopAll();
   watcher.stop();
   if (webServer) webServer.server.close();
   process.exit(0);
 });
 
 process.on('SIGTERM', () => {
+  pmManager.stopAll();
   watcher.stop();
   if (webServer) webServer.server.close();
   process.exit(0);

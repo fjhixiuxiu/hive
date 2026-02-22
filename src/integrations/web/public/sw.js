@@ -1,4 +1,4 @@
-const CACHE = 'hive-v2';
+const CACHE = 'hive-v11';
 const CDN_ASSETS = [
   'https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css',
   'https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js',
