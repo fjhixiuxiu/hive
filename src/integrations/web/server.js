@@ -71,9 +71,10 @@ function capturePaneAnsi(target) {
  * Create and start the web dashboard server.
  * @param {object} config - hive config
  * @param {Watcher} watcher - core watcher instance
+ * @param {TaskQueue} taskQueue - task queue instance
  * @returns {{ app, server, wss }}
  */
-function createWebServer(config, watcher) {
+function createWebServer(config, watcher, taskQueue) {
   const port = parseInt(process.env.WEB_PORT) || 3000;
   const token = process.env.WEB_TOKEN;
 
@@ -128,6 +129,15 @@ function createWebServer(config, watcher) {
           ws.send(JSON.stringify({ type: 'config', links: config.links || {} }));
           ws.send(JSON.stringify({ type: 'commands:list', commands }));
           sendFleetStatus(ws);
+          // Send task queue initial state
+          if (taskQueue) {
+            ws.send(JSON.stringify({ type: 'tasks:list', tasks: taskQueue.getTasksList() }));
+            ws.send(JSON.stringify({ type: 'auto:status', sessions: taskQueue.getAutoSessions() }));
+            ws.send(JSON.stringify({ type: 'approvals:list', approvals: taskQueue.getPendingApprovals() }));
+            const feedData = taskQueue.getFeed(null, 50);
+            ws.send(JSON.stringify({ type: 'feed:entries', entries: feedData.entries, hasMore: feedData.hasMore }));
+            ws.send(JSON.stringify({ type: 'rules:list', rules: taskQueue.getRules() }));
+          }
         } else {
           ws.send(JSON.stringify({ type: 'auth', ok: false }));
           ws.close();
@@ -284,6 +294,63 @@ function createWebServer(config, watcher) {
         }, 500);
         break;
       }
+
+      // ── Task queue messages ──────────────────────────
+      case 'task:create': {
+        if (!taskQueue) break;
+        const task = taskQueue.createTask(msg.text, msg.mode, msg.targetSession);
+        ws.send(JSON.stringify({ type: 'task:created', task }));
+        break;
+      }
+
+      case 'task:cancel': {
+        if (!taskQueue) break;
+        const task = taskQueue.cancelTask(msg.taskId);
+        if (task) ws.send(JSON.stringify({ type: 'task:cancelled', task }));
+        break;
+      }
+
+      case 'auto:toggle': {
+        if (!taskQueue) break;
+        taskQueue.toggleAutoSession(msg.session);
+        break;
+      }
+
+      case 'auto:set': {
+        if (!taskQueue) break;
+        taskQueue.setAutoSessions(msg.sessions || []);
+        break;
+      }
+
+      case 'broadcast': {
+        if (!taskQueue) break;
+        taskQueue.broadcast(msg.message, msg.target, msg.sessions).then((result) => {
+          if (ws.readyState === 1) {
+            ws.send(JSON.stringify({ type: 'broadcast:done', sent: result.sent, failed: result.failed }));
+          }
+        });
+        break;
+      }
+
+      case 'approval:respond': {
+        if (!taskQueue) break;
+        const approval = taskQueue.resolveApproval(msg.approvalId, msg.approved);
+        if (approval) ws.send(JSON.stringify({ type: 'approval:resolved', approval }));
+        break;
+      }
+
+      case 'feed:get': {
+        if (!taskQueue) break;
+        const feedData = taskQueue.getFeed(msg.before, msg.limit);
+        ws.send(JSON.stringify({ type: 'feed:entries', entries: feedData.entries, hasMore: feedData.hasMore }));
+        break;
+      }
+
+      case 'rule:toggle': {
+        if (!taskQueue) break;
+        taskQueue.toggleRule(msg.ruleId);
+        break;
+      }
     }
   }
 
@@ -386,6 +453,21 @@ function createWebServer(config, watcher) {
     broadcast({ type: 'notify', event: 'ci:changed', session: num, name, from, to, pr });
     broadcastFleetStatus();
   });
+
+  // ── TaskQueue event bridge ───────────────────────────
+
+  if (taskQueue) {
+    taskQueue.on('task:created', (task) => broadcast({ type: 'task:created', task }));
+    taskQueue.on('task:dispatched', (task) => broadcast({ type: 'task:dispatched', task }));
+    taskQueue.on('task:completed', (task) => broadcast({ type: 'task:completed', task }));
+    taskQueue.on('task:failed', (task) => broadcast({ type: 'task:failed', task }));
+    taskQueue.on('task:cancelled', (task) => broadcast({ type: 'task:cancelled', task }));
+    taskQueue.on('auto:changed', (sessions) => broadcast({ type: 'auto:status', sessions }));
+    taskQueue.on('feed:new', (entry) => broadcast({ type: 'feed:new', entry }));
+    taskQueue.on('approval:new', (approval) => broadcast({ type: 'approval:new', approval }));
+    taskQueue.on('approval:resolved', (approval) => broadcast({ type: 'approval:resolved', approval }));
+    taskQueue.on('rules:changed', (rules) => broadcast({ type: 'rules:list', rules }));
+  }
 
   // ── Start server ────────────────────────────────────
 

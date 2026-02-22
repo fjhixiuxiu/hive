@@ -34,9 +34,14 @@ console.log(`Watcher started (polling every ${config.watcher.interval / 1000}s)`
 const { createBot } = require('./integrations/telegram/bot');
 createBot(config, watcher);
 
+// Start task queue
+const TaskQueue = require('./core/taskqueue');
+const taskQueue = new TaskQueue(config, watcher);
+console.log('Task queue initialized');
+
 // Start Web dashboard
 const { createWebServer } = require('./integrations/web/server');
-const webServer = createWebServer(config, watcher);
+const webServer = createWebServer(config, watcher, taskQueue);
 
 // Graceful shutdown
 process.on('SIGINT', () => {

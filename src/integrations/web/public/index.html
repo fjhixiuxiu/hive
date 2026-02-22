@@ -24,6 +24,7 @@
   --purple: #bd93f9;
   --orange: #ffb86c;
   --pink: #ff79c6;
+  --sidebar-w: 64px;
 }
 html, body { height: 100%; background: var(--bg); color: var(--fg); font-family: -apple-system, system-ui, sans-serif; overflow: hidden; }
 
@@ -53,16 +54,54 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 #conn-bar.disconnected { background: var(--red); }
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
 
-/* ── Header ──────────────────────────── */
-#header {
-  padding: 12px 16px 8px; display: flex; align-items: center; justify-content: space-between;
+/* ── Main layout: sidebar + content ──── */
+#main-view {
+  display: none; flex-direction: row; height: 100%;
 }
-#header h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.5px; }
-#header h1 span { color: var(--green); }
-#summary { font-size: 13px; color: var(--dim); }
+
+/* ── Left sidebar ────────────────────── */
+#sidebar {
+  width: var(--sidebar-w); flex-shrink: 0;
+  background: var(--bg2); border-right: 1px solid var(--bg3);
+  display: flex; flex-direction: column;
+}
+#sidebar-logo {
+  padding: 12px 0 8px; text-align: center;
+  font-size: 14px; font-weight: 700; color: var(--green);
+  letter-spacing: -0.5px; border-bottom: 1px solid var(--bg3);
+}
+.nav-btn {
+  background: none; border: none; color: var(--dim); font-size: 10px;
+  font-weight: 600; padding: 14px 0 10px; cursor: pointer; text-align: center;
+  position: relative; transition: color 0.15s, background 0.15s;
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+}
+.nav-btn:hover { background: var(--bg3); }
+.nav-btn.active { color: var(--purple); background: rgba(189,147,249,0.08); }
+.nav-icon { font-size: 20px; }
+.nav-badge {
+  position: absolute; top: 6px; right: 8px;
+  background: var(--red); color: #fff; font-size: 8px; font-weight: 700;
+  min-width: 14px; height: 14px; border-radius: 7px;
+  display: none; align-items: center; justify-content: center; padding: 0 3px;
+}
+.nav-badge.visible { display: flex; }
+#sidebar-summary {
+  margin-top: auto; padding: 8px 4px; text-align: center;
+  font-size: 9px; color: var(--dim); line-height: 1.5;
+}
+
+/* ── Content area ────────────────────── */
+#content-area {
+  flex: 1; display: flex; flex-direction: column; overflow: hidden;
+  min-width: 0;
+}
+
+/* ── Panel switching ─────────────────── */
+.panel { display: none; flex-direction: column; height: 100%; overflow: hidden; }
+.panel.active { display: flex; }
 
 /* ── Fleet grid ──────────────────────── */
-#fleet-view { display: flex; flex-direction: column; height: calc(100% - 48px); }
 #grid {
   display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px;
   padding: 6px 10px; overflow-y: auto; flex: 1;
@@ -76,10 +115,9 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   border-left: 4px solid var(--dim); cursor: pointer;
   transition: transform 0.1s, background 0.15s;
   display: flex; flex-direction: column;
-  overflow: hidden;
+  overflow: hidden; position: relative;
 }
 .card:active { transform: scale(0.97); background: var(--bg3); }
-/* Border = CI status when PR exists, otherwise state */
 .card.border-green { border-left-color: var(--green); }
 .card.border-yellow { border-left-color: var(--yellow); }
 .card.border-red { border-left-color: var(--red); }
@@ -103,24 +141,25 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .card-pr { font-size: 13px; font-weight: 700; color: var(--cyan); margin-left: auto; text-decoration: none; }
 .card-pr:active { opacity: 0.6; }
 .card-badges { display: flex; gap: 4px; align-items: center; margin-left: 4px; }
-.card-ci {
-  font-size: 10px; font-weight: 700; padding: 2px 5px; border-radius: 3px;
-}
-.card-ci { text-decoration: none; }
+.card-ci { font-size: 10px; font-weight: 700; padding: 2px 5px; border-radius: 3px; text-decoration: none; }
 .card-ci.pass { background: rgba(80,250,123,0.25); color: var(--green); }
 .card-ci.fail { background: rgba(255,85,85,0.25); color: var(--red); }
 .card-ci.run { background: rgba(241,250,140,0.25); color: var(--yellow); }
 .card-ci:active { opacity: 0.6; }
-.card-review {
-  font-size: 10px; font-weight: 700; padding: 2px 5px; border-radius: 3px;
-  background: rgba(189,147,249,0.2); color: var(--purple);
+.card-review { font-size: 10px; font-weight: 700; padding: 2px 5px; border-radius: 3px; background: rgba(189,147,249,0.2); color: var(--purple); }
+
+.card-mode {
+  position: absolute; bottom: 6px; right: 8px;
+  font-size: 9px; font-weight: 700; padding: 2px 5px; border-radius: 3px;
+  letter-spacing: 0.5px; pointer-events: none;
 }
+.card-mode.auto { background: rgba(139,233,253,0.2); color: var(--cyan); }
+.card-mode.manual { background: rgba(98,114,164,0.15); color: var(--dim); }
 
 .card-branch {
   font-size: 14px; font-weight: 600; color: #b0b4d0; white-space: nowrap;
   overflow: hidden; text-overflow: ellipsis; margin-bottom: 6px;
 }
-
 .card-preview {
   font-family: 'SF Mono', 'Menlo', 'Monaco', 'Courier New', monospace;
   font-size: 12px; line-height: 1.45; color: #7a80a0;
@@ -159,112 +198,152 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 }
 #quick-send:disabled { opacity: 0.3; cursor: default; }
 
-/* ── Session detail (overlay) ────────── */
-#session-view {
-  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-  background: var(--bg); z-index: 50; display: none; flex-direction: column;
+/* ── Tasks panel ─────────────────────── */
+.tasks-scroll { flex: 1; overflow-y: auto; padding: 8px 10px; -webkit-overflow-scrolling: touch; }
+.task-section-label {
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;
+  color: var(--dim); margin: 12px 0 6px; padding-left: 2px;
 }
-#session-view.active { display: flex; }
+.task-section-label:first-child { margin-top: 0; }
+.task-card {
+  background: var(--bg2); border-radius: 6px; padding: 10px 12px;
+  margin-bottom: 6px; border-left: 3px solid var(--dim);
+  cursor: pointer; transition: background 0.1s;
+}
+.task-card:active { background: var(--bg3); }
+.task-card.queued { border-left-color: var(--purple); }
+.task-card.dispatched { border-left-color: var(--yellow); }
+.task-card.completed { border-left-color: var(--green); opacity: 0.7; }
+.task-card.failed { border-left-color: var(--red); opacity: 0.7; }
+.task-text { font-size: 14px; font-weight: 500; margin-bottom: 4px; }
+.task-meta { font-size: 12px; color: var(--dim); display: flex; gap: 8px; align-items: center; }
+.task-cancel {
+  margin-left: auto; background: none; border: none; color: var(--red);
+  font-size: 11px; font-weight: 600; cursor: pointer; padding: 2px 6px;
+}
+#task-bar {
+  display: flex; gap: 6px; padding: 8px 10px;
+  background: var(--bg2); border-top: 1px solid var(--bg3); flex-shrink: 0;
+  flex-wrap: wrap;
+}
+#task-input {
+  flex: 1; background: var(--bg); border: 1px solid var(--bg3); color: var(--fg);
+  padding: 8px 12px; border-radius: 6px; font-size: 15px; outline: none; min-width: 0;
+}
+#task-input:focus { border-color: var(--purple); }
+#task-input::placeholder { color: var(--dim); }
+.task-mode-btn {
+  background: var(--bg3); border: none; color: var(--fg); font-size: 12px;
+  font-weight: 700; padding: 8px 12px; border-radius: 6px; cursor: pointer;
+}
+.task-mode-btn.selected { background: var(--purple); color: var(--bg); }
+#task-send {
+  background: var(--purple); border: none; color: var(--bg); font-size: 14px;
+  font-weight: 700; padding: 8px 14px; border-radius: 6px; cursor: pointer;
+}
+#task-send:disabled { opacity: 0.3; cursor: default; }
+#session-picker {
+  display: none; width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch;
+  gap: 6px; padding: 4px 0;
+}
+#session-picker.visible { display: flex; }
+.picker-btn {
+  background: var(--bg3); border: none; color: var(--fg); font-size: 14px;
+  font-weight: 700; min-width: 36px; height: 36px; border-radius: 6px;
+  cursor: pointer; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+}
+.picker-btn.selected { background: var(--purple); color: var(--bg); }
+.picker-btn:active { background: var(--purple); color: var(--bg); }
 
+/* ── Feed panel ──────────────────────── */
+.feed-scroll {
+  flex: 1; overflow-y: auto; padding: 8px 10px; -webkit-overflow-scrolling: touch;
+  display: flex; flex-direction: column;
+}
+.feed-entry { padding: 8px 10px; border-bottom: 1px solid var(--bg3); font-size: 13px; line-height: 1.5; }
+.feed-time { color: var(--dim); font-size: 11px; font-weight: 600; margin-bottom: 2px; }
+.feed-detail { color: var(--fg); }
+.feed-entry.type-state .feed-detail { color: var(--cyan); }
+.feed-entry.type-task .feed-detail { color: var(--purple); }
+.feed-entry.type-ci .feed-detail { color: var(--yellow); }
+.feed-entry.type-approval .feed-detail { color: var(--orange); }
+.feed-entry.type-broadcast .feed-detail { color: var(--pink); }
+.approval-actions { display: flex; gap: 8px; margin-top: 6px; }
+.approval-btn { font-size: 12px; font-weight: 700; padding: 6px 16px; border-radius: 6px; border: none; cursor: pointer; }
+.approval-btn.approve { background: var(--green); color: var(--bg); }
+.approval-btn.deny { background: var(--red); color: #fff; }
+.approval-btn:active { opacity: 0.7; }
+.feed-load-more { background: var(--bg3); border: none; color: var(--dim); font-size: 12px; padding: 8px; border-radius: 6px; cursor: pointer; margin: 8px auto; width: 100%; }
+.feed-empty { color: var(--dim); text-align: center; padding: 40px 20px; font-size: 14px; }
+
+/* ── More panel ──────────────────────── */
+.more-scroll { flex: 1; overflow-y: auto; padding: 12px; -webkit-overflow-scrolling: touch; }
+.more-section { background: var(--bg2); border-radius: 8px; padding: 12px; margin-bottom: 12px; }
+.more-section-title { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--dim); margin-bottom: 10px; }
+.mode-columns { display: flex; gap: 10px; }
+.mode-col { flex: 1; }
+.mode-col-header { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; padding: 6px 8px; border-radius: 4px; margin-bottom: 8px; text-align: center; }
+.mode-col-header.auto-header { background: rgba(139,233,253,0.15); color: var(--cyan); }
+.mode-col-header.manual-header { background: rgba(98,114,164,0.15); color: var(--dim); }
+.mode-chips { display: flex; flex-wrap: wrap; gap: 6px; min-height: 44px; background: var(--bg); border-radius: 6px; padding: 8px; border: 2px dashed var(--bg3); }
+.mode-chip { background: var(--bg3); border: none; color: var(--fg); font-size: 14px; font-weight: 700; min-width: 40px; height: 36px; border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.1s, transform 0.1s; }
+.mode-chip:active { transform: scale(0.92); }
+.mode-chip.auto { background: rgba(139,233,253,0.2); color: var(--cyan); }
+.mode-all-btn { background: none; border: 1px solid var(--bg3); color: var(--dim); font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 4px; cursor: pointer; margin-top: 6px; width: 100%; }
+.mode-all-btn:active { background: var(--bg3); }
+#broadcast-target { background: var(--bg3); border: none; color: var(--fg); font-size: 13px; padding: 8px 12px; border-radius: 6px; width: 100%; margin-bottom: 8px; outline: none; }
+#broadcast-input { background: var(--bg); border: 1px solid var(--bg3); color: var(--fg); padding: 8px 12px; border-radius: 6px; font-size: 14px; width: 100%; margin-bottom: 8px; outline: none; }
+#broadcast-input:focus { border-color: var(--purple); }
+#broadcast-send { background: var(--pink); border: none; color: var(--bg); font-size: 13px; font-weight: 700; padding: 8px 16px; border-radius: 6px; cursor: pointer; width: 100%; }
+#broadcast-send:active { opacity: 0.8; }
+.rule-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--bg3); }
+.rule-row:last-child { border-bottom: none; }
+.rule-name { flex: 1; font-size: 13px; }
+.rule-toggle { width: 44px; height: 24px; border-radius: 12px; border: none; background: var(--bg3); cursor: pointer; position: relative; transition: background 0.2s; }
+.rule-toggle.on { background: var(--green); }
+.rule-toggle::after { content: ''; position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; border-radius: 50%; background: var(--fg); transition: transform 0.2s; }
+.rule-toggle.on::after { transform: translateX(20px); }
+
+/* ── Session detail (now inside content area) ─── */
+#session-panel {
+  display: none; flex-direction: column; height: 100%; overflow: hidden;
+}
+#session-panel.active { display: flex; }
 #session-header {
   display: flex; align-items: center; gap: 12px;
   padding: 10px 12px; background: var(--bg2); border-bottom: 1px solid var(--bg3);
   flex-shrink: 0;
 }
-#back-btn {
-  background: none; border: none; color: var(--fg); font-size: 20px;
-  cursor: pointer; padding: 4px 8px; border-radius: 4px;
-}
+#back-btn { background: none; border: none; color: var(--fg); font-size: 20px; cursor: pointer; padding: 4px 8px; border-radius: 4px; }
 #back-btn:active { background: var(--bg3); }
 #session-title { font-size: 16px; font-weight: 600; flex: 1; }
 #session-branch { font-size: 12px; color: var(--dim); }
-#restart-btn {
-  background: var(--bg3); border: none; color: var(--orange); font-size: 11px;
-  font-weight: 700; padding: 5px 10px; border-radius: 4px; cursor: pointer;
-}
+#restart-btn { background: var(--bg3); border: none; color: var(--orange); font-size: 11px; font-weight: 700; padding: 5px 10px; border-radius: 4px; cursor: pointer; }
 #restart-btn:active { background: var(--orange); color: var(--bg); }
-
 #terminal-wrap { flex: 1; overflow: hidden; padding: 4px; position: relative; touch-action: none; }
-/* Enable touch scrolling inside xterm viewport */
-.xterm .xterm-viewport {
-  touch-action: pan-y !important;
-  -webkit-overflow-scrolling: touch !important;
-  overscroll-behavior: contain;
-}
-#scroll-pause {
-  position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%);
-  background: var(--purple); color: var(--bg); font-size: 12px; font-weight: 600;
-  padding: 6px 14px; border-radius: 16px; cursor: pointer; z-index: 10;
-  opacity: 0.9; white-space: nowrap;
-}
-
-/* ── Keys bar ────────────────────────── */
-#keys-bar {
-  display: flex; gap: 4px; padding: 6px 10px;
-  background: var(--bg2); border-top: 1px solid var(--bg3);
-  flex-shrink: 0; overflow-x: auto; -webkit-overflow-scrolling: touch;
-}
-.key-btn {
-  background: var(--bg3); border: none; color: var(--fg); font-size: 13px;
-  font-weight: 600; padding: 8px 14px; border-radius: 6px; cursor: pointer;
-  white-space: nowrap; flex-shrink: 0;
-  font-family: 'SF Mono', 'Menlo', monospace;
-}
+.xterm .xterm-viewport { touch-action: pan-y !important; -webkit-overflow-scrolling: touch !important; overscroll-behavior: contain; }
+#scroll-pause { position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%); background: var(--purple); color: var(--bg); font-size: 12px; font-weight: 600; padding: 6px 14px; border-radius: 16px; cursor: pointer; z-index: 10; opacity: 0.9; white-space: nowrap; }
+#keys-bar { display: flex; gap: 4px; padding: 6px 10px; background: var(--bg2); border-top: 1px solid var(--bg3); flex-shrink: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.key-btn { background: var(--bg3); border: none; color: var(--fg); font-size: 13px; font-weight: 600; padding: 8px 14px; border-radius: 6px; cursor: pointer; white-space: nowrap; flex-shrink: 0; font-family: 'SF Mono', 'Menlo', monospace; }
 .key-btn:active { background: var(--purple); color: var(--bg); }
 .key-btn.num-key { padding: 8px 12px; color: var(--cyan); }
-
-/* ── Command bar ────────────────────── */
-#cmd-bar {
-  display: flex; gap: 4px; padding: 6px 10px;
-  background: var(--bg2); border-top: 1px solid var(--bg3);
-  flex-shrink: 0; overflow-x: auto; -webkit-overflow-scrolling: touch;
-}
-.cmd-btn {
-  background: rgba(189,147,249,0.12); border: 1px solid rgba(189,147,249,0.25);
-  color: var(--purple); font-size: 12px; font-weight: 600;
-  padding: 6px 10px; border-radius: 6px; cursor: pointer;
-  white-space: nowrap; flex-shrink: 0;
-  font-family: 'SF Mono', 'Menlo', monospace;
-}
+#cmd-bar { display: flex; gap: 4px; padding: 6px 10px; background: var(--bg2); border-top: 1px solid var(--bg3); flex-shrink: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.cmd-btn { background: rgba(189,147,249,0.12); border: 1px solid rgba(189,147,249,0.25); color: var(--purple); font-size: 12px; font-weight: 600; padding: 6px 10px; border-radius: 6px; cursor: pointer; white-space: nowrap; flex-shrink: 0; font-family: 'SF Mono', 'Menlo', monospace; }
 .cmd-btn:active { background: var(--purple); color: var(--bg); }
-
-/* ── Input bar ───────────────────────── */
-#input-bar {
-  display: flex; gap: 8px; padding: 8px 12px;
-  background: var(--bg2); border-top: 1px solid var(--bg3);
-  flex-shrink: 0;
-}
-#mode-toggle {
-  background: var(--bg3); border: none; color: var(--green); font-size: 12px;
-  font-weight: 700; padding: 8px 12px; border-radius: 6px; cursor: pointer;
-  min-width: 48px; text-transform: uppercase;
-}
+#input-bar { display: flex; gap: 8px; padding: 8px 12px; background: var(--bg2); border-top: 1px solid var(--bg3); flex-shrink: 0; }
+#mode-toggle { background: var(--bg3); border: none; color: var(--green); font-size: 12px; font-weight: 700; padding: 8px 12px; border-radius: 6px; cursor: pointer; min-width: 48px; text-transform: uppercase; }
 #mode-toggle.tell { color: var(--orange); }
-#msg-input {
-  flex: 1; background: var(--bg); border: 1px solid var(--bg3); color: var(--fg);
-  padding: 8px 12px; border-radius: 6px; font-size: 14px; outline: none;
-}
+#msg-input { flex: 1; background: var(--bg); border: 1px solid var(--bg3); color: var(--fg); padding: 8px 12px; border-radius: 6px; font-size: 14px; outline: none; }
 #msg-input:focus { border-color: var(--purple); }
 #msg-input::placeholder { color: var(--dim); }
 #msg-input:disabled { opacity: 0.5; }
-#send-btn {
-  background: var(--purple); border: none; color: var(--bg); font-size: 14px;
-  font-weight: 700; padding: 8px 16px; border-radius: 6px; cursor: pointer;
-}
+#send-btn { background: var(--purple); border: none; color: var(--bg); font-size: 14px; font-weight: 700; padding: 8px 16px; border-radius: 6px; cursor: pointer; }
 #send-btn:active { opacity: 0.8; }
 #send-btn:disabled { opacity: 0.4; cursor: default; }
 
 /* ── Toast notifications ─────────────── */
-#toasts {
-  position: fixed; top: 12px; right: 12px; z-index: 200;
-  display: flex; flex-direction: column; gap: 8px; pointer-events: none;
-}
-.toast {
-  background: var(--bg2); border: 1px solid var(--bg3); border-radius: 8px;
-  padding: 10px 14px; font-size: 13px; max-width: 300px;
-  animation: slideIn 0.25s ease-out; pointer-events: auto;
-  border-left: 3px solid var(--cyan);
-}
+#toasts { position: fixed; top: 12px; right: 12px; z-index: 200; display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
+.toast { background: var(--bg2); border: 1px solid var(--bg3); border-radius: 8px; padding: 10px 14px; font-size: 13px; max-width: 300px; animation: slideIn 0.25s ease-out; pointer-events: auto; border-left: 3px solid var(--cyan); }
 .toast.idle { border-left-color: var(--green); }
 .toast.ci-pass { border-left-color: var(--green); }
 .toast.ci-fail { border-left-color: var(--red); }
@@ -289,48 +368,122 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 <!-- Connection status bar -->
 <div id="conn-bar" class="disconnected"></div>
 
-<!-- Fleet grid view -->
-<div id="fleet-view" style="display:none">
-  <div id="header">
-    <h1><span>hive</span></h1>
-    <div id="summary"></div>
+<!-- Main view: sidebar + content -->
+<div id="main-view">
+  <!-- Left sidebar nav -->
+  <div id="sidebar">
+    <div id="sidebar-logo">hive</div>
+    <button class="nav-btn active" data-tab="fleet-panel">
+      <span class="nav-icon">&#9638;</span>Fleet
+    </button>
+    <button class="nav-btn" data-tab="tasks-panel">
+      <span class="nav-icon">&#9776;</span>Tasks
+      <span class="nav-badge" id="tasks-badge"></span>
+    </button>
+    <button class="nav-btn" data-tab="feed-panel">
+      <span class="nav-icon">&#9679;</span>Feed
+      <span class="nav-badge" id="feed-badge"></span>
+    </button>
+    <button class="nav-btn" data-tab="more-panel">
+      <span class="nav-icon">&#8943;</span>More
+    </button>
+    <div id="sidebar-summary"></div>
   </div>
-  <div id="grid"></div>
-  <div id="quick-bar">
-    <button id="quick-target">-</button>
-    <button id="quick-mode">Tell</button>
-    <input id="quick-input" type="text" placeholder="Select a session..." disabled autocomplete="off">
-    <button id="quick-send" disabled>Send</button>
-  </div>
-</div>
 
-<!-- Session detail view -->
-<div id="session-view">
-  <div id="session-header">
-    <button id="back-btn">&larr;</button>
-    <span id="session-title"></span>
-    <span id="session-branch"></span>
-    <button id="restart-btn" title="Restart Claude">Restart</button>
-  </div>
-  <div id="terminal-wrap"></div>
-  <div id="keys-bar">
-    <button class="key-btn" data-key="Enter">Enter</button>
-    <button class="key-btn" data-key="Escape">Esc</button>
-    <button class="key-btn" data-key="Up">Up</button>
-    <button class="key-btn" data-key="Down">Down</button>
-    <button class="key-btn" data-key="Tab">Tab</button>
-    <button class="key-btn" data-key="y">y</button>
-    <button class="key-btn" data-key="n">n</button>
-    <button class="key-btn num-key" data-key="1">1</button>
-    <button class="key-btn num-key" data-key="2">2</button>
-    <button class="key-btn num-key" data-key="3">3</button>
-    <button class="key-btn num-key" data-key="4">4</button>
-  </div>
-  <div id="cmd-bar"></div>
-  <div id="input-bar">
-    <button id="mode-toggle">Ask</button>
-    <input id="msg-input" type="text" placeholder="Message Claude..." autocomplete="off">
-    <button id="send-btn">Send</button>
+  <!-- Content area -->
+  <div id="content-area">
+    <!-- Fleet panel -->
+    <div id="fleet-panel" class="panel active">
+      <div id="grid"></div>
+      <div id="quick-bar">
+        <button id="quick-target">-</button>
+        <button id="quick-mode">Tell</button>
+        <input id="quick-input" type="text" placeholder="Select a session..." disabled autocomplete="off">
+        <button id="quick-send" disabled>Send</button>
+      </div>
+    </div>
+
+    <!-- Tasks panel -->
+    <div id="tasks-panel" class="panel">
+      <div class="tasks-scroll" id="tasks-scroll"></div>
+      <div id="task-bar">
+        <input id="task-input" type="text" placeholder="Enter task description..." autocomplete="off">
+        <button class="task-mode-btn selected" data-mode="auto" id="task-auto-btn">Auto</button>
+        <button class="task-mode-btn" data-mode="manual" id="task-manual-btn">Manual</button>
+        <button id="task-send">Send</button>
+        <div id="session-picker"></div>
+      </div>
+    </div>
+
+    <!-- Feed panel -->
+    <div id="feed-panel" class="panel">
+      <div class="feed-scroll" id="feed-scroll"></div>
+    </div>
+
+    <!-- More panel -->
+    <div id="more-panel" class="panel">
+      <div class="more-scroll">
+        <div class="more-section">
+          <div class="more-section-title">Session Modes</div>
+          <div class="mode-columns">
+            <div class="mode-col">
+              <div class="mode-col-header auto-header">Auto</div>
+              <div class="mode-chips" id="auto-chips"></div>
+              <button class="mode-all-btn" id="auto-all-btn">Move all here</button>
+            </div>
+            <div class="mode-col">
+              <div class="mode-col-header manual-header">Manual</div>
+              <div class="mode-chips" id="manual-chips"></div>
+              <button class="mode-all-btn" id="manual-all-btn">Move all here</button>
+            </div>
+          </div>
+        </div>
+        <div class="more-section">
+          <div class="more-section-title">Broadcast</div>
+          <select id="broadcast-target">
+            <option value="all">All active sessions</option>
+            <option value="idle">All idle sessions</option>
+            <option value="working">All working sessions</option>
+          </select>
+          <input id="broadcast-input" type="text" placeholder="Message to broadcast..." autocomplete="off">
+          <button id="broadcast-send">Send Broadcast</button>
+        </div>
+        <div class="more-section">
+          <div class="more-section-title">Auto-Pilot Rules</div>
+          <div id="rules-list"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Session detail panel (replaces content, not an overlay) -->
+    <div id="session-panel" class="panel">
+      <div id="session-header">
+        <button id="back-btn">&larr;</button>
+        <span id="session-title"></span>
+        <span id="session-branch"></span>
+        <button id="restart-btn" title="Restart Claude">Restart</button>
+      </div>
+      <div id="terminal-wrap"></div>
+      <div id="keys-bar">
+        <button class="key-btn" data-key="Enter">Enter</button>
+        <button class="key-btn" data-key="Escape">Esc</button>
+        <button class="key-btn" data-key="Up">Up</button>
+        <button class="key-btn" data-key="Down">Down</button>
+        <button class="key-btn" data-key="Tab">Tab</button>
+        <button class="key-btn" data-key="y">y</button>
+        <button class="key-btn" data-key="n">n</button>
+        <button class="key-btn num-key" data-key="1">1</button>
+        <button class="key-btn num-key" data-key="2">2</button>
+        <button class="key-btn num-key" data-key="3">3</button>
+        <button class="key-btn num-key" data-key="4">4</button>
+      </div>
+      <div id="cmd-bar"></div>
+      <div id="input-bar">
+        <button id="mode-toggle">Ask</button>
+        <input id="msg-input" type="text" placeholder="Message Claude..." autocomplete="off">
+        <button id="send-btn">Send</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -347,23 +500,34 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   let ws = null;
   let authenticated = false;
   let currentSession = null;
-  let mode = 'ask'; // 'ask' or 'tell'
+  let mode = 'ask';
   let askPending = false;
-  let fleet = [];
-  let linkTemplates = {};  // { pr, ci } URL templates from config
+  let fleetData = [];
+  let linkTemplates = {};
   let term = null;
   let fitAddon = null;
+  let tasks = [];
+  let autoSessions = new Set();
+  let feedEntries = [];
+  let feedHasMore = false;
+  let pendingApprovals = [];
+  let rules = [];
+  let unreadFeedCount = 0;
+  let activeTab = 'fleet-panel';
+  let previousTab = 'fleet-panel'; // remember which tab was active before session view
+  let taskMode = 'auto';
+  let manualTarget = null;
 
   // ── DOM refs ──────────────────────────────────────
   const $ = (s) => document.querySelector(s);
+  const $$ = (s) => document.querySelectorAll(s);
   const authScreen = $('#auth-screen');
   const authInput = $('#auth-input');
   const authError = $('#auth-error');
   const connBar = $('#conn-bar');
-  const fleetView = $('#fleet-view');
+  const mainView = $('#main-view');
   const grid = $('#grid');
-  const summary = $('#summary');
-  const sessionView = $('#session-view');
+  const sessionPanel = $('#session-panel');
   const backBtn = $('#back-btn');
   const sessionTitle = $('#session-title');
   const sessionBranch = $('#session-branch');
@@ -375,9 +539,15 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   const quickTarget = $('#quick-target');
   const quickMode = $('#quick-mode');
   const quickInput = $('#quick-input');
-  const quickSend = $('#quick-send');
-  let quickSession = null; // selected session number for quick send
-  let quickSendMode = 'tell'; // default to tell for quick messages
+  const quickSendEl = $('#quick-send');
+  const tasksScroll = $('#tasks-scroll');
+  const feedScroll = $('#feed-scroll');
+  const taskInput = $('#task-input');
+  const taskSendBtn = $('#task-send');
+  const sessionPicker = $('#session-picker');
+  const sidebarSummary = $('#sidebar-summary');
+  let quickSession = null;
+  let quickSendMode = 'tell';
 
   // ── Token management ──────────────────────────────
   const TOKEN_KEY = 'hive_token';
@@ -404,35 +574,58 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 
   function connect() {
     if (ws && ws.readyState <= 1) return;
-
     connBar.className = 'connecting';
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
     ws = new WebSocket(`${proto}//${location.host}`);
-
-    ws.onopen = () => {
-      ws.send(JSON.stringify({ type: 'auth', token }));
-    };
-
-    ws.onmessage = (e) => {
-      const msg = JSON.parse(e.data);
-      handleMessage(msg);
-    };
-
-    ws.onclose = () => {
-      connBar.className = 'disconnected';
-      authenticated = false;
-      scheduleReconnect();
-    };
-
+    ws.onopen = () => { ws.send(JSON.stringify({ type: 'auth', token })); };
+    ws.onmessage = (e) => { handleMessage(JSON.parse(e.data)); };
+    ws.onclose = () => { connBar.className = 'disconnected'; authenticated = false; scheduleReconnect(); };
     ws.onerror = () => {};
   }
 
   function scheduleReconnect() {
     if (reconnectTimer) return;
-    reconnectTimer = setTimeout(() => {
-      reconnectTimer = null;
-      if (token) connect();
-    }, 3000);
+    reconnectTimer = setTimeout(() => { reconnectTimer = null; if (token) connect(); }, 3000);
+  }
+
+  // ── Navigation ────────────────────────────────────
+  $$('.nav-btn').forEach(btn => {
+    btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+  });
+
+  function switchTab(tab) {
+    activeTab = tab;
+    // Hide session panel if switching away
+    if (tab !== 'session-panel' && currentSession) {
+      // Keep session open — just show the other tab over it
+    }
+    $$('.nav-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+    $$('.panel').forEach(p => {
+      if (p.id === 'session-panel') {
+        // Session panel stays visible if active, hides otherwise
+        p.classList.toggle('active', tab === 'session-panel');
+      } else {
+        p.classList.toggle('active', p.id === tab);
+      }
+    });
+    if (tab === 'feed-panel') { unreadFeedCount = 0; updateFeedBadge(); }
+    if (tab === 'fleet-panel') renderGrid();
+    if (tab === 'session-panel' && term && fitAddon) {
+      requestAnimationFrame(() => fitAddon.fit());
+    }
+  }
+
+  function updateFeedBadge() {
+    const badge = $('#feed-badge');
+    if (unreadFeedCount > 0) { badge.textContent = unreadFeedCount > 99 ? '99+' : unreadFeedCount; badge.classList.add('visible'); }
+    else { badge.classList.remove('visible'); }
+  }
+
+  function updateTasksBadge() {
+    const badge = $('#tasks-badge');
+    const queued = tasks.filter(t => t.status === 'queued').length;
+    if (queued > 0) { badge.textContent = queued; badge.classList.add('visible'); }
+    else { badge.classList.remove('visible'); }
   }
 
   // ── Message handling ──────────────────────────────
@@ -440,107 +633,76 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     switch (msg.type) {
       case 'auth':
         if (msg.ok) {
-          authenticated = true;
-          connBar.className = 'connected';
-          authScreen.style.display = 'none';
-          fleetView.style.display = 'flex';
-          // Request notification permission
-          if ('Notification' in window && Notification.permission === 'default') {
-            Notification.requestPermission();
-          }
+          authenticated = true; connBar.className = 'connected';
+          authScreen.style.display = 'none'; mainView.style.display = 'flex';
+          if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
         } else {
-          token = null;
-          localStorage.removeItem(TOKEN_KEY);
-          authScreen.style.display = 'flex';
-          fleetView.style.display = 'none';
-          authError.style.display = 'block';
-          authInput.value = '';
-          authInput.focus();
+          token = null; localStorage.removeItem(TOKEN_KEY);
+          authScreen.style.display = 'flex'; mainView.style.display = 'none';
+          authError.style.display = 'block'; authInput.value = ''; authInput.focus();
         }
         break;
-
-      case 'config':
-        linkTemplates = msg.links || {};
-        break;
-
-      case 'commands:list':
-        renderCommands(msg.commands || []);
-        break;
-
+      case 'config': linkTemplates = msg.links || {}; break;
+      case 'commands:list': renderCommands(msg.commands || []); break;
       case 'fleet:status':
-        fleet = msg.sessions;
-        // Only re-render grid if we're viewing it (not in session detail)
-        if (!sessionView.classList.contains('active')) {
-          renderGrid();
-        }
+        fleetData = msg.sessions;
+        if (activeTab === 'fleet-panel') renderGrid();
+        renderSessionPicker();
+        renderAutoGrid();
+        updateSidebarSummary();
         break;
-
       case 'terminal:data':
         if (term && currentSession === String(msg.session)) {
-          // Skip if content hasn't changed — no need to destroy scroll state
           if (msg.content === lastContent) break;
-          if (userScrolledUp) {
-            pendingContent = msg.content;
-          } else {
-            writeTerminalContent(msg.content);
-          }
+          if (userScrolledUp) { pendingContent = msg.content; }
+          else { writeTerminalContent(msg.content); }
         }
         break;
-
-      case 'ask:stream':
-        // Terminal subscription handles live view; nothing extra needed
-        break;
-
+      case 'ask:stream': break;
       case 'ask:done':
-        askPending = false;
-        msgInput.disabled = false;
-        sendBtn.disabled = false;
-        msgInput.focus();
-        if (msg.success) {
-          const dur = msg.duration ? `${Math.round(msg.duration / 1000)}s` : '';
-          showToast('Done', `Session ${msg.session} responded ${dur}`, 'success');
-        } else {
-          showToast('Error', msg.error || 'Ask failed', 'error');
-        }
+        askPending = false; msgInput.disabled = false; sendBtn.disabled = false; msgInput.focus();
+        if (msg.success) { const dur = msg.duration ? `${Math.round(msg.duration / 1000)}s` : ''; showToast('Done', `Session ${msg.session} responded ${dur}`, 'success'); }
+        else { showToast('Error', msg.error || 'Ask failed', 'error'); }
         break;
-
       case 'tell:done':
-        if (msg.success) {
-          showToast('Sent', `Message sent to session ${msg.session}`, 'success');
-        } else {
-          showToast('Error', msg.error || 'Tell failed', 'error');
-        }
+        if (msg.success) showToast('Sent', `Message sent to session ${msg.session}`, 'success');
+        else showToast('Error', msg.error || 'Tell failed', 'error');
         break;
-
-      case 'notify':
-        handleNotify(msg);
+      case 'notify': handleNotify(msg); break;
+      case 'restart:done': showToast('Restarted', `Session ${msg.session} — claude --resume`, 'success'); break;
+      case 'keys:done': break;
+      case 'error': showToast('Error', msg.message, 'error'); break;
+      case 'tasks:list': tasks = msg.tasks || []; renderTasks(); updateTasksBadge(); break;
+      case 'task:created': case 'task:dispatched': case 'task:completed': case 'task:failed': case 'task:cancelled': {
+        const idx = tasks.findIndex(t => t.id === msg.task.id);
+        if (idx >= 0) tasks[idx] = msg.task; else tasks.unshift(msg.task);
+        renderTasks(); updateTasksBadge(); break;
+      }
+      case 'auto:status': autoSessions = new Set(msg.sessions || []); renderAutoGrid(); if (activeTab === 'fleet-panel') renderGrid(); break;
+      case 'feed:entries': feedEntries = msg.entries || []; feedHasMore = msg.hasMore || false; renderFeed(); break;
+      case 'feed:new':
+        feedEntries.push(msg.entry); if (feedEntries.length > 200) feedEntries.shift();
+        renderFeedEntry(msg.entry, true);
+        if (activeTab !== 'feed-panel') { unreadFeedCount++; updateFeedBadge(); }
         break;
-
-      case 'restart:done':
-        showToast('Restarted', `Session ${msg.session} — claude --resume`, 'success');
-        break;
-
-      case 'keys:done':
-        // silent
-        break;
-
-      case 'error':
-        showToast('Error', msg.message, 'error');
-        break;
+      case 'approval:new': pendingApprovals.push(msg.approval); renderFeed(); nativeNotify('Approval Required', `Session ${msg.approval.session}: ${msg.approval.prompt}`); break;
+      case 'approval:resolved': { const ai = pendingApprovals.findIndex(a => a.id === msg.approval.id); if (ai >= 0) pendingApprovals.splice(ai, 1); renderFeed(); break; }
+      case 'approvals:list': pendingApprovals = msg.approvals || []; break;
+      case 'broadcast:done': showToast('Broadcast', `${msg.sent} sent, ${msg.failed} failed`, msg.failed ? 'error' : 'success'); break;
+      case 'rules:list': rules = msg.rules || []; renderRules(); break;
     }
+  }
+
+  function updateSidebarSummary() {
+    let idle = 0, work = 0, off = 0;
+    for (const s of fleetData) { if (s.state === 'idle') idle++; else if (s.state === 'working') work++; else off++; }
+    sidebarSummary.innerHTML = `${idle} idle<br>${work} work<br>${off} off`;
   }
 
   // ── Fleet grid rendering ──────────────────────────
   function renderGrid() {
     grid.innerHTML = '';
-    let idle = 0, work = 0, off = 0;
-
-    for (const s of fleet) {
-      if (s.state === 'idle') idle++;
-      else if (s.state === 'working') work++;
-      else off++;
-
-      // Border color: CI status > working state > idle/off
+    for (const s of fleetData) {
       let borderCls = 'border-dim';
       if (s.pr && s.pr.ciResult === 'FAILURE') borderCls = 'border-red';
       else if (s.pr && s.pr.ciResult === 'SUCCESS') borderCls = 'border-green';
@@ -551,23 +713,14 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       const card = document.createElement('div');
       card.className = `card ${s.state === 'off' ? 'off' : ''} ${borderCls}`;
       card.dataset.session = s.num;
-
       const branch = shortBranch(s.branch);
       const stateCls = s.state === 'idle' ? 'state-idle' : s.state === 'working' ? 'state-working' : 'state-off';
 
-      // PR + CI + review badges in the top row
-      let prHtml = '';
-      let badgesHtml = '';
+      let prHtml = '', badgesHtml = '';
       if (s.pr) {
-        const prUrl = linkTemplates.pr
-          ? linkTemplates.pr.replace('${prNum}', s.pr.prNum)
-          : null;
-        prHtml = prUrl
-          ? `<a class="card-pr" href="${prUrl}" target="_blank" onclick="event.stopPropagation()">#${s.pr.prNum}</a>`
-          : `<span class="card-pr">#${s.pr.prNum}</span>`;
-        const ciUrl = (linkTemplates.ci && s.pr.ciBuild)
-          ? linkTemplates.ci.replace('${prNum}', s.pr.prNum).replace('${ciBuild}', s.pr.ciBuild)
-          : null;
+        const prUrl = linkTemplates.pr ? linkTemplates.pr.replace('${prNum}', s.pr.prNum) : null;
+        prHtml = prUrl ? `<a class="card-pr" href="${prUrl}" target="_blank" onclick="event.stopPropagation()">#${s.pr.prNum}</a>` : `<span class="card-pr">#${s.pr.prNum}</span>`;
+        const ciUrl = (linkTemplates.ci && s.pr.ciBuild) ? linkTemplates.ci.replace('${prNum}', s.pr.prNum).replace('${ciBuild}', s.pr.ciBuild) : null;
         const ciTag = ciUrl ? 'a' : 'span';
         const ciAttrs = ciUrl ? `href="${ciUrl}" target="_blank" onclick="event.stopPropagation()"` : '';
         if (s.pr.ciResult === 'SUCCESS') badgesHtml += `<${ciTag} class="card-ci pass" ${ciAttrs}>CI</${ciTag}>`;
@@ -577,173 +730,88 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         else if (s.pr.review === 'CHANGES_REQUESTED') badgesHtml += '<span class="card-review">CHG</span>';
       }
 
-      card.innerHTML = `
-        <div class="card-top">
-          <span class="card-num">${s.num}</span>
-          <span class="card-state ${stateCls}">${s.state}</span>
-          ${prHtml}
-          ${badgesHtml ? `<span class="card-badges">${badgesHtml}</span>` : ''}
-        </div>
-        <div class="card-branch">${esc(branch)}</div>
-        <div class="card-preview">${esc(s.preview || '')}</div>
-      `;
+      const isAuto = autoSessions.has(s.num);
+      const modeHtml = `<span class="card-mode ${isAuto ? 'auto' : 'manual'}">${isAuto ? 'Auto' : 'Manual'}</span>`;
 
-      // Tap the number to select for quick send
-      card.querySelector('.card-num').addEventListener('click', (e) => {
-        e.stopPropagation();
-        selectQuickSession(s.num);
-      });
-      // Tap card body to open session detail
+      card.innerHTML = `${modeHtml}
+        <div class="card-top"><span class="card-num">${s.num}</span><span class="card-state ${stateCls}">${s.state}</span>${prHtml}${badgesHtml ? `<span class="card-badges">${badgesHtml}</span>` : ''}</div>
+        <div class="card-branch">${esc(branch)}</div>
+        <div class="card-preview">${esc(s.preview || '')}</div>`;
+      card.querySelector('.card-num').addEventListener('click', (e) => { e.stopPropagation(); selectQuickSession(s.num); });
       card.addEventListener('click', () => openSession(s));
       grid.appendChild(card);
     }
-
-    summary.textContent = `${idle} idle  ${work} working  ${off} off`;
-    // Highlight selected card
     if (quickSession) highlightQuickCard();
   }
 
-  function shortBranch(branch) {
-    if (!branch) return 'master';
-    const short = branch.replace(/^[^/]+\//, '');
-    return short.length > 28 ? short.substring(0, 25) + '...' : short;
-  }
-
-  function esc(s) {
-    const d = document.createElement('div');
-    d.textContent = s;
-    return d.innerHTML;
-  }
+  function shortBranch(branch) { if (!branch) return 'master'; const short = branch.replace(/^[^/]+\//, ''); return short.length > 28 ? short.substring(0, 25) + '...' : short; }
+  function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
   // ── Session detail view ───────────────────────────
   let userScrolledUp = false;
   let pendingContent = null;
-  let lastContent = '';        // skip rewrite if content unchanged
+  let lastContent = '';
 
   function openSession(s) {
     currentSession = String(s.num);
     sessionTitle.textContent = `Session ${s.num}`;
     sessionBranch.textContent = shortBranch(s.branch);
-    sessionView.classList.add('active');
+    previousTab = activeTab;
     userScrolledUp = false;
     pendingContent = null;
     lastContent = '';
 
-    // Initialize xterm.js
     if (!term) {
       term = new Terminal({
-        theme: {
-          background: '#0f0f23',
-          foreground: '#e2e2f0',
-          cursor: '#e2e2f0',
-          black: '#282a36',
-          red: '#ff5555',
-          green: '#50fa7b',
-          yellow: '#f1fa8c',
-          blue: '#bd93f9',
-          magenta: '#ff79c6',
-          cyan: '#8be9fd',
-          white: '#f8f8f2',
-          brightBlack: '#6272a4',
-          brightRed: '#ff6e6e',
-          brightGreen: '#69ff94',
-          brightYellow: '#ffffa5',
-          brightBlue: '#d6acff',
-          brightMagenta: '#ff92df',
-          brightCyan: '#a4ffff',
-          brightWhite: '#ffffff',
-        },
-        fontSize: 13,
-        fontFamily: "'SF Mono', 'Menlo', 'Monaco', 'Courier New', monospace",
-        disableStdin: true,
-        scrollback: 5000,
-        convertEol: true,
-        allowProposedApi: true,
+        theme: { background: '#0f0f23', foreground: '#e2e2f0', cursor: '#e2e2f0', black: '#282a36', red: '#ff5555', green: '#50fa7b', yellow: '#f1fa8c', blue: '#bd93f9', magenta: '#ff79c6', cyan: '#8be9fd', white: '#f8f8f2', brightBlack: '#6272a4', brightRed: '#ff6e6e', brightGreen: '#69ff94', brightYellow: '#ffffa5', brightBlue: '#d6acff', brightMagenta: '#ff92df', brightCyan: '#a4ffff', brightWhite: '#ffffff' },
+        fontSize: 13, fontFamily: "'SF Mono', 'Menlo', 'Monaco', 'Courier New', monospace",
+        disableStdin: true, scrollback: 5000, convertEol: true, allowProposedApi: true,
       });
       fitAddon = new FitAddon.FitAddon();
       term.loadAddon(fitAddon);
       term.open(termWrap);
-
-      // Detect user scroll — only on intentional user gestures
-      term.element.addEventListener('wheel', () => {
-        setTimeout(checkScrollPosition, 50);
-      });
-      // Mobile: detect touch-initiated scrolling
+      term.element.addEventListener('wheel', () => { setTimeout(checkScrollPosition, 50); });
       let touchStartY = 0;
-      term.element.addEventListener('touchstart', (e) => {
-        touchStartY = e.touches[0].clientY;
-      }, { passive: true });
-      term.element.addEventListener('touchend', (e) => {
-        const dy = touchStartY - (e.changedTouches[0] || {}).clientY;
-        // Only check if they swiped more than 20px (intentional scroll)
-        if (Math.abs(dy) > 20) {
-          setTimeout(checkScrollPosition, 150);
-          setTimeout(checkScrollPosition, 500);
-        }
-      });
+      term.element.addEventListener('touchstart', (e) => { touchStartY = e.touches[0].clientY; }, { passive: true });
+      term.element.addEventListener('touchend', (e) => { const dy = touchStartY - (e.changedTouches[0] || {}).clientY; if (Math.abs(dy) > 20) { setTimeout(checkScrollPosition, 150); setTimeout(checkScrollPosition, 500); } });
     }
 
-    fitAddon.fit();
-    term.clear();
+    // Show session panel
+    switchTab('session-panel');
+    requestAnimationFrame(() => { fitAddon.fit(); term.clear(); });
 
-    // Subscribe to terminal updates
     if (ws && ws.readyState === 1) {
       ws.send(JSON.stringify({ type: 'terminal:subscribe', session: currentSession }));
     }
   }
 
-  let writingContent = false;  // guard to ignore scroll events during content writes
+  let writingContent = false;
 
   function checkScrollPosition() {
     if (!term || writingContent) return;
     const buf = term.buffer.active;
-    // Threshold: only "scrolled up" if more than 3 lines from bottom
     const linesFromBottom = buf.baseY - buf.viewportY;
     if (linesFromBottom <= 3 && userScrolledUp) {
-      // User scrolled back to bottom — flush pending content
-      userScrolledUp = false;
-      scrollIndicator(false);
-      if (pendingContent !== null) {
-        writeTerminalContent(pendingContent);
-        pendingContent = null;
-      }
-    } else if (linesFromBottom > 3) {
-      userScrolledUp = true;
-      scrollIndicator(true);
-    }
+      userScrolledUp = false; scrollIndicator(false);
+      if (pendingContent !== null) { writeTerminalContent(pendingContent); pendingContent = null; }
+    } else if (linesFromBottom > 3) { userScrolledUp = true; scrollIndicator(true); }
   }
 
   function writeTerminalContent(content) {
     if (!term) return;
-    lastContent = content;
-    writingContent = true;
-    term.reset();
-    term.write(content);
-    requestAnimationFrame(() => {
-      term.scrollToBottom();
-      requestAnimationFrame(() => { writingContent = false; });
-    });
+    lastContent = content; writingContent = true;
+    term.reset(); term.write(content);
+    requestAnimationFrame(() => { term.scrollToBottom(); requestAnimationFrame(() => { writingContent = false; }); });
   }
 
   function scrollIndicator(show) {
     let el = document.getElementById('scroll-pause');
     if (show && !el) {
-      el = document.createElement('div');
-      el.id = 'scroll-pause';
+      el = document.createElement('div'); el.id = 'scroll-pause';
       el.textContent = 'Scroll paused — tap to resume';
-      el.addEventListener('click', () => {
-        userScrolledUp = false;
-        scrollIndicator(false);
-        if (term) term.scrollToBottom();
-        if (pendingContent !== null) {
-          writeTerminalContent(pendingContent);
-          pendingContent = null;
-        }
-      });
+      el.addEventListener('click', () => { userScrolledUp = false; scrollIndicator(false); if (term) term.scrollToBottom(); if (pendingContent !== null) { writeTerminalContent(pendingContent); pendingContent = null; } });
       termWrap.appendChild(el);
-    } else if (!show && el) {
-      el.remove();
-    }
+    } else if (!show && el) { el.remove(); }
   }
 
   function closeSession() {
@@ -751,23 +819,17 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       ws.send(JSON.stringify({ type: 'terminal:unsubscribe' }));
     }
     currentSession = null;
-    sessionView.classList.remove('active');
-    askPending = false;
-    msgInput.disabled = false;
-    sendBtn.disabled = false;
-    msgInput.value = '';
-    // Re-render grid with latest data
-    renderGrid();
+    askPending = false; msgInput.disabled = false; sendBtn.disabled = false; msgInput.value = '';
+    switchTab(previousTab);
   }
 
   backBtn.addEventListener('click', closeSession);
 
   // ── Key buttons + restart ───────────────────────
-  document.querySelectorAll('.key-btn').forEach(btn => {
+  $$('.key-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       if (!currentSession || !ws || ws.readyState !== 1) return;
-      const key = btn.dataset.key;
-      ws.send(JSON.stringify({ type: 'keys', session: currentSession, keys: [key] }));
+      ws.send(JSON.stringify({ type: 'keys', session: currentSession, keys: [btn.dataset.key] }));
     });
   });
 
@@ -778,15 +840,12 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     showToast('Restarting', `Session ${currentSession}`, 'success');
   });
 
-  // ── Command buttons (dynamically populated) ─────────
+  // ── Command buttons ────────────────────────────
   const cmdBar = $('#cmd-bar');
-
   function renderCommands(commands) {
     cmdBar.innerHTML = '';
     for (const cmd of commands) {
-      const btn = document.createElement('button');
-      btn.className = 'cmd-btn';
-      btn.textContent = '/' + cmd.name;
+      const btn = document.createElement('button'); btn.className = 'cmd-btn'; btn.textContent = '/' + cmd.name;
       if (cmd.description) btn.title = cmd.description;
       btn.addEventListener('click', () => {
         if (!currentSession || !ws || ws.readyState !== 1) return;
@@ -797,11 +856,8 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     }
   }
 
-  // Handle resize
   window.addEventListener('resize', () => {
-    if (term && fitAddon && sessionView.classList.contains('active')) {
-      fitAddon.fit();
-    }
+    if (term && fitAddon && activeTab === 'session-panel') fitAddon.fit();
   });
 
   // ── Input bar ─────────────────────────────────────
@@ -814,53 +870,29 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   function sendMessage() {
     const text = msgInput.value.trim();
     if (!text || !currentSession || !ws || ws.readyState !== 1) return;
-
-    if (mode === 'ask') {
-      if (askPending) return;
-      askPending = true;
-      msgInput.disabled = true;
-      sendBtn.disabled = true;
-      ws.send(JSON.stringify({ type: 'ask', session: currentSession, message: text }));
-    } else {
-      ws.send(JSON.stringify({ type: 'tell', session: currentSession, message: text }));
-    }
+    if (mode === 'ask') { if (askPending) return; askPending = true; msgInput.disabled = true; sendBtn.disabled = true; ws.send(JSON.stringify({ type: 'ask', session: currentSession, message: text })); }
+    else { ws.send(JSON.stringify({ type: 'tell', session: currentSession, message: text })); }
     msgInput.value = '';
   }
 
   sendBtn.addEventListener('click', sendMessage);
-  msgInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') sendMessage();
-  });
+  msgInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendMessage(); });
 
   // ── Quick send from grid ─────────────────────────
   function selectQuickSession(num) {
-    quickSession = String(num);
-    quickTarget.textContent = num;
-    quickTarget.classList.remove('empty');
-    quickInput.disabled = false;
-    quickSend.disabled = false;
-    quickInput.placeholder = `Message session ${num}...`;
-    quickInput.focus();
-    highlightQuickCard();
+    quickSession = String(num); quickTarget.textContent = num; quickTarget.classList.remove('empty');
+    quickInput.disabled = false; quickSendEl.disabled = false;
+    quickInput.placeholder = `Message session ${num}...`; quickInput.focus(); highlightQuickCard();
   }
 
   function highlightQuickCard() {
     grid.querySelectorAll('.card').forEach(c => c.style.outline = '');
-    if (quickSession) {
-      const sel = grid.querySelector(`.card[data-session="${quickSession}"]`);
-      if (sel) sel.style.outline = '2px solid var(--purple)';
-    }
+    if (quickSession) { const sel = grid.querySelector(`.card[data-session="${quickSession}"]`); if (sel) sel.style.outline = '2px solid var(--purple)'; }
   }
 
   quickTarget.addEventListener('click', () => {
-    // Cycle through sessions or deselect
-    quickSession = null;
-    quickTarget.textContent = '-';
-    quickTarget.classList.add('empty');
-    quickInput.disabled = true;
-    quickSend.disabled = true;
-    quickInput.placeholder = 'Select a session...';
-    quickInput.value = '';
+    quickSession = null; quickTarget.textContent = '-'; quickTarget.classList.add('empty');
+    quickInput.disabled = true; quickSendEl.disabled = true; quickInput.placeholder = 'Select a session...'; quickInput.value = '';
     grid.querySelectorAll('.card').forEach(c => c.style.outline = '');
   });
 
@@ -873,58 +905,180 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   function quickSendMessage() {
     const text = quickInput.value.trim();
     if (!text || !quickSession || !ws || ws.readyState !== 1) return;
-
-    if (quickSendMode === 'ask') {
-      ws.send(JSON.stringify({ type: 'ask', session: quickSession, message: text }));
-      showToast('Ask sent', `Session ${quickSession}`, 'success');
-    } else {
-      ws.send(JSON.stringify({ type: 'tell', session: quickSession, message: text }));
-    }
+    if (quickSendMode === 'ask') { ws.send(JSON.stringify({ type: 'ask', session: quickSession, message: text })); showToast('Ask sent', `Session ${quickSession}`, 'success'); }
+    else { ws.send(JSON.stringify({ type: 'tell', session: quickSession, message: text })); }
     quickInput.value = '';
   }
 
-  quickSend.addEventListener('click', quickSendMessage);
-  quickInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') quickSendMessage();
+  quickSendEl.addEventListener('click', quickSendMessage);
+  quickInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') quickSendMessage(); });
+
+  // ── Tasks panel ───────────────────────────────────
+  $('#task-auto-btn').addEventListener('click', () => { taskMode = 'auto'; $('#task-auto-btn').classList.add('selected'); $('#task-manual-btn').classList.remove('selected'); sessionPicker.classList.remove('visible'); manualTarget = null; });
+  $('#task-manual-btn').addEventListener('click', () => { taskMode = 'manual'; $('#task-manual-btn').classList.add('selected'); $('#task-auto-btn').classList.remove('selected'); sessionPicker.classList.add('visible'); renderSessionPicker(); });
+
+  function renderSessionPicker() {
+    sessionPicker.innerHTML = '';
+    const idle = fleetData.filter(s => s.state === 'idle');
+    for (const s of idle) {
+      const btn = document.createElement('button'); btn.className = `picker-btn${manualTarget === s.num ? ' selected' : ''}`; btn.textContent = s.num;
+      btn.addEventListener('click', () => { manualTarget = s.num; sessionPicker.querySelectorAll('.picker-btn').forEach(b => b.classList.remove('selected')); btn.classList.add('selected'); });
+      sessionPicker.appendChild(btn);
+    }
+    if (!idle.length) sessionPicker.innerHTML = '<span style="color:var(--dim);font-size:12px;padding:8px">No idle sessions</span>';
+  }
+
+  function sendTask() {
+    const text = taskInput.value.trim();
+    if (!text || !ws || ws.readyState !== 1) return;
+    if (taskMode === 'manual' && !manualTarget) { showToast('Select session', 'Tap an idle session number', 'error'); return; }
+    ws.send(JSON.stringify({ type: 'task:create', text, mode: taskMode, targetSession: taskMode === 'manual' ? manualTarget : undefined }));
+    taskInput.value = ''; manualTarget = null;
+    sessionPicker.querySelectorAll('.picker-btn').forEach(b => b.classList.remove('selected'));
+    showToast('Task created', text.substring(0, 40), 'success');
+  }
+
+  taskSendBtn.addEventListener('click', sendTask);
+  taskInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendTask(); });
+
+  function renderTasks() {
+    const queued = tasks.filter(t => t.status === 'queued');
+    const dispatched = tasks.filter(t => t.status === 'dispatched');
+    const completed = tasks.filter(t => t.status === 'completed' || t.status === 'failed');
+    let html = '';
+    if (queued.length) { html += '<div class="task-section-label">Queued</div>'; for (const t of queued) html += taskCardHtml(t); }
+    if (dispatched.length) { html += '<div class="task-section-label">In Progress</div>'; for (const t of dispatched) html += taskCardHtml(t); }
+    if (completed.length) { html += '<div class="task-section-label">Completed</div>'; for (const t of completed.slice(0, 20)) html += taskCardHtml(t); }
+    if (!tasks.length) html = '<div class="feed-empty">No tasks yet. Create one below.</div>';
+    tasksScroll.innerHTML = html;
+    tasksScroll.querySelectorAll('.task-cancel').forEach(btn => { btn.addEventListener('click', (e) => { e.stopPropagation(); if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'task:cancel', taskId: btn.dataset.id })); }); });
+    tasksScroll.querySelectorAll('.task-card').forEach(card => {
+      card.addEventListener('click', () => {
+        const task = tasks.find(t => t.id === card.dataset.id); if (!task) return;
+        if (task.status === 'dispatched' && task.assignedTo) { const s = fleetData.find(x => x.num === task.assignedTo); if (s) openSession(s); }
+        else if ((task.status === 'completed' || task.status === 'failed') && task.result) { showToast(task.status === 'completed' ? 'Result' : 'Error', task.result.substring(0, 100), task.status === 'completed' ? 'success' : 'error'); }
+      });
+    });
+  }
+
+  function taskCardHtml(t) {
+    const ago = timeAgo(t.createdAt); let meta = `${t.mode}`;
+    if (t.assignedTo) meta += ` · session ${t.assignedTo}`;
+    if (t.status === 'dispatched' && t.dispatchedAt) meta += ` · ${timeAgo(t.dispatchedAt)}`;
+    if (t.status === 'completed' && t.dispatchedAt && t.completedAt) { meta += ` · done in ${Math.round((t.completedAt - t.dispatchedAt) / 60000)}m`; }
+    if (t.status === 'failed') meta += ' · failed';
+    const cancelBtn = (t.status === 'queued' || t.status === 'dispatched') ? `<button class="task-cancel" data-id="${t.id}">Cancel</button>` : '';
+    return `<div class="task-card ${t.status}" data-id="${t.id}"><div class="task-text">${esc(t.text)}</div><div class="task-meta"><span>${meta} · ${ago}</span>${cancelBtn}</div></div>`;
+  }
+
+  // ── Feed panel ────────────────────────────────────
+  function renderFeed() {
+    feedScroll.innerHTML = '';
+    if (!feedEntries.length) { feedScroll.innerHTML = '<div class="feed-empty">No activity yet.</div>'; return; }
+    if (feedHasMore) {
+      const loadBtn = document.createElement('button'); loadBtn.className = 'feed-load-more'; loadBtn.textContent = 'Load older entries';
+      loadBtn.addEventListener('click', () => { if (ws && ws.readyState === 1 && feedEntries.length) ws.send(JSON.stringify({ type: 'feed:get', before: feedEntries[0].id, limit: 50 })); });
+      feedScroll.appendChild(loadBtn);
+    }
+    for (const entry of feedEntries) renderFeedEntry(entry, false);
+  }
+
+  function renderFeedEntry(entry, append) {
+    const el = document.createElement('div'); el.className = `feed-entry type-${entry.type}`;
+    const time = new Date(entry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    let detailHtml = esc(entry.detail);
+    const approval = pendingApprovals.find(a => a.session === entry.session && entry.type === 'approval' && entry.detail.includes('requested'));
+    if (approval) { detailHtml += `<div class="approval-actions"><button class="approval-btn approve" data-id="${approval.id}">Approve</button><button class="approval-btn deny" data-id="${approval.id}">Deny</button></div>`; }
+    el.innerHTML = `<div class="feed-time">${time}${entry.session ? ` · Session ${entry.session}` : ''}</div><div class="feed-detail">${detailHtml}</div>`;
+    el.querySelectorAll('.approval-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (!ws || ws.readyState !== 1) return;
+        const approved = btn.classList.contains('approve');
+        ws.send(JSON.stringify({ type: 'approval:respond', approvalId: btn.dataset.id, approved }));
+        btn.closest('.approval-actions').innerHTML = `<span style="color:var(--dim);font-size:12px">${approved ? 'Approved' : 'Denied'}</span>`;
+      });
+    });
+    feedScroll.appendChild(el);
+    if (append) { const scrollEl = feedScroll; if (scrollEl.scrollTop + scrollEl.clientHeight >= scrollEl.scrollHeight - 80) el.scrollIntoView({ behavior: 'smooth', block: 'end' }); }
+  }
+
+  // ── More panel ────────────────────────────────────
+  function toggleAutoLocal(num) {
+    if (autoSessions.has(num)) autoSessions.delete(num); else autoSessions.add(num);
+    renderAutoGrid(); if (activeTab === 'fleet-panel') renderGrid();
+    if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'auto:toggle', session: num }));
+  }
+
+  function setAutoLocal(nums) {
+    autoSessions = new Set(nums); renderAutoGrid(); if (activeTab === 'fleet-panel') renderGrid();
+    if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'auto:set', sessions: nums }));
+  }
+
+  function renderAutoGrid() {
+    const autoChips = $('#auto-chips'); const manualChips = $('#manual-chips');
+    if (!autoChips || !manualChips) return;
+    autoChips.innerHTML = ''; manualChips.innerHTML = '';
+    for (const s of fleetData) {
+      const chip = document.createElement('button');
+      const isAuto = autoSessions.has(s.num);
+      chip.className = `mode-chip${isAuto ? ' auto' : ''}`; chip.textContent = s.num;
+      const num = s.num;
+      chip.addEventListener('click', () => toggleAutoLocal(num));
+      if (isAuto) autoChips.appendChild(chip); else manualChips.appendChild(chip);
+    }
+    if (!autoChips.children.length) autoChips.innerHTML = '<span style="color:var(--dim);font-size:12px;padding:4px">Tap a session to move here</span>';
+    if (!manualChips.children.length) manualChips.innerHTML = '<span style="color:var(--dim);font-size:12px;padding:4px">Tap a session to move here</span>';
+  }
+
+  $('#auto-all-btn').addEventListener('click', () => setAutoLocal(fleetData.map(s => s.num)));
+  $('#manual-all-btn').addEventListener('click', () => setAutoLocal([]));
+
+  // Broadcast
+  $('#broadcast-send').addEventListener('click', () => {
+    const message = $('#broadcast-input').value.trim(); const target = $('#broadcast-target').value;
+    if (!message || !ws || ws.readyState !== 1) return;
+    ws.send(JSON.stringify({ type: 'broadcast', message, target }));
+    $('#broadcast-input').value = '';
+    showToast('Broadcasting', `"${message.substring(0, 30)}..." to ${target}`, 'success');
   });
+
+  // Auto-pilot rules
+  function renderRules() {
+    const list = $('#rules-list'); list.innerHTML = '';
+    for (const rule of rules) {
+      const row = document.createElement('div'); row.className = 'rule-row';
+      row.innerHTML = `<span class="rule-name">${esc(rule.name)}</span><button class="rule-toggle${rule.enabled ? ' on' : ''}" data-id="${rule.id}"></button>`;
+      row.querySelector('.rule-toggle').addEventListener('click', (e) => {
+        if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'rule:toggle', ruleId: rule.id }));
+        e.target.classList.toggle('on');
+      });
+      list.appendChild(row);
+    }
+  }
 
   // ── Notifications ─────────────────────────────────
   function handleNotify(msg) {
     switch (msg.event) {
-      case 'session:idle':
-        showToast(`Session ${msg.session} idle`, msg.name, 'idle');
-        nativeNotify(`Session ${msg.session} finished`, msg.name);
-        break;
-      case 'ci:changed': {
-        const cls = msg.to === 'SUCCESS' ? 'ci-pass' : msg.to === 'FAILURE' ? 'ci-fail' : '';
-        showToast(`CI ${msg.to}`, `Session ${msg.session} PR#${msg.pr}`, cls);
-        nativeNotify(`CI ${msg.to}`, `Session ${msg.session} PR#${msg.pr}: ${msg.from} -> ${msg.to}`);
-        break;
-      }
+      case 'session:idle': showToast(`Session ${msg.session} idle`, msg.name, 'idle'); nativeNotify(`Session ${msg.session} finished`, msg.name); break;
+      case 'ci:changed': { const cls = msg.to === 'SUCCESS' ? 'ci-pass' : msg.to === 'FAILURE' ? 'ci-fail' : ''; showToast(`CI ${msg.to}`, `Session ${msg.session} PR#${msg.pr}`, cls); nativeNotify(`CI ${msg.to}`, `Session ${msg.session} PR#${msg.pr}: ${msg.from} -> ${msg.to}`); break; }
     }
   }
 
   function showToast(title, body, cls) {
-    const el = document.createElement('div');
-    el.className = `toast ${cls || ''}`;
+    const el = document.createElement('div'); el.className = `toast ${cls || ''}`;
     el.innerHTML = `<div class="toast-title">${esc(title)}</div><div class="toast-body">${esc(body || '')}</div>`;
     toasts.appendChild(el);
-    setTimeout(() => {
-      el.classList.add('out');
-      setTimeout(() => el.remove(), 200);
-    }, 5000);
+    setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 200); }, 5000);
   }
 
   function nativeNotify(title, body) {
-    if ('Notification' in window && Notification.permission === 'granted') {
-      new Notification(title, { body, icon: '/icon-192.png' });
-    }
+    if ('Notification' in window && Notification.permission === 'granted') new Notification(title, { body, icon: '/icon-192.png' });
   }
 
+  function timeAgo(ts) { const diff = Date.now() - ts; if (diff < 60000) return 'just now'; if (diff < 3600000) return `${Math.round(diff / 60000)}m ago`; if (diff < 86400000) return `${Math.round(diff / 3600000)}h ago`; return `${Math.round(diff / 86400000)}d ago`; }
+
   // ── Service worker registration ───────────────────
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/sw.js').catch(() => {});
-  }
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 })();
 </script>
 </body>
