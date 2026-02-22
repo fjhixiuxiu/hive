@@ -59,4 +59,13 @@ module.exports = {
     // How often to check for state changes (ms)
     interval: 10000,
   },
+
+  // ── Web dashboard links ───────────────────────────────
+  // URL templates for PR and CI links in the dashboard.
+  // Use ${prNum} and ${ciBuild} as placeholders.
+  // Set to null to disable linking.
+  links: {
+    pr: 'https://github.com/mavencare/webplatform/pull/${prNum}',
+    ci: 'https://jenkins.vivtechnologies.com/job/webplatform/job/PR-${prNum}/${ciBuild}/',
+  },
 };

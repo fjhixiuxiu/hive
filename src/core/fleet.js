@@ -100,18 +100,12 @@ function getFleetStatus(config) {
 }
 
 /**
- * Get last N meaningful lines from Claude's pane (for /peek).
+ * Get Claude's pane content with TUI chrome stripped.
  */
-function peekSession(config, sessionName, lines = 50) {
+function peekSession(config, sessionName) {
   const paneTarget = `${sessionName}:.${config.sessions.claudePane}`;
-  const content = tmux.capturePane(paneTarget, { lines });
-  // Strip empty trailing lines and non-printable chars
-  return content
-    .split('\n')
-    .map(l => l.replace(/[^\x20-\x7E]/g, '').trimEnd())
-    .filter(l => l)
-    .slice(-30)
-    .join('\n');
+  const content = tmux.capturePane(paneTarget);
+  return tmux.stripTUIChrome(content, config);
 }
 
 /**

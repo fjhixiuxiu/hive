@@ -1,17 +1,33 @@
 const tmux = require('./tmux');
 
 /**
+ * Capture the visible pane and extract Claude's response content,
+ * stripping TUI chrome (status bars, prompts, etc).
+ */
+function captureResponse(paneTarget, config) {
+  const content = tmux.capturePane(paneTarget);
+  return tmux.stripTUIChrome(content, config);
+}
+
+/**
  * Send a message to Claude in a session and wait for the response.
  *
  * @param {object} config - hive config
  * @param {string} sessionName - tmux session name
  * @param {string} message - message to send to Claude
- * @param {function} onProgress - called with status updates (optional)
+ * @param {object} callbacks
+ * @param {function} callbacks.onProgress - called with status strings
+ * @param {function} callbacks.onStream - called with current response content periodically
  * @returns {Promise<{ success: boolean, response?: string, error?: string, duration?: number }>}
  */
-async function ask(config, sessionName, message, onProgress) {
+async function ask(config, sessionName, message, callbacks = {}) {
+  const { onProgress, onStream } = typeof callbacks === 'function'
+    ? { onProgress: callbacks } // backward compat: single function = onProgress
+    : callbacks;
+
   const paneTarget = `${sessionName}:.${config.sessions.claudePane}`;
   const { pollInterval, cooldown, timeout } = config.relay;
+  const streamInterval = config.relay.streamInterval || 3000;
 
   // Check if session is idle first
   const beforeContent = tmux.capturePane(paneTarget, { lines: 3 });
@@ -23,9 +39,13 @@ async function ask(config, sessionName, message, onProgress) {
     return { success: false, error: 'Claude is not running in this session.' };
   }
 
-  // Snapshot before: capture full visible pane as baseline
-  const before = tmux.capturePane(paneTarget, { lines: 200 });
-  const beforeLines = before.split('\n').length;
+  // Ensure Claude's TUI is in INSERT mode:
+  // 1. Escape clears any partial input / exits current mode
+  // 2. 'i' re-enters INSERT mode so keystrokes become text input
+  tmux.exec(`tmux send-keys -t "${paneTarget}" Escape`);
+  await new Promise(r => setTimeout(r, 150));
+  tmux.exec(`tmux send-keys -t "${paneTarget}" i`);
+  await new Promise(r => setTimeout(r, 100));
 
   // Send the message
   tmux.sendKeys(paneTarget, message, true);
@@ -33,9 +53,11 @@ async function ask(config, sessionName, message, onProgress) {
 
   if (onProgress) onProgress('Message sent, waiting for response...');
 
-  // Poll for idle
+  // Poll for idle + stream updates
   return new Promise((resolve) => {
     let idleDetectedAt = null;
+    let lastStreamAt = 0;
+    let lastStreamContent = '';
 
     const timer = setInterval(() => {
       const elapsed = Date.now() - startTime;
@@ -43,6 +65,10 @@ async function ask(config, sessionName, message, onProgress) {
       // Timeout
       if (elapsed > timeout) {
         clearInterval(timer);
+        if (onStream) {
+          const content = captureResponse(paneTarget, config);
+          if (content) onStream(content, true);
+        }
         resolve({
           success: false,
           error: `Timed out after ${Math.round(timeout / 1000)}s. Claude may still be working. Use /peek to check.`,
@@ -55,31 +81,26 @@ async function ask(config, sessionName, message, onProgress) {
       const tail = tmux.capturePane(paneTarget, { lines: 3 });
       const state = tmux.detectState(tail, config);
 
+      // Stream update if enough time has passed
+      if (onStream && state === 'working' && (Date.now() - lastStreamAt >= streamInterval)) {
+        const content = captureResponse(paneTarget, config);
+        if (content && content !== lastStreamContent) {
+          lastStreamContent = content;
+          lastStreamAt = Date.now();
+          onStream(content, false);
+        }
+      }
+
       if (state === 'idle') {
         if (!idleDetectedAt) {
-          // First idle detection — start cooldown to make sure Claude is really done
-          // (Claude can go briefly idle between tool calls)
           idleDetectedAt = Date.now();
           return;
         }
 
-        // Check if cooldown has passed
         if (Date.now() - idleDetectedAt >= cooldown) {
           clearInterval(timer);
 
-          // Capture the response
-          const after = tmux.capturePane(paneTarget, { lines: 200 });
-          const afterLines = after.split('\n');
-
-          // Extract new content (everything after baseline)
-          const newContent = afterLines
-            .slice(Math.max(0, beforeLines - 5)) // overlap a bit for safety
-            .map(l => l.replace(/[^\x20-\x7E]/g, '').trimEnd())
-            .filter(l => l)
-            .join('\n');
-
-          // Trim to just Claude's response (remove the echoed input and idle prompt)
-          const response = cleanResponse(newContent, message, config);
+          const response = captureResponse(paneTarget, config);
 
           resolve({
             success: true,
@@ -88,7 +109,6 @@ async function ask(config, sessionName, message, onProgress) {
           });
         }
       } else {
-        // Reset cooldown if Claude starts working again
         idleDetectedAt = null;
       }
     }, pollInterval);
@@ -98,7 +118,7 @@ async function ask(config, sessionName, message, onProgress) {
 /**
  * Send a message to Claude without waiting for response (fire-and-forget).
  */
-function tell(config, sessionName, message) {
+async function tell(config, sessionName, message) {
   const paneTarget = `${sessionName}:.${config.sessions.claudePane}`;
   const beforeContent = tmux.capturePane(paneTarget, { lines: 3 });
   const state = tmux.detectState(beforeContent, config);
@@ -107,32 +127,14 @@ function tell(config, sessionName, message) {
     return { success: false, error: 'Claude is not running in this session.' };
   }
 
+  // Ensure Claude's TUI is in INSERT mode
+  tmux.exec(`tmux send-keys -t "${paneTarget}" Escape`);
+  await new Promise(r => setTimeout(r, 150));
+  tmux.exec(`tmux send-keys -t "${paneTarget}" i`);
+  await new Promise(r => setTimeout(r, 100));
+
   tmux.sendKeys(paneTarget, message, true);
   return { success: true };
-}
-
-/**
- * Clean up the response: remove echoed input, prompt artifacts, status lines.
- */
-function cleanResponse(raw, sentMessage, config) {
-  const lines = raw.split('\n');
-
-  // Remove lines that are just the echoed input
-  const filtered = lines.filter(l => {
-    const clean = l.trim();
-    if (clean === sentMessage.trim()) return false;
-    // Remove idle prompt indicators
-    for (const pat of config.idlePatterns) {
-      if (pat.test(clean)) return false;
-    }
-    // Remove status line artifacts
-    if (/^(CI|PR|JIRA)\s/.test(clean)) return false;
-    if (/bypass permissions/.test(clean)) return false;
-    if (/-- INSERT --/.test(clean)) return false;
-    return true;
-  });
-
-  return filtered.join('\n').trim();
 }
 
 module.exports = { ask, tell };

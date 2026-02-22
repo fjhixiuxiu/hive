@@ -45,8 +45,9 @@ function capturePane(target, { lines } = {}) {
 function sendKeys(target, keys, enter = true) {
   // Escape single quotes in the message
   const escaped = keys.replace(/'/g, "'\\''");
-  const enterKey = enter ? ' Enter' : '';
-  exec(`tmux send-keys -t "${target}" '${escaped}'${enterKey}`);
+  // Use -l for literal text (prevents key name interpretation)
+  exec(`tmux send-keys -t "${target}" -l '${escaped}'`);
+  if (enter) exec(`tmux send-keys -t "${target}" Enter`);
 }
 
 /**
@@ -97,6 +98,69 @@ function killSession(name) {
   return exec(`tmux kill-session -t "${name}:" 2>/dev/null`) !== null;
 }
 
+// Claude Code TUI chrome patterns (status bars, prompt, UI elements)
+const TUI_CHROME = [
+  /\$[\d.]+/,                    // cost: $186.73
+  /bypass permissions/,
+  /shift\+tab/,
+  /ctrl-g to edit/,
+  /ctrl\+o to expand/,
+  /no JIRA ticket/i,
+  /^\s*>\s*$/,                   // bare prompt ">"
+  /^\s*copy\s*$/,                // TUI "copy" button
+  /-- INSERT --/,
+  /Cogitated for/,               // "Cogitated for 1m 19s"
+  /Baked for/,                   // "Baked for 3m 23s"
+  /^\s*\d+\s*tokens/,            // token count
+  /^\s*CI\s+(no build|PASS|FAIL)/i, // CI status line
+  /^\s*approve,?\s*(next|merge)/i,  // "approve, next"
+  /^Waiting/,                    // "Waitingpr diff..." tool calls
+  /^Explore\(/,                  // "Explore(..." tool calls
+  /^Reading\(/,                  // "Reading(..." tool calls
+];
+
+/**
+ * Strip Claude Code TUI chrome from pane content.
+ * Removes status bars, prompts, and UI elements from top and bottom.
+ * Returns cleaned content string.
+ */
+function stripTUIChrome(content, config) {
+  if (!content) return '';
+  const lines = content.split('\n');
+
+  function isChrome(line) {
+    const clean = line.replace(/[^\x20-\x7E]/g, '').trim();
+    if (!clean) return true;
+    // Config patterns
+    if (config) {
+      for (const pat of (config.idlePatterns || [])) {
+        if (pat.test(clean)) return true;
+      }
+      for (const pat of (config.offPatterns || [])) {
+        if (pat.test(clean)) return true;
+      }
+    }
+    // Built-in patterns
+    for (const pat of TUI_CHROME) {
+      if (pat.test(clean)) return true;
+    }
+    return false;
+  }
+
+  // Strip from bottom
+  let end = lines.length;
+  while (end > 0 && isChrome(lines[end - 1])) end--;
+
+  // Strip from top
+  let start = 0;
+  while (start < end && isChrome(lines[start])) start++;
+
+  return lines.slice(start, end)
+    .map(l => l.replace(/[^\x20-\x7E]/g, '').trimEnd())
+    .join('\n')
+    .trim();
+}
+
 module.exports = {
   exec,
   listSessions,
@@ -106,4 +170,5 @@ module.exports = {
   detectState,
   gitInfo,
   killSession,
+  stripTUIChrome,
 };

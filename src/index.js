@@ -34,14 +34,20 @@ console.log(`Watcher started (polling every ${config.watcher.interval / 1000}s)`
 const { createBot } = require('./integrations/telegram/bot');
 createBot(config, watcher);
 
+// Start Web dashboard
+const { createWebServer } = require('./integrations/web/server');
+const webServer = createWebServer(config, watcher);
+
 // Graceful shutdown
 process.on('SIGINT', () => {
   console.log('\nShutting down...');
   watcher.stop();
+  if (webServer) webServer.server.close();
   process.exit(0);
 });
 
 process.on('SIGTERM', () => {
   watcher.stop();
+  if (webServer) webServer.server.close();
   process.exit(0);
 });

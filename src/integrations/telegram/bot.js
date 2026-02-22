@@ -21,106 +21,134 @@ function createBot(config, watcher) {
     return String(msg.chat.id) === allowedChatId;
   }
 
-  // Helper to send a message
+  // Helper to send a message (with error handling)
   function send(text, opts = {}) {
-    return bot.sendMessage(allowedChatId, text, { parse_mode: 'Markdown', ...opts });
+    return bot.sendMessage(allowedChatId, text, opts)
+      .catch(err => {
+        console.error('Send error:', err.message);
+        // Retry without formatting if it fails
+        return bot.sendMessage(allowedChatId, text.replace(/<[^>]+>/g, '')).catch(() => {});
+      });
+  }
+
+  // Helper to edit an existing message
+  function edit(messageId, text, opts = {}) {
+    return bot.editMessageText(text, { chat_id: allowedChatId, message_id: messageId, ...opts })
+      .catch(err => {
+        // Ignore "message is not modified" errors (content unchanged)
+        if (err.message && err.message.includes('not modified')) return;
+        console.error('Edit error:', err.message);
+      });
+  }
+
+  // Wrap command handlers with error catching
+  function safe(fn) {
+    return async (...args) => {
+      try {
+        await fn(...args);
+      } catch (err) {
+        console.error('Command error:', err.message);
+        send(`Error: ${err.message}`).catch(() => {});
+      }
+    };
   }
 
   // ── Command routing ──────────────────────────────────
 
-  bot.onText(/\/start/, (msg) => {
+  bot.onText(/\/start$/, (msg) => {
     if (!auth(msg)) return;
     send([
-      '*hive* — AI Fleet Command',
+      '<b>trhive</b> — AI Fleet Command',
       '',
-      '`/status` — all sessions at a glance',
-      '`/idle` — list idle sessions',
-      '`/working` — list working sessions',
-      '`/session <N>` — detailed session status',
-      '`/peek <N>` — last output from Claude',
-      '`/ask <N> <msg>` — send message, get response',
-      '`/tell <N> <msg>` — fire and forget',
-      '`/restart <N>` — restart Claude',
-      '`/kill <N>` — kill session',
-      '`/prs` — all open PRs',
-    ].join('\n'));
+      '<code>/status</code> — all sessions at a glance',
+      '<code>/idle</code> — list idle sessions',
+      '<code>/working</code> — list working sessions',
+      '<code>/session N</code> — detailed session status',
+      '<code>/peek N</code> — last output from Claude',
+      '<code>/ask N msg</code> — send message, get response',
+      '<code>/tell N msg</code> — fire and forget',
+      '<code>/restart N</code> — restart Claude',
+      '<code>/kill N</code> — kill session',
+      '<code>/prs</code> — all open PRs',
+    ].join('\n'), { parse_mode: 'HTML' });
   });
 
-  bot.onText(/\/status/, (msg) => {
+  bot.onText(/\/status$/, (msg) => {
     if (!auth(msg)) return;
-    commands.status(config, send);
+    safe(commands.status)(config, send);
   });
 
-  bot.onText(/\/idle/, (msg) => {
+  bot.onText(/\/idle$/, (msg) => {
     if (!auth(msg)) return;
-    commands.idle(config, send);
+    safe(commands.idle)(config, send);
   });
 
-  bot.onText(/\/working/, (msg) => {
+  bot.onText(/\/working$/, (msg) => {
     if (!auth(msg)) return;
-    commands.working(config, send);
+    safe(commands.working)(config, send);
   });
 
   bot.onText(/\/session\s+(\S+)/, (msg, match) => {
     if (!auth(msg)) return;
-    commands.session(config, send, match[1]);
+    safe(commands.session)(config, send, match[1]);
   });
 
   bot.onText(/\/peek\s+(\S+)/, (msg, match) => {
     if (!auth(msg)) return;
-    commands.peek(config, send, match[1]);
+    safe(commands.peek)(config, send, match[1]);
   });
 
   bot.onText(/\/ask\s+(\S+)\s+(.+)/, (msg, match) => {
     if (!auth(msg)) return;
-    commands.ask(config, send, match[1], match[2]);
+    safe(commands.ask)(config, send, edit, match[1], match[2]);
   });
 
   bot.onText(/\/tell\s+(\S+)\s+(.+)/, (msg, match) => {
     if (!auth(msg)) return;
-    commands.tell(config, send, match[1], match[2]);
+    safe(commands.tell)(config, send, match[1], match[2]);
   });
 
   bot.onText(/\/restart\s+(\S+)/, (msg, match) => {
     if (!auth(msg)) return;
-    commands.restart(config, send, match[1]);
+    safe(commands.restart)(config, send, match[1]);
   });
 
   bot.onText(/\/kill\s+(\S+)/, (msg, match) => {
     if (!auth(msg)) return;
-    commands.kill(config, send, match[1]);
+    safe(commands.kill)(config, send, match[1]);
   });
 
-  bot.onText(/\/prs/, (msg) => {
+  bot.onText(/\/prs$/, (msg) => {
     if (!auth(msg)) return;
-    commands.prs(config, send);
+    safe(commands.prs)(config, send);
   });
 
   // ── Watcher notifications ────────────────────────────
 
   watcher.on('session:idle', ({ name, num }) => {
-    send(`✅ *Session ${num}* finished\\.\n_${esc(name)}_`, { parse_mode: 'MarkdownV2' })
-      .catch(() => send(`✅ Session ${num} finished. ${name}`));
+    send(`Session ${num} finished: ${name}`).catch(() => {});
   });
 
   watcher.on('ci:changed', ({ name, num, from, to, pr }) => {
-    const icon = to === 'SUCCESS' ? '🟢' : to === 'FAILURE' ? '🔴' : '🟡';
-    send(`${icon} CI changed for session ${num}: ${from} → *${to}*\nPR #${pr} — ${name}`);
+    const icon = to === 'SUCCESS' ? 'PASS' : to === 'FAILURE' ? 'FAIL' : to;
+    send(`CI ${icon} for session ${num} PR #${pr}: ${from} -> ${to}`).catch(() => {});
   });
 
   // ── Error handling ───────────────────────────────────
 
   bot.on('polling_error', (err) => {
+    // Ignore conflict errors during startup
+    if (err.message && err.message.includes('409')) return;
     console.error('Telegram polling error:', err.message);
+  });
+
+  // Catch unhandled promise rejections from the bot
+  process.on('unhandledRejection', (err) => {
+    console.error('Unhandled rejection:', err.message || err);
   });
 
   console.log('Telegram bot started. Listening for commands...');
   return bot;
-}
-
-// Escape MarkdownV2 special chars
-function esc(s) {
-  return s.replace(/[_*[\]()~`>#+\-=|{}.!]/g, '\\$&');
 }
 
 module.exports = { createBot };
