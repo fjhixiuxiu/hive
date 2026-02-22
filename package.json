@@ -19,7 +19,13 @@
     "automation",
     "coding-agents"
   ],
+  "author": "Nukul Bhasin",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nukulb/hive.git"
+  },
+  "homepage": "https://github.com/nukulb/hive#readme",
   "dependencies": {
     "express": "^4.21.0",
     "node-telegram-bot-api": "^0.66.0",

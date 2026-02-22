@@ -184,7 +184,13 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 }
 #restart-btn:active { background: var(--orange); color: var(--bg); }
 
-#terminal-wrap { flex: 1; overflow: hidden; padding: 4px; position: relative; }
+#terminal-wrap { flex: 1; overflow: hidden; padding: 4px; position: relative; touch-action: none; }
+/* Enable touch scrolling inside xterm viewport */
+.xterm .xterm-viewport {
+  touch-action: pan-y !important;
+  -webkit-overflow-scrolling: touch !important;
+  overscroll-behavior: contain;
+}
 #scroll-pause {
   position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%);
   background: var(--purple); color: var(--bg); font-size: 12px; font-weight: 600;
@@ -471,8 +477,9 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 
       case 'terminal:data':
         if (term && currentSession === String(msg.session)) {
+          // Skip if content hasn't changed — no need to destroy scroll state
+          if (msg.content === lastContent) break;
           if (userScrolledUp) {
-            // Stash content — don't disrupt scroll position
             pendingContent = msg.content;
           } else {
             writeTerminalContent(msg.content);
@@ -609,8 +616,9 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   }
 
   // ── Session detail view ───────────────────────────
-  let userScrolledUp = false;  // pause updates when user scrolls up
-  let pendingContent = null;   // stash latest content while paused
+  let userScrolledUp = false;
+  let pendingContent = null;
+  let lastContent = '';        // skip rewrite if content unchanged
 
   function openSession(s) {
     currentSession = String(s.num);
@@ -619,6 +627,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     sessionView.classList.add('active');
     userScrolledUp = false;
     pendingContent = null;
+    lastContent = '';
 
     // Initialize xterm.js
     if (!term) {
@@ -655,12 +664,22 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       term.loadAddon(fitAddon);
       term.open(termWrap);
 
-      // Detect user scroll — pause updates when scrolled up, resume at bottom
+      // Detect user scroll — only on intentional user gestures
       term.element.addEventListener('wheel', () => {
-        checkScrollPosition();
+        setTimeout(checkScrollPosition, 50);
       });
-      term.element.addEventListener('touchend', () => {
-        setTimeout(checkScrollPosition, 100);
+      // Mobile: detect touch-initiated scrolling
+      let touchStartY = 0;
+      term.element.addEventListener('touchstart', (e) => {
+        touchStartY = e.touches[0].clientY;
+      }, { passive: true });
+      term.element.addEventListener('touchend', (e) => {
+        const dy = touchStartY - (e.changedTouches[0] || {}).clientY;
+        // Only check if they swiped more than 20px (intentional scroll)
+        if (Math.abs(dy) > 20) {
+          setTimeout(checkScrollPosition, 150);
+          setTimeout(checkScrollPosition, 500);
+        }
       });
     }
 
@@ -673,11 +692,14 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     }
   }
 
+  let writingContent = false;  // guard to ignore scroll events during content writes
+
   function checkScrollPosition() {
-    if (!term) return;
+    if (!term || writingContent) return;
     const buf = term.buffer.active;
-    const atBottom = buf.viewportY >= buf.baseY;
-    if (atBottom && userScrolledUp) {
+    // Threshold: only "scrolled up" if more than 3 lines from bottom
+    const linesFromBottom = buf.baseY - buf.viewportY;
+    if (linesFromBottom <= 3 && userScrolledUp) {
       // User scrolled back to bottom — flush pending content
       userScrolledUp = false;
       scrollIndicator(false);
@@ -685,7 +707,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         writeTerminalContent(pendingContent);
         pendingContent = null;
       }
-    } else if (!atBottom) {
+    } else if (linesFromBottom > 3) {
       userScrolledUp = true;
       scrollIndicator(true);
     }
@@ -693,8 +715,14 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 
   function writeTerminalContent(content) {
     if (!term) return;
+    lastContent = content;
+    writingContent = true;
     term.reset();
     term.write(content);
+    requestAnimationFrame(() => {
+      term.scrollToBottom();
+      requestAnimationFrame(() => { writingContent = false; });
+    });
   }
 
   function scrollIndicator(show) {
