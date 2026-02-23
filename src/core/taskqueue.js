@@ -5,7 +5,6 @@ const os = require('os');
 const { execSync } = require('child_process');
 const relay = require('./relay');
 const fleet = require('./fleet');
-const tmux = require('./tmux');
 
 const STATE_FILE = path.join(__dirname, '..', '..', '.hive-state.json');
 
@@ -13,20 +12,21 @@ let nextTaskId = 1;
 let nextApprovalId = 1;
 
 class TaskQueue extends EventEmitter {
-  constructor(config, watcher) {
+  constructor(config, watcher, router) {
     super();
     this.config = config;
     this.watcher = watcher;
+    this.router = router;
 
     // State
-    this.tasks = new Map();           // id → Task
+    this.tasks = new Map();           // id -> Task
     this.autoSessions = new Set();    // session numbers opted into auto-mode
-    this.designations = new Map();    // session num → designation string
+    this.designations = new Map();    // session num -> designation string
     this.feed = [];                   // ring buffer, max 200
-    this.approvals = new Map();       // id → Approval
+    this.approvals = new Map();       // id -> Approval
     this.dispatchLock = new Set();    // session numbers currently being dispatched to
-    this.activeTaskBySession = new Map(); // session num → task id
-    this.spawnedAgents = new Map();  // slot num → { repoDir, name }
+    this.activeTaskBySession = new Map(); // session num -> task id
+    this.spawnedAgents = new Map();  // slot num -> { repoDir, name }
 
     // Auto-pilot rules
     this.rules = [
@@ -44,12 +44,14 @@ class TaskQueue extends EventEmitter {
     // Wire watcher events
     this._wireWatcher();
 
-    // Delayed dispatch after startup — give sessions time to boot (60s)
+    // Delayed dispatch after startup -- give sessions time to boot (60s)
     // then check once. Ongoing dispatch is event-driven (session:idle, designation change, etc.)
-    setTimeout(() => this._tryAutoDispatch(), 60000);
+    setTimeout(() => {
+      this._tryAutoDispatch().catch(err => console.error('Auto-dispatch error:', err.message));
+    }, 60000);
   }
 
-  // ── Task lifecycle ─────────────────────────────────
+  // -- Task lifecycle -----------------------------------------------
 
   createTask(text, mode, targetSession, designation) {
     const task = {
@@ -70,10 +72,12 @@ class TaskQueue extends EventEmitter {
     this.pushFeed('task', null, `Task created: "${text}" (${mode})`);
 
     if (mode === 'manual' && targetSession) {
-      this._dispatchTask(task, targetSession);
+      this._dispatchTask(task, targetSession).catch(err =>
+        console.error('Dispatch error:', err.message));
     } else if (mode === 'auto') {
       // Try to dispatch immediately to an idle auto-session
-      this._tryAutoDispatch();
+      this._tryAutoDispatch().catch(err =>
+        console.error('Auto-dispatch error:', err.message));
     }
 
     return task;
@@ -113,7 +117,8 @@ class TaskQueue extends EventEmitter {
       `Task completed: "${task.text}" (${duration}m)`);
     this._saveState();
     // Dispatch next queued task now that a session is free
-    this._tryAutoDispatch();
+    this._tryAutoDispatch().catch(err =>
+      console.error('Auto-dispatch error:', err.message));
     return task;
   }
 
@@ -132,24 +137,27 @@ class TaskQueue extends EventEmitter {
 
     this.emit('task:failed', task);
     this.pushFeed('task', task.assignedTo,
-      `Task failed: "${task.text}" — ${error}`);
+      `Task failed: "${task.text}" -- ${error}`);
     return task;
   }
 
-  _dispatchTask(task, sessionNum) {
+  async _dispatchTask(task, sessionNum) {
     if (this.dispatchLock.has(sessionNum)) return false;
 
-    const sessionName = fleet.findSession(this.config, sessionNum);
-    if (!sessionName) {
+    const found = await fleet.findSession(this.config, this.router, sessionNum);
+    if (!found) {
       this.failTask(task.id, `Session ${sessionNum} not found`);
       return false;
     }
 
+    const { name: sessionName, nodeId } = found;
+    const node = this.router.getNode(nodeId);
+
     // Double-check session is actually idle right now (fresh read)
-    const sessions = fleet.getFleetStatus(this.config);
+    const sessions = await fleet.getFleetStatus(this.config, this.router);
     const session = sessions.find(s => s.num === sessionNum);
     if (!session || session.state !== 'idle') {
-      return false; // silently skip — don't fail the task, just don't dispatch yet
+      return false; // silently skip -- don't fail the task, just don't dispatch yet
     }
 
     this.dispatchLock.add(sessionNum);
@@ -167,19 +175,19 @@ class TaskQueue extends EventEmitter {
     // For auto-dispatched tasks, clear context first so the agent starts fresh
     const sendTask = async () => {
       if (task.mode === 'auto') {
-        const clearResult = await relay.tell(this.config, sessionName, '/clear');
+        const clearResult = await relay.tell(this.config, node, sessionName, '/clear');
         if (clearResult.success) {
           await new Promise(r => setTimeout(r, 2500));
         }
       }
-      return relay.tell(this.config, sessionName, task.text);
+      return relay.tell(this.config, node, sessionName, task.text);
     };
 
     sendTask().then((result) => {
       if (!result.success) {
         this.failTask(task.id, result.error || 'Tell failed');
       }
-      // Don't unlock dispatchLock here — wait for session to go idle
+      // Don't unlock dispatchLock here -- wait for session to go idle
     }).catch((err) => {
       this.failTask(task.id, err.message);
     });
@@ -196,12 +204,12 @@ class TaskQueue extends EventEmitter {
     this.dispatchLock.delete(num);
   }
 
-  _tryAutoDispatch() {
+  async _tryAutoDispatch() {
     const queuedTasks = Array.from(this.tasks.values())
       .filter(t => t.status === 'queued' && t.mode === 'auto');
     if (!queuedTasks.length) return;
 
-    const sessions = fleet.getFleetStatus(this.config);
+    const sessions = await fleet.getFleetStatus(this.config, this.router);
     const idleAuto = sessions.filter(s =>
       s.state === 'idle'
       && this.autoSessions.has(s.num)
@@ -217,15 +225,15 @@ class TaskQueue extends EventEmitter {
         if (t.designation) {
           return this.designations.get(session.num) === t.designation;
         }
-        return true; // no designation — any session
+        return true; // no designation -- any session
       });
       if (task) {
-        this._dispatchTask(task, session.num);
+        await this._dispatchTask(task, session.num);
       }
     }
   }
 
-  // ── Auto-mode ──────────────────────────────────────
+  // -- Auto-mode ----------------------------------------------------
 
   toggleAutoSession(num) {
     if (this.autoSessions.has(num)) {
@@ -236,7 +244,8 @@ class TaskQueue extends EventEmitter {
     this._saveState();
     this.emit('auto:changed', this.getAutoSessions());
     // Re-evaluate dispatch with new auto-session set
-    this._tryAutoDispatch();
+    this._tryAutoDispatch().catch(err =>
+      console.error('Auto-dispatch error:', err.message));
     return this.autoSessions.has(num);
   }
 
@@ -251,7 +260,7 @@ class TaskQueue extends EventEmitter {
     return Array.from(this.autoSessions).sort((a, b) => a - b);
   }
 
-  // ── Designations ─────────────────────────────────
+  // -- Designations -------------------------------------------------
 
   setDesignation(num, designation) {
     if (designation) {
@@ -262,7 +271,8 @@ class TaskQueue extends EventEmitter {
     this._saveState();
     this.emit('designations:changed', this.getDesignations());
     // Re-evaluate dispatch with new designation mapping
-    this._tryAutoDispatch();
+    this._tryAutoDispatch().catch(err =>
+      console.error('Auto-dispatch error:', err.message));
   }
 
   getDesignations() {
@@ -271,10 +281,10 @@ class TaskQueue extends EventEmitter {
     return obj;
   }
 
-  // ── Spawn ───────────────────────────────────────
+  // -- Spawn -------------------------------------------------------
 
-  getAvailableSlots() {
-    const sessions = fleet.getFleetStatus(this.config);
+  async getAvailableSlots() {
+    const sessions = await fleet.getFleetStatus(this.config, this.router);
     const occupied = new Set(sessions.map(s => s.num));
     const slots = [];
     for (let i = 17; i <= 32; i++) {
@@ -301,13 +311,13 @@ class TaskQueue extends EventEmitter {
 
     // Pick slot
     if (num === undefined || num === null) {
-      const slots = this.getAvailableSlots();
+      const slots = await this.getAvailableSlots();
       if (!slots.length) throw new Error('No available slots (17-32 all occupied)');
       num = slots[0];
     }
     if (num < 17 || num > 32) throw new Error('Spawn slots must be 17-32');
 
-    const sessions = fleet.getFleetStatus(this.config);
+    const sessions = await fleet.getFleetStatus(this.config, this.router);
     if (sessions.find(s => s.num === num)) {
       throw new Error(`Slot ${num} is already occupied`);
     }
@@ -355,10 +365,10 @@ class TaskQueue extends EventEmitter {
     return { num, repoDir };
   }
 
-  // ── Broadcast ──────────────────────────────────────
+  // -- Broadcast ----------------------------------------------------
 
   async broadcast(message, target, specificSessions) {
-    const sessions = fleet.getFleetStatus(this.config);
+    const sessions = await fleet.getFleetStatus(this.config, this.router);
     let targets;
 
     if (specificSessions && specificSessions.length) {
@@ -374,7 +384,9 @@ class TaskQueue extends EventEmitter {
     let sent = 0, failed = 0;
     for (const s of targets) {
       try {
-        const result = await relay.tell(this.config, s.name, message);
+        const node = this.router.nodeFor(s.name);
+        if (!node) { failed++; continue; }
+        const result = await relay.tell(this.config, node, s.name, message);
         if (result.success) sent++;
         else failed++;
       } catch {
@@ -387,7 +399,7 @@ class TaskQueue extends EventEmitter {
     return { sent, failed };
   }
 
-  // ── Approvals ──────────────────────────────────────
+  // -- Approvals ----------------------------------------------------
 
   createApproval(sessionNum, prompt) {
     // Don't create duplicate pending approvals for the same session
@@ -409,7 +421,7 @@ class TaskQueue extends EventEmitter {
     return approval;
   }
 
-  resolveApproval(approvalId, approved) {
+  async resolveApproval(approvalId, approved) {
     const approval = this.approvals.get(approvalId);
     if (!approval || approval.status !== 'pending') return null;
 
@@ -417,11 +429,15 @@ class TaskQueue extends EventEmitter {
     approval.resolvedAt = Date.now();
 
     // Send y or n key to the session
-    const sessionName = fleet.findSession(this.config, approval.session);
-    if (sessionName) {
-      const paneTarget = `${sessionName}:.${this.config.sessions.claudePane}`;
-      const key = approved ? 'y' : 'n';
-      tmux.exec(`tmux send-keys -t "${paneTarget}" ${key}`);
+    const found = await fleet.findSession(this.config, this.router, approval.session);
+    if (found) {
+      const { name: sessionName, nodeId } = found;
+      const node = this.router.getNode(nodeId);
+      if (node) {
+        const paneTarget = `${sessionName}:.${this.config.sessions.claudePane}`;
+        const key = approved ? 'y' : 'n';
+        await node.exec(`tmux send-keys -t "${paneTarget}" ${key}`);
+      }
     }
 
     this.emit('approval:resolved', approval);
@@ -435,7 +451,7 @@ class TaskQueue extends EventEmitter {
       .filter(a => a.status === 'pending');
   }
 
-  // ── Feed ───────────────────────────────────────────
+  // -- Feed ---------------------------------------------------------
 
   pushFeed(type, session, detail, extra) {
     const entry = {
@@ -467,7 +483,7 @@ class TaskQueue extends EventEmitter {
     };
   }
 
-  // ── Auto-pilot rules ──────────────────────────────
+  // -- Auto-pilot rules --------------------------------------------
 
   getRules() {
     return this.rules;
@@ -489,7 +505,8 @@ class TaskQueue extends EventEmitter {
 
       switch (rule.action) {
         case 'auto-dispatch':
-          this._tryAutoDispatch();
+          this._tryAutoDispatch().catch(err =>
+            console.error('Auto-dispatch error:', err.message));
           break;
 
         case 'dispatch-fix':
@@ -504,7 +521,7 @@ class TaskQueue extends EventEmitter {
     }
   }
 
-  // ── Persistence ─────────────────────────────────────
+  // -- Persistence ---------------------------------------------------
 
   _loadState() {
     try {
@@ -544,7 +561,7 @@ class TaskQueue extends EventEmitter {
       console.log(`Loaded state: ${this.autoSessions.size} auto-sessions, ${this.designations.size} designations, ${this.spawnedAgents.size} spawned agents`);
       if (this.tasks.size) console.log(`Restored ${this.tasks.size} tasks`);
     } catch {
-      // No state file yet — that's fine
+      // No state file yet -- that's fine
     }
   }
 
@@ -573,7 +590,7 @@ class TaskQueue extends EventEmitter {
     }
   }
 
-  // ── Watcher integration ────────────────────────────
+  // -- Watcher integration ------------------------------------------
 
   _wireWatcher() {
     this.watcher.on('session:idle', (data) => {
@@ -591,15 +608,10 @@ class TaskQueue extends EventEmitter {
       this.evaluateRules('session:idle', data);
     });
 
-    // Periodic check: complete tasks for sessions that are idle but were
-    // missed (e.g. working state was too brief between polls)
-    this.watcher.on('poll', (sessions) => {
-      for (const s of sessions) {
-        if (s.state === 'idle' && this.activeTaskBySession.has(s.num)) {
-          this._handleSessionIdle(s.num);
-        }
-      }
-    });
+    // Note: task completion is handled by 'session:idle' event above,
+    // which now requires two consecutive polls confirming idle state.
+    // No periodic fallback needed — the watcher confirmation prevents
+    // false positives from brief idle flickers between tool calls.
 
     this.watcher.on('session:working', (data) => {
       this.pushFeed('state', data.num, `Session ${data.num} started working`);
@@ -608,7 +620,7 @@ class TaskQueue extends EventEmitter {
     this.watcher.on('ci:changed', (data) => {
       const label = data.to === 'SUCCESS' ? 'PASS' : data.to === 'FAILURE' ? 'FAIL' : data.to;
       this.pushFeed('ci', data.num,
-        `CI ${label} — session ${data.num} PR#${data.pr}`);
+        `CI ${label} -- session ${data.num} PR#${data.pr}`);
 
       if (data.to === 'FAILURE') {
         this.evaluateRules('ci:fail', data);
@@ -621,7 +633,7 @@ class TaskQueue extends EventEmitter {
 
     this.watcher.on('review:changed', (data) => {
       this.pushFeed('ci', data.num,
-        `Review: ${data.to} — session ${data.num} PR#${data.pr}`);
+        `Review: ${data.to} -- session ${data.num} PR#${data.pr}`);
 
       if (data.to === 'CHANGES_REQUESTED') {
         this.evaluateRules('review:changes_requested', data);
@@ -629,7 +641,7 @@ class TaskQueue extends EventEmitter {
     });
   }
 
-  // ── Serialization (for sending to clients) ─────────
+  // -- Serialization (for sending to clients) -----------------------
 
   getTasksList() {
     return Array.from(this.tasks.values())

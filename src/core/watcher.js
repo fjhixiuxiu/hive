@@ -3,18 +3,18 @@ const fleet = require('./fleet');
 const tmux = require('./tmux');
 
 // Lines that look like Claude presenting choices to the user
-const OPTION_PATTERN = /^[-–•]\s+.{5,}/;
+const OPTION_PATTERN = /^[-\u2013\u2022]\s+.{5,}/;
 const NUMBERED_OPTION_PATTERN = /^\d+[.)]\s+.{5,}/;
 
 /**
  * Watches fleet sessions for state changes and emits events.
  *
  * Events:
- *   'session:idle'          - { session, name, num }  — Claude finished working
- *   'session:working'       - { session, name, num }  — Claude started working
- *   'ci:changed'            - { session, name, num, from, to, pr }  — CI result changed
- *   'review:changed'        - { session, name, num, from, to, pr }  — PR review changed
- *   'approval:requested'    - { session, name, num, prompt }  — Claude needs permission
+ *   'session:idle'          - { session, name, num }  -- Claude finished working
+ *   'session:working'       - { session, name, num }  -- Claude started working
+ *   'ci:changed'            - { session, name, num, from, to, pr }  -- CI result changed
+ *   'review:changed'        - { session, name, num, from, to, pr }  -- PR review changed
+ *   'approval:requested'    - { session, name, num, prompt }  -- Claude needs permission
  */
 
 // Patterns that indicate Claude is asking for permission
@@ -29,27 +29,33 @@ const APPROVAL_PATTERNS = [
 ];
 
 class Watcher extends EventEmitter {
-  constructor(config) {
+  constructor(config, router) {
     super();
     this.config = config;
+    this.router = router;
     this.interval = null;
     this.approvalInterval = null;
-    this.prevStates = new Map();   // num → 'idle'|'working'|'off'
+    this.prevStates = new Map();   // num -> 'idle'|'working'|'off'
     this.notifiedIdle = new Set(); // nums we've already emitted idle for
-    this.prevCI = new Map();       // num → CI result string
-    this.prevReview = new Map();   // num → review status string
+    this.pendingIdle = new Map();  // num -> timestamp of first idle detection (confirmation delay)
+    this.prevCI = new Map();       // num -> CI result string
+    this.prevReview = new Map();   // num -> review status string
     this.detectedApprovals = new Set(); // session nums with active approval prompts
   }
 
-  start() {
+  async start() {
     if (this.interval) return;
 
     // Seed initial states (no notifications on startup)
-    this._seed();
+    await this._seed();
 
-    this.interval = setInterval(() => this._poll(), this.config.watcher.interval);
+    this.interval = setInterval(() => {
+      this._poll().catch(err => console.error('Watcher poll error:', err.message));
+    }, this.config.watcher.interval);
     // Approval detection: poll working sessions every 10s
-    this.approvalInterval = setInterval(() => this._checkApprovals(), 10000);
+    this.approvalInterval = setInterval(() => {
+      this._checkApprovals().catch(err => console.error('Approval check error:', err.message));
+    }, 10000);
   }
 
   stop() {
@@ -63,8 +69,8 @@ class Watcher extends EventEmitter {
     }
   }
 
-  _seed() {
-    const sessions = fleet.getFleetStatus(this.config);
+  async _seed() {
+    const sessions = await fleet.getFleetStatus(this.config, this.router);
     for (const s of sessions) {
       this.prevStates.set(s.num, s.state);
       // Mark already-idle sessions so we don't spam notifications on startup
@@ -73,31 +79,40 @@ class Watcher extends EventEmitter {
     }
   }
 
-  _poll() {
-    const sessions = fleet.getFleetStatus(this.config);
+  async _poll() {
+    const sessions = await fleet.getFleetStatus(this.config, this.router);
 
     for (const s of sessions) {
       const prevState = this.prevStates.get(s.num);
       const currState = s.state;
 
-      // Detect idle: emit if session is idle and we haven't notified yet.
-      // This catches working→idle transitions AND cases where the exact
-      // transition was missed between polls (e.g., cache race, fast cycles).
+      // Detect idle with confirmation: require idle on TWO consecutive polls
+      // to avoid false positives from brief idle flickers between tool calls.
       if (currState === 'idle' && !this.notifiedIdle.has(s.num)) {
-        this.notifiedIdle.add(s.num);
-        // Capture terminal preview so the feed entry can show context
-        let preview = '';
-        try { preview = fleet.peekSession(this.config, s.name); } catch {}
-        this.emit('session:idle', { session: s, name: s.name, num: s.num, preview });
+        if (!this.pendingIdle.has(s.num)) {
+          // First time seeing idle — mark as pending, wait for next poll
+          this.pendingIdle.set(s.num, Date.now());
+        } else {
+          // Second consecutive poll showing idle — confirmed idle
+          this.pendingIdle.delete(s.num);
+          this.notifiedIdle.add(s.num);
+          // Capture terminal preview so the feed entry can show context
+          let preview = '';
+          try {
+            const node = this.router.nodeFor(s.name);
+            if (node) preview = await fleet.peekSession(this.config, node, s.name);
+          } catch {}
+          this.emit('session:idle', { session: s, name: s.name, num: s.num, preview });
+        }
       }
 
-      // Clear notified flag when session leaves idle — so next time it
-      // returns to idle, we'll notify again.
+      // Clear pending/notified flags when session leaves idle
       if (currState !== 'idle') {
         this.notifiedIdle.delete(s.num);
+        this.pendingIdle.delete(s.num);
       }
 
-      // State transition: idle/off → working
+      // State transition: idle/off -> working
       if (prevState !== 'working' && currState === 'working') {
         this.emit('session:working', { session: s, name: s.name, num: s.num });
       }
@@ -146,15 +161,18 @@ class Watcher extends EventEmitter {
     this.emit('poll', sessions);
   }
 
-  _checkApprovals() {
-    const sessions = fleet.getFleetStatus(this.config);
+  async _checkApprovals() {
+    const sessions = await fleet.getFleetStatus(this.config, this.router);
     for (const s of sessions) {
       if (s.state !== 'working') continue;
       if (this.detectedApprovals.has(s.num)) continue;
 
+      const node = this.router.nodeFor(s.name);
+      if (!node) continue;
+
       // Capture last 5 lines and check for permission patterns
       const paneTarget = `${s.name}:.${this.config.sessions.claudePane}`;
-      const content = tmux.capturePane(paneTarget, { lines: 5 });
+      const content = await node.capturePane(paneTarget, { lines: 5 });
       if (!content) continue;
 
       const lines = content.split('\n').map(l => l.replace(/[^\x20-\x7E]/g, '').trim()).filter(Boolean);
