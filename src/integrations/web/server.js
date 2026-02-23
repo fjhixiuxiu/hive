@@ -243,6 +243,33 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
         break;
       }
 
+      case 'fleet:search': {
+        const query = (msg.query || '').trim();
+        if (!query) { ws.send(JSON.stringify({ type: 'fleet:search:result', results: [] })); break; }
+        const sessions = await fleet.getFleetStatus(config, router);
+        const results = [];
+        const queryLower = query.toLowerCase();
+        await Promise.all(sessions.map(async (s) => {
+          const node = router.nodeFor(s.name);
+          if (!node) return;
+          const paneTarget = `${s.name}:.${config.sessions.claudePane}`;
+          try {
+            const content = await capturePaneAnsi(node, paneTarget);
+            const plain = content.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
+            if (plain.toLowerCase().includes(queryLower)) {
+              // Extract matching lines for context
+              const matchLines = plain.split('\n')
+                .filter(l => l.toLowerCase().includes(queryLower))
+                .slice(0, 3)
+                .map(l => l.trim());
+              results.push({ num: s.num, name: s.name, branch: s.branch, state: s.state, matchLines });
+            }
+          } catch {}
+        }));
+        ws.send(JSON.stringify({ type: 'fleet:search:result', query, results }));
+        break;
+      }
+
       case 'terminal:subscribe': {
         // Unsubscribe from any previous session
         clearTermSub(ws);

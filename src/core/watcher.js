@@ -28,6 +28,14 @@ const APPROVAL_PATTERNS = [
   /approve,?\s*deny/i,
 ];
 
+// Patterns that indicate Claude is asking the user a question
+const QUESTION_PATTERNS = [
+  /^\s*❯\s+/,           // selection cursor (AskUserQuestion UI)
+  /^\s*>\s+\S/,          // alternate selection cursor
+  /^\s*\?\s+.{5,}/,     // ? prefix on question line
+  /Other$/,              // "Other" option always present in AskUserQuestion
+];
+
 class Watcher extends EventEmitter {
   constructor(config, router) {
     super();
@@ -37,10 +45,10 @@ class Watcher extends EventEmitter {
     this.approvalInterval = null;
     this.prevStates = new Map();   // num -> 'idle'|'working'|'off'
     this.notifiedIdle = new Set(); // nums we've already emitted idle for
-    this.pendingIdle = new Map();  // num -> timestamp of first idle detection (confirmation delay)
+    this.pendingIdle = new Map();  // num -> count of consecutive idle polls (confirm at 5)
     this.prevCI = new Map();       // num -> CI result string
     this.prevReview = new Map();   // num -> review status string
-    this.detectedApprovals = new Set(); // session nums with active approval prompts
+    this.detectedWaiting = new Set(); // session nums waiting for user (approvals or questions)
   }
 
   async start() {
@@ -86,23 +94,29 @@ class Watcher extends EventEmitter {
       const prevState = this.prevStates.get(s.num);
       const currState = s.state;
 
-      // Detect idle with confirmation: require idle on TWO consecutive polls
+      // Detect idle with confirmation: require FIVE consecutive idle polls
       // to avoid false positives from brief idle flickers between tool calls.
+      // Also skip if session is waiting for user answer (approval or question).
       if (currState === 'idle' && !this.notifiedIdle.has(s.num)) {
-        if (!this.pendingIdle.has(s.num)) {
-          // First time seeing idle — mark as pending, wait for next poll
-          this.pendingIdle.set(s.num, Date.now());
-        } else {
-          // Second consecutive poll showing idle — confirmed idle
+        if (this.detectedWaiting.has(s.num)) {
+          // Session is waiting for user answer — do NOT count toward idle
           this.pendingIdle.delete(s.num);
-          this.notifiedIdle.add(s.num);
-          // Capture terminal preview so the feed entry can show context
-          let preview = '';
-          try {
-            const node = this.router.nodeFor(s.name);
-            if (node) preview = await fleet.peekSession(this.config, node, s.name);
-          } catch {}
-          this.emit('session:idle', { session: s, name: s.name, num: s.num, preview });
+        } else {
+          const count = (this.pendingIdle.get(s.num) || 0) + 1;
+          if (count >= 5) {
+            // Fifth consecutive poll showing idle — confirmed idle
+            this.pendingIdle.delete(s.num);
+            this.notifiedIdle.add(s.num);
+            // Capture terminal preview so the feed entry can show context
+            let preview = '';
+            try {
+              const node = this.router.nodeFor(s.name);
+              if (node) preview = await fleet.peekSession(this.config, node, s.name);
+            } catch {}
+            this.emit('session:idle', { session: s, name: s.name, num: s.num, preview });
+          } else {
+            this.pendingIdle.set(s.num, count);
+          }
         }
       }
 
@@ -151,9 +165,9 @@ class Watcher extends EventEmitter {
         this.prevReview.set(s.num, currReview);
       }
 
-      // Clear approval flag when session goes idle
-      if (currState === 'idle') {
-        this.detectedApprovals.delete(s.num);
+      // Clear waiting flag when session starts working (user answered the question/approval)
+      if (currState === 'working' && prevState !== 'working') {
+        this.detectedWaiting.delete(s.num);
       }
     }
 
@@ -164,32 +178,63 @@ class Watcher extends EventEmitter {
   async _checkApprovals() {
     const sessions = await fleet.getFleetStatus(this.config, this.router);
     for (const s of sessions) {
-      if (s.state !== 'working') continue;
-      if (this.detectedApprovals.has(s.num)) continue;
+      if (this.detectedWaiting.has(s.num)) continue;
+      // Check both working and idle sessions — questions can appear during idle detection
+      if (s.state !== 'working' && s.state !== 'idle') continue;
 
       const node = this.router.nodeFor(s.name);
       if (!node) continue;
 
-      // Capture last 5 lines and check for permission patterns
+      // Capture last 8 lines and check for permission/question patterns
       const paneTarget = `${s.name}:.${this.config.sessions.claudePane}`;
-      const content = await node.capturePane(paneTarget, { lines: 5 });
+      const content = await node.capturePane(paneTarget, { lines: 8 });
       if (!content) continue;
 
       const lines = content.split('\n').map(l => l.replace(/[^\x20-\x7E]/g, '').trim()).filter(Boolean);
+      let isWaiting = false;
+      let prompt = '';
+
+      // Check for approval patterns
       for (const line of lines) {
         for (const pat of APPROVAL_PATTERNS) {
           if (pat.test(line)) {
-            this.detectedApprovals.add(s.num);
-            this.emit('approval:requested', {
-              session: s,
-              name: s.name,
-              num: s.num,
-              prompt: line,
-            });
+            isWaiting = true;
+            prompt = line;
             break;
           }
         }
-        if (this.detectedApprovals.has(s.num)) break;
+        if (isWaiting) break;
+      }
+
+      // Check for question patterns (multiple option-like lines or question indicators)
+      if (!isWaiting) {
+        let optionCount = 0;
+        for (const line of lines) {
+          if (OPTION_PATTERN.test(line) || NUMBERED_OPTION_PATTERN.test(line)) optionCount++;
+          for (const pat of QUESTION_PATTERNS) {
+            if (pat.test(line)) {
+              isWaiting = true;
+              prompt = line;
+              break;
+            }
+          }
+          if (isWaiting) break;
+        }
+        // 2+ option-like lines = likely a question with choices
+        if (!isWaiting && optionCount >= 2) {
+          isWaiting = true;
+          prompt = `${optionCount} options detected`;
+        }
+      }
+
+      if (isWaiting) {
+        this.detectedWaiting.add(s.num);
+        this.emit('approval:requested', {
+          session: s,
+          name: s.name,
+          num: s.num,
+          prompt,
+        });
       }
     }
   }

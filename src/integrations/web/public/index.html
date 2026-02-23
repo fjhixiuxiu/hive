@@ -110,6 +110,65 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 @media (min-width: 600px) { #grid { grid-template-columns: repeat(4, 1fr); gap: 8px; padding: 8px 12px; } }
 @media (min-width: 900px) { #grid { grid-template-columns: repeat(4, 1fr); gap: 8px; padding: 8px 16px; } }
 
+/* ── Fleet search ───────────────────── */
+.fleet-search-bar {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 10px 4px; position: relative;
+}
+@media (min-width: 600px) { .fleet-search-bar { padding: 8px 12px 4px; } }
+@media (min-width: 900px) { .fleet-search-bar { padding: 8px 16px 4px; } }
+#fleet-search-input {
+  flex: 1; background: var(--bg2); border: 1px solid var(--dim); border-radius: 6px;
+  color: var(--fg); padding: 8px 32px 8px 12px; font: inherit; font-size: 14px;
+  outline: none; transition: border-color 0.15s;
+}
+#fleet-search-input:focus { border-color: var(--purple); }
+#fleet-search-input::placeholder { color: var(--dim); }
+.fleet-search-clear {
+  position: absolute; right: 18px; top: 50%; transform: translateY(-50%);
+  background: none; border: none; color: var(--dim); cursor: pointer;
+  font-size: 18px; padding: 2px 6px; line-height: 1;
+}
+@media (min-width: 600px) { .fleet-search-clear { right: 20px; } }
+@media (min-width: 900px) { .fleet-search-clear { right: 24px; } }
+.fleet-search-clear:hover { color: var(--fg); }
+.fleet-search-results {
+  padding: 4px 10px 8px; max-height: 280px; overflow-y: auto;
+}
+@media (min-width: 600px) { .fleet-search-results { padding: 4px 12px 8px; } }
+@media (min-width: 900px) { .fleet-search-results { padding: 4px 16px 8px; } }
+.fleet-search-result {
+  background: var(--bg2); border-radius: 6px; padding: 8px 12px; margin-bottom: 6px;
+  border-left: 3px solid var(--purple); cursor: pointer;
+  transition: background 0.15s;
+}
+.fleet-search-result:hover { background: var(--bg3); }
+.fleet-search-result .result-header {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 4px;
+}
+.fleet-search-result .result-num {
+  font-weight: bold; color: var(--purple); min-width: 24px;
+}
+.fleet-search-result .result-branch {
+  color: var(--dim); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.fleet-search-result .result-state {
+  font-size: 11px; padding: 1px 6px; border-radius: 3px; margin-left: auto;
+}
+.fleet-search-result .result-match {
+  font-size: 12px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  margin-top: 2px;
+}
+.fleet-search-result .result-match mark {
+  background: rgba(168, 130, 255, 0.3); color: var(--fg); border-radius: 2px; padding: 0 2px;
+}
+.fleet-search-no-results {
+  color: var(--dim); font-size: 13px; padding: 8px 0; text-align: center;
+}
+.fleet-search-loading {
+  color: var(--dim); font-size: 13px; padding: 8px 0; text-align: center;
+}
+
 .card {
   background: var(--bg2); border-radius: 6px; padding: 10px 12px 8px;
   border-left: 4px solid var(--dim); cursor: pointer;
@@ -888,6 +947,11 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   <div id="content-area">
     <!-- Fleet panel -->
     <div id="fleet-panel" class="panel active">
+      <div class="fleet-search-bar">
+        <input id="fleet-search-input" type="text" placeholder="Search sessions (e.g. DEV-1234)..." autocomplete="off">
+        <button id="fleet-search-clear" class="fleet-search-clear" style="display:none">&times;</button>
+      </div>
+      <div id="fleet-search-results" class="fleet-search-results" style="display:none"></div>
       <div id="grid"></div>
       <div id="quick-bar">
         <button id="quick-target">-</button>
@@ -1231,6 +1295,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   let pmList = [];        // PM objects from server
   let editingPmId = null; // PM being edited (null = creating new)
   let activeSessionTab = 'terminal'; // 'terminal' or 'git'
+  let fleetSearchTimer = null; // debounce timer for fleet search
 
   // ── DOM refs ──────────────────────────────────────
   const $ = (s) => document.querySelector(s);
@@ -1241,6 +1306,9 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   const connBar = $('#conn-bar');
   const mainView = $('#main-view');
   const grid = $('#grid');
+  const fleetSearchInput = $('#fleet-search-input');
+  const fleetSearchClear = $('#fleet-search-clear');
+  const fleetSearchResults = $('#fleet-search-results');
   const sessionPanel = $('#session-panel');
   const backBtn = $('#back-btn');
   const sessionTitle = $('#session-title');
@@ -1420,6 +1488,9 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         break;
       case 'config': linkTemplates = msg.links || {}; break;
       case 'commands:list': renderCommands(msg.commands || []); break;
+      case 'fleet:search:result':
+        renderFleetSearchResults(msg.query, msg.results);
+        break;
       case 'fleet:status':
         fleetData = msg.sessions;
         if (activeTab === 'fleet-panel') renderGrid();
@@ -1587,6 +1658,75 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       grid.appendChild(card);
     }
     if (quickSession) highlightQuickCard();
+  }
+
+  // ── Fleet search ────────────────────────────────
+  fleetSearchInput.addEventListener('input', () => {
+    const q = fleetSearchInput.value.trim();
+    fleetSearchClear.style.display = q ? '' : 'none';
+    clearTimeout(fleetSearchTimer);
+    if (!q) {
+      fleetSearchResults.style.display = 'none';
+      fleetSearchResults.innerHTML = '';
+      return;
+    }
+    fleetSearchResults.style.display = '';
+    fleetSearchResults.innerHTML = '<div class="fleet-search-loading">Searching...</div>';
+    fleetSearchTimer = setTimeout(() => {
+      if (ws && ws.readyState === 1) {
+        ws.send(JSON.stringify({ type: 'fleet:search', query: q }));
+      }
+    }, 400);
+  });
+
+  fleetSearchInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      fleetSearchInput.value = '';
+      fleetSearchClear.style.display = 'none';
+      fleetSearchResults.style.display = 'none';
+      fleetSearchResults.innerHTML = '';
+      fleetSearchInput.blur();
+    }
+  });
+
+  fleetSearchClear.addEventListener('click', () => {
+    fleetSearchInput.value = '';
+    fleetSearchClear.style.display = 'none';
+    fleetSearchResults.style.display = 'none';
+    fleetSearchResults.innerHTML = '';
+    fleetSearchInput.focus();
+  });
+
+  function renderFleetSearchResults(query, results) {
+    if (!query || fleetSearchInput.value.trim() !== query) return; // stale result
+    fleetSearchResults.style.display = '';
+    if (results.length === 0) {
+      fleetSearchResults.innerHTML = '<div class="fleet-search-no-results">No sessions match "' + esc(query) + '"</div>';
+      return;
+    }
+    const queryRe = new RegExp('(' + query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+    fleetSearchResults.innerHTML = results.map(r => {
+      const stateCls = r.state === 'idle' ? 'state-idle' : r.state === 'working' ? 'state-working' : 'state-off';
+      const matchHtml = (r.matchLines || []).map(l =>
+        '<div class="result-match">' + esc(l).replace(queryRe, '<mark>$1</mark>') + '</div>'
+      ).join('');
+      return `<div class="fleet-search-result" data-num="${r.num}">
+        <div class="result-header">
+          <span class="result-num">${r.num}</span>
+          <span class="result-branch">${esc(shortBranch(r.branch))}</span>
+          <span class="result-state ${stateCls}">${r.state}</span>
+        </div>
+        ${matchHtml}
+      </div>`;
+    }).join('');
+    // Click to open session
+    fleetSearchResults.querySelectorAll('.fleet-search-result').forEach(el => {
+      el.addEventListener('click', () => {
+        const num = el.dataset.num;
+        const s = fleetData.find(x => String(x.num) === num);
+        if (s) openSession(s);
+      });
+    });
   }
 
   function shortBranch(branch) { if (!branch) return 'master'; const short = branch.replace(/^[^/]+\//, ''); return short.length > 28 ? short.substring(0, 25) + '...' : short; }
