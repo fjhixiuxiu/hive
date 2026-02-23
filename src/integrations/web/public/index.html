@@ -167,6 +167,136 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   flex: 1; min-height: 0;
   display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical;
 }
+.card-preview.expanded {
+  -webkit-line-clamp: unset; display: block;
+  max-height: 200px; overflow-y: auto;
+}
+.card-preview-toggle {
+  font-size: 10px; color: var(--purple); cursor: pointer; padding: 2px 0;
+  background: none; border: none; font-weight: 600;
+}
+.card-preview-toggle:hover { text-decoration: underline; }
+
+/* ── Card git row ────────────────────── */
+.card-git-row {
+  display: flex; align-items: center; gap: 6px; margin-bottom: 4px;
+  font-size: 11px; min-height: 0; overflow: hidden;
+}
+.card-commit {
+  font-family: 'SF Mono', 'Menlo', monospace; color: var(--dim);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0;
+}
+.card-diff-stat { display: flex; gap: 4px; flex-shrink: 0; font-family: 'SF Mono', 'Menlo', monospace; font-weight: 700; }
+.card-diff-add { color: var(--green); }
+.card-diff-del { color: var(--red); }
+.card-changes-badge {
+  font-size: 9px; font-weight: 700; padding: 1px 5px; border-radius: 8px;
+  background: rgba(255,184,108,0.2); color: var(--orange); white-space: nowrap; flex-shrink: 0;
+}
+
+/* ── Session tabs ────────────────────── */
+.session-tabs {
+  display: flex; gap: 0; background: var(--bg2); border-bottom: 1px solid var(--bg3); flex-shrink: 0;
+}
+.session-tab {
+  background: none; border: none; color: var(--dim); font-size: 13px;
+  font-weight: 700; padding: 8px 20px; cursor: pointer;
+  border-bottom: 2px solid transparent; transition: color 0.15s, border-color 0.15s;
+}
+.session-tab:hover { color: var(--fg); }
+.session-tab.active { color: var(--purple); border-bottom-color: var(--purple); }
+.session-tab-content { display: none; flex-direction: column; flex: 1; overflow: hidden; min-height: 0; }
+.session-tab-content.active { display: flex; }
+
+/* ── Git split layout ────────────────── */
+#session-git-content { flex-direction: row; }
+.git-sidebar {
+  width: 35%; min-width: 240px; max-width: 400px;
+  overflow-y: auto; border-right: 1px solid var(--bg3);
+  padding: 12px; flex-shrink: 0; -webkit-overflow-scrolling: touch;
+}
+.git-diff-pane {
+  flex: 1; display: flex; flex-direction: column;
+  overflow: hidden; min-width: 0;
+}
+@media (max-width: 699px) {
+  #session-git-content { flex-direction: column; }
+  .git-sidebar { width: 100%; max-width: none; min-width: 0;
+                 max-height: 40vh; border-right: none;
+                 border-bottom: 1px solid var(--bg3); }
+}
+.git-section { margin-bottom: 16px; }
+.git-section-title {
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;
+  color: var(--dim); margin-bottom: 8px;
+}
+.git-branch-summary {
+  background: var(--bg2); border-radius: 6px; padding: 10px 12px;
+  font-size: 13px; display: flex; gap: 12px; flex-wrap: wrap; align-items: center;
+}
+.git-branch-summary .stat { font-weight: 700; }
+.git-branch-summary .stat.green { color: var(--green); }
+.git-branch-summary .stat.red { color: var(--red); }
+.git-branch-summary .stat.purple { color: var(--purple); }
+.git-file-row {
+  display: flex; align-items: center; gap: 8px; padding: 6px 8px;
+  border-radius: 4px; cursor: pointer; transition: background 0.1s; font-size: 13px;
+}
+.git-file-row:hover { background: var(--bg3); }
+.git-file-status {
+  font-size: 10px; font-weight: 800; width: 20px; text-align: center;
+  padding: 1px 0; border-radius: 3px;
+}
+.git-file-status.M { background: rgba(241,250,140,0.2); color: var(--yellow); }
+.git-file-status.A { background: rgba(80,250,123,0.2); color: var(--green); }
+.git-file-status.D { background: rgba(255,85,85,0.2); color: var(--red); }
+.git-file-status.U { background: rgba(139,233,253,0.2); color: var(--cyan); }
+.git-file-status.R { background: rgba(189,147,249,0.2); color: var(--purple); }
+.git-file-name {
+  flex: 1; font-family: 'SF Mono', 'Menlo', monospace; font-size: 12px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
+}
+.git-file-stat { font-family: 'SF Mono', 'Menlo', monospace; font-size: 11px; font-weight: 700; flex-shrink: 0; }
+.git-file-stat .add { color: var(--green); }
+.git-file-stat .del { color: var(--red); }
+.git-log-row {
+  display: flex; align-items: baseline; gap: 8px; padding: 6px 8px; font-size: 12px;
+  cursor: pointer; border-radius: 4px; transition: background 0.1s;
+}
+.git-log-row:hover { background: var(--bg3); }
+.git-log-row.expanded { background: var(--bg2); border-radius: 4px 4px 0 0; }
+.git-log-hash {
+  font-family: 'SF Mono', 'Menlo', monospace; color: var(--purple);
+  font-weight: 700; flex-shrink: 0;
+}
+.git-log-msg { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.git-log-time { color: var(--dim); font-size: 11px; flex-shrink: 0; }
+.git-log-files {
+  display: none; padding: 4px 8px 8px 36px; background: var(--bg2);
+  border-radius: 0 0 4px 4px; margin-bottom: 2px;
+}
+.git-log-files.visible { display: block; }
+.git-log-loading { color: var(--dim); font-size: 11px; padding: 4px 0; }
+.git-empty { color: var(--dim); font-size: 13px; padding: 8px; }
+
+/* ── Diff pane header + content ───────── */
+.git-diff-header {
+  display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+  background: var(--bg2); border-bottom: 1px solid var(--bg3); flex-shrink: 0;
+}
+.git-diff-filename {
+  font-family: 'SF Mono', 'Menlo', monospace; font-size: 13px; font-weight: 600;
+}
+.git-diff-content {
+  flex: 1; overflow: auto; padding: 8px 12px; font-family: 'SF Mono', 'Menlo', monospace;
+  font-size: 12px; line-height: 1.6; white-space: pre-wrap; word-break: break-all;
+  -webkit-overflow-scrolling: touch;
+}
+.diff-add { background: rgba(80,250,123,0.1); color: var(--green); }
+.diff-del { background: rgba(255,85,85,0.1); color: var(--red); }
+.diff-hunk { color: var(--cyan); font-weight: 700; }
+.diff-ctx { color: var(--dim); }
+.git-file-row.selected { background: var(--bg3); }
 
 /* ── Quick send bar ──────────────────── */
 #quick-bar {
@@ -759,7 +889,24 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         <span id="session-branch"></span>
         <button id="restart-btn" title="Restart Claude">Restart</button>
       </div>
-      <div id="terminal-wrap"></div>
+      <div class="session-tabs">
+        <button class="session-tab active" data-stab="terminal">Terminal</button>
+        <button class="session-tab" data-stab="git">Git</button>
+      </div>
+      <div class="session-tab-content active" id="session-terminal-content">
+        <div id="terminal-wrap"></div>
+      </div>
+      <div class="session-tab-content" id="session-git-content">
+        <div class="git-sidebar" id="git-sidebar"></div>
+        <div class="git-diff-pane" id="git-diff-pane">
+          <div class="git-diff-header" id="git-diff-header" style="display:none">
+            <span class="git-diff-filename" id="git-diff-filename"></span>
+          </div>
+          <div class="git-diff-content" id="git-diff-content">
+            <div class="git-empty">Select a file to view diff</div>
+          </div>
+        </div>
+      </div>
       <div id="keys-bar">
         <button class="key-btn" data-key="Enter">Enter</button>
         <button class="key-btn" data-key="Escape">Esc</button>
@@ -946,6 +1093,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   let designations = {};  // { num: string }
   let pmList = [];        // PM objects from server
   let editingPmId = null; // PM being edited (null = creating new)
+  let activeSessionTab = 'terminal'; // 'terminal' or 'git'
 
   // ── DOM refs ──────────────────────────────────────
   const $ = (s) => document.querySelector(s);
@@ -1086,7 +1234,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     if (tab === 'more-panel') renderDesignationGrid();
     const spawnBtn = document.getElementById('spawn-btn');
     if (spawnBtn) spawnBtn.classList.toggle('visible', tab === 'fleet-panel');
-    if (tab === 'session-panel' && term && fitAddon) {
+    if (tab === 'session-panel' && term && fitAddon && activeSessionTab === 'terminal') {
       requestAnimationFrame(() => fitAddon.fit());
     }
     if (!fromRoute) pushHash();
@@ -1128,6 +1276,10 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         renderSessionPicker();
         renderAutoGrid();
         updateSidebarSummary();
+        // Auto-refresh git tab if active
+        if (activeTab === 'session-panel' && activeSessionTab === 'git' && currentSession && ws && ws.readyState === 1) {
+          ws.send(JSON.stringify({ type: 'git:info', session: currentSession }));
+        }
         // Apply pending session route from URL
         if (pendingRouteSession) {
           const s = fleetData.find(x => String(x.num) === pendingRouteSession);
@@ -1191,6 +1343,15 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       case 'pm:list': pmList = msg.pms || []; renderPMs(); break;
       case 'pm:created': showToast('PM Created', msg.pm.name, 'success'); break;
       case 'pm:error': showToast('PM Error', `${msg.id}: ${msg.error}`, 'error'); break;
+      case 'git:info':
+        if (currentSession === String(msg.session)) renderGitPanel(msg);
+        break;
+      case 'git:diff':
+        if (currentSession === String(msg.session)) showDiffViewer(msg.file, msg.diff);
+        break;
+      case 'git:commit':
+        if (currentSession === String(msg.session)) expandCommitRow(msg.hash, msg.files);
+        break;
     }
   }
 
@@ -1236,11 +1397,33 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       const desig = designations[s.num];
       const desigHtml = desig ? `<span class="card-designation">${esc(desig)}</span>` : '';
 
+      // Git summary row
+      let gitRowHtml = '';
+      if (s.gitSummary && s.gitSummary.lastCommit) {
+        const gs = s.gitSummary;
+        const diffParts = [];
+        if (s.git && s.git.staged) diffParts.push(`<span class="card-diff-add">+${s.git.staged}</span>`);
+        if (s.git && s.git.modified) diffParts.push(`<span class="card-diff-del">~${s.git.modified}</span>`);
+        const changesHtml = gs.totalChanges > 0 ? `<span class="card-changes-badge">${gs.totalChanges} files</span>` : '';
+        gitRowHtml = `<div class="card-git-row"><span class="card-commit">${esc(gs.lastCommit)}</span>${diffParts.length ? `<span class="card-diff-stat">${diffParts.join('')}</span>` : ''}${changesHtml}</div>`;
+      }
+
       card.innerHTML = `${modeHtml}${desigHtml}
         <div class="card-top"><span class="card-num">${s.num}</span><span class="card-state ${stateCls}">${s.state}</span>${prHtml}${badgesHtml ? `<span class="card-badges">${badgesHtml}</span>` : ''}</div>
         <div class="card-branch">${esc(branch)}</div>
-        <div class="card-preview">${esc(s.preview || '')}</div>`;
+        ${gitRowHtml}
+        <div class="card-preview">${esc(s.preview || '')}</div>
+        <button class="card-preview-toggle" data-session="${s.num}">expand</button>`;
       card.querySelector('.card-num').addEventListener('click', (e) => { e.stopPropagation(); selectQuickSession(s.num); });
+      card.querySelector('.card-preview-toggle').addEventListener('click', (e) => {
+        e.stopPropagation();
+        const preview = card.querySelector('.card-preview');
+        const isExpanded = preview.classList.toggle('expanded');
+        e.target.textContent = isExpanded ? 'collapse' : 'expand';
+        if (isExpanded && ws && ws.readyState === 1) {
+          ws.send(JSON.stringify({ type: 'peek', session: String(s.num) }));
+        }
+      });
       card.addEventListener('click', () => openSession(s));
       grid.appendChild(card);
     }
@@ -1263,6 +1446,11 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     userScrolledUp = false;
     pendingContent = null;
     lastContent = '';
+    // Reset to terminal tab
+    activeSessionTab = 'terminal';
+    $$('.session-tab').forEach(t => t.classList.toggle('active', t.dataset.stab === 'terminal'));
+    document.getElementById('session-terminal-content').classList.add('active');
+    document.getElementById('session-git-content').classList.remove('active');
 
     if (!term) {
       term = new Terminal({
@@ -1329,6 +1517,22 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 
   backBtn.addEventListener('click', closeSession);
 
+  // ── Session tab switching ──────────────────────
+  $$('.session-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      activeSessionTab = tab.dataset.stab;
+      $$('.session-tab').forEach(t => t.classList.toggle('active', t.dataset.stab === activeSessionTab));
+      document.getElementById('session-terminal-content').classList.toggle('active', activeSessionTab === 'terminal');
+      document.getElementById('session-git-content').classList.toggle('active', activeSessionTab === 'git');
+      if (activeSessionTab === 'terminal' && term && fitAddon) {
+        requestAnimationFrame(() => fitAddon.fit());
+      }
+      if (activeSessionTab === 'git' && currentSession && ws && ws.readyState === 1) {
+        ws.send(JSON.stringify({ type: 'git:info', session: currentSession }));
+      }
+    });
+  });
+
   // ── Key buttons + restart ───────────────────────
   $$('.key-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -1361,7 +1565,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   }
 
   window.addEventListener('resize', () => {
-    if (term && fitAddon && activeTab === 'session-panel') fitAddon.fit();
+    if (term && fitAddon && activeTab === 'session-panel' && activeSessionTab === 'terminal') fitAddon.fit();
   });
 
   // ── Input bar ─────────────────────────────────────
@@ -2061,6 +2265,205 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   }
 
   function closePmDialog() { pmDialog.classList.remove('visible'); editingPmId = null; }
+
+  // ── Git panel rendering ──────────────────────────
+  function renderGitPanel(data) {
+    const scroll = document.getElementById('git-sidebar');
+    if (!scroll) return;
+    // Preserve state across refreshes
+    const prevSelected = scroll.querySelector('.git-file-row.selected');
+    const selectedFile = prevSelected ? prevSelected.dataset.file : null;
+    const expandedRow = scroll.querySelector('.git-log-row.expanded');
+    const expandedHash = expandedRow ? expandedRow.dataset.hash : null;
+    const loadedCommits = {};
+    scroll.querySelectorAll('.git-log-files[data-loaded="1"]').forEach(el => {
+      loadedCommits[el.dataset.forHash] = el.innerHTML;
+    });
+    scroll.innerHTML = '';
+
+    // Branch summary + committed file list
+    const bd = data.branchDiff;
+    if (bd && bd.commitCount > 0) {
+      const totalAdd = bd.files.reduce((s, f) => s + f.added, 0);
+      const totalDel = bd.files.reduce((s, f) => s + f.deleted, 0);
+      const section = document.createElement('div');
+      section.className = 'git-section';
+      let branchFilesHtml = '';
+      for (const f of bd.files) {
+        branchFilesHtml += `<div class="git-file-row" data-file="${esc(f.file)}" data-base="${esc(bd.base)}">
+          <span class="git-file-status M">M</span>
+          <span class="git-file-name">${esc(f.file)}</span>
+          <span class="git-file-stat"><span class="add">+${f.added}</span> <span class="del">-${f.deleted}</span></span>
+        </div>`;
+      }
+      section.innerHTML = `<div class="git-section-title">Branch vs ${esc(bd.base)}</div>
+        <div class="git-branch-summary">
+          <span><span class="stat purple">${bd.commitCount}</span> commits ahead</span>
+          <span><span class="stat green">+${totalAdd}</span> <span class="stat red">-${totalDel}</span></span>
+          <span><span class="stat">${bd.files.length}</span> files</span>
+        </div>
+        ${branchFilesHtml}`;
+      // Click handlers for branch diff files — pass base
+      section.querySelectorAll('.git-file-row').forEach(row => {
+        row.addEventListener('click', () => {
+          if (!currentSession || !ws || ws.readyState !== 1) return;
+          ws.send(JSON.stringify({ type: 'git:diff', session: currentSession, file: row.dataset.file, base: row.dataset.base }));
+        });
+      });
+      scroll.appendChild(section);
+    }
+
+    // Uncommitted changed files
+    const files = data.changedFiles || [];
+    if (files.length) {
+      const section = document.createElement('div');
+      section.className = 'git-section';
+      let html = '<div class="git-section-title">Uncommitted Changes</div>';
+      // Build stat map from diffStat + stagedStat
+      const statMap = {};
+      for (const d of (data.diffStat || [])) statMap[d.file] = d;
+      for (const d of (data.stagedStat || [])) {
+        if (statMap[d.file]) { statMap[d.file].added += d.added; statMap[d.file].deleted += d.deleted; }
+        else statMap[d.file] = d;
+      }
+      for (const f of files) {
+        const st = statMap[f.file];
+        const statHtml = st ? `<span class="git-file-stat"><span class="add">+${st.added}</span> <span class="del">-${st.deleted}</span></span>` : '';
+        const statusChar = f.status.charAt(0) || '?';
+        html += `<div class="git-file-row" data-file="${esc(f.file)}">
+          <span class="git-file-status ${statusChar}">${statusChar}</span>
+          <span class="git-file-name">${esc(f.file)}</span>
+          ${statHtml}
+        </div>`;
+      }
+      section.innerHTML = html;
+      // Click handlers for uncommitted files — no base
+      section.querySelectorAll('.git-file-row').forEach(row => {
+        row.addEventListener('click', () => {
+          if (!currentSession || !ws || ws.readyState !== 1) return;
+          ws.send(JSON.stringify({ type: 'git:diff', session: currentSession, file: row.dataset.file }));
+        });
+      });
+      scroll.appendChild(section);
+    }
+
+    // Commit log
+    const log = data.log || [];
+    if (log.length) {
+      const section = document.createElement('div');
+      section.className = 'git-section';
+      let html = '<div class="git-section-title">Recent Commits</div>';
+      for (const c of log) {
+        html += `<div class="git-log-row" data-hash="${esc(c.hash)}">
+          <span class="git-log-hash">${esc(c.short)}</span>
+          <span class="git-log-msg">${esc(c.message)}</span>
+          <span class="git-log-time">${esc(c.relative)}</span>
+        </div>
+        <div class="git-log-files" data-for-hash="${esc(c.hash)}"></div>`;
+      }
+      section.innerHTML = html;
+      // Click commit → request files
+      section.querySelectorAll('.git-log-row').forEach(row => {
+        row.addEventListener('click', () => {
+          const hash = row.dataset.hash;
+          const filesEl = section.querySelector(`.git-log-files[data-for-hash="${hash}"]`);
+          const wasExpanded = row.classList.contains('expanded');
+          // Collapse all
+          section.querySelectorAll('.git-log-row').forEach(r => r.classList.remove('expanded'));
+          section.querySelectorAll('.git-log-files').forEach(f => f.classList.remove('visible'));
+          if (wasExpanded) return;
+          // Expand this one
+          row.classList.add('expanded');
+          filesEl.classList.add('visible');
+          if (!filesEl.dataset.loaded) {
+            filesEl.innerHTML = '<div class="git-log-loading">Loading files...</div>';
+            if (ws && ws.readyState === 1) {
+              ws.send(JSON.stringify({ type: 'git:commit', session: currentSession, hash }));
+            }
+          }
+        });
+      });
+      scroll.appendChild(section);
+    }
+
+    // Restore expanded commits and loaded file lists
+    for (const [hash, html] of Object.entries(loadedCommits)) {
+      const filesEl = scroll.querySelector(`.git-log-files[data-for-hash="${hash}"]`);
+      if (filesEl) {
+        filesEl.dataset.loaded = '1';
+        filesEl.innerHTML = html;
+        filesEl.querySelectorAll('.git-file-row').forEach(row => {
+          row.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (!currentSession || !ws || ws.readyState !== 1) return;
+            ws.send(JSON.stringify({ type: 'git:diff', session: currentSession, file: row.dataset.file, commit: row.dataset.commit }));
+          });
+        });
+      }
+    }
+    if (expandedHash) {
+      const row = scroll.querySelector(`.git-log-row[data-hash="${expandedHash}"]`);
+      const filesEl = scroll.querySelector(`.git-log-files[data-for-hash="${expandedHash}"]`);
+      if (row && filesEl) { row.classList.add('expanded'); filesEl.classList.add('visible'); }
+    }
+    // Restore selected file highlight
+    if (selectedFile) {
+      const match = scroll.querySelector(`.git-file-row[data-file="${CSS.escape(selectedFile)}"]`);
+      if (match) match.classList.add('selected');
+    }
+
+    // Empty state
+    if (!files.length && !log.length && !(bd && bd.commitCount > 0)) {
+      scroll.innerHTML = '<div class="git-empty">No git data available for this session.</div>';
+    }
+  }
+
+  function expandCommitRow(hash, files) {
+    const filesEl = document.querySelector(`.git-log-files[data-for-hash="${hash}"]`);
+    if (!filesEl) return;
+    filesEl.dataset.loaded = '1';
+    if (!files.length) {
+      filesEl.innerHTML = '<div class="git-log-loading">No files in this commit</div>';
+      return;
+    }
+    let html = '';
+    for (const f of files) {
+      html += `<div class="git-file-row" data-file="${esc(f.file)}" data-commit="${esc(hash)}">
+        <span class="git-file-status M">M</span>
+        <span class="git-file-name">${esc(f.file)}</span>
+        <span class="git-file-stat"><span class="add">+${f.added}</span> <span class="del">-${f.deleted}</span></span>
+      </div>`;
+    }
+    filesEl.innerHTML = html;
+    filesEl.querySelectorAll('.git-file-row').forEach(row => {
+      row.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (!currentSession || !ws || ws.readyState !== 1) return;
+        ws.send(JSON.stringify({ type: 'git:diff', session: currentSession, file: row.dataset.file, commit: row.dataset.commit }));
+      });
+    });
+  }
+
+  function showDiffViewer(file, diff) {
+    document.getElementById('git-diff-header').style.display = '';
+    document.getElementById('git-diff-filename').textContent = file;
+    const content = document.getElementById('git-diff-content');
+    if (!diff) {
+      content.innerHTML = '<span class="diff-ctx">No diff available</span>';
+    } else {
+      const lines = diff.split('\n');
+      content.innerHTML = lines.map(line => {
+        if (line.startsWith('+') && !line.startsWith('+++')) return `<div class="diff-add">${esc(line)}</div>`;
+        if (line.startsWith('-') && !line.startsWith('---')) return `<div class="diff-del">${esc(line)}</div>`;
+        if (line.startsWith('@@')) return `<div class="diff-hunk">${esc(line)}</div>`;
+        return `<div class="diff-ctx">${esc(line)}</div>`;
+      }).join('');
+    }
+    // Highlight selected file in sidebar
+    document.querySelectorAll('#git-sidebar .git-file-row').forEach(r => r.classList.remove('selected'));
+    const match = document.querySelector(`#git-sidebar .git-file-row[data-file="${CSS.escape(file)}"]`);
+    if (match) match.classList.add('selected');
+  }
 
   // ── Notifications ─────────────────────────────────
   function handleNotify(msg) {

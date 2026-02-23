@@ -164,7 +164,18 @@ class TaskQueue extends EventEmitter {
     this._saveState();
 
     // Fire-and-forget: send the task text to Claude
-    relay.tell(this.config, sessionName, task.text).then((result) => {
+    // For auto-dispatched tasks, clear context first so the agent starts fresh
+    const sendTask = async () => {
+      if (task.mode === 'auto') {
+        const clearResult = await relay.tell(this.config, sessionName, '/clear');
+        if (clearResult.success) {
+          await new Promise(r => setTimeout(r, 2500));
+        }
+      }
+      return relay.tell(this.config, sessionName, task.text);
+    };
+
+    sendTask().then((result) => {
       if (!result.success) {
         this.failTask(task.id, result.error || 'Tell failed');
       }

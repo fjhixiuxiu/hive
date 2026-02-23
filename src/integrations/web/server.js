@@ -7,6 +7,7 @@ const { WebSocketServer } = require('ws');
 const fleet = require('../../core/fleet');
 const relay = require('../../core/relay');
 const tmux = require('../../core/tmux');
+const git = require('../../core/git');
 
 /**
  * Scan a directory for Claude command .md files and parse frontmatter.
@@ -299,6 +300,61 @@ function createWebServer(config, watcher, taskQueue, pmManager) {
         break;
       }
 
+      // ── Git info messages ─────────────────────────────
+      case 'git:info': {
+        const name = fleet.findSession(config, msg.session);
+        if (!name) {
+          ws.send(JSON.stringify({ type: 'error', message: `No session matching "${msg.session}"` }));
+          return;
+        }
+        const num = fleet.sessionNum(name);
+        const repoDir = num ? config.sessions.repoDir(num) : null;
+        if (!repoDir) {
+          ws.send(JSON.stringify({ type: 'git:info', session: msg.session, log: [], diffStat: [], stagedStat: [], changedFiles: [], branchDiff: null }));
+          return;
+        }
+        const log = git.getLog(repoDir);
+        const diffStat = git.getDiffStat(repoDir);
+        const stagedStat = git.getStagedStat(repoDir);
+        const changedFiles = git.getChangedFiles(repoDir);
+        const branchDiff = git.getBranchDiff(repoDir);
+        ws.send(JSON.stringify({ type: 'git:info', session: msg.session, log, diffStat, stagedStat, changedFiles, branchDiff }));
+        break;
+      }
+
+      case 'git:diff': {
+        const name = fleet.findSession(config, msg.session);
+        if (!name) {
+          ws.send(JSON.stringify({ type: 'error', message: `No session matching "${msg.session}"` }));
+          return;
+        }
+        const num = fleet.sessionNum(name);
+        const repoDir = num ? config.sessions.repoDir(num) : null;
+        let diff = '';
+        if (repoDir) {
+          if (msg.commit) {
+            diff = git.getCommitFileDiff(repoDir, msg.commit, msg.file);
+          } else {
+            diff = git.getFileDiff(repoDir, msg.file, msg.base);
+          }
+        }
+        ws.send(JSON.stringify({ type: 'git:diff', session: msg.session, file: msg.file, diff }));
+        break;
+      }
+
+      case 'git:commit': {
+        const name = fleet.findSession(config, msg.session);
+        if (!name) {
+          ws.send(JSON.stringify({ type: 'error', message: `No session matching "${msg.session}"` }));
+          return;
+        }
+        const num = fleet.sessionNum(name);
+        const repoDir = num ? config.sessions.repoDir(num) : null;
+        const files = repoDir ? git.getCommitFiles(repoDir, msg.hash) : [];
+        ws.send(JSON.stringify({ type: 'git:commit', session: msg.session, hash: msg.hash, files }));
+        break;
+      }
+
       // ── Task queue messages ──────────────────────────
       case 'task:create': {
         if (!taskQueue) break;
@@ -483,6 +539,20 @@ function createWebServer(config, watcher, taskQueue, pmManager) {
         s.preview = cleanPreview(content);
       } catch {
         s.preview = '';
+      }
+      // Lightweight git summary for card rendering
+      try {
+        const repoDir = s.num ? config.sessions.repoDir(s.num) : null;
+        if (repoDir) {
+          const topLog = git.getLog(repoDir, 1);
+          s.gitSummary = {
+            lastCommit: topLog.length ? topLog[0].message : '',
+            lastCommitTime: topLog.length ? topLog[0].relative : '',
+            totalChanges: (s.git ? s.git.staged + s.git.modified + s.git.untracked : 0),
+          };
+        }
+      } catch {
+        // git summary is optional
       }
     }
     return sessions;
