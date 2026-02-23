@@ -6,8 +6,8 @@ const express = require('express');
 const { WebSocketServer } = require('ws');
 const fleet = require('../../core/fleet');
 const relay = require('../../core/relay');
-const tmux = require('../../core/tmux');
 const git = require('../../core/git');
+const RemoteNode = require('../../core/remote-node');
 
 /**
  * Scan a directory for Claude command .md files and parse frontmatter.
@@ -32,7 +32,7 @@ function scanCommands(dir) {
       }
     }
   } catch {
-    // Directory doesn't exist or not readable — that's fine
+    // Directory doesn't exist or not readable -- that's fine
   }
   return cmds;
 }
@@ -64,8 +64,8 @@ function discoverCommands(config) {
  * Uses -e flag for raw terminal colors that xterm.js can render.
  * -S -500 captures 500 lines of scrollback history.
  */
-function capturePaneAnsi(target) {
-  return tmux.exec(`tmux capture-pane -e -p -S -500 -t "${target}" 2>/dev/null`) || '';
+async function capturePaneAnsi(node, target) {
+  return await node.exec(`tmux capture-pane -e -p -S -500 -t "${target}" 2>/dev/null`) || '';
 }
 
 /**
@@ -73,14 +73,17 @@ function capturePaneAnsi(target) {
  * @param {object} config - hive config
  * @param {Watcher} watcher - core watcher instance
  * @param {TaskQueue} taskQueue - task queue instance
+ * @param {ProjectManager} pmManager
+ * @param {NodeRouter} router
  * @returns {{ app, server, wss }}
  */
-function createWebServer(config, watcher, taskQueue, pmManager) {
+function createWebServer(config, watcher, taskQueue, pmManager, router) {
   const port = parseInt(process.env.WEB_PORT) || 3000;
   const token = process.env.WEB_TOKEN;
+  const workerSecret = process.env.HIVE_WORKER_SECRET;
 
   if (!token) {
-    console.warn('WEB_TOKEN not set in .env — web dashboard disabled');
+    console.warn('WEB_TOKEN not set in .env -- web dashboard disabled');
     return null;
   }
 
@@ -95,15 +98,18 @@ function createWebServer(config, watcher, taskQueue, pmManager) {
 
   // Track authenticated clients
   const clients = new Set();
-  // Per-client terminal subscriptions: ws → { interval, session }
+  // Per-client terminal subscriptions: ws -> { interval, session }
   const termSubs = new Map();
+  // Track worker connections: ws -> RemoteNode
+  const workers = new Map();
 
-  // ── WebSocket handling ──────────────────────────────
+  // -- WebSocket handling -----------------------------------------------
 
   wss.on('connection', (ws) => {
     let authenticated = false;
+    let isWorker = false;
 
-    // Auth timeout — must authenticate within 5s
+    // Auth timeout -- must authenticate within 5s
     const authTimeout = setTimeout(() => {
       if (!authenticated) {
         ws.send(JSON.stringify({ type: 'error', message: 'Auth timeout' }));
@@ -119,9 +125,10 @@ function createWebServer(config, watcher, taskQueue, pmManager) {
         return;
       }
 
-      // First message must be auth
+      // First message must be auth or worker registration
       if (!authenticated) {
         if (msg.type === 'auth' && msg.token === token) {
+          // Dashboard client
           authenticated = true;
           clearTimeout(authTimeout);
           clients.add(ws);
@@ -143,6 +150,23 @@ function createWebServer(config, watcher, taskQueue, pmManager) {
           if (pmManager) {
             ws.send(JSON.stringify({ type: 'pm:list', pms: pmManager.getAll() }));
           }
+          // Send connected worker nodes info
+          const workerNodes = Array.from(workers.values()).map(n => ({
+            id: n.id, type: n.type, connected: n.connected,
+          }));
+          ws.send(JSON.stringify({ type: 'nodes:list', nodes: workerNodes }));
+        } else if (msg.type === 'worker:register' && workerSecret && msg.secret === workerSecret) {
+          // Worker node registration
+          authenticated = true;
+          isWorker = true;
+          clearTimeout(authTimeout);
+          const node = new RemoteNode(msg.nodeId, ws);
+          router.addNode(node);
+          workers.set(ws, node);
+          ws.send(JSON.stringify({ type: 'worker:registered', nodeId: msg.nodeId }));
+          console.log(`Worker "${msg.nodeId}" connected`);
+          // Notify dashboard clients about the new node
+          broadcast({ type: 'node:connected', nodeId: msg.nodeId });
         } else {
           ws.send(JSON.stringify({ type: 'auth', ok: false }));
           ws.close();
@@ -150,8 +174,23 @@ function createWebServer(config, watcher, taskQueue, pmManager) {
         return;
       }
 
-      // Authenticated message routing
-      handleMessage(ws, msg);
+      // Worker messages: handle RPC responses and heartbeats
+      if (isWorker) {
+        if (msg.type === 'rpc:response') {
+          const node = workers.get(ws);
+          if (node) node.handleResponse(msg);
+        }
+        // Heartbeats are handled implicitly (connection stays alive)
+        return;
+      }
+
+      // Dashboard client message routing
+      handleMessage(ws, msg).catch(err => {
+        console.error('Message handler error:', err.message);
+        if (ws.readyState === 1) {
+          ws.send(JSON.stringify({ type: 'error', message: err.message }));
+        }
+      });
     });
 
     ws.on('close', () => {
@@ -159,30 +198,47 @@ function createWebServer(config, watcher, taskQueue, pmManager) {
       clients.delete(ws);
       clearTermSub(ws);
       clearTimeout(authTimeout);
+      // Clean up worker
+      const node = workers.get(ws);
+      if (node) {
+        node.disconnect();
+        router.removeNode(node.id);
+        workers.delete(ws);
+        console.log(`Worker "${node.id}" disconnected`);
+        broadcast({ type: 'node:disconnected', nodeId: node.id });
+      }
     });
 
     ws.on('error', () => {
       clients.delete(ws);
       clearTermSub(ws);
+      const node = workers.get(ws);
+      if (node) {
+        node.disconnect();
+        router.removeNode(node.id);
+        workers.delete(ws);
+      }
     });
   });
 
-  // ── Message handlers ────────────────────────────────
+  // -- Message handlers --------------------------------------------------
 
-  function handleMessage(ws, msg) {
+  async function handleMessage(ws, msg) {
     switch (msg.type) {
       case 'fleet:get':
-        sendFleetStatus(ws);
+        await sendFleetStatus(ws);
         break;
 
       case 'peek': {
-        const name = fleet.findSession(config, msg.session);
-        if (!name) {
+        const found = await fleet.findSession(config, router, msg.session);
+        if (!found) {
           ws.send(JSON.stringify({ type: 'error', message: `No session matching "${msg.session}"` }));
           return;
         }
+        const { name, nodeId } = found;
+        const node = router.getNode(nodeId);
         const paneTarget = `${name}:.${config.sessions.claudePane}`;
-        const content = capturePaneAnsi(paneTarget);
+        const content = await capturePaneAnsi(node, paneTarget);
         ws.send(JSON.stringify({ type: 'terminal:data', session: msg.session, content }));
         break;
       }
@@ -190,20 +246,26 @@ function createWebServer(config, watcher, taskQueue, pmManager) {
       case 'terminal:subscribe': {
         // Unsubscribe from any previous session
         clearTermSub(ws);
-        const name = fleet.findSession(config, msg.session);
-        if (!name) {
+        const found = await fleet.findSession(config, router, msg.session);
+        if (!found) {
           ws.send(JSON.stringify({ type: 'error', message: `No session matching "${msg.session}"` }));
           return;
         }
+        const { name, nodeId } = found;
+        const node = router.getNode(nodeId);
         const paneTarget = `${name}:.${config.sessions.claudePane}`;
         // Send immediately
-        const content = capturePaneAnsi(paneTarget);
+        const content = await capturePaneAnsi(node, paneTarget);
         ws.send(JSON.stringify({ type: 'terminal:data', session: msg.session, content }));
         // Poll every 2s
-        const interval = setInterval(() => {
+        const interval = setInterval(async () => {
           if (ws.readyState !== 1) { clearTermSub(ws); return; }
-          const data = capturePaneAnsi(paneTarget);
-          ws.send(JSON.stringify({ type: 'terminal:data', session: msg.session, content: data }));
+          try {
+            const data = await capturePaneAnsi(node, paneTarget);
+            ws.send(JSON.stringify({ type: 'terminal:data', session: msg.session, content: data }));
+          } catch {
+            // Node may have disconnected
+          }
         }, 2000);
         termSubs.set(ws, { interval, session: msg.session });
         break;
@@ -214,12 +276,14 @@ function createWebServer(config, watcher, taskQueue, pmManager) {
         break;
 
       case 'ask': {
-        const name = fleet.findSession(config, msg.session);
-        if (!name) {
+        const found = await fleet.findSession(config, router, msg.session);
+        if (!found) {
           ws.send(JSON.stringify({ type: 'error', message: `No session matching "${msg.session}"` }));
           return;
         }
-        relay.ask(config, name, msg.message, {
+        const { name, nodeId } = found;
+        const node = router.getNode(nodeId);
+        relay.ask(config, node, name, msg.message, {
           onStream: (content, isFinal) => {
             if (ws.readyState !== 1) return;
             ws.send(JSON.stringify({ type: 'ask:stream', session: msg.session, content, final: isFinal }));
@@ -239,12 +303,14 @@ function createWebServer(config, watcher, taskQueue, pmManager) {
       }
 
       case 'tell': {
-        const name = fleet.findSession(config, msg.session);
-        if (!name) {
+        const found = await fleet.findSession(config, router, msg.session);
+        if (!found) {
           ws.send(JSON.stringify({ type: 'error', message: `No session matching "${msg.session}"` }));
           return;
         }
-        relay.tell(config, name, msg.message).then((result) => {
+        const { name, nodeId } = found;
+        const node = router.getNode(nodeId);
+        relay.tell(config, node, name, msg.message).then((result) => {
           if (ws.readyState !== 1) return;
           ws.send(JSON.stringify({
             type: 'tell:done',
@@ -263,35 +329,39 @@ function createWebServer(config, watcher, taskQueue, pmManager) {
 
       case 'keys': {
         // Send raw tmux keys (Enter, Up, Down, Escape, Tab, etc.)
-        const name = fleet.findSession(config, msg.session);
-        if (!name) {
+        const found = await fleet.findSession(config, router, msg.session);
+        if (!found) {
           ws.send(JSON.stringify({ type: 'error', message: `No session matching "${msg.session}"` }));
           return;
         }
+        const { name, nodeId } = found;
+        const node = router.getNode(nodeId);
         const paneTarget = `${name}:.${config.sessions.claudePane}`;
         // msg.keys is an array of tmux key names, e.g. ["Enter"], ["Up"], ["Escape"]
         for (const key of (msg.keys || [])) {
-          tmux.exec(`tmux send-keys -t "${paneTarget}" ${key}`);
+          await node.exec(`tmux send-keys -t "${paneTarget}" ${key}`);
         }
         ws.send(JSON.stringify({ type: 'keys:done', session: msg.session }));
         break;
       }
 
       case 'restart': {
-        const name = fleet.findSession(config, msg.session);
-        if (!name) {
+        const found = await fleet.findSession(config, router, msg.session);
+        if (!found) {
           ws.send(JSON.stringify({ type: 'error', message: `No session matching "${msg.session}"` }));
           return;
         }
+        const { name, nodeId } = found;
+        const node = router.getNode(nodeId);
         const paneTarget = `${name}:.${config.sessions.claudePane}`;
         // Send Escape, then /exit, wait, then claude --resume
-        tmux.exec(`tmux send-keys -t "${paneTarget}" Escape`);
-        setTimeout(() => {
-          tmux.exec(`tmux send-keys -t "${paneTarget}" -l '/exit'`);
-          tmux.exec(`tmux send-keys -t "${paneTarget}" Enter`);
-          setTimeout(() => {
-            tmux.exec(`tmux send-keys -t "${paneTarget}" -l 'claude --resume'`);
-            tmux.exec(`tmux send-keys -t "${paneTarget}" Enter`);
+        await node.exec(`tmux send-keys -t "${paneTarget}" Escape`);
+        setTimeout(async () => {
+          await node.exec(`tmux send-keys -t "${paneTarget}" -l '/exit'`);
+          await node.exec(`tmux send-keys -t "${paneTarget}" Enter`);
+          setTimeout(async () => {
+            await node.exec(`tmux send-keys -t "${paneTarget}" -l 'claude --resume'`);
+            await node.exec(`tmux send-keys -t "${paneTarget}" Enter`);
             if (ws.readyState === 1) {
               ws.send(JSON.stringify({ type: 'restart:done', session: msg.session }));
             }
@@ -300,42 +370,50 @@ function createWebServer(config, watcher, taskQueue, pmManager) {
         break;
       }
 
-      // ── Git info messages ─────────────────────────────
+      // -- Git info messages -----------------------------------------------
       case 'git:info': {
-        const name = fleet.findSession(config, msg.session);
-        if (!name) {
+        const found = await fleet.findSession(config, router, msg.session);
+        if (!found) {
           ws.send(JSON.stringify({ type: 'error', message: `No session matching "${msg.session}"` }));
           return;
         }
+        const { name, nodeId } = found;
+        const node = router.getNode(nodeId);
         const num = fleet.sessionNum(name);
-        const repoDir = num ? config.sessions.repoDir(num) : null;
+        const nc = fleet.getNodeConfig(config, nodeId);
+        const repoDir = num ? nc.sessions.repoDir(num) : null;
         if (!repoDir) {
           ws.send(JSON.stringify({ type: 'git:info', session: msg.session, log: [], diffStat: [], stagedStat: [], changedFiles: [], branchDiff: null }));
           return;
         }
-        const log = git.getLog(repoDir);
-        const diffStat = git.getDiffStat(repoDir);
-        const stagedStat = git.getStagedStat(repoDir);
-        const changedFiles = git.getChangedFiles(repoDir);
-        const branchDiff = git.getBranchDiff(repoDir);
+        const [log, diffStat, stagedStat, changedFiles, branchDiff] = await Promise.all([
+          git.getLog(node, repoDir),
+          git.getDiffStat(node, repoDir),
+          git.getStagedStat(node, repoDir),
+          git.getChangedFiles(node, repoDir),
+          git.getBranchDiff(node, repoDir),
+        ]);
         ws.send(JSON.stringify({ type: 'git:info', session: msg.session, log, diffStat, stagedStat, changedFiles, branchDiff }));
         break;
       }
 
       case 'git:diff': {
-        const name = fleet.findSession(config, msg.session);
-        if (!name) {
+        const found = await fleet.findSession(config, router, msg.session);
+        if (!found) {
           ws.send(JSON.stringify({ type: 'error', message: `No session matching "${msg.session}"` }));
           return;
         }
+        const { name, nodeId } = found;
+        const node = router.getNode(nodeId);
         const num = fleet.sessionNum(name);
-        const repoDir = num ? config.sessions.repoDir(num) : null;
+        const nc = fleet.getNodeConfig(config, nodeId);
+        const repoDir = num ? nc.sessions.repoDir(num) : null;
         let diff = '';
         if (repoDir) {
           if (msg.commit) {
-            diff = git.getCommitFileDiff(repoDir, msg.commit, msg.file);
+            diff = await git.getCommitFileDiff(node, repoDir, msg.commit, msg.file);
           } else {
-            diff = git.getFileDiff(repoDir, msg.file, msg.base);
+            diff = await git.getFileDiff(node, repoDir, msg.file, msg.base);
           }
         }
         ws.send(JSON.stringify({ type: 'git:diff', session: msg.session, file: msg.file, diff }));
@@ -343,19 +421,22 @@ function createWebServer(config, watcher, taskQueue, pmManager) {
       }
 
       case 'git:commit': {
-        const name = fleet.findSession(config, msg.session);
-        if (!name) {
+        const found = await fleet.findSession(config, router, msg.session);
+        if (!found) {
           ws.send(JSON.stringify({ type: 'error', message: `No session matching "${msg.session}"` }));
           return;
         }
+        const { name, nodeId } = found;
+        const node = router.getNode(nodeId);
         const num = fleet.sessionNum(name);
-        const repoDir = num ? config.sessions.repoDir(num) : null;
-        const files = repoDir ? git.getCommitFiles(repoDir, msg.hash) : [];
+        const nc = fleet.getNodeConfig(config, nodeId);
+        const repoDir = num ? nc.sessions.repoDir(num) : null;
+        const files = repoDir ? await git.getCommitFiles(node, repoDir, msg.hash) : [];
         ws.send(JSON.stringify({ type: 'git:commit', session: msg.session, hash: msg.hash, files }));
         break;
       }
 
-      // ── Task queue messages ──────────────────────────
+      // -- Task queue messages ----------------------------------------------
       case 'task:create': {
         if (!taskQueue) break;
         const task = taskQueue.createTask(msg.text, msg.mode, msg.targetSession, msg.designation);
@@ -367,6 +448,13 @@ function createWebServer(config, watcher, taskQueue, pmManager) {
         if (!taskQueue) break;
         const task = taskQueue.cancelTask(msg.taskId);
         if (task) ws.send(JSON.stringify({ type: 'task:cancelled', task }));
+        break;
+      }
+
+      case 'task:complete': {
+        if (!taskQueue) break;
+        const task = taskQueue.completeTask(msg.taskId, msg.result || 'Manually completed');
+        if (task) broadcast({ type: 'task:completed', task });
         break;
       }
 
@@ -394,7 +482,7 @@ function createWebServer(config, watcher, taskQueue, pmManager) {
 
       case 'approval:respond': {
         if (!taskQueue) break;
-        const approval = taskQueue.resolveApproval(msg.approvalId, msg.approved);
+        const approval = await taskQueue.resolveApproval(msg.approvalId, msg.approved);
         if (approval) ws.send(JSON.stringify({ type: 'approval:resolved', approval }));
         break;
       }
@@ -412,17 +500,18 @@ function createWebServer(config, watcher, taskQueue, pmManager) {
         break;
       }
 
-      // ── Designation messages ─────────────────────────
+      // -- Designation messages ---------------------------------------------
       case 'designation:set': {
         if (!taskQueue) break;
         taskQueue.setDesignation(msg.session, msg.designation);
         break;
       }
 
-      // ── Spawn messages ──────────────────────────────
+      // -- Spawn messages ---------------------------------------------------
       case 'spawn:slots': {
         if (!taskQueue) break;
-        ws.send(JSON.stringify({ type: 'spawn:slots', slots: taskQueue.getAvailableSlots() }));
+        const slots = await taskQueue.getAvailableSlots();
+        ws.send(JSON.stringify({ type: 'spawn:slots', slots }));
         break;
       }
 
@@ -438,7 +527,9 @@ function createWebServer(config, watcher, taskQueue, pmManager) {
             ws.send(JSON.stringify({ type: 'spawn:done', success: true, num: result.num, repoDir: result.repoDir }));
           }
           // Refresh fleet for all clients after a delay
-          setTimeout(broadcastFleetStatus, 3000);
+          setTimeout(() => {
+            broadcastFleetStatus().catch(() => {});
+          }, 3000);
         }).catch((err) => {
           if (ws.readyState === 1) {
             ws.send(JSON.stringify({ type: 'spawn:done', success: false, error: err.message }));
@@ -447,7 +538,7 @@ function createWebServer(config, watcher, taskQueue, pmManager) {
         break;
       }
 
-      // ── PM messages ─────────────────────────────────
+      // -- PM messages -------------------------------------------------------
       case 'pm:create': {
         if (!pmManager) break;
         const pm = pmManager.create(msg.config);
@@ -493,7 +584,7 @@ function createWebServer(config, watcher, taskQueue, pmManager) {
     }
   }
 
-  // ── Fleet status broadcast ──────────────────────────
+  // -- Fleet status broadcast --------------------------------------------
 
   // Noise patterns to strip from previews (already shown in badges or not useful)
   const PREVIEW_NOISE = [
@@ -531,20 +622,27 @@ function createWebServer(config, watcher, taskQueue, pmManager) {
     return lines.slice(-5).join('\n');
   }
 
-  function getFleetWithPreviews() {
-    const sessions = fleet.getFleetStatus(config);
+  async function getFleetWithPreviews() {
+    const sessions = await fleet.getFleetStatus(config, router);
     for (const s of sessions) {
       try {
-        const content = fleet.peekSession(config, s.name);
-        s.preview = cleanPreview(content);
+        const node = router.nodeFor(s.name);
+        if (node) {
+          const content = await fleet.peekSession(config, node, s.name);
+          s.preview = cleanPreview(content);
+        } else {
+          s.preview = '';
+        }
       } catch {
         s.preview = '';
       }
       // Lightweight git summary for card rendering
       try {
-        const repoDir = s.num ? config.sessions.repoDir(s.num) : null;
-        if (repoDir) {
-          const topLog = git.getLog(repoDir, 1);
+        const node = router.nodeFor(s.name);
+        const nc = fleet.getNodeConfig(config, s.nodeId);
+        const repoDir = s.num ? nc.sessions.repoDir(s.num) : null;
+        if (repoDir && node) {
+          const topLog = await git.getLog(node, repoDir, 1);
           s.gitSummary = {
             lastCommit: topLog.length ? topLog[0].message : '',
             lastCommitTime: topLog.length ? topLog[0].relative : '',
@@ -558,15 +656,15 @@ function createWebServer(config, watcher, taskQueue, pmManager) {
     return sessions;
   }
 
-  function sendFleetStatus(ws) {
-    const sessions = getFleetWithPreviews();
+  async function sendFleetStatus(ws) {
+    const sessions = await getFleetWithPreviews();
     if (ws.readyState === 1) {
       ws.send(JSON.stringify({ type: 'fleet:status', sessions }));
     }
   }
 
-  function broadcastFleetStatus() {
-    const sessions = getFleetWithPreviews();
+  async function broadcastFleetStatus() {
+    const sessions = await getFleetWithPreviews();
     const msg = JSON.stringify({ type: 'fleet:status', sessions });
     for (const ws of clients) {
       if (ws.readyState === 1) ws.send(msg);
@@ -574,9 +672,11 @@ function createWebServer(config, watcher, taskQueue, pmManager) {
   }
 
   // Broadcast fleet status every 10s
-  const fleetInterval = setInterval(broadcastFleetStatus, 10000);
+  const fleetInterval = setInterval(() => {
+    broadcastFleetStatus().catch(err => console.error('Fleet broadcast error:', err.message));
+  }, 10000);
 
-  // ── Watcher event bridge ────────────────────────────
+  // -- Watcher event bridge -----------------------------------------------
 
   function broadcast(data) {
     const msg = JSON.stringify(data);
@@ -587,7 +687,7 @@ function createWebServer(config, watcher, taskQueue, pmManager) {
 
   watcher.on('session:idle', ({ session, name, num }) => {
     broadcast({ type: 'notify', event: 'session:idle', session: num, name });
-    broadcastFleetStatus();
+    broadcastFleetStatus().catch(() => {});
   });
 
   watcher.on('session:working', ({ session, name, num }) => {
@@ -596,10 +696,10 @@ function createWebServer(config, watcher, taskQueue, pmManager) {
 
   watcher.on('ci:changed', ({ name, num, from, to, pr }) => {
     broadcast({ type: 'notify', event: 'ci:changed', session: num, name, from, to, pr });
-    broadcastFleetStatus();
+    broadcastFleetStatus().catch(() => {});
   });
 
-  // ── TaskQueue event bridge ───────────────────────────
+  // -- TaskQueue event bridge ---------------------------------------------
 
   if (taskQueue) {
     taskQueue.on('task:created', (task) => broadcast({ type: 'task:created', task }));
@@ -620,10 +720,13 @@ function createWebServer(config, watcher, taskQueue, pmManager) {
     pmManager.on('pm:changed', () => broadcast({ type: 'pm:list', pms: pmManager.getAll() }));
   }
 
-  // ── Start server ────────────────────────────────────
+  // -- Start server -------------------------------------------------------
 
   server.listen(port, () => {
     console.log(`Web dashboard: http://localhost:${port}`);
+    if (workerSecret) {
+      console.log(`Worker registration enabled (workers connect to ws://localhost:${port})`);
+    }
   });
 
   // Cleanup helper
@@ -634,6 +737,13 @@ function createWebServer(config, watcher, taskQueue, pmManager) {
       ws.close();
     }
     clients.clear();
+    // Clean up worker connections
+    for (const [ws, node] of workers) {
+      node.disconnect();
+      router.removeNode(node.id);
+      ws.close();
+    }
+    workers.clear();
   });
 
   return { app, server, wss };

@@ -367,6 +367,37 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   margin-left: auto; background: none; border: none; color: var(--red);
   font-size: 11px; font-weight: 600; cursor: pointer; padding: 2px 6px;
 }
+.task-checkbox {
+  -webkit-appearance: none; appearance: none;
+  width: 20px; height: 20px; border: 2px solid var(--dim); border-radius: 4px;
+  background: var(--bg); cursor: pointer; flex-shrink: 0;
+  transition: all 0.15s; position: relative;
+}
+.task-checkbox:checked {
+  background: var(--purple); border-color: var(--purple);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='%230f0f23' d='M13.5 4.5l-7 7L3 8' stroke='%230f0f23' stroke-width='2.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-size: 14px; background-position: center; background-repeat: no-repeat;
+}
+.task-checkbox:hover { border-color: var(--purple); }
+.task-card-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.task-card-row .task-card { flex: 1; min-width: 0; margin-bottom: 0; }
+.tasks-bulk-bar {
+  display: flex; gap: 6px; padding: 8px 10px; align-items: center;
+  background: var(--bg2); border-bottom: 1px solid var(--bg3); flex-shrink: 0;
+}
+.tasks-bulk-bar .bulk-count { font-size: 12px; font-weight: 700; color: var(--fg); flex: 1; }
+.tasks-bulk-bar .bulk-btn {
+  background: var(--bg3); border: none; color: var(--fg); font-size: 11px;
+  font-weight: 600; padding: 5px 10px; border-radius: 4px; cursor: pointer;
+}
+.tasks-bulk-bar .bulk-btn.cancel { color: var(--red); }
+.tasks-bulk-bar .bulk-btn.done { background: var(--green); color: var(--bg); }
+.tasks-bulk-bar .bulk-btn:active { opacity: 0.7; }
+.tasks-select-all {
+  background: none; border: none; color: var(--dim); font-size: 11px;
+  font-weight: 600; cursor: pointer; padding: 2px 6px; margin-left: auto;
+}
+.tasks-select-all:hover { color: var(--fg); }
 #task-input {
   flex: 1; background: var(--bg); border: 1px solid var(--bg3); color: var(--fg);
   padding: 8px 12px; border-radius: 6px; font-size: 15px; outline: none; min-width: 0;
@@ -484,7 +515,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 }
 .feed-dismiss {
   background: none; border: none; color: var(--dim); font-size: 14px;
-  cursor: pointer; padding: 2px 4px; flex-shrink: 0; opacity: 0;
+  cursor: pointer; padding: 2px 4px; flex-shrink: 0; opacity: 0.5;
   transition: opacity 0.15s;
 }
 .feed-entry:hover .feed-dismiss { opacity: 1; }
@@ -548,6 +579,75 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .feed-option-btn.sent { background: var(--green); opacity: 0.7; pointer-events: none; }
 .feed-load-more { background: var(--bg3); border: none; color: var(--dim); font-size: 12px; padding: 8px; border-radius: 6px; cursor: pointer; margin: 8px 10px; }
 .feed-empty { color: var(--dim); text-align: center; padding: 40px 20px; font-size: 14px; }
+
+/* ── Feed two-pane layout ────────────── */
+.feed-panes { display: flex; flex-direction: column; height: 100%; }
+.feed-list-pane { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.feed-preview-pane { display: none; }
+.feed-entry.selected { border-left: 3px solid var(--purple); background: rgba(189,147,249,0.06); }
+.feed-checkbox {
+  -webkit-appearance: none; appearance: none;
+  width: 18px; height: 18px; border: 2px solid var(--dim); border-radius: 4px;
+  background: var(--bg); cursor: pointer; flex-shrink: 0;
+  transition: all 0.15s; position: relative;
+}
+.feed-checkbox:checked {
+  background: var(--purple); border-color: var(--purple);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='%230f0f23' d='M13.5 4.5l-7 7L3 8' stroke='%230f0f23' stroke-width='2.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-size: 12px; background-position: center; background-repeat: no-repeat;
+}
+.feed-checkbox:hover { border-color: var(--purple); }
+.feed-entry.swiping { transition: none; }
+.feed-entry.dismissed-swipe { opacity: 0; transform: translateX(100%); transition: all 0.2s; }
+
+@media (min-width: 900px) {
+  .feed-panes { flex-direction: row; }
+  .feed-list-pane { flex: 4; max-width: 480px; border-right: 1px solid var(--bg3); }
+  .feed-preview-pane {
+    display: flex; flex: 6; flex-direction: column; min-height: 0;
+    background: var(--bg); overflow: hidden;
+  }
+}
+
+.feed-preview-header {
+  display: flex; align-items: center; gap: 8px; padding: 10px 12px;
+  background: var(--bg2); border-bottom: 1px solid var(--bg3); flex-shrink: 0;
+}
+#feed-preview-title { font-weight: 700; font-size: 14px; color: var(--fg); }
+#feed-preview-branch { font-size: 12px; color: var(--dim); flex: 1; }
+.feed-preview-actions {
+  display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 12px;
+  border-bottom: 1px solid var(--bg3); flex-shrink: 0; min-height: 0;
+}
+.feed-preview-actions:empty { display: none; }
+.feed-preview-actions .state-badge {
+  font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 4px;
+}
+.feed-preview-actions .state-badge.idle { background: rgba(139,233,253,0.15); color: var(--cyan); }
+.feed-preview-actions .state-badge.working { background: rgba(80,250,123,0.15); color: var(--green); }
+.feed-preview-actions .state-badge.off { background: rgba(98,114,164,0.15); color: var(--dim); }
+.feed-preview-terminal {
+  flex: 1; min-height: 0; overflow: hidden; position: relative;
+  background: var(--bg);
+}
+.feed-preview-terminal .xterm { height: 100%; }
+.feed-preview-terminal .xterm-viewport { overflow-y: auto !important; }
+.feed-preview-empty { color: var(--dim); font-family: inherit; font-style: italic; }
+.feed-preview-input-row {
+  display: flex; gap: 6px; padding: 8px 12px;
+  border-top: 1px solid var(--bg3); flex-shrink: 0;
+}
+.feed-preview-input {
+  flex: 1; background: var(--bg2); border: 1px solid var(--bg3); color: var(--fg);
+  padding: 8px 12px; border-radius: 6px; font-size: 13px; outline: none; min-width: 0;
+}
+.feed-preview-input:focus { border-color: var(--purple); }
+.feed-preview-input::placeholder { color: var(--dim); }
+.feed-preview-send {
+  background: var(--purple); border: none; color: var(--bg); font-size: 12px;
+  font-weight: 700; padding: 8px 14px; border-radius: 6px; cursor: pointer;
+}
+.feed-preview-send:active { filter: brightness(0.85); }
 
 /* ── More panel ──────────────────────── */
 .more-scroll { flex: 1; overflow-y: auto; padding: 12px; -webkit-overflow-scrolling: touch; }
@@ -804,6 +904,12 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
           <div class="tasks-tabs">
             <button class="tasks-tab active" data-tab="pending">Pending</button>
             <button class="tasks-tab" data-tab="completed">Completed</button>
+            <button class="tasks-select-all" id="tasks-select-all" style="display:none">Select All</button>
+          </div>
+          <div class="tasks-bulk-bar" id="tasks-bulk-bar" style="display:none">
+            <span class="bulk-count" id="tasks-bulk-count">0 selected</span>
+            <button class="bulk-btn cancel" id="tasks-bulk-cancel">Cancel</button>
+            <button class="bulk-btn done" id="tasks-bulk-done">Mark Done</button>
           </div>
           <div class="tasks-scroll" id="tasks-scroll"></div>
         </div>
@@ -824,14 +930,38 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 
     <!-- Feed panel -->
     <div id="feed-panel" class="panel">
-      <div class="feed-header">
-        <div class="feed-tabs">
-          <button class="feed-tab active" data-feed-tab="new">New</button>
-          <button class="feed-tab" data-feed-tab="cleared">Cleared</button>
+      <div class="feed-panes">
+        <div class="feed-list-pane">
+          <div class="feed-header">
+            <div class="feed-tabs">
+              <button class="feed-tab active" data-feed-tab="new">New</button>
+              <button class="feed-tab" data-feed-tab="cleared">Cleared</button>
+            </div>
+            <button class="tasks-select-all" id="feed-select-all" style="display:none">Select All</button>
+            <button class="feed-clear-btn" id="feed-clear-btn">Clear All</button>
+          </div>
+          <div class="tasks-bulk-bar" id="feed-bulk-bar" style="display:none">
+            <span class="bulk-count" id="feed-bulk-count">0 selected</span>
+            <button class="bulk-btn cancel" id="feed-bulk-clear">Clear Selected</button>
+          </div>
+          <div class="feed-scroll" id="feed-scroll"></div>
         </div>
-        <button class="feed-clear-btn" id="feed-clear-btn">Clear All</button>
+        <div class="feed-preview-pane" id="feed-preview-pane">
+          <div class="feed-preview-header" id="feed-preview-header">
+            <span id="feed-preview-title">Select an entry</span>
+            <span id="feed-preview-branch"></span>
+            <button class="feed-action open" id="feed-preview-open" style="display:none">Open Full Session</button>
+          </div>
+          <div class="feed-preview-actions" id="feed-preview-actions"></div>
+          <div class="feed-preview-terminal" id="feed-preview-terminal">
+            <span class="feed-preview-empty">Click a feed entry to preview its session</span>
+          </div>
+          <div class="feed-preview-input-row" id="feed-preview-input-row" style="display:none">
+            <input class="feed-preview-input" id="feed-preview-input" type="text" placeholder="Send message..." autocomplete="off">
+            <button class="feed-preview-send" id="feed-preview-send">Send</button>
+          </div>
+        </div>
       </div>
-      <div class="feed-scroll" id="feed-scroll"></div>
     </div>
 
     <!-- More panel -->
@@ -1082,6 +1212,12 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   let clearedFeedEntries = []; // in-memory only, lost on reload
   let activeFeedTab = 'new';
   let lastSeenFeedId = null;
+  let feedSelectedId = null;
+  let selectedFeedIds = new Set();
+  let feedPreviewSession = null;
+  let feedPreviewTimer = null;
+  let feedPreviewTerm = null;
+  let feedPreviewFit = null;
   let pendingApprovals = [];
   let rules = [];
   let unreadFeedCount = 0;
@@ -1090,6 +1226,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   let taskMode = 'auto';
   let manualTarget = null;
   let activeTaskTab = 'pending';
+  let selectedTaskIds = new Set();
   let designations = {};  // { num: string }
   let pmList = [];        // PM objects from server
   let editingPmId = null; // PM being edited (null = creating new)
@@ -1229,6 +1366,19 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       const visible = feedEntries.filter(e => !dismissedFeedIds.has(e.id));
       if (visible.length) lastSeenFeedId = visible[visible.length - 1].id;
       unreadFeedCount = 0; updateFeedBadge();
+      // Restart feed preview timer if a session was selected
+      if (feedPreviewSession && !feedPreviewTimer) {
+        feedPreviewTimer = setInterval(() => {
+          if (ws && ws.readyState === 1 && feedPreviewSession) {
+            ws.send(JSON.stringify({ type: 'peek', session: feedPreviewSession }));
+          }
+        }, 3000);
+      }
+      // Fit preview terminal
+      if (feedPreviewFit) requestAnimationFrame(() => feedPreviewFit.fit());
+    } else {
+      // Stop peek timer when leaving feed tab
+      if (feedPreviewTimer) { clearInterval(feedPreviewTimer); feedPreviewTimer = null; }
     }
     if (tab === 'fleet-panel') renderGrid();
     if (tab === 'more-panel') renderDesignationGrid();
@@ -1291,6 +1441,9 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
           if (msg.content === lastContent) break;
           if (userScrolledUp) { pendingContent = msg.content; }
           else { writeTerminalContent(msg.content); }
+        }
+        if (feedPreviewSession === String(msg.session)) {
+          writeFeedPreviewContent(msg.content);
         }
         break;
       case 'ask:stream': break;
@@ -1566,6 +1719,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 
   window.addEventListener('resize', () => {
     if (term && fitAddon && activeTab === 'session-panel' && activeSessionTab === 'terminal') fitAddon.fit();
+    if (feedPreviewFit && activeTab === 'feed-panel') feedPreviewFit.fit();
   });
 
   // ── Input bar ─────────────────────────────────────
@@ -1625,6 +1779,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   $$('.tasks-tab').forEach(tab => {
     tab.addEventListener('click', () => {
       activeTaskTab = tab.dataset.tab;
+      selectedTaskIds.clear();
       $$('.tasks-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === activeTaskTab));
       renderTasks();
     });
@@ -1659,17 +1814,24 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   taskInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendTask(); } });
 
   function renderTasks() {
+    // Clean up selectedTaskIds for tasks that no longer exist
+    const taskIds = new Set(tasks.map(t => t.id));
+    for (const id of selectedTaskIds) { if (!taskIds.has(id)) selectedTaskIds.delete(id); }
+
     const queued = tasks.filter(t => t.status === 'queued');
     const dispatched = tasks.filter(t => t.status === 'dispatched');
     const completed = tasks.filter(t => t.status === 'completed' || t.status === 'failed');
     let html = '';
+    let visibleTasks = [];
     if (activeTaskTab === 'pending') {
-      if (queued.length) { html += '<div class="task-section-label">Queued</div>'; for (const t of queued) html += taskCardHtml(t); }
-      if (dispatched.length) { html += '<div class="task-section-label">In Progress</div>'; for (const t of dispatched) html += taskCardHtml(t); }
+      if (queued.length) { html += '<div class="task-section-label">Queued</div>'; for (const t of queued) html += taskCardHtml(t, true); }
+      if (dispatched.length) { html += '<div class="task-section-label">In Progress</div>'; for (const t of dispatched) html += taskCardHtml(t, true); }
       if (!queued.length && !dispatched.length) html = '<div class="feed-empty">No pending tasks.</div>';
+      visibleTasks = [...queued, ...dispatched];
     } else {
-      if (completed.length) { for (const t of completed) html += taskCardHtml(t); }
+      if (completed.length) { for (const t of completed) html += taskCardHtml(t, true); }
       else html = '<div class="feed-empty">No completed tasks yet.</div>';
+      visibleTasks = completed;
     }
     tasksScroll.innerHTML = html;
     tasksScroll.querySelectorAll('.task-cancel').forEach(btn => { btn.addEventListener('click', (e) => { e.stopPropagation(); if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'task:cancel', taskId: btn.dataset.id })); }); });
@@ -1680,8 +1842,89 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         else if ((task.status === 'completed' || task.status === 'failed') && task.result) { showToast(task.status === 'completed' ? 'Result' : 'Error', task.result.substring(0, 100), task.status === 'completed' ? 'success' : 'error'); }
       });
     });
+    // Wire up checkboxes
+    tasksScroll.querySelectorAll('.task-checkbox').forEach(cb => {
+      cb.addEventListener('change', (e) => {
+        e.stopPropagation();
+        if (cb.checked) selectedTaskIds.add(cb.dataset.id);
+        else selectedTaskIds.delete(cb.dataset.id);
+        updateTasksBulkBar();
+      });
+      cb.addEventListener('click', (e) => e.stopPropagation());
+    });
+    // Show/hide select all button
+    const selectAllBtn = document.getElementById('tasks-select-all');
+    selectAllBtn.style.display = visibleTasks.length > 0 ? '' : 'none';
+    updateTasksBulkBar();
     renderTaskStats();
   }
+
+  function updateTasksBulkBar() {
+    const bar = document.getElementById('tasks-bulk-bar');
+    const count = selectedTaskIds.size;
+    if (count === 0) { bar.style.display = 'none'; return; }
+    bar.style.display = '';
+    document.getElementById('tasks-bulk-count').textContent = `${count} selected`;
+    // Show appropriate buttons based on what's selected
+    const cancelBtn = document.getElementById('tasks-bulk-cancel');
+    const doneBtn = document.getElementById('tasks-bulk-done');
+    const hasQueued = [...selectedTaskIds].some(id => { const t = tasks.find(x => x.id === id); return t && t.status === 'queued'; });
+    const hasDispatched = [...selectedTaskIds].some(id => { const t = tasks.find(x => x.id === id); return t && t.status === 'dispatched'; });
+    const hasCompleted = [...selectedTaskIds].some(id => { const t = tasks.find(x => x.id === id); return t && (t.status === 'completed' || t.status === 'failed'); });
+    cancelBtn.style.display = (hasQueued || hasDispatched) ? '' : 'none';
+    doneBtn.style.display = (hasDispatched || hasCompleted) ? '' : 'none';
+    doneBtn.textContent = hasDispatched ? 'Mark Done' : 'Clear';
+  }
+
+  // Bulk action handlers
+  document.getElementById('tasks-bulk-cancel').addEventListener('click', () => {
+    if (!ws || ws.readyState !== 1) return;
+    for (const id of selectedTaskIds) {
+      const t = tasks.find(x => x.id === id);
+      if (t && (t.status === 'queued' || t.status === 'dispatched')) {
+        ws.send(JSON.stringify({ type: 'task:cancel', taskId: id }));
+      }
+    }
+    showToast('Bulk Cancel', `Cancelling ${selectedTaskIds.size} task(s)`, 'success');
+    selectedTaskIds.clear();
+    updateTasksBulkBar();
+  });
+
+  document.getElementById('tasks-bulk-done').addEventListener('click', () => {
+    let doneCount = 0, clearCount = 0;
+    for (const id of selectedTaskIds) {
+      const t = tasks.find(x => x.id === id);
+      if (!t) continue;
+      if (t.status === 'dispatched' && ws && ws.readyState === 1) {
+        ws.send(JSON.stringify({ type: 'task:complete', taskId: id }));
+        doneCount++;
+      } else if (t.status === 'completed' || t.status === 'failed') {
+        // Remove completed/failed tasks from local list
+        const idx = tasks.indexOf(t);
+        if (idx >= 0) tasks.splice(idx, 1);
+        clearCount++;
+      }
+    }
+    if (doneCount) showToast('Bulk Done', `Marking ${doneCount} task(s) as done`, 'success');
+    if (clearCount) showToast('Cleared', `Removed ${clearCount} task(s)`, 'success');
+    selectedTaskIds.clear();
+    updateTasksBulkBar();
+    renderTasks();
+    updateTasksBadge();
+  });
+
+  document.getElementById('tasks-select-all').addEventListener('click', () => {
+    const visible = activeTaskTab === 'pending'
+      ? tasks.filter(t => t.status === 'queued' || t.status === 'dispatched')
+      : tasks.filter(t => t.status === 'completed' || t.status === 'failed');
+    const allSelected = visible.length > 0 && visible.every(t => selectedTaskIds.has(t.id));
+    if (allSelected) {
+      selectedTaskIds.clear();
+    } else {
+      for (const t of visible) selectedTaskIds.add(t.id);
+    }
+    renderTasks();
+  });
 
   function renderTaskStats() {
     const statsEl = document.getElementById('tasks-stats');
@@ -1698,7 +1941,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     `;
   }
 
-  function taskCardHtml(t) {
+  function taskCardHtml(t, showCheckbox) {
     const ago = timeAgo(t.createdAt); let meta = `${t.mode}`;
     if (t.assignedTo) meta += ` · session ${t.assignedTo}`;
     if (t.status === 'dispatched' && t.dispatchedAt) meta += ` · ${timeAgo(t.dispatchedAt)}`;
@@ -1706,6 +1949,11 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     if (t.status === 'failed') meta += ' · failed';
     const desigBadge = t.designation ? `<span class="task-designation">${esc(t.designation)}</span>` : '';
     const cancelBtn = (t.status === 'queued' || t.status === 'dispatched') ? `<button class="task-cancel" data-id="${t.id}">Cancel</button>` : '';
+    const checked = selectedTaskIds.has(t.id) ? ' checked' : '';
+    const checkbox = showCheckbox ? `<input type="checkbox" class="task-checkbox" data-id="${t.id}"${checked}>` : '';
+    if (showCheckbox) {
+      return `<div class="task-card-row">${checkbox}<div class="task-card ${t.status}" data-id="${t.id}"><div class="task-text">${esc(t.text)}</div><div class="task-meta"><span>${meta} · ${ago}</span>${desigBadge}${cancelBtn}</div></div></div>`;
+    }
     return `<div class="task-card ${t.status}" data-id="${t.id}"><div class="task-text">${esc(t.text)}</div><div class="task-meta"><span>${meta} · ${ago}</span>${desigBadge}${cancelBtn}</div></div>`;
   }
 
@@ -1713,6 +1961,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   $$('.feed-tab').forEach(tab => {
     tab.addEventListener('click', () => {
       activeFeedTab = tab.dataset.feedTab;
+      selectedFeedIds.clear();
       $$('.feed-tab').forEach(t => t.classList.toggle('active', t.dataset.feedTab === activeFeedTab));
       renderFeed();
     });
@@ -1726,8 +1975,47 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     }
     // Cap cleared entries in memory
     if (clearedFeedEntries.length > 500) clearedFeedEntries = clearedFeedEntries.slice(-500);
+    selectedFeedIds.clear();
     renderFeed();
     updateFeedTabCounts();
+  });
+
+  function updateFeedBulkBar() {
+    const bar = document.getElementById('feed-bulk-bar');
+    const count = selectedFeedIds.size;
+    if (count === 0) { bar.style.display = 'none'; return; }
+    bar.style.display = '';
+    document.getElementById('feed-bulk-count').textContent = `${count} selected`;
+  }
+
+  document.getElementById('feed-bulk-clear').addEventListener('click', () => {
+    for (const id of selectedFeedIds) {
+      const entry = feedEntries.find(e => e.id === id);
+      if (entry && !dismissedFeedIds.has(id)) {
+        dismissedFeedIds.add(id);
+        clearedFeedEntries.push(entry);
+      }
+    }
+    if (clearedFeedEntries.length > 500) clearedFeedEntries = clearedFeedEntries.slice(-500);
+    showToast('Cleared', `Cleared ${selectedFeedIds.size} entries`, 'success');
+    selectedFeedIds.clear();
+    updateFeedBulkBar();
+    renderFeed();
+    updateFeedTabCounts();
+  });
+
+  document.getElementById('feed-select-all').addEventListener('click', () => {
+    const visible = activeFeedTab === 'new'
+      ? feedEntries.filter(e => !dismissedFeedIds.has(e.id))
+      : [];
+    const allSelected = visible.length > 0 && visible.every(e => selectedFeedIds.has(e.id));
+    if (allSelected) {
+      selectedFeedIds.clear();
+    } else {
+      for (const e of visible) selectedFeedIds.add(e.id);
+    }
+    renderFeed();
+    updateFeedBulkBar();
   });
 
   function renderFeed() {
@@ -1770,6 +2058,16 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       for (const entry of reversed) renderFeedEntry(entry, false, true);
     }
     updateFeedTabCounts();
+    // Restore selection highlight after re-render
+    if (feedSelectedId) {
+      const sel = feedScroll.querySelector(`.feed-entry[data-id="${feedSelectedId}"]`);
+      if (sel) sel.classList.add('selected');
+    }
+    // Show/hide Select All and bulk bar
+    const feedSelectAll = document.getElementById('feed-select-all');
+    const visibleCount = activeFeedTab === 'new' ? feedEntries.filter(e => !dismissedFeedIds.has(e.id)).length : 0;
+    feedSelectAll.style.display = visibleCount > 0 ? '' : 'none';
+    updateFeedBulkBar();
   }
 
   // Parse terminal preview for actionable options (bullets/numbered lists)
@@ -1851,8 +2149,12 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     // For idle entries with options, auto-expand so user sees them immediately
     const autoExpand = (parsedOptions.length && !isCleared) ? ' expanded' : '';
 
+    const feedChecked = selectedFeedIds.has(entry.id) ? ' checked' : '';
+    const feedCheckbox = !isCleared ? `<input type="checkbox" class="feed-checkbox" data-id="${entry.id}"${feedChecked}>` : '';
+
     el.innerHTML = `
       <div class="feed-top">
+        ${feedCheckbox}
         <span class="feed-type-dot"></span>
         <div class="feed-summary">
           <div class="feed-detail">${esc(entry.detail)}</div>
@@ -1869,12 +2171,26 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 
     if (autoExpand) el.classList.add('expanded');
 
+    // Wire checkbox
+    const feedCb = el.querySelector('.feed-checkbox');
+    if (feedCb) {
+      feedCb.addEventListener('change', (e) => {
+        e.stopPropagation();
+        if (feedCb.checked) selectedFeedIds.add(entry.id);
+        else selectedFeedIds.delete(entry.id);
+        updateFeedBulkBar();
+      });
+      feedCb.addEventListener('click', (e) => e.stopPropagation());
+    }
+
     // Toggle expand on click (but not on buttons)
     el.addEventListener('click', (e) => {
       if (e.target.closest('button, input')) return;
       el.classList.toggle('expanded');
       const rr = el.querySelector('.feed-reply-row');
       if (rr) rr.classList.toggle('visible', el.classList.contains('expanded'));
+      // Select for preview pane (desktop only — pane is hidden on mobile)
+      if (entry.session) selectFeedEntry(entry);
     });
 
     // Dismiss → move to cleared
@@ -1886,6 +2202,41 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         if (clearedFeedEntries.length > 500) clearedFeedEntries = clearedFeedEntries.slice(-500);
         el.style.opacity = '0'; el.style.transform = 'translateX(100%)'; el.style.transition = 'all 0.2s';
         setTimeout(() => { el.remove(); updateFeedTabCounts(); }, 200);
+      });
+
+      // Swipe-to-dismiss (touch devices)
+      let swipeStartX = 0, swipeStartY = 0, swiping = false;
+      el.addEventListener('touchstart', (e) => {
+        const t = e.touches[0];
+        swipeStartX = t.clientX; swipeStartY = t.clientY; swiping = false;
+      }, { passive: true });
+      el.addEventListener('touchmove', (e) => {
+        const t = e.touches[0];
+        const dx = t.clientX - swipeStartX;
+        const dy = Math.abs(t.clientY - swipeStartY);
+        if (dx > 10 && dy < 30) swiping = true;
+        if (swiping) {
+          el.classList.add('swiping');
+          el.style.transform = `translateX(${Math.max(0, dx)}px)`;
+          el.style.opacity = String(Math.max(0.2, 1 - dx / 300));
+        }
+      }, { passive: true });
+      el.addEventListener('touchend', () => {
+        el.classList.remove('swiping');
+        if (swiping && parseFloat(el.style.opacity) < 0.6) {
+          // Dismiss
+          dismissedFeedIds.add(entry.id);
+          clearedFeedEntries.push(entry);
+          if (clearedFeedEntries.length > 500) clearedFeedEntries = clearedFeedEntries.slice(-500);
+          el.classList.add('dismissed-swipe');
+          setTimeout(() => { el.remove(); updateFeedTabCounts(); }, 200);
+        } else {
+          // Snap back
+          el.style.transform = ''; el.style.opacity = '';
+          el.style.transition = 'transform 0.15s, opacity 0.15s';
+          setTimeout(() => { el.style.transition = ''; }, 150);
+        }
+        swiping = false;
       });
     }
 
@@ -1978,6 +2329,195 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     const clearBtn = document.getElementById('feed-clear-btn');
     if (clearBtn) clearBtn.style.display = activeFeedTab === 'new' && newCount ? '' : 'none';
   }
+
+  // ── Feed preview pane ───────────────────────────────
+  function selectFeedEntry(entry) {
+    // Remove previous selection
+    const prev = feedScroll.querySelector('.feed-entry.selected');
+    if (prev) prev.classList.remove('selected');
+
+    // Select current
+    const el = feedScroll.querySelector(`.feed-entry[data-id="${entry.id}"]`);
+    if (el) el.classList.add('selected');
+    feedSelectedId = entry.id;
+
+    const previewPane = document.getElementById('feed-preview-pane');
+    const titleEl = document.getElementById('feed-preview-title');
+    const branchEl = document.getElementById('feed-preview-branch');
+    const openBtn = document.getElementById('feed-preview-open');
+    const actionsEl = document.getElementById('feed-preview-actions');
+    const termEl = document.getElementById('feed-preview-terminal');
+    const inputRow = document.getElementById('feed-preview-input-row');
+
+    if (!entry.session) {
+      titleEl.textContent = 'No session';
+      branchEl.textContent = '';
+      openBtn.style.display = 'none';
+      actionsEl.innerHTML = '';
+      termEl.innerHTML = '<span class="feed-preview-empty">This entry has no associated session</span>';
+      inputRow.style.display = 'none';
+      stopFeedPreview();
+      return;
+    }
+
+    const session = fleetData.find(s => s.num === parseInt(entry.session));
+    const sessionNum = String(entry.session);
+    const state = session ? session.state : 'off';
+    const branch = session ? shortBranch(session.branch) : '';
+
+    titleEl.textContent = `Session ${sessionNum}`;
+    branchEl.textContent = branch ? `— ${branch}` : '';
+    openBtn.style.display = '';
+    openBtn.onclick = () => {
+      const s = fleetData.find(x => x.num === parseInt(sessionNum));
+      if (s) openSession(s);
+    };
+
+    // Render action buttons
+    renderFeedPreviewActions(entry, session);
+
+    // Show/hide message input
+    if (state !== 'off') {
+      inputRow.style.display = '';
+      document.getElementById('feed-preview-input').placeholder = `Message session ${sessionNum}...`;
+    } else {
+      inputRow.style.display = 'none';
+    }
+
+    // Load terminal preview
+    loadFeedPreviewTerminal(sessionNum, entry);
+  }
+
+  function renderFeedPreviewActions(entry, session) {
+    const actionsEl = document.getElementById('feed-preview-actions');
+    actionsEl.innerHTML = '';
+
+    const state = session ? session.state : 'off';
+
+    // State badge
+    const badge = document.createElement('span');
+    badge.className = `state-badge ${state === 'idle' ? 'idle' : state === 'working' ? 'working' : 'off'}`;
+    badge.textContent = state;
+    actionsEl.appendChild(badge);
+
+    // Approval buttons if pending
+    const approval = pendingApprovals.find(a => a.session === entry.session && entry.type === 'approval' && entry.detail.includes('requested'));
+    if (approval) {
+      const appBtn = document.createElement('button');
+      appBtn.className = 'feed-action approve';
+      appBtn.textContent = 'Approve';
+      appBtn.addEventListener('click', () => {
+        if (ws && ws.readyState === 1) {
+          ws.send(JSON.stringify({ type: 'approval:respond', approvalId: approval.id, approved: true }));
+          appBtn.textContent = 'Approved'; appBtn.disabled = true; appBtn.style.opacity = '0.5';
+          denyBtn.style.display = 'none';
+        }
+      });
+      const denyBtn = document.createElement('button');
+      denyBtn.className = 'feed-action deny';
+      denyBtn.textContent = 'Deny';
+      denyBtn.addEventListener('click', () => {
+        if (ws && ws.readyState === 1) {
+          ws.send(JSON.stringify({ type: 'approval:respond', approvalId: approval.id, approved: false }));
+          denyBtn.textContent = 'Denied'; denyBtn.disabled = true; denyBtn.style.opacity = '0.5';
+          appBtn.style.display = 'none';
+        }
+      });
+      actionsEl.appendChild(appBtn);
+      actionsEl.appendChild(denyBtn);
+    }
+
+    // Option buttons if idle with preview
+    if (entry.preview && entry.type === 'state' && entry.detail.includes('idle')) {
+      const parsedOptions = parseFeedOptions(entry.preview);
+      for (let i = 0; i < parsedOptions.length; i++) {
+        const optBtn = document.createElement('button');
+        optBtn.className = 'feed-option-btn';
+        optBtn.textContent = parsedOptions[i];
+        const option = parsedOptions[i];
+        const sessionNum = String(entry.session);
+        optBtn.addEventListener('click', () => {
+          if (!ws || ws.readyState !== 1) return;
+          ws.send(JSON.stringify({ type: 'tell', session: sessionNum, message: option }));
+          optBtn.classList.add('sent');
+          optBtn.textContent = option + ' (sent)';
+          actionsEl.querySelectorAll('.feed-option-btn').forEach(b => { if (b !== optBtn) b.style.opacity = '0.3'; });
+          showToast('Sent', `"${option.substring(0, 40)}" → session ${sessionNum}`, 'success');
+        });
+        actionsEl.appendChild(optBtn);
+      }
+    }
+  }
+
+  function ensureFeedPreviewTerm() {
+    const container = document.getElementById('feed-preview-terminal');
+    if (feedPreviewTerm) return;
+    container.innerHTML = '';
+    feedPreviewTerm = new Terminal({
+      theme: { background: '#0f0f23', foreground: '#e2e2f0', cursor: '#e2e2f0', black: '#282a36', red: '#ff5555', green: '#50fa7b', yellow: '#f1fa8c', blue: '#bd93f9', magenta: '#ff79c6', cyan: '#8be9fd', white: '#f8f8f2', brightBlack: '#6272a4', brightRed: '#ff6e6e', brightGreen: '#69ff94', brightYellow: '#ffffa5', brightBlue: '#d6acff', brightMagenta: '#ff92df', brightCyan: '#a4ffff', brightWhite: '#ffffff' },
+      fontSize: 13, fontFamily: "'SF Mono', 'Menlo', 'Monaco', 'Courier New', monospace",
+      disableStdin: true, scrollback: 5000, convertEol: true, allowProposedApi: true,
+    });
+    feedPreviewFit = new FitAddon.FitAddon();
+    feedPreviewTerm.loadAddon(feedPreviewFit);
+    feedPreviewTerm.open(container);
+    requestAnimationFrame(() => feedPreviewFit.fit());
+  }
+
+  function loadFeedPreviewTerminal(sessionNum, entry) {
+    ensureFeedPreviewTerm();
+
+    // Show entry preview text immediately if available
+    if (entry.preview) {
+      writeFeedPreviewContent(entry.preview);
+    }
+
+    stopFeedPreview();
+    feedPreviewSession = sessionNum;
+
+    // Send initial peek
+    if (ws && ws.readyState === 1) {
+      ws.send(JSON.stringify({ type: 'peek', session: sessionNum }));
+    }
+
+    // Refresh every 3s
+    feedPreviewTimer = setInterval(() => {
+      if (ws && ws.readyState === 1 && feedPreviewSession === sessionNum) {
+        ws.send(JSON.stringify({ type: 'peek', session: sessionNum }));
+      }
+    }, 3000);
+  }
+
+  function stopFeedPreview() {
+    if (feedPreviewTimer) {
+      clearInterval(feedPreviewTimer);
+      feedPreviewTimer = null;
+    }
+    feedPreviewSession = null;
+  }
+
+  function writeFeedPreviewContent(content) {
+    ensureFeedPreviewTerm();
+    feedPreviewTerm.reset();
+    feedPreviewTerm.write(content);
+    requestAnimationFrame(() => feedPreviewTerm.scrollToBottom());
+  }
+
+  // ── Feed preview message sending ────────────────────
+  document.getElementById('feed-preview-send').addEventListener('click', () => {
+    const input = document.getElementById('feed-preview-input');
+    const text = input.value.trim();
+    if (!text || !feedPreviewSession || !ws || ws.readyState !== 1) return;
+    ws.send(JSON.stringify({ type: 'tell', session: feedPreviewSession, message: text }));
+    input.value = '';
+    showToast('Sent', `Message → session ${feedPreviewSession}`, 'success');
+  });
+  document.getElementById('feed-preview-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      document.getElementById('feed-preview-send').click();
+    }
+  });
 
   // ── More panel ────────────────────────────────────
   function toggleAutoLocal(num) {
