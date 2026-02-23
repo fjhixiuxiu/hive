@@ -447,7 +447,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       case 'task:cancel': {
         if (!taskQueue) break;
         const task = taskQueue.cancelTask(msg.taskId);
-        if (task) ws.send(JSON.stringify({ type: 'task:cancelled', task }));
+        if (task) broadcast({ type: 'task:cancelled', task });
         break;
       }
 

@@ -307,8 +307,27 @@ class ProjectManager extends EventEmitter {
     const params = new URLSearchParams({ per_page: '50' });
     if (source.state) params.set('state', source.state);
     if (source.labels) params.set('labels', source.labels);
-    const urlStr = `https://api.github.com/repos/${source.repo}/pulls?${params}`;
+    if (source.base) params.set('base', source.base);
 
+    // If no base specified, only fetch PRs targeting main or master
+    if (!source.base) {
+      const bases = ['main', 'master'];
+      const allPrs = [];
+      for (const base of bases) {
+        params.set('base', base);
+        const urlStr = `https://api.github.com/repos/${source.repo}/pulls?${params}`;
+        const data = await this._httpRequest(urlStr, this._githubHeaders());
+        if (Array.isArray(data)) allPrs.push(...data);
+      }
+      return allPrs.map(pr => ({
+        key: `${source.repo}#${pr.number}`,
+        summary: pr.title,
+        issueType: 'pr',
+        storyPoints: null,
+      }));
+    }
+
+    const urlStr = `https://api.github.com/repos/${source.repo}/pulls?${params}`;
     const data = await this._httpRequest(urlStr, this._githubHeaders());
     return (Array.isArray(data) ? data : []).map(pr => ({
       key: `${source.repo}#${pr.number}`,
