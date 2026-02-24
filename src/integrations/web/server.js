@@ -65,7 +65,10 @@ function discoverCommands(config) {
  * -S -500 captures 500 lines of scrollback history.
  */
 async function capturePaneAnsi(node, target) {
-  return await node.exec(`tmux capture-pane -e -p -S -500 -t "${target}" 2>/dev/null`) || '';
+  const content = await node.exec(`tmux capture-pane -e -p -S -500 -t "${target}" 2>/dev/null`) || '';
+  const colsStr = await node.exec(`tmux display-message -p -t "${target}" "#{pane_width}" 2>/dev/null`);
+  const cols = parseInt(colsStr) || 0;
+  return { content, cols };
 }
 
 /**
@@ -238,8 +241,8 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
         const { name, nodeId } = found;
         const node = router.getNode(nodeId);
         const paneTarget = `${name}:.${config.sessions.claudePane}`;
-        const content = await capturePaneAnsi(node, paneTarget);
-        ws.send(JSON.stringify({ type: 'terminal:data', session: msg.session, content }));
+        const { content: peekContent, cols: peekCols } = await capturePaneAnsi(node, paneTarget);
+        ws.send(JSON.stringify({ type: 'terminal:data', session: msg.session, content: peekContent, cols: peekCols }));
         break;
       }
 
@@ -254,8 +257,8 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
           if (!node) return;
           const paneTarget = `${s.name}:.${config.sessions.claudePane}`;
           try {
-            const content = await capturePaneAnsi(node, paneTarget);
-            const plain = content.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
+            const { content: searchContent } = await capturePaneAnsi(node, paneTarget);
+            const plain = searchContent.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
             if (plain.toLowerCase().includes(queryLower)) {
               // Extract matching lines for context
               const matchLines = plain.split('\n')
@@ -282,14 +285,14 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
         const node = router.getNode(nodeId);
         const paneTarget = `${name}:.${config.sessions.claudePane}`;
         // Send immediately
-        const content = await capturePaneAnsi(node, paneTarget);
-        ws.send(JSON.stringify({ type: 'terminal:data', session: msg.session, content }));
+        const { content: subContent, cols: subCols } = await capturePaneAnsi(node, paneTarget);
+        ws.send(JSON.stringify({ type: 'terminal:data', session: msg.session, content: subContent, cols: subCols }));
         // Poll every 2s
         const interval = setInterval(async () => {
           if (ws.readyState !== 1) { clearTermSub(ws); return; }
           try {
-            const data = await capturePaneAnsi(node, paneTarget);
-            ws.send(JSON.stringify({ type: 'terminal:data', session: msg.session, content: data }));
+            const { content: pollContent, cols: pollCols } = await capturePaneAnsi(node, paneTarget);
+            ws.send(JSON.stringify({ type: 'terminal:data', session: msg.session, content: pollContent, cols: pollCols }));
           } catch {
             // Node may have disconnected
           }
@@ -471,10 +474,26 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
         break;
       }
 
+      case 'task:update': {
+        if (!taskQueue) break;
+        const updatedTask = taskQueue.updateTask(msg.taskId, msg.updates || {});
+        if (updatedTask) broadcast({ type: 'task:updated', task: updatedTask });
+        break;
+      }
+
+      case 'task:snapshot': {
+        if (!taskQueue) break;
+        const snapTask = taskQueue.tasks.get(msg.taskId);
+        if (snapTask && snapTask.snapshot) {
+          ws.send(JSON.stringify({ type: 'task:snapshot', taskId: msg.taskId, content: snapTask.snapshot, cols: snapTask.snapshotCols || 0 }));
+        }
+        break;
+      }
+
       case 'task:cancel': {
         if (!taskQueue) break;
-        const task = taskQueue.cancelTask(msg.taskId);
-        if (task) broadcast({ type: 'task:cancelled', task });
+        const cancelledTask = taskQueue.cancelTask(msg.taskId);
+        if (cancelledTask) broadcast({ type: 'task:cancelled', task: cancelledTask });
         break;
       }
 
@@ -734,6 +753,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     taskQueue.on('task:completed', (task) => broadcast({ type: 'task:completed', task }));
     taskQueue.on('task:failed', (task) => broadcast({ type: 'task:failed', task }));
     taskQueue.on('task:cancelled', (task) => broadcast({ type: 'task:cancelled', task }));
+    taskQueue.on('task:updated', (task) => broadcast({ type: 'task:updated', task }));
     taskQueue.on('auto:changed', (sessions) => broadcast({ type: 'auto:status', sessions }));
     taskQueue.on('feed:new', (entry) => broadcast({ type: 'feed:new', entry }));
     taskQueue.on('approval:new', (approval) => broadcast({ type: 'approval:new', approval }));

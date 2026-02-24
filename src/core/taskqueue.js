@@ -83,6 +83,19 @@ class TaskQueue extends EventEmitter {
     return task;
   }
 
+  updateTask(taskId, updates) {
+    const task = this.tasks.get(taskId);
+    if (!task || task.status !== 'queued') return null;
+
+    const allowed = ['text', 'mode', 'targetSession', 'designation'];
+    for (const key of allowed) {
+      if (key in updates) task[key] = updates[key];
+    }
+    this.emit('task:updated', task);
+    this._saveState();
+    return task;
+  }
+
   cancelTask(taskId) {
     const task = this.tasks.get(taskId);
     if (!task || task.status === 'completed' || task.status === 'failed') return null;
@@ -96,13 +109,15 @@ class TaskQueue extends EventEmitter {
     return task;
   }
 
-  completeTask(taskId, result) {
+  completeTask(taskId, result, snapshot, snapshotCols) {
     const task = this.tasks.get(taskId);
     if (!task || task.status !== 'dispatched') return null;
 
     task.status = 'completed';
     task.completedAt = Date.now();
     task.result = result || null;
+    task.snapshot = snapshot || null;
+    task.snapshotCols = snapshotCols || 0;
 
     if (task.assignedTo) {
       this.activeTaskBySession.delete(task.assignedTo);
@@ -195,11 +210,11 @@ class TaskQueue extends EventEmitter {
     return true;
   }
 
-  _handleSessionIdle(num) {
+  _handleSessionIdle(num, preview, paneCols) {
     // Complete active task for this session
     const taskId = this.activeTaskBySession.get(num);
     if (taskId) {
-      this.completeTask(taskId);
+      this.completeTask(taskId, null, preview || null, paneCols);
     }
     this.dispatchLock.delete(num);
   }
@@ -602,7 +617,7 @@ class TaskQueue extends EventEmitter {
         extra.preview = lines.slice(-20).join('\n');
       }
       this.pushFeed('state', data.num, `Session ${data.num} went idle`, extra);
-      this._handleSessionIdle(data.num);
+      this._handleSessionIdle(data.num, data.ansiSnapshot || data.preview, data.paneCols);
 
       // Evaluate auto-pilot rules
       this.evaluateRules('session:idle', data);
@@ -646,7 +661,11 @@ class TaskQueue extends EventEmitter {
   getTasksList() {
     return Array.from(this.tasks.values())
       .filter(t => t.status !== 'cancelled')
-      .sort((a, b) => b.createdAt - a.createdAt);
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .map(t => {
+        const { snapshot, snapshotCols, ...rest } = t;
+        return rest;
+      });
   }
 }
 

@@ -109,11 +109,20 @@ class Watcher extends EventEmitter {
             this.notifiedIdle.add(s.num);
             // Capture terminal preview so the feed entry can show context
             let preview = '';
+            let ansiSnapshot = '';
+            let paneCols = 0;
             try {
               const node = this.router.nodeFor(s.name);
-              if (node) preview = await fleet.peekSession(this.config, node, s.name);
+              if (node) {
+                preview = await fleet.peekSession(this.config, node, s.name);
+                // Also capture ANSI version + pane width for task snapshot display
+                const paneTarget = `${s.name}:.${this.config.sessions.claudePane}`;
+                ansiSnapshot = await node.exec(`tmux capture-pane -e -p -S -500 -t "${paneTarget}" 2>/dev/null`) || '';
+                const colsStr = await node.exec(`tmux display-message -p -t "${paneTarget}" "#{pane_width}" 2>/dev/null`);
+                paneCols = parseInt(colsStr) || 0;
+              }
             } catch {}
-            this.emit('session:idle', { session: s, name: s.name, num: s.num, preview });
+            this.emit('session:idle', { session: s, name: s.name, num: s.num, preview, ansiSnapshot, paneCols });
           } else {
             this.pendingIdle.set(s.num, count);
           }

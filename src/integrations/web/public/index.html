@@ -390,13 +390,8 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 /* ── Tasks panel ─────────────────────── */
 .tasks-panes { display: flex; flex-direction: column; height: 100%; }
 .tasks-list-pane { flex: 1; display: flex; flex-direction: column; min-height: 0; order: 1; }
-.tasks-entry-pane {
-  order: 2; flex-shrink: 0; display: flex; gap: 6px; padding: 8px 10px;
-  background: var(--bg2); border-top: 1px solid var(--bg3); flex-wrap: wrap; align-items: center;
-}
-.tasks-entry-title { display: none; }
-.tasks-stats { display: none; }
-.tasks-tabs { display: flex; gap: 4px; padding: 8px 10px 0; flex-shrink: 0; }
+.tasks-session-pane { display: none; }
+.tasks-tabs { display: flex; gap: 4px; padding: 8px 10px 0; flex-shrink: 0; align-items: center; }
 .tasks-tab {
   background: var(--bg3); border: none; color: var(--dim); font-size: 12px;
   font-weight: 700; padding: 6px 16px; border-radius: 16px; cursor: pointer;
@@ -404,6 +399,12 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 }
 .tasks-tab:hover { color: var(--fg); }
 .tasks-tab.active { background: var(--purple); color: var(--bg); }
+.tasks-create-btn {
+  background: var(--purple); border: none; color: var(--bg); font-size: 12px;
+  font-weight: 700; padding: 6px 14px; border-radius: 16px; cursor: pointer;
+  margin-left: auto; white-space: nowrap;
+}
+.tasks-create-btn:active { opacity: 0.8; }
 .tasks-scroll { flex: 1; overflow-y: auto; padding: 8px 10px; -webkit-overflow-scrolling: touch; }
 .task-section-label {
   font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;
@@ -420,11 +421,21 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .task-card.dispatched { border-left-color: var(--yellow); }
 .task-card.completed { border-left-color: var(--green); opacity: 0.7; }
 .task-card.failed { border-left-color: var(--red); opacity: 0.7; }
+.task-card.selected { border-left-color: var(--purple); background: rgba(189,147,249,0.08); }
 .task-text { font-size: 14px; font-weight: 500; margin-bottom: 4px; }
 .task-meta { font-size: 12px; color: var(--dim); display: flex; gap: 8px; align-items: center; }
 .task-cancel {
   margin-left: auto; background: none; border: none; color: var(--red);
   font-size: 11px; font-weight: 600; cursor: pointer; padding: 2px 6px;
+}
+.task-edit-btn {
+  background: none; border: none; color: var(--dim); font-size: 11px;
+  font-weight: 600; cursor: pointer; padding: 2px 6px;
+}
+.task-edit-btn:hover { color: var(--purple); }
+.task-session-badge {
+  background: rgba(241,250,140,0.15); color: var(--yellow); font-size: 11px;
+  font-weight: 700; padding: 2px 6px; border-radius: 3px; margin-left: auto;
 }
 .task-checkbox {
   -webkit-appearance: none; appearance: none;
@@ -457,29 +468,6 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   font-weight: 600; cursor: pointer; padding: 2px 6px; margin-left: auto;
 }
 .tasks-select-all:hover { color: var(--fg); }
-#task-input {
-  flex: 1; background: var(--bg); border: 1px solid var(--bg3); color: var(--fg);
-  padding: 8px 12px; border-radius: 6px; font-size: 15px; outline: none; min-width: 0;
-  resize: none; font-family: inherit;
-}
-#task-input:focus { border-color: var(--purple); }
-#task-input::placeholder { color: var(--dim); }
-.tasks-mode-row { display: flex; gap: 6px; }
-.task-mode-btn {
-  background: var(--bg3); border: none; color: var(--fg); font-size: 12px;
-  font-weight: 700; padding: 8px 12px; border-radius: 6px; cursor: pointer;
-}
-.task-mode-btn.selected { background: var(--purple); color: var(--bg); }
-#task-send {
-  background: var(--purple); border: none; color: var(--bg); font-size: 14px;
-  font-weight: 700; padding: 8px 14px; border-radius: 6px; cursor: pointer;
-}
-#task-send:disabled { opacity: 0.3; cursor: default; }
-#session-picker {
-  display: none; width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch;
-  gap: 6px; padding: 4px 0;
-}
-#session-picker.visible { display: flex; }
 .picker-btn {
   background: var(--bg3); border: none; color: var(--fg); font-size: 14px;
   font-weight: 700; min-width: 36px; height: 36px; border-radius: 6px;
@@ -488,31 +476,112 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .picker-btn.selected { background: var(--purple); color: var(--bg); }
 .picker-btn:active { background: var(--purple); color: var(--bg); }
 
+/* ── Tasks session pane ─────────────── */
+.tasks-session-header {
+  display: flex; align-items: center; gap: 8px; padding: 10px 12px;
+  background: var(--bg2); border-bottom: 1px solid var(--bg3); flex-shrink: 0;
+}
+.tasks-session-title { font-weight: 700; font-size: 14px; color: var(--fg); }
+.tasks-session-branch { font-size: 12px; color: var(--dim); flex: 1; }
+.ts-open-btn {
+  background: var(--bg3); border: none; color: var(--purple); font-size: 11px;
+  font-weight: 700; padding: 5px 10px; border-radius: 4px; cursor: pointer;
+  white-space: nowrap;
+}
+.ts-open-btn:active { background: var(--purple); color: var(--bg); }
+.tasks-session-tabs {
+  display: flex; gap: 0; background: var(--bg2); border-bottom: 1px solid var(--bg3); flex-shrink: 0;
+}
+.tasks-session-terminal {
+  flex: 1; min-height: 0; overflow: hidden; position: relative;
+  background: var(--bg);
+}
+.tasks-session-terminal .xterm { height: 100%; }
+.tasks-session-terminal .xterm-viewport { overflow-y: auto !important; }
+.tasks-session-empty {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  color: var(--dim); font-style: italic; font-size: 14px; padding: 20px;
+}
+.ts-scroll-pause {
+  position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%);
+  background: var(--purple); color: var(--bg); font-size: 12px; font-weight: 600;
+  padding: 6px 14px; border-radius: 16px; cursor: pointer; z-index: 10; opacity: 0.9;
+  white-space: nowrap;
+}
+.ts-cmd-bar {
+  display: flex; gap: 4px; padding: 6px 10px; background: var(--bg2);
+  border-top: 1px solid var(--bg3); flex-shrink: 0; overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+#ts-git-content { flex-direction: row; }
+@media (max-width: 699px) {
+  #ts-git-content { flex-direction: column; }
+  #ts-git-content .git-sidebar { width: 100%; max-width: none; min-width: 0;
+                 max-height: 40vh; border-right: none;
+                 border-bottom: 1px solid var(--bg3); }
+}
+.tasks-session-keys {
+  display: flex; gap: 4px; padding: 6px 10px;
+  background: var(--bg2); border-top: 1px solid var(--bg3); flex-shrink: 0;
+  overflow-x: auto; -webkit-overflow-scrolling: touch;
+}
+.tasks-session-input {
+  display: flex; gap: 8px; padding: 8px 12px;
+  background: var(--bg2); border-top: 1px solid var(--bg3); flex-shrink: 0; align-items: flex-end;
+}
+.tasks-session-input .ts-mode {
+  background: var(--bg3); border: none; color: var(--green); font-size: 12px;
+  font-weight: 700; padding: 8px 12px; border-radius: 6px; cursor: pointer;
+  min-width: 48px; text-transform: uppercase;
+}
+.tasks-session-input .ts-mode.tell { color: var(--orange); }
+.tasks-session-input .ts-msg {
+  flex: 1; background: var(--bg); border: 1px solid var(--bg3); color: var(--fg);
+  padding: 8px 12px; border-radius: 6px; font-size: 14px; outline: none;
+  resize: none; font-family: inherit; line-height: 1.4; height: 3em; min-width: 0;
+}
+.tasks-session-input .ts-msg:focus { border-color: var(--purple); }
+.tasks-session-input .ts-msg::placeholder { color: var(--dim); }
+.tasks-session-input .ts-send {
+  background: var(--purple); border: none; color: var(--bg); font-size: 14px;
+  font-weight: 700; padding: 8px 16px; border-radius: 6px; cursor: pointer;
+}
+.tasks-session-input .ts-send:active { opacity: 0.8; }
+
+/* ── Task create/edit dialog ────────── */
+.task-dialog-field { margin-bottom: 12px; }
+.task-dialog-label { font-size: 12px; font-weight: 600; color: var(--dim); margin-bottom: 4px; display: block; }
+.task-dialog-input {
+  background: var(--bg); border: 1px solid var(--bg3); color: var(--fg);
+  padding: 8px 10px; border-radius: 6px; font-size: 14px; width: 100%; outline: none;
+  font-family: inherit;
+}
+.task-dialog-input:focus { border-color: var(--purple); }
+.task-dialog-input::placeholder { color: var(--dim); }
+.task-dialog-select {
+  background: var(--bg); border: 1px solid var(--bg3); color: var(--fg);
+  padding: 8px 10px; border-radius: 6px; font-size: 14px; width: 100%; outline: none;
+}
+.task-dialog-mode-row { display: flex; gap: 6px; margin-bottom: 12px; }
+.task-dialog-mode-btn {
+  background: var(--bg3); border: none; color: var(--fg); font-size: 12px;
+  font-weight: 700; padding: 8px 12px; border-radius: 6px; cursor: pointer; flex: 1;
+}
+.task-dialog-mode-btn.selected { background: var(--purple); color: var(--bg); }
+#task-dialog-picker {
+  display: none; width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch;
+  gap: 6px; padding: 4px 0; flex-wrap: wrap;
+}
+#task-dialog-picker.visible { display: flex; }
+
 /* ── Tasks desktop layout (≥900px) ──── */
 @media (min-width: 900px) {
   .tasks-panes { flex-direction: row; }
-  .tasks-list-pane { flex: 7; order: 1; }
-  .tasks-entry-pane {
-    flex: 3; order: 2; flex-direction: column; align-items: stretch;
-    gap: 12px; padding: 16px; border-top: none;
-    border-left: 1px solid var(--bg3); flex-wrap: nowrap;
-    overflow-y: auto;
+  .tasks-list-pane { flex: 3; order: 1; border-right: 1px solid var(--bg3); }
+  .tasks-session-pane {
+    display: flex; flex: 7; order: 2; flex-direction: column; min-height: 0;
+    background: var(--bg); overflow: hidden;
   }
-  .tasks-entry-title {
-    display: block; font-size: 15px; font-weight: 700; color: var(--fg);
-  }
-  .tasks-stats {
-    display: flex; flex-direction: column; gap: 6px; margin-top: auto;
-    padding-top: 12px; border-top: 1px solid var(--bg3);
-    font-size: 13px; color: var(--dim);
-  }
-  .tasks-stats .stat-row { display: flex; justify-content: space-between; }
-  .tasks-stats .stat-val { font-weight: 700; color: var(--fg); }
-  #task-send { width: 100%; padding: 10px; }
-  #session-picker { width: auto; flex-wrap: wrap; }
-  #task-designation { width: 100%; max-width: none; }
-  .tasks-mode-row { width: 100%; }
-  .tasks-mode-row .task-mode-btn { flex: 1; }
 }
 
 /* ── Feed panel ──────────────────────── */
@@ -801,13 +870,6 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   background: rgba(255,184,108,0.2); color: var(--orange); text-transform: uppercase;
 }
 
-/* ── Designation selector in task bar ─ */
-#task-designation {
-  background: var(--bg3); border: none; color: var(--orange); font-size: 12px;
-  font-weight: 700; padding: 8px 8px; border-radius: 6px; cursor: pointer;
-  max-width: 110px;
-}
-
 /* ── Designation manager in More tab ── */
 .desig-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; }
 .desig-item { display: flex; align-items: center; gap: 8px; background: var(--bg); padding: 8px 10px; border-radius: 6px; }
@@ -966,9 +1028,10 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       <div class="tasks-panes">
         <div class="tasks-list-pane">
           <div class="tasks-tabs">
-            <button class="tasks-tab active" data-tab="pending">Pending</button>
+            <button class="tasks-tab active" data-tab="inprogress">In Progress</button>
+            <button class="tasks-tab" data-tab="queued">Queued</button>
             <button class="tasks-tab" data-tab="completed">Completed</button>
-            <button class="tasks-select-all" id="tasks-select-all" style="display:none">Select All</button>
+            <button class="tasks-create-btn" id="tasks-create-btn">+ Create</button>
           </div>
           <div class="tasks-bulk-bar" id="tasks-bulk-bar" style="display:none">
             <span class="bulk-count" id="tasks-bulk-count">0 selected</span>
@@ -977,17 +1040,46 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
           </div>
           <div class="tasks-scroll" id="tasks-scroll"></div>
         </div>
-        <div class="tasks-entry-pane">
-          <div class="tasks-entry-title">Create Task</div>
-          <textarea id="task-input" rows="4" placeholder="Enter task description..." autocomplete="off"></textarea>
-          <select id="task-designation"><option value="">Any</option></select>
-          <div class="tasks-mode-row">
-            <button class="task-mode-btn selected" data-mode="auto" id="task-auto-btn">Auto</button>
-            <button class="task-mode-btn" data-mode="manual" id="task-manual-btn">Manual</button>
+        <div class="tasks-session-pane" id="tasks-session-pane">
+          <div class="tasks-session-header" id="tasks-session-header">
+            <span class="tasks-session-title" id="tasks-session-title">Session</span>
+            <span class="tasks-session-branch" id="tasks-session-branch"></span>
+            <button class="ts-open-btn" id="ts-open-session" style="display:none">Open Full Session</button>
           </div>
-          <div id="session-picker"></div>
-          <button id="task-send">Send</button>
-          <div class="tasks-stats" id="tasks-stats"></div>
+          <div class="tasks-session-tabs" id="tasks-session-tabs" style="display:none">
+            <button class="session-tab active" data-tstab="terminal">Terminal</button>
+            <button class="session-tab" data-tstab="git">Git</button>
+          </div>
+          <div class="tasks-session-empty" id="tasks-session-empty">Select an in-progress task to view its session</div>
+          <div class="session-tab-content active" id="ts-terminal-content" style="display:none">
+            <div class="tasks-session-terminal" id="tasks-session-terminal"></div>
+          </div>
+          <div class="session-tab-content" id="ts-git-content" style="display:none">
+            <div class="git-sidebar" id="ts-git-sidebar"></div>
+            <div class="git-diff-pane" id="ts-git-diff-pane">
+              <div class="git-diff-header" id="ts-git-diff-header" style="display:none">
+                <span class="git-diff-filename" id="ts-git-diff-filename"></span>
+              </div>
+              <div class="git-diff-content" id="ts-git-diff-content">
+                <div class="git-empty">Select a file to view diff</div>
+              </div>
+            </div>
+          </div>
+          <div class="tasks-session-keys" id="tasks-session-keys" style="display:none">
+            <button class="key-btn ts-key-btn" data-key="Enter">Enter</button>
+            <button class="key-btn ts-key-btn" data-key="Escape">Esc</button>
+            <button class="key-btn ts-key-btn" data-key="Up">Up</button>
+            <button class="key-btn ts-key-btn" data-key="Down">Down</button>
+            <button class="key-btn ts-key-btn" data-key="Tab">Tab</button>
+            <button class="key-btn ts-key-btn" data-key="y">y</button>
+            <button class="key-btn ts-key-btn" data-key="n">n</button>
+          </div>
+          <div id="ts-cmd-bar" class="ts-cmd-bar" style="display:none"></div>
+          <div class="tasks-session-input" id="tasks-session-input" style="display:none">
+            <button class="ts-mode" id="ts-mode-toggle">Ask</button>
+            <textarea class="ts-msg" id="ts-msg-input" rows="2" placeholder="Message Claude..." autocomplete="off"></textarea>
+            <button class="ts-send" id="ts-send-btn">Send</button>
+          </div>
         </div>
       </div>
     </div>
@@ -1249,6 +1341,33 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   </div>
 </div>
 
+<!-- Task create/edit dialog -->
+<div class="dialog-overlay" id="task-dialog">
+  <div class="dialog" style="max-width:400px">
+    <div class="dialog-title" id="task-dialog-title">Create Task</div>
+    <div class="task-dialog-field">
+      <label class="task-dialog-label">Task Description</label>
+      <textarea class="task-dialog-input" id="task-dialog-text" rows="4" placeholder="Enter task description..." autocomplete="off"></textarea>
+    </div>
+    <div class="task-dialog-field">
+      <label class="task-dialog-label">Designation</label>
+      <select class="task-dialog-select" id="task-dialog-designation"><option value="">Any</option></select>
+    </div>
+    <div class="task-dialog-field">
+      <label class="task-dialog-label">Mode</label>
+      <div class="task-dialog-mode-row">
+        <button class="task-dialog-mode-btn selected" data-mode="auto" id="task-dialog-auto-btn">Auto</button>
+        <button class="task-dialog-mode-btn" data-mode="manual" id="task-dialog-manual-btn">Manual</button>
+      </div>
+    </div>
+    <div id="task-dialog-picker"></div>
+    <div class="dialog-actions">
+      <button class="dialog-btn primary" id="task-dialog-save">Create</button>
+      <button class="dialog-btn" id="task-dialog-cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <!-- Toasts -->
 <div id="toasts"></div>
 
@@ -1289,8 +1408,21 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   let previousTab = 'fleet-panel'; // remember which tab was active before session view
   let taskMode = 'auto';
   let manualTarget = null;
-  let activeTaskTab = 'pending';
+  let activeTaskTab = 'inprogress';
   let selectedTaskIds = new Set();
+  let tasksSessionNum = null;
+  let tasksSessionTerm = null;
+  let tasksSessionFit = null;
+  let tasksSessionMode = 'ask';
+  let editingTaskId = null;
+  let tasksSelectedTaskId = null;
+  let tsUserScrolledUp = false;
+  let tsPendingContent = null;
+  let tsLastContent = '';
+  let tsActiveTab = 'terminal'; // 'terminal' or 'git'
+  let tsCommands = []; // cached slash commands for tasks cmd-bar
+  let paneCols = 0;    // last known tmux pane cols for main session terminal
+  let tsPaneCols = 0;  // last known tmux pane cols for tasks session terminal
   let designations = {};  // { num: string }
   let pmList = [];        // PM objects from server
   let editingPmId = null; // PM being edited (null = creating new)
@@ -1324,9 +1456,6 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   const quickSendEl = $('#quick-send');
   const tasksScroll = $('#tasks-scroll');
   const feedScroll = $('#feed-scroll');
-  const taskInput = $('#task-input');
-  const taskSendBtn = $('#task-send');
-  const sessionPicker = $('#session-picker');
   const sidebarSummary = $('#sidebar-summary');
   let quickSession = null;
   let quickSendMode = 'tell';
@@ -1448,12 +1577,29 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       // Stop peek timer when leaving feed tab
       if (feedPreviewTimer) { clearInterval(feedPreviewTimer); feedPreviewTimer = null; }
     }
+    if (tab === 'tasks-panel') {
+      // Re-subscribe if we had a session open
+      if (tasksSessionNum && ws && ws.readyState === 1) {
+        ws.send(JSON.stringify({ type: 'terminal:subscribe', session: tasksSessionNum }));
+      }
+      requestAnimationFrame(() => fitTasksTerminal());
+      renderTasks();
+    } else {
+      // Unsubscribe from tasks session when leaving
+      if (tasksSessionNum && ws && ws.readyState === 1) {
+        ws.send(JSON.stringify({ type: 'terminal:unsubscribe' }));
+      }
+    }
     if (tab === 'fleet-panel') renderGrid();
     if (tab === 'more-panel') renderDesignationGrid();
     const spawnBtn = document.getElementById('spawn-btn');
     if (spawnBtn) spawnBtn.classList.toggle('visible', tab === 'fleet-panel');
     if (tab === 'session-panel' && term && fitAddon && activeSessionTab === 'terminal') {
-      requestAnimationFrame(() => fitAddon.fit());
+      requestAnimationFrame(() => fitTerminal());
+      // Re-subscribe in case tasks panel took over the subscription
+      if (currentSession && ws && ws.readyState === 1) {
+        ws.send(JSON.stringify({ type: 'terminal:subscribe', session: currentSession }));
+      }
     }
     if (!fromRoute) pushHash();
   }
@@ -1487,14 +1633,13 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         }
         break;
       case 'config': linkTemplates = msg.links || {}; break;
-      case 'commands:list': renderCommands(msg.commands || []); break;
+      case 'commands:list': tsCommands = msg.commands || []; renderCommands(tsCommands); break;
       case 'fleet:search:result':
         renderFleetSearchResults(msg.query, msg.results);
         break;
       case 'fleet:status':
         fleetData = msg.sessions;
         if (activeTab === 'fleet-panel') renderGrid();
-        renderSessionPicker();
         renderAutoGrid();
         updateSidebarSummary();
         // Auto-refresh git tab if active
@@ -1509,12 +1654,19 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         break;
       case 'terminal:data':
         if (term && currentSession === String(msg.session)) {
+          if (msg.cols && msg.cols > 0) { paneCols = msg.cols; if (msg.cols !== term.cols) term.resize(msg.cols, term.rows); }
           if (msg.content === lastContent) break;
           if (userScrolledUp) { pendingContent = msg.content; }
           else { writeTerminalContent(msg.content); }
         }
         if (feedPreviewSession === String(msg.session)) {
           writeFeedPreviewContent(msg.content);
+        }
+        if (tasksSessionTerm && tasksSessionNum === String(msg.session) && activeTab === 'tasks-panel') {
+          if (msg.cols && msg.cols > 0) { tsPaneCols = msg.cols; if (msg.cols !== tasksSessionTerm.cols) tasksSessionTerm.resize(msg.cols, tasksSessionTerm.rows); }
+          if (msg.content === tsLastContent) break;
+          if (tsUserScrolledUp) { tsPendingContent = msg.content; }
+          else { writeTasksSessionContent(msg.content); }
         }
         break;
       case 'ask:stream': break;
@@ -1537,11 +1689,20 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         if (idx >= 0) tasks[idx] = msg.task; else tasks.unshift(msg.task);
         renderTasks(); updateTasksBadge(); break;
       }
+      case 'task:updated': {
+        const idx = tasks.findIndex(t => t.id === msg.task.id);
+        if (idx >= 0) tasks[idx] = msg.task; else tasks.unshift(msg.task);
+        renderTasks(); updateTasksBadge(); break;
+      }
       case 'task:cancelled': {
         const idx = tasks.findIndex(t => t.id === msg.task.id);
         if (idx >= 0) tasks.splice(idx, 1);
         selectedTaskIds.delete(msg.task.id);
         renderTasks(); updateTasksBadge(); break;
+      }
+      case 'task:snapshot': {
+        showTaskSnapshotContent(msg.taskId, msg.content, msg.cols);
+        break;
       }
       case 'auto:status': autoSessions = new Set(msg.sessions || []); renderAutoGrid(); if (activeTab === 'fleet-panel') renderGrid(); break;
       case 'feed:entries': feedEntries = msg.entries || []; feedHasMore = msg.hasMore || false; renderFeed(); break;
@@ -1574,13 +1735,16 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       case 'pm:created': showToast('PM Created', msg.pm.name, 'success'); break;
       case 'pm:error': showToast('PM Error', `${msg.id}: ${msg.error}`, 'error'); break;
       case 'git:info':
-        if (currentSession === String(msg.session)) renderGitPanel(msg);
+        if (currentSession === String(msg.session)) renderGitPanel(msg, 'git-sidebar');
+        if (tasksSessionNum === String(msg.session) && activeTab === 'tasks-panel') renderGitPanel(msg, 'ts-git-sidebar');
         break;
       case 'git:diff':
-        if (currentSession === String(msg.session)) showDiffViewer(msg.file, msg.diff);
+        if (currentSession === String(msg.session)) showDiffViewer(msg.file, msg.diff, 'git-diff');
+        if (tasksSessionNum === String(msg.session) && activeTab === 'tasks-panel') showDiffViewer(msg.file, msg.diff, 'ts-git-diff');
         break;
       case 'git:commit':
-        if (currentSession === String(msg.session)) expandCommitRow(msg.hash, msg.files);
+        if (currentSession === String(msg.session)) expandCommitRow(msg.hash, msg.files, 'git-sidebar', currentSession);
+        if (tasksSessionNum === String(msg.session) && activeTab === 'tasks-panel') expandCommitRow(msg.hash, msg.files, 'ts-git-sidebar', tasksSessionNum);
         break;
     }
   }
@@ -1739,6 +1903,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 
   function openSession(s, fromRoute) {
     currentSession = String(s.num);
+    paneCols = 0; // reset until we get pane width from server
     sessionTitle.textContent = `Session ${s.num}`;
     sessionBranch.textContent = shortBranch(s.branch);
     previousTab = activeTab;
@@ -1769,7 +1934,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     // Show session panel
     switchTab('session-panel', fromRoute);
     if (!fromRoute) pushHash();
-    requestAnimationFrame(() => { fitAddon.fit(); term.clear(); });
+    requestAnimationFrame(() => { fitTerminal(); term.clear(); });
 
     if (ws && ws.readyState === 1) {
       ws.send(JSON.stringify({ type: 'terminal:subscribe', session: currentSession }));
@@ -1793,6 +1958,18 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     lastContent = content; writingContent = true;
     term.reset(); term.write(content);
     requestAnimationFrame(() => { term.scrollToBottom(); requestAnimationFrame(() => { writingContent = false; }); });
+  }
+
+  // Fit terminal to container, but use pane cols if wider (prevents ANSI line wrapping artifacts)
+  function fitTerminal() {
+    if (!term || !fitAddon) return;
+    fitAddon.fit();
+    if (paneCols > 0 && paneCols > term.cols) term.resize(paneCols, term.rows);
+  }
+  function fitTasksTerminal() {
+    if (!tasksSessionTerm || !tasksSessionFit) return;
+    tasksSessionFit.fit();
+    if (tsPaneCols > 0 && tsPaneCols > tasksSessionTerm.cols) tasksSessionTerm.resize(tsPaneCols, tasksSessionTerm.rows);
   }
 
   function scrollIndicator(show) {
@@ -1824,7 +2001,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       document.getElementById('session-terminal-content').classList.toggle('active', activeSessionTab === 'terminal');
       document.getElementById('session-git-content').classList.toggle('active', activeSessionTab === 'git');
       if (activeSessionTab === 'terminal' && term && fitAddon) {
-        requestAnimationFrame(() => fitAddon.fit());
+        requestAnimationFrame(() => fitTerminal());
       }
       if (activeSessionTab === 'git' && currentSession && ws && ws.readyState === 1) {
         ws.send(JSON.stringify({ type: 'git:info', session: currentSession }));
@@ -1864,8 +2041,9 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   }
 
   window.addEventListener('resize', () => {
-    if (term && fitAddon && activeTab === 'session-panel' && activeSessionTab === 'terminal') fitAddon.fit();
+    if (term && fitAddon && activeTab === 'session-panel' && activeSessionTab === 'terminal') fitTerminal();
     if (feedPreviewFit && activeTab === 'feed-panel') feedPreviewFit.fit();
+    if (tasksSessionFit && activeTab === 'tasks-panel') fitTasksTerminal();
   });
 
   // ── Input bar ─────────────────────────────────────
@@ -1926,69 +2104,414 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     tab.addEventListener('click', () => {
       activeTaskTab = tab.dataset.tab;
       selectedTaskIds.clear();
+      tasksSelectedTaskId = null;
       $$('.tasks-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === activeTaskTab));
+      // Close live session when switching to queued tab
+      if (activeTaskTab === 'queued') {
+        closeTaskSession();
+        showTasksEmptyState('Select an in-progress task to view its session');
+      } else if (activeTaskTab === 'completed') {
+        closeTaskSession();
+        showTasksEmptyState('Click a completed task to view its snapshot');
+      }
       renderTasks();
     });
   });
 
-  $('#task-auto-btn').addEventListener('click', () => { taskMode = 'auto'; $('#task-auto-btn').classList.add('selected'); $('#task-manual-btn').classList.remove('selected'); sessionPicker.classList.remove('visible'); manualTarget = null; });
-  $('#task-manual-btn').addEventListener('click', () => { taskMode = 'manual'; $('#task-manual-btn').classList.add('selected'); $('#task-auto-btn').classList.remove('selected'); sessionPicker.classList.add('visible'); renderSessionPicker(); });
+  // ── Task dialog (create/edit) ────────────────────
+  const taskDialog = document.getElementById('task-dialog');
+  const taskDialogPicker = document.getElementById('task-dialog-picker');
 
-  function renderSessionPicker() {
-    sessionPicker.innerHTML = '';
+  document.getElementById('tasks-create-btn').addEventListener('click', () => openTaskDialog(null));
+
+  document.getElementById('task-dialog-auto-btn').addEventListener('click', () => {
+    taskMode = 'auto'; manualTarget = null;
+    document.getElementById('task-dialog-auto-btn').classList.add('selected');
+    document.getElementById('task-dialog-manual-btn').classList.remove('selected');
+    taskDialogPicker.classList.remove('visible');
+  });
+  document.getElementById('task-dialog-manual-btn').addEventListener('click', () => {
+    taskMode = 'manual';
+    document.getElementById('task-dialog-manual-btn').classList.add('selected');
+    document.getElementById('task-dialog-auto-btn').classList.remove('selected');
+    taskDialogPicker.classList.add('visible');
+    renderDialogSessionPicker();
+  });
+
+  function renderDialogSessionPicker() {
+    taskDialogPicker.innerHTML = '';
     const idle = fleetData.filter(s => s.state === 'idle');
     for (const s of idle) {
       const btn = document.createElement('button'); btn.className = `picker-btn${manualTarget === s.num ? ' selected' : ''}`; btn.textContent = s.num;
-      btn.addEventListener('click', () => { manualTarget = s.num; sessionPicker.querySelectorAll('.picker-btn').forEach(b => b.classList.remove('selected')); btn.classList.add('selected'); });
-      sessionPicker.appendChild(btn);
+      btn.addEventListener('click', () => { manualTarget = s.num; taskDialogPicker.querySelectorAll('.picker-btn').forEach(b => b.classList.remove('selected')); btn.classList.add('selected'); });
+      taskDialogPicker.appendChild(btn);
     }
-    if (!idle.length) sessionPicker.innerHTML = '<span style="color:var(--dim);font-size:12px;padding:8px">No idle sessions</span>';
+    if (!idle.length) taskDialogPicker.innerHTML = '<span style="color:var(--dim);font-size:12px;padding:8px">No idle sessions</span>';
   }
 
-  function sendTask() {
-    const text = taskInput.value.trim();
+  function openTaskDialog(taskId) {
+    editingTaskId = taskId;
+    const textEl = document.getElementById('task-dialog-text');
+    const desigEl = document.getElementById('task-dialog-designation');
+    const titleEl = document.getElementById('task-dialog-title');
+    const saveBtn = document.getElementById('task-dialog-save');
+
+    if (taskId) {
+      const task = tasks.find(t => t.id === taskId);
+      if (!task) return;
+      titleEl.textContent = 'Edit Task';
+      saveBtn.textContent = 'Save';
+      textEl.value = task.text;
+      desigEl.value = task.designation || '';
+      taskMode = task.mode || 'auto';
+      manualTarget = task.targetSession || null;
+    } else {
+      titleEl.textContent = 'Create Task';
+      saveBtn.textContent = 'Create';
+      textEl.value = '';
+      desigEl.value = '';
+      taskMode = 'auto';
+      manualTarget = null;
+    }
+    document.getElementById('task-dialog-auto-btn').classList.toggle('selected', taskMode === 'auto');
+    document.getElementById('task-dialog-manual-btn').classList.toggle('selected', taskMode === 'manual');
+    taskDialogPicker.classList.toggle('visible', taskMode === 'manual');
+    if (taskMode === 'manual') renderDialogSessionPicker();
+    taskDialog.classList.add('visible');
+    textEl.focus();
+  }
+
+  document.getElementById('task-dialog-save').addEventListener('click', () => {
+    const text = document.getElementById('task-dialog-text').value.trim();
     if (!text || !ws || ws.readyState !== 1) return;
     if (taskMode === 'manual' && !manualTarget) { showToast('Select session', 'Tap an idle session number', 'error'); return; }
-    const desig = document.getElementById('task-designation').value || undefined;
-    ws.send(JSON.stringify({ type: 'task:create', text, mode: taskMode, targetSession: taskMode === 'manual' ? manualTarget : undefined, designation: desig }));
-    taskInput.value = ''; manualTarget = null;
-    sessionPicker.querySelectorAll('.picker-btn').forEach(b => b.classList.remove('selected'));
-    showToast('Task created', text.substring(0, 40), 'success');
+    const desig = document.getElementById('task-dialog-designation').value || undefined;
+
+    if (editingTaskId) {
+      ws.send(JSON.stringify({ type: 'task:update', taskId: editingTaskId, updates: { text, mode: taskMode, targetSession: taskMode === 'manual' ? manualTarget : null, designation: desig || null } }));
+      showToast('Task updated', text.substring(0, 40), 'success');
+    } else {
+      ws.send(JSON.stringify({ type: 'task:create', text, mode: taskMode, targetSession: taskMode === 'manual' ? manualTarget : undefined, designation: desig }));
+      showToast('Task created', text.substring(0, 40), 'success');
+    }
+    taskDialog.classList.remove('visible');
+    editingTaskId = null;
+  });
+  document.getElementById('task-dialog-cancel').addEventListener('click', () => { taskDialog.classList.remove('visible'); editingTaskId = null; });
+  document.getElementById('task-dialog-text').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); document.getElementById('task-dialog-save').click(); }
+  });
+
+  // ── Tasks session pane ─────────────────────────────
+  function ensureTasksSessionTerm() {
+    const container = document.getElementById('tasks-session-terminal');
+    if (tasksSessionTerm) return;
+    container.innerHTML = '';
+    tasksSessionTerm = new Terminal({
+      theme: { background: '#0f0f23', foreground: '#e2e2f0', cursor: '#e2e2f0', black: '#282a36', red: '#ff5555', green: '#50fa7b', yellow: '#f1fa8c', blue: '#bd93f9', magenta: '#ff79c6', cyan: '#8be9fd', white: '#f8f8f2', brightBlack: '#6272a4', brightRed: '#ff6e6e', brightGreen: '#69ff94', brightYellow: '#ffffa5', brightBlue: '#d6acff', brightMagenta: '#ff92df', brightCyan: '#a4ffff', brightWhite: '#ffffff' },
+      fontSize: 13, fontFamily: "'SF Mono', 'Menlo', 'Monaco', 'Courier New', monospace",
+      disableStdin: true, scrollback: 5000, convertEol: true, allowProposedApi: true,
+    });
+    tasksSessionFit = new FitAddon.FitAddon();
+    tasksSessionTerm.loadAddon(tasksSessionFit);
+    tasksSessionTerm.open(container);
+    // Wire scroll-pause detection
+    tasksSessionTerm.element.addEventListener('wheel', () => { setTimeout(tsCheckScroll, 50); });
+    let tsTouchStartY = 0;
+    tasksSessionTerm.element.addEventListener('touchstart', (e) => { tsTouchStartY = e.touches[0].clientY; }, { passive: true });
+    tasksSessionTerm.element.addEventListener('touchend', (e) => { const dy = tsTouchStartY - (e.changedTouches[0] || {}).clientY; if (Math.abs(dy) > 20) { setTimeout(tsCheckScroll, 150); setTimeout(tsCheckScroll, 500); } });
+    requestAnimationFrame(() => fitTasksTerminal());
   }
 
-  taskSendBtn.addEventListener('click', sendTask);
-  taskInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendTask(); } });
+  let tsWriting = false;
+  function tsCheckScroll() {
+    if (!tasksSessionTerm || tsWriting) return;
+    const buf = tasksSessionTerm.buffer.active;
+    const linesFromBottom = buf.baseY - buf.viewportY;
+    if (linesFromBottom <= 3 && tsUserScrolledUp) {
+      tsUserScrolledUp = false; tsScrollIndicator(false);
+      if (tsPendingContent !== null) { writeTasksSessionContent(tsPendingContent); tsPendingContent = null; }
+    } else if (linesFromBottom > 3) { tsUserScrolledUp = true; tsScrollIndicator(true); }
+  }
 
+  function tsScrollIndicator(show) {
+    const container = document.getElementById('tasks-session-terminal');
+    let el = container.querySelector('.ts-scroll-pause');
+    if (show && !el) {
+      el = document.createElement('div'); el.className = 'ts-scroll-pause';
+      el.textContent = 'Scroll paused — tap to resume';
+      el.addEventListener('click', () => { tsUserScrolledUp = false; tsScrollIndicator(false); if (tasksSessionTerm) tasksSessionTerm.scrollToBottom(); if (tsPendingContent !== null) { writeTasksSessionContent(tsPendingContent); tsPendingContent = null; } });
+      container.appendChild(el);
+    } else if (!show && el) { el.remove(); }
+  }
+
+  function writeTasksSessionContent(content) {
+    ensureTasksSessionTerm();
+    tsLastContent = content; tsWriting = true;
+    tasksSessionTerm.reset();
+    tasksSessionTerm.write(content);
+    requestAnimationFrame(() => { tasksSessionTerm.scrollToBottom(); requestAnimationFrame(() => { tsWriting = false; }); });
+  }
+
+  function renderTsCmdBar() {
+    const bar = document.getElementById('ts-cmd-bar');
+    bar.innerHTML = '';
+    for (const cmd of tsCommands) {
+      const btn = document.createElement('button'); btn.className = 'cmd-btn'; btn.textContent = '/' + cmd.name;
+      if (cmd.description) btn.title = cmd.description;
+      btn.addEventListener('click', () => {
+        if (!tasksSessionNum || !ws || ws.readyState !== 1) return;
+        ws.send(JSON.stringify({ type: 'tell', session: tasksSessionNum, message: '/' + cmd.name }));
+        showToast('Command sent', `/${cmd.name} → session ${tasksSessionNum}`, 'success');
+      });
+      bar.appendChild(btn);
+    }
+  }
+
+  function showTsSessionControls(interactive) {
+    const termContent = document.getElementById('ts-terminal-content');
+    const keysBar = document.getElementById('tasks-session-keys');
+    const cmdBar = document.getElementById('ts-cmd-bar');
+    const inputBar = document.getElementById('tasks-session-input');
+    const tabs = document.getElementById('tasks-session-tabs');
+    const openBtn = document.getElementById('ts-open-session');
+
+    termContent.style.display = '';
+    termContent.classList.add('active');
+    document.getElementById('tasks-session-empty').style.display = 'none';
+    document.getElementById('tasks-session-header').style.display = '';
+
+    if (interactive) {
+      keysBar.style.display = '';
+      cmdBar.style.display = '';
+      inputBar.style.display = '';
+      tabs.style.display = '';
+      openBtn.style.display = '';
+      renderTsCmdBar();
+    } else {
+      keysBar.style.display = 'none';
+      cmdBar.style.display = 'none';
+      inputBar.style.display = 'none';
+      tabs.style.display = 'none';
+      openBtn.style.display = 'none';
+    }
+    // Reset to terminal tab
+    tsActiveTab = 'terminal';
+    document.querySelectorAll('[data-tstab]').forEach(t => t.classList.toggle('active', t.dataset.tstab === 'terminal'));
+    termContent.classList.add('active');
+    document.getElementById('ts-git-content').style.display = 'none';
+    document.getElementById('ts-git-content').classList.remove('active');
+  }
+
+  function openTaskSession(sessionNum) {
+    if (tasksSessionNum === String(sessionNum)) return;
+    // Unsubscribe from previous
+    if (tasksSessionNum && ws && ws.readyState === 1) {
+      ws.send(JSON.stringify({ type: 'terminal:unsubscribe' }));
+    }
+    tasksSessionNum = String(sessionNum);
+    tsPaneCols = 0; // reset until we get pane width from server
+    tsUserScrolledUp = false; tsPendingContent = null; tsLastContent = '';
+    ensureTasksSessionTerm();
+
+    // Update header
+    const session = fleetData.find(s => s.num === sessionNum);
+    document.getElementById('tasks-session-title').textContent = `Session ${sessionNum}`;
+    document.getElementById('tasks-session-branch').textContent = session ? `— ${shortBranch(session.branch)}` : '';
+
+    // Wire open button
+    document.getElementById('ts-open-session').onclick = () => {
+      const s = fleetData.find(x => x.num === sessionNum);
+      if (s) openSession(s);
+    };
+
+    showTsSessionControls(true);
+
+    // Subscribe
+    if (ws && ws.readyState === 1) {
+      ws.send(JSON.stringify({ type: 'terminal:subscribe', session: tasksSessionNum }));
+    }
+    requestAnimationFrame(() => fitTasksTerminal());
+  }
+
+  function closeTaskSession() {
+    if (tasksSessionNum && ws && ws.readyState === 1) {
+      ws.send(JSON.stringify({ type: 'terminal:unsubscribe' }));
+    }
+    tasksSessionNum = null;
+    tsUserScrolledUp = false; tsPendingContent = null; tsLastContent = '';
+  }
+
+  function showTasksEmptyState(message) {
+    const emptyEl = document.getElementById('tasks-session-empty');
+    emptyEl.textContent = message;
+    emptyEl.style.display = '';
+    document.getElementById('ts-terminal-content').style.display = 'none';
+    document.getElementById('ts-git-content').style.display = 'none';
+    document.getElementById('tasks-session-keys').style.display = 'none';
+    document.getElementById('ts-cmd-bar').style.display = 'none';
+    document.getElementById('tasks-session-input').style.display = 'none';
+    document.getElementById('tasks-session-tabs').style.display = 'none';
+    document.getElementById('ts-open-session').style.display = 'none';
+  }
+
+  function showTaskSnapshot(taskId) {
+    if (!ws || ws.readyState !== 1) return;
+    ws.send(JSON.stringify({ type: 'task:snapshot', taskId }));
+    ensureTasksSessionTerm();
+    const task = tasks.find(t => t.id === taskId);
+    document.getElementById('tasks-session-title').textContent = task ? `Completed — Session ${task.assignedTo || '?'}` : 'Completed';
+    document.getElementById('tasks-session-branch').textContent = '';
+    document.getElementById('tasks-session-header').style.display = '';
+    showTsSessionControls(false); // read-only
+    // Unsubscribe from live session
+    if (tasksSessionNum && ws && ws.readyState === 1) {
+      ws.send(JSON.stringify({ type: 'terminal:unsubscribe' }));
+    }
+    tasksSessionNum = null;
+    requestAnimationFrame(() => fitTasksTerminal());
+  }
+
+  function showTaskSnapshotContent(taskId, content, cols) {
+    ensureTasksSessionTerm();
+    if (cols && cols > 0) { tsPaneCols = cols; if (cols !== tasksSessionTerm.cols) tasksSessionTerm.resize(cols, tasksSessionTerm.rows); }
+    tasksSessionTerm.reset();
+    tasksSessionTerm.write(content);
+    requestAnimationFrame(() => tasksSessionTerm.scrollToBottom());
+  }
+
+  // ── Tasks session tab switching ──────────────────
+  document.querySelectorAll('[data-tstab]').forEach(tab => {
+    tab.addEventListener('click', () => {
+      tsActiveTab = tab.dataset.tstab;
+      document.querySelectorAll('[data-tstab]').forEach(t => t.classList.toggle('active', t.dataset.tstab === tsActiveTab));
+      const termContent = document.getElementById('ts-terminal-content');
+      const gitContent = document.getElementById('ts-git-content');
+      termContent.classList.toggle('active', tsActiveTab === 'terminal');
+      termContent.style.display = tsActiveTab === 'terminal' ? '' : 'none';
+      gitContent.classList.toggle('active', tsActiveTab === 'git');
+      gitContent.style.display = tsActiveTab === 'git' ? '' : 'none';
+      // Show/hide keys + cmd + input bars (only for terminal tab)
+      document.getElementById('tasks-session-keys').style.display = tsActiveTab === 'terminal' ? '' : 'none';
+      document.getElementById('ts-cmd-bar').style.display = tsActiveTab === 'terminal' ? '' : 'none';
+      document.getElementById('tasks-session-input').style.display = tsActiveTab === 'terminal' ? '' : 'none';
+      if (tsActiveTab === 'terminal') {
+        requestAnimationFrame(() => fitTasksTerminal());
+      }
+      if (tsActiveTab === 'git' && tasksSessionNum && ws && ws.readyState === 1) {
+        ws.send(JSON.stringify({ type: 'git:info', session: tasksSessionNum }));
+      }
+    });
+  });
+
+  // Wire keys bar for tasks session
+  document.querySelectorAll('.ts-key-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (!tasksSessionNum || !ws || ws.readyState !== 1) return;
+      ws.send(JSON.stringify({ type: 'keys', session: tasksSessionNum, keys: [btn.dataset.key] }));
+    });
+  });
+
+  // Wire mode toggle + send for tasks session
+  const tsModeToggle = document.getElementById('ts-mode-toggle');
+  const tsMsgInput = document.getElementById('ts-msg-input');
+  const tsSendBtn = document.getElementById('ts-send-btn');
+
+  tsModeToggle.addEventListener('click', () => {
+    tasksSessionMode = tasksSessionMode === 'ask' ? 'tell' : 'ask';
+    tsModeToggle.textContent = tasksSessionMode === 'ask' ? 'Ask' : 'Tell';
+    tsModeToggle.classList.toggle('tell', tasksSessionMode === 'tell');
+  });
+
+  function sendTasksMessage() {
+    const text = tsMsgInput.value.trim();
+    if (!text || !tasksSessionNum || !ws || ws.readyState !== 1) return;
+    ws.send(JSON.stringify({ type: tasksSessionMode, session: tasksSessionNum, message: text }));
+    tsMsgInput.value = '';
+    showToast('Sent', `${tasksSessionMode === 'ask' ? 'Ask' : 'Tell'} → session ${tasksSessionNum}`, 'success');
+  }
+  tsSendBtn.addEventListener('click', sendTasksMessage);
+  tsMsgInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendTasksMessage(); } });
+
+  // ── Render tasks ───────────────────────────────────
   function renderTasks() {
     // Clean up selectedTaskIds for tasks that no longer exist
     const taskIds = new Set(tasks.map(t => t.id));
     for (const id of selectedTaskIds) { if (!taskIds.has(id)) selectedTaskIds.delete(id); }
 
-    const queued = tasks.filter(t => t.status === 'queued');
     const dispatched = tasks.filter(t => t.status === 'dispatched');
+    const queued = tasks.filter(t => t.status === 'queued');
     const completed = tasks.filter(t => t.status === 'completed' || t.status === 'failed');
     let html = '';
     let visibleTasks = [];
-    if (activeTaskTab === 'pending') {
-      if (queued.length) { html += '<div class="task-section-label">Queued</div>'; for (const t of queued) html += taskCardHtml(t, true); }
-      if (dispatched.length) { html += '<div class="task-section-label">In Progress</div>'; for (const t of dispatched) html += taskCardHtml(t, true); }
-      if (!queued.length && !dispatched.length) html = '<div class="feed-empty">No pending tasks.</div>';
-      visibleTasks = [...queued, ...dispatched];
+
+    if (activeTaskTab === 'inprogress') {
+      if (dispatched.length) {
+        for (const t of dispatched) html += taskCardHtml(t, 'inprogress');
+      } else {
+        html = '<div class="feed-empty">No tasks in progress.</div>';
+      }
+      visibleTasks = dispatched;
+    } else if (activeTaskTab === 'queued') {
+      if (queued.length) {
+        for (const t of queued) html += taskCardHtml(t, 'queued');
+      } else {
+        html = '<div class="feed-empty">No queued tasks.</div>';
+      }
+      visibleTasks = queued;
     } else {
-      if (completed.length) { for (const t of completed) html += taskCardHtml(t, true); }
-      else html = '<div class="feed-empty">No completed tasks yet.</div>';
+      if (completed.length) {
+        for (const t of completed) html += taskCardHtml(t, 'completed');
+      } else {
+        html = '<div class="feed-empty">No completed tasks yet.</div>';
+      }
       visibleTasks = completed;
     }
     tasksScroll.innerHTML = html;
-    tasksScroll.querySelectorAll('.task-cancel').forEach(btn => { btn.addEventListener('click', (e) => { e.stopPropagation(); if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'task:cancel', taskId: btn.dataset.id })); }); });
-    tasksScroll.querySelectorAll('.task-card').forEach(card => {
-      card.addEventListener('click', () => {
-        const task = tasks.find(t => t.id === card.dataset.id); if (!task) return;
-        if (task.status === 'dispatched' && task.assignedTo) { const s = fleetData.find(x => x.num === task.assignedTo); if (s) openSession(s); }
-        else if ((task.status === 'completed' || task.status === 'failed') && task.result) { showToast(task.status === 'completed' ? 'Result' : 'Error', task.result.substring(0, 100), task.status === 'completed' ? 'success' : 'error'); }
+
+    // Wire cancel buttons
+    tasksScroll.querySelectorAll('.task-cancel').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'task:cancel', taskId: btn.dataset.id }));
       });
     });
-    // Wire up checkboxes
+
+    // Wire edit buttons (queued tab)
+    tasksScroll.querySelectorAll('.task-edit-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => { e.stopPropagation(); openTaskDialog(btn.dataset.id); });
+    });
+
+    // Wire card clicks
+    tasksScroll.querySelectorAll('.task-card').forEach(card => {
+      card.addEventListener('click', () => {
+        const task = tasks.find(t => t.id === card.dataset.id);
+        if (!task) return;
+
+        if (activeTaskTab === 'inprogress' && task.status === 'dispatched' && task.assignedTo) {
+          // On mobile, open full session panel
+          if (window.innerWidth < 900) {
+            const s = fleetData.find(x => x.num === task.assignedTo);
+            if (s) openSession(s);
+            return;
+          }
+          // Desktop: load in tasks session pane
+          tasksSelectedTaskId = task.id;
+          openTaskSession(task.assignedTo);
+          // Update selection highlight
+          tasksScroll.querySelectorAll('.task-card').forEach(c => c.classList.remove('selected'));
+          card.classList.add('selected');
+        } else if (activeTaskTab === 'completed' && (task.status === 'completed' || task.status === 'failed')) {
+          tasksSelectedTaskId = task.id;
+          showTaskSnapshot(task.id);
+          // Update selection highlight
+          tasksScroll.querySelectorAll('.task-card').forEach(c => c.classList.remove('selected'));
+          card.classList.add('selected');
+        }
+      });
+    });
+
+    // Wire checkboxes
     tasksScroll.querySelectorAll('.task-checkbox').forEach(cb => {
       cb.addEventListener('change', (e) => {
         e.stopPropagation();
@@ -1998,11 +2521,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       });
       cb.addEventListener('click', (e) => e.stopPropagation());
     });
-    // Show/hide select all button
-    const selectAllBtn = document.getElementById('tasks-select-all');
-    selectAllBtn.style.display = visibleTasks.length > 0 ? '' : 'none';
     updateTasksBulkBar();
-    renderTaskStats();
   }
 
   function updateTasksBulkBar() {
@@ -2011,7 +2530,6 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     if (count === 0) { bar.style.display = 'none'; return; }
     bar.style.display = '';
     document.getElementById('tasks-bulk-count').textContent = `${count} selected`;
-    // Show appropriate buttons based on what's selected
     const cancelBtn = document.getElementById('tasks-bulk-cancel');
     const doneBtn = document.getElementById('tasks-bulk-done');
     const hasQueued = [...selectedTaskIds].some(id => { const t = tasks.find(x => x.id === id); return t && t.status === 'queued'; });
@@ -2045,7 +2563,6 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         ws.send(JSON.stringify({ type: 'task:complete', taskId: id }));
         doneCount++;
       } else if (t.status === 'completed' || t.status === 'failed') {
-        // Remove completed/failed tasks from local list
         const idx = tasks.indexOf(t);
         if (idx >= 0) tasks.splice(idx, 1);
         clearCount++;
@@ -2059,48 +2576,33 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     updateTasksBadge();
   });
 
-  document.getElementById('tasks-select-all').addEventListener('click', () => {
-    const visible = activeTaskTab === 'pending'
-      ? tasks.filter(t => t.status === 'queued' || t.status === 'dispatched')
-      : tasks.filter(t => t.status === 'completed' || t.status === 'failed');
-    const allSelected = visible.length > 0 && visible.every(t => selectedTaskIds.has(t.id));
-    if (allSelected) {
-      selectedTaskIds.clear();
-    } else {
-      for (const t of visible) selectedTaskIds.add(t.id);
-    }
-    renderTasks();
-  });
-
-  function renderTaskStats() {
-    const statsEl = document.getElementById('tasks-stats');
-    if (!statsEl) return;
-    const queued = tasks.filter(t => t.status === 'queued').length;
-    const dispatched = tasks.filter(t => t.status === 'dispatched').length;
-    const completed = tasks.filter(t => t.status === 'completed').length;
-    const failed = tasks.filter(t => t.status === 'failed').length;
-    statsEl.innerHTML = `
-      <div class="stat-row"><span>Queued</span><span class="stat-val">${queued}</span></div>
-      <div class="stat-row"><span>In progress</span><span class="stat-val">${dispatched}</span></div>
-      <div class="stat-row"><span>Completed</span><span class="stat-val">${completed}</span></div>
-      ${failed ? `<div class="stat-row"><span>Failed</span><span class="stat-val">${failed}</span></div>` : ''}
-    `;
-  }
-
-  function taskCardHtml(t, showCheckbox) {
-    const ago = timeAgo(t.createdAt); let meta = `${t.mode}`;
-    if (t.assignedTo) meta += ` · session ${t.assignedTo}`;
-    if (t.status === 'dispatched' && t.dispatchedAt) meta += ` · ${timeAgo(t.dispatchedAt)}`;
-    if (t.status === 'completed' && t.dispatchedAt && t.completedAt) { meta += ` · done in ${Math.round((t.completedAt - t.dispatchedAt) / 60000)}m`; }
-    if (t.status === 'failed') meta += ' · failed';
+  function taskCardHtml(t, tabType) {
+    const ago = timeAgo(t.createdAt);
+    let meta = `${t.mode}`;
     const desigBadge = t.designation ? `<span class="task-designation">${esc(t.designation)}</span>` : '';
-    const cancelBtn = (t.status === 'queued' || t.status === 'dispatched') ? `<button class="task-cancel" data-id="${t.id}">Cancel</button>` : '';
-    const checked = selectedTaskIds.has(t.id) ? ' checked' : '';
-    const checkbox = showCheckbox ? `<input type="checkbox" class="task-checkbox" data-id="${t.id}"${checked}>` : '';
-    if (showCheckbox) {
-      return `<div class="task-card-row">${checkbox}<div class="task-card ${t.status}" data-id="${t.id}"><div class="task-text">${esc(t.text)}</div><div class="task-meta"><span>${meta} · ${ago}</span>${desigBadge}${cancelBtn}</div></div></div>`;
+    const selected = tasksSelectedTaskId === t.id ? ' selected' : '';
+
+    if (tabType === 'inprogress') {
+      if (t.assignedTo) meta += ` · ${timeAgo(t.dispatchedAt || t.createdAt)}`;
+      const sessionBadge = t.assignedTo ? `<span class="task-session-badge">S:${t.assignedTo}</span>` : '';
+      const checked = selectedTaskIds.has(t.id) ? ' checked' : '';
+      return `<div class="task-card-row"><input type="checkbox" class="task-checkbox" data-id="${t.id}"${checked}><div class="task-card dispatched${selected}" data-id="${t.id}"><div class="task-text">${esc(t.text)}</div><div class="task-meta"><span>${meta} · ${ago}</span>${desigBadge}${sessionBadge}</div></div></div>`;
     }
-    return `<div class="task-card ${t.status}" data-id="${t.id}"><div class="task-text">${esc(t.text)}</div><div class="task-meta"><span>${meta} · ${ago}</span>${desigBadge}${cancelBtn}</div></div>`;
+    if (tabType === 'queued') {
+      const editBtn = `<button class="task-edit-btn" data-id="${t.id}">Edit</button>`;
+      const cancelBtn = `<button class="task-cancel" data-id="${t.id}">Cancel</button>`;
+      const checked = selectedTaskIds.has(t.id) ? ' checked' : '';
+      return `<div class="task-card-row"><input type="checkbox" class="task-checkbox" data-id="${t.id}"${checked}><div class="task-card queued" data-id="${t.id}"><div class="task-text">${esc(t.text)}</div><div class="task-meta"><span>${meta} · ${ago}</span>${desigBadge}${editBtn}${cancelBtn}</div></div></div>`;
+    }
+    // completed
+    if (t.dispatchedAt && t.completedAt) {
+      meta += ` · done in ${Math.round((t.completedAt - t.dispatchedAt) / 60000)}m`;
+    }
+    if (t.assignedTo) meta += ` · session ${t.assignedTo}`;
+    if (t.status === 'failed') meta += ' · failed';
+    const snippet = t.result ? `<div class="task-text" style="font-size:12px;color:var(--dim);margin-top:2px">${esc(t.result.substring(0, 80))}</div>` : '';
+    const checked = selectedTaskIds.has(t.id) ? ' checked' : '';
+    return `<div class="task-card-row"><input type="checkbox" class="task-checkbox" data-id="${t.id}"${checked}><div class="task-card ${t.status}${selected}" data-id="${t.id}"><div class="task-text">${esc(t.text)}</div>${snippet}<div class="task-meta"><span>${meta} · ${ago}</span>${desigBadge}</div></div></div>`;
   }
 
   // ── Feed panel ────────────────────────────────────
@@ -2743,7 +3245,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   }
 
   function updateDesignationSelector() {
-    const sel = document.getElementById('task-designation');
+    const sel = document.getElementById('task-dialog-designation');
     if (!sel) return;
     const unique = [...new Set(Object.values(designations))].filter(Boolean).sort();
     const cur = sel.value;
@@ -2953,9 +3455,10 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   function closePmDialog() { pmDialog.classList.remove('visible'); editingPmId = null; }
 
   // ── Git panel rendering ──────────────────────────
-  function renderGitPanel(data) {
-    const scroll = document.getElementById('git-sidebar');
+  function renderGitPanel(data, sidebarId) {
+    const scroll = document.getElementById(sidebarId || 'git-sidebar');
     if (!scroll) return;
+    const sessionForGit = sidebarId === 'ts-git-sidebar' ? tasksSessionNum : currentSession;
     // Preserve state across refreshes
     const prevSelected = scroll.querySelector('.git-file-row.selected');
     const selectedFile = prevSelected ? prevSelected.dataset.file : null;
@@ -2992,8 +3495,8 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       // Click handlers for branch diff files — pass base
       section.querySelectorAll('.git-file-row').forEach(row => {
         row.addEventListener('click', () => {
-          if (!currentSession || !ws || ws.readyState !== 1) return;
-          ws.send(JSON.stringify({ type: 'git:diff', session: currentSession, file: row.dataset.file, base: row.dataset.base }));
+          if (!sessionForGit || !ws || ws.readyState !== 1) return;
+          ws.send(JSON.stringify({ type: 'git:diff', session: sessionForGit, file: row.dataset.file, base: row.dataset.base }));
         });
       });
       scroll.appendChild(section);
@@ -3026,8 +3529,8 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       // Click handlers for uncommitted files — no base
       section.querySelectorAll('.git-file-row').forEach(row => {
         row.addEventListener('click', () => {
-          if (!currentSession || !ws || ws.readyState !== 1) return;
-          ws.send(JSON.stringify({ type: 'git:diff', session: currentSession, file: row.dataset.file }));
+          if (!sessionForGit || !ws || ws.readyState !== 1) return;
+          ws.send(JSON.stringify({ type: 'git:diff', session: sessionForGit, file: row.dataset.file }));
         });
       });
       scroll.appendChild(section);
@@ -3064,7 +3567,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
           if (!filesEl.dataset.loaded) {
             filesEl.innerHTML = '<div class="git-log-loading">Loading files...</div>';
             if (ws && ws.readyState === 1) {
-              ws.send(JSON.stringify({ type: 'git:commit', session: currentSession, hash }));
+              ws.send(JSON.stringify({ type: 'git:commit', session: sessionForGit, hash }));
             }
           }
         });
@@ -3081,8 +3584,8 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         filesEl.querySelectorAll('.git-file-row').forEach(row => {
           row.addEventListener('click', (e) => {
             e.stopPropagation();
-            if (!currentSession || !ws || ws.readyState !== 1) return;
-            ws.send(JSON.stringify({ type: 'git:diff', session: currentSession, file: row.dataset.file, commit: row.dataset.commit }));
+            if (!sessionForGit || !ws || ws.readyState !== 1) return;
+            ws.send(JSON.stringify({ type: 'git:diff', session: sessionForGit, file: row.dataset.file, commit: row.dataset.commit }));
           });
         });
       }
@@ -3104,9 +3607,11 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     }
   }
 
-  function expandCommitRow(hash, files) {
-    const filesEl = document.querySelector(`.git-log-files[data-for-hash="${hash}"]`);
+  function expandCommitRow(hash, files, sidebarId, session) {
+    const container = document.getElementById(sidebarId || 'git-sidebar');
+    const filesEl = container && container.querySelector(`.git-log-files[data-for-hash="${hash}"]`);
     if (!filesEl) return;
+    const sess = session || currentSession;
     filesEl.dataset.loaded = '1';
     if (!files.length) {
       filesEl.innerHTML = '<div class="git-log-loading">No files in this commit</div>';
@@ -3124,16 +3629,18 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     filesEl.querySelectorAll('.git-file-row').forEach(row => {
       row.addEventListener('click', (e) => {
         e.stopPropagation();
-        if (!currentSession || !ws || ws.readyState !== 1) return;
-        ws.send(JSON.stringify({ type: 'git:diff', session: currentSession, file: row.dataset.file, commit: row.dataset.commit }));
+        if (!sess || !ws || ws.readyState !== 1) return;
+        ws.send(JSON.stringify({ type: 'git:diff', session: sess, file: row.dataset.file, commit: row.dataset.commit }));
       });
     });
   }
 
-  function showDiffViewer(file, diff) {
-    document.getElementById('git-diff-header').style.display = '';
-    document.getElementById('git-diff-filename').textContent = file;
-    const content = document.getElementById('git-diff-content');
+  function showDiffViewer(file, diff, prefix) {
+    const pfx = prefix || 'git-diff';
+    const sidebarId = prefix === 'ts-git-diff' ? 'ts-git-sidebar' : 'git-sidebar';
+    document.getElementById(pfx + '-header').style.display = '';
+    document.getElementById(pfx + '-filename').textContent = file;
+    const content = document.getElementById(pfx + '-content');
     if (!diff) {
       content.innerHTML = '<span class="diff-ctx">No diff available</span>';
     } else {
@@ -3146,8 +3653,8 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       }).join('');
     }
     // Highlight selected file in sidebar
-    document.querySelectorAll('#git-sidebar .git-file-row').forEach(r => r.classList.remove('selected'));
-    const match = document.querySelector(`#git-sidebar .git-file-row[data-file="${CSS.escape(file)}"]`);
+    document.querySelectorAll(`#${sidebarId} .git-file-row`).forEach(r => r.classList.remove('selected'));
+    const match = document.querySelector(`#${sidebarId} .git-file-row[data-file="${CSS.escape(file)}"]`);
     if (match) match.classList.add('selected');
   }
 
