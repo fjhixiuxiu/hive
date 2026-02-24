@@ -19,24 +19,34 @@ if (fs.existsSync(envPath)) {
 // Load config
 const configPath = path.join(__dirname, '..', 'hive.config.js');
 if (!fs.existsSync(configPath)) {
-  console.error('Missing hive.config.js — copy from hive.config.example.js and customize.');
+  console.error('Missing hive.config.js -- copy from hive.config.example.js and customize.');
   process.exit(1);
 }
 const config = require(configPath);
 
+// Create node router with local node
+const LocalNode = require('./core/local-node');
+const NodeRouter = require('./core/node-router');
+const router = new NodeRouter();
+router.addNode(new LocalNode('local'));
+console.log('Node router initialized (local node)');
+
 // Start core watcher
 const Watcher = require('./core/watcher');
-const watcher = new Watcher(config);
-watcher.start();
-console.log(`Watcher started (polling every ${config.watcher.interval / 1000}s)`);
+const watcher = new Watcher(config, router);
+watcher.start().then(() => {
+  console.log(`Watcher started (polling every ${config.watcher.interval / 1000}s)`);
+}).catch(err => {
+  console.error('Watcher failed to start:', err.message);
+});
 
 // Start Telegram integration
 const { createBot } = require('./integrations/telegram/bot');
-createBot(config, watcher);
+createBot(config, watcher, router);
 
 // Start task queue
 const TaskQueue = require('./core/taskqueue');
-const taskQueue = new TaskQueue(config, watcher);
+const taskQueue = new TaskQueue(config, watcher, router);
 console.log('Task queue initialized');
 
 // Patch config.sessions.repoDir to check spawned agents first
@@ -61,7 +71,7 @@ try {
 
 // Start Web dashboard
 const { createWebServer } = require('./integrations/web/server');
-const webServer = createWebServer(config, watcher, taskQueue, pmManager);
+const webServer = createWebServer(config, watcher, taskQueue, pmManager, router);
 
 // Graceful shutdown
 process.on('SIGINT', () => {

@@ -1,15 +1,32 @@
-const fs = require('fs');
 const path = require('path');
 const tmux = require('./tmux');
+
+/**
+ * Get node-specific config, merging overrides from config.nodes[nodeId].
+ * Falls back to default config if no node-specific config exists.
+ */
+function getNodeConfig(config, nodeId) {
+  if (!nodeId || nodeId === 'local' || !config.nodes || !config.nodes[nodeId]) {
+    return config;
+  }
+  const nc = config.nodes[nodeId];
+  return {
+    ...config,
+    sessions: { ...config.sessions, ...(nc.sessions || {}) },
+    cache: { ...config.cache, ...(nc.cache || {}) },
+  };
+}
 
 /**
  * Read the cache file for a session number.
  * Returns { prNum, prAdds, prDels, prFiles, ciResult, ciBuild, review } or null.
  */
-function readCache(config, num) {
-  const file = `${config.cache.statusPrefix}${num}`;
+async function readCache(cacheConfig, node, num) {
+  const file = `${cacheConfig.statusPrefix}${num}`;
   try {
-    const lines = fs.readFileSync(file, 'utf8').split('\n');
+    const content = await node.readFile(file);
+    if (!content) return null;
+    const lines = content.split('\n');
     const prNum = lines[0] || '';
     if (!prNum) return null;
     return {
@@ -30,17 +47,18 @@ function readCache(config, num) {
  * Read the Claude state file for a session number.
  * Returns 'idle', 'working', 'off', or null.
  */
-function readState(config, num) {
-  const file = path.join(config.cache.stateDir, String(num));
+async function readState(cacheConfig, node, num) {
+  const file = path.join(cacheConfig.stateDir, String(num));
   try {
-    return fs.readFileSync(file, 'utf8').trim() || null;
+    const content = await node.readFile(file);
+    return content ? content.trim() || null : null;
   } catch {
     return null;
   }
 }
 
 /**
- * Extract session number from session name ("6-DEV-43966-..." → 6).
+ * Extract session number from session name ("6-DEV-43966-..." -> 6).
  */
 function sessionNum(name) {
   const m = name.match(/^(\d+)/);
@@ -57,26 +75,31 @@ function ticketFromBranch(branch) {
 
 /**
  * Get full status for a single session.
+ * @param {object} config - hive config
+ * @param {Node} node - execution node
+ * @param {string} sessionName - tmux session name
+ * @param {string} nodeId - node identifier (for per-node config)
  */
-function getSession(config, sessionName) {
+async function getSession(config, node, sessionName, nodeId) {
+  const nc = getNodeConfig(config, nodeId);
   const num = sessionNum(sessionName);
-  const repoDir = num ? config.sessions.repoDir(num) : null;
-  const isRepo = repoDir && fs.existsSync(path.join(repoDir, '.git'));
+  const repoDir = num ? nc.sessions.repoDir(num) : null;
+  const isRepo = repoDir ? await node.fileExists(path.join(repoDir, '.git')) : false;
 
-  // Claude state — prefer cached state file, fall back to live detection
-  let state = num ? readState(config, num) : null;
+  // Claude state -- prefer cached state file, fall back to live detection
+  let state = num ? await readState(nc.cache, node, num) : null;
   if (!state) {
-    const paneTarget = `${sessionName}:.${config.sessions.claudePane}`;
-    const paneContent = tmux.capturePane(paneTarget, { lines: 3 });
+    const paneTarget = `${sessionName}:.${nc.sessions.claudePane}`;
+    const paneContent = await node.capturePane(paneTarget, { lines: 3 });
     state = tmux.detectState(paneContent, config);
   }
 
   // Git info
-  const git = isRepo ? tmux.gitInfo(repoDir) : { branch: '', staged: 0, modified: 0, untracked: 0 };
+  const git = isRepo ? await node.gitInfo(repoDir) : { branch: '', staged: 0, modified: 0, untracked: 0 };
   const ticket = ticketFromBranch(git.branch);
 
   // PR/CI from cache
-  const cache = num ? readCache(config, num) : null;
+  const cache = num ? await readCache(nc.cache, node, num) : null;
 
   return {
     name: sessionName,
@@ -91,38 +114,58 @@ function getSession(config, sessionName) {
 
 /**
  * Get status for all fleet sessions.
+ * @param {object} config - hive config
+ * @param {NodeRouter} router
  */
-function getFleetStatus(config) {
-  const sessions = tmux.listSessions();
-  return sessions
-    .filter(s => config.sessions.pattern.test(s))
-    .map(s => getSession(config, s));
+async function getFleetStatus(config, router) {
+  const all = await router.listAllSessions();
+  const matching = all.filter(({ name, nodeId }) => {
+    const nc = getNodeConfig(config, nodeId);
+    return nc.sessions.pattern.test(name);
+  });
+  return Promise.all(matching.map(async ({ name, nodeId }) => {
+    const node = router.getNode(nodeId);
+    const session = await getSession(config, node, name, nodeId);
+    return { ...session, nodeId };
+  }));
 }
 
 /**
  * Get Claude's pane content with TUI chrome stripped.
+ * @param {object} config
+ * @param {Node} node
+ * @param {string} sessionName
  */
-function peekSession(config, sessionName) {
+async function peekSession(config, node, sessionName) {
   const paneTarget = `${sessionName}:.${config.sessions.claudePane}`;
-  const content = tmux.capturePane(paneTarget);
+  const content = await node.capturePane(paneTarget);
   return tmux.stripTUIChrome(content, config);
 }
 
 /**
- * Find a session by number (partial match).
+ * Find a session by number or substring match.
+ * @param {object} config
+ * @param {NodeRouter} router
+ * @param {string|number} query
+ * @returns {Promise<{name, nodeId}|null>}
  */
-function findSession(config, query) {
-  const sessions = tmux.listSessions().filter(s => config.sessions.pattern.test(s));
+async function findSession(config, router, query) {
+  const all = await router.listAllSessions();
+  const sessions = all.filter(({ name }) => config.sessions.pattern.test(name));
+
   // Exact number match
   const num = parseInt(query);
   if (!isNaN(num)) {
-    return sessions.find(s => sessionNum(s) === num) || null;
+    return sessions.find(({ name }) => sessionNum(name) === num) || null;
   }
   // Substring match
-  return sessions.find(s => s.toLowerCase().includes(query.toLowerCase())) || null;
+  return sessions.find(({ name }) =>
+    name.toLowerCase().includes(String(query).toLowerCase())
+  ) || null;
 }
 
 module.exports = {
+  getNodeConfig,
   readCache,
   readState,
   sessionNum,

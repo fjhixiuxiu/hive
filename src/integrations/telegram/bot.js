@@ -4,7 +4,7 @@ const commands = require('./commands');
 /**
  * Create and start the Telegram bot.
  */
-function createBot(config, watcher) {
+function createBot(config, watcher, router) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
 
@@ -16,7 +16,7 @@ function createBot(config, watcher) {
   const bot = new TelegramBot(token, { polling: true });
   const allowedChatId = String(chatId);
 
-  // Auth middleware — only respond to the configured user
+  // Auth middleware -- only respond to the configured user
   function auth(msg) {
     return String(msg.chat.id) === allowedChatId;
   }
@@ -53,77 +53,77 @@ function createBot(config, watcher) {
     };
   }
 
-  // ── Command routing ──────────────────────────────────
+  // -- Command routing ------------------------------------------------
 
   bot.onText(/\/start$/, (msg) => {
     if (!auth(msg)) return;
     send([
-      '<b>trhive</b> — AI Fleet Command',
+      '<b>trhive</b> -- AI Fleet Command',
       '',
-      '<code>/status</code> — all sessions at a glance',
-      '<code>/idle</code> — list idle sessions',
-      '<code>/working</code> — list working sessions',
-      '<code>/session N</code> — detailed session status',
-      '<code>/peek N</code> — last output from Claude',
-      '<code>/ask N msg</code> — send message, get response',
-      '<code>/tell N msg</code> — fire and forget',
-      '<code>/restart N</code> — restart Claude',
-      '<code>/kill N</code> — kill session',
-      '<code>/prs</code> — all open PRs',
+      '<code>/status</code> -- all sessions at a glance',
+      '<code>/idle</code> -- list idle sessions',
+      '<code>/working</code> -- list working sessions',
+      '<code>/session N</code> -- detailed session status',
+      '<code>/peek N</code> -- last output from Claude',
+      '<code>/ask N msg</code> -- send message, get response',
+      '<code>/tell N msg</code> -- fire and forget',
+      '<code>/restart N</code> -- restart Claude',
+      '<code>/kill N</code> -- kill session',
+      '<code>/prs</code> -- all open PRs',
     ].join('\n'), { parse_mode: 'HTML' });
   });
 
   bot.onText(/\/status$/, (msg) => {
     if (!auth(msg)) return;
-    safe(commands.status)(config, send);
+    safe(commands.status)(config, send, router);
   });
 
   bot.onText(/\/idle$/, (msg) => {
     if (!auth(msg)) return;
-    safe(commands.idle)(config, send);
+    safe(commands.idle)(config, send, router);
   });
 
   bot.onText(/\/working$/, (msg) => {
     if (!auth(msg)) return;
-    safe(commands.working)(config, send);
+    safe(commands.working)(config, send, router);
   });
 
   bot.onText(/\/session\s+(\S+)/, (msg, match) => {
     if (!auth(msg)) return;
-    safe(commands.session)(config, send, match[1]);
+    safe(commands.session)(config, send, router, match[1]);
   });
 
   bot.onText(/\/peek\s+(\S+)/, (msg, match) => {
     if (!auth(msg)) return;
-    safe(commands.peek)(config, send, match[1]);
+    safe(commands.peek)(config, send, router, match[1]);
   });
 
   bot.onText(/\/ask\s+(\S+)\s+(.+)/, (msg, match) => {
     if (!auth(msg)) return;
-    safe(commands.ask)(config, send, edit, match[1], match[2]);
+    safe(commands.ask)(config, send, edit, router, match[1], match[2]);
   });
 
   bot.onText(/\/tell\s+(\S+)\s+(.+)/, (msg, match) => {
     if (!auth(msg)) return;
-    safe(commands.tell)(config, send, match[1], match[2]);
+    safe(commands.tell)(config, send, router, match[1], match[2]);
   });
 
   bot.onText(/\/restart\s+(\S+)/, (msg, match) => {
     if (!auth(msg)) return;
-    safe(commands.restart)(config, send, match[1]);
+    safe(commands.restart)(config, send, router, match[1]);
   });
 
   bot.onText(/\/kill\s+(\S+)/, (msg, match) => {
     if (!auth(msg)) return;
-    safe(commands.kill)(config, send, match[1]);
+    safe(commands.kill)(config, send, router, match[1]);
   });
 
   bot.onText(/\/prs$/, (msg) => {
     if (!auth(msg)) return;
-    safe(commands.prs)(config, send);
+    safe(commands.prs)(config, send, router);
   });
 
-  // ── Watcher notifications ────────────────────────────
+  // -- Watcher notifications ------------------------------------------
 
   watcher.on('session:idle', ({ name, num }) => {
     send(`Session ${num} finished: ${name}`).catch(() => {});
@@ -134,7 +134,7 @@ function createBot(config, watcher) {
     send(`CI ${icon} for session ${num} PR #${pr}: ${from} -> ${to}`).catch(() => {});
   });
 
-  // ── Error handling ───────────────────────────────────
+  // -- Error handling -------------------------------------------------
 
   bot.on('polling_error', (err) => {
     // Ignore conflict errors during startup

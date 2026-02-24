@@ -4,7 +4,8 @@
   "description": "Command your AI coding fleet from your phone",
   "main": "src/index.js",
   "bin": {
-    "hive": "src/index.js"
+    "hive": "src/index.js",
+    "hive-worker": "src/worker.js"
   },
   "scripts": {
     "start": "node src/index.js",

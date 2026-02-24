@@ -1,8 +1,7 @@
 const fleet = require('../../core/fleet');
 const relay = require('../../core/relay');
-const tmux = require('../../core/tmux');
 
-// ── Formatting helpers ───────────────────────────────
+// -- Formatting helpers -------------------------------------------------
 
 function esc(s) {
   return (s || '')
@@ -53,27 +52,27 @@ function mdToHtml(text) {
     // Horizontal rules (--- or ***)
     if (/^[-*_]{3,}$/.test(trimmed)) {
       if (inBlockquote) { out.push('</blockquote>'); inBlockquote = false; }
-      out.push('───────────────────');
+      out.push('\u2500'.repeat(19));
       continue;
     }
 
-    // H1: # heading → ▎HEADING (bold + line)
+    // H1: # heading -> |HEADING (bold + line)
     const h1 = line.match(/^#{1}\s+(.+)$/);
     if (h1) {
       if (inBlockquote) { out.push('</blockquote>'); inBlockquote = false; }
-      out.push(`\n<b>▎${h1[1].toUpperCase()}</b>`);
+      out.push(`\n<b>\u258e${h1[1].toUpperCase()}</b>`);
       continue;
     }
 
-    // H2: ## heading → bold with marker
+    // H2: ## heading -> bold with marker
     const h2 = line.match(/^#{2}\s+(.+)$/);
     if (h2) {
       if (inBlockquote) { out.push('</blockquote>'); inBlockquote = false; }
-      out.push(`\n<b>◆ ${h2[1]}</b>`);
+      out.push(`\n<b>\u25c6 ${h2[1]}</b>`);
       continue;
     }
 
-    // H3: ### heading → bold italic
+    // H3: ### heading -> bold italic
     const h3 = line.match(/^#{3,}\s+(.+)$/);
     if (h3) {
       if (inBlockquote) { out.push('</blockquote>'); inBlockquote = false; }
@@ -84,14 +83,14 @@ function mdToHtml(text) {
     // Detect standalone section headers (short lines, Title Case or ALL CAPS, no punctuation at end)
     if (escapedTrimmed.length > 0 && escapedTrimmed.length < 40 &&
         !escapedTrimmed.endsWith('.') && !escapedTrimmed.endsWith(':') &&
-        !escapedTrimmed.startsWith('•') && !escapedTrimmed.startsWith('-') &&
+        !escapedTrimmed.startsWith('\u2022') && !escapedTrimmed.startsWith('-') &&
         /^[A-Z]/.test(escapedTrimmed) &&
         i > 0 && (!lines[i-1] || !lines[i-1].trim())) {
       // Check next line exists and is content (not empty)
       const nextLine = lines[i+1];
       if (nextLine && nextLine.trim() && !nextLine.trim().startsWith('#')) {
         if (inBlockquote) { out.push('</blockquote>'); inBlockquote = false; }
-        out.push(`\n<b>◆ ${escapedTrimmed}</b>`);
+        out.push(`\n<b>\u25c6 ${escapedTrimmed}</b>`);
         continue;
       }
     }
@@ -124,12 +123,12 @@ function mdToHtml(text) {
     if (bullet) {
       const depth = Math.floor(bullet[1].length / 2);
       const indent = '  '.repeat(depth);
-      const marker = depth === 0 ? '•' : '◦';
+      const marker = depth === 0 ? '\u2022' : '\u25e6';
       out.push(`${indent}${marker} ${applyInlineFormatting(bullet[2])}`);
       continue;
     }
 
-    // Regular line — apply inline formatting
+    // Regular line -- apply inline formatting
     out.push(applyInlineFormatting(line));
   }
 
@@ -205,27 +204,27 @@ function formatGitStatus(git) {
   return parts.join(' ');
 }
 
-// ── Resolve session from user input ────────────────────
+// -- Resolve session from user input ----------------------------------
 
-function resolve(config, send, query) {
-  const name = fleet.findSession(config, query);
-  if (!name) {
+async function resolve(config, send, router, query) {
+  const found = await fleet.findSession(config, router, query);
+  if (!found) {
     send(`<pre>? No session matching "${esc(query)}"</pre>`, HTML);
     return null;
   }
-  return name;
+  return found;
 }
 
-// ── Commands ───────────────────────────────────────────
+// -- Commands ---------------------------------------------------------
 
-async function status(config, send) {
-  const sessions = fleet.getFleetStatus(config);
+async function status(config, send, router) {
+  const sessions = await fleet.getFleetStatus(config, router);
   if (sessions.length === 0) {
     send('<pre>No fleet sessions found.</pre>', HTML);
     return;
   }
 
-  const lines = ['HIVE FLEET STATUS', '═'.repeat(42)];
+  const lines = ['HIVE FLEET STATUS', '\u2550'.repeat(42)];
 
   for (const s of sessions) {
     const num = rpad(s.num, 2);
@@ -240,7 +239,7 @@ async function status(config, send) {
     }
   }
 
-  lines.push('═'.repeat(42));
+  lines.push('\u2550'.repeat(42));
   const idle = sessions.filter(s => s.state === 'idle').length;
   const work = sessions.filter(s => s.state === 'working').length;
   const off = sessions.filter(s => s.state === 'off').length;
@@ -249,14 +248,14 @@ async function status(config, send) {
   send(`<pre>${lines.join('\n')}</pre>`, HTML);
 }
 
-async function idle(config, send) {
-  const sessions = fleet.getFleetStatus(config).filter(s => s.state === 'idle');
+async function idle(config, send, router) {
+  const sessions = (await fleet.getFleetStatus(config, router)).filter(s => s.state === 'idle');
   if (sessions.length === 0) {
     send('<pre>No idle sessions.</pre>', HTML);
     return;
   }
 
-  const lines = ['IDLE SESSIONS', '─'.repeat(42)];
+  const lines = ['IDLE SESSIONS', '\u2500'.repeat(42)];
   for (const s of sessions) {
     const num = rpad(s.num, 2);
     const branch = esc(shortBranch(s.branch));
@@ -267,14 +266,14 @@ async function idle(config, send) {
   send(`<pre>${lines.join('\n')}</pre>`, HTML);
 }
 
-async function working(config, send) {
-  const sessions = fleet.getFleetStatus(config).filter(s => s.state === 'working');
+async function working(config, send, router) {
+  const sessions = (await fleet.getFleetStatus(config, router)).filter(s => s.state === 'working');
   if (sessions.length === 0) {
     send('<pre>No sessions currently working.</pre>', HTML);
     return;
   }
 
-  const lines = ['WORKING SESSIONS', '─'.repeat(42)];
+  const lines = ['WORKING SESSIONS', '\u2500'.repeat(42)];
   for (const s of sessions) {
     const num = rpad(s.num, 2);
     const branch = esc(shortBranch(s.branch));
@@ -288,14 +287,16 @@ async function working(config, send) {
   send(`<pre>${lines.join('\n')}</pre>`, HTML);
 }
 
-async function session(config, send, query) {
-  const name = resolve(config, send, query);
-  if (!name) return;
+async function session(config, send, router, query) {
+  const found = await resolve(config, send, router, query);
+  if (!found) return;
 
-  const s = fleet.getSession(config, name);
+  const { name, nodeId } = found;
+  const node = router.getNode(nodeId);
+  const s = await fleet.getSession(config, node, name, nodeId);
   const lines = [
     `SESSION ${s.num}`,
-    '═'.repeat(42),
+    '\u2550'.repeat(42),
     `State:   ${stateTag(s.state)}`,
     `Branch:  ${esc(s.branch || 'master')}`,
   ];
@@ -315,11 +316,13 @@ async function session(config, send, query) {
   send(`<pre>${lines.join('\n')}</pre>`, HTML);
 }
 
-async function peek(config, send, query) {
-  const name = resolve(config, send, query);
-  if (!name) return;
+async function peek(config, send, router, query) {
+  const found = await resolve(config, send, router, query);
+  if (!found) return;
 
-  const content = fleet.peekSession(config, name);
+  const { name, nodeId } = found;
+  const node = router.getNode(nodeId);
+  const content = await fleet.peekSession(config, node, name);
   if (!content) {
     send('<i>(empty pane)</i>', HTML);
     return;
@@ -340,16 +343,18 @@ async function peek(config, send, query) {
   send(`${header}${truncated}`, HTML);
 }
 
-async function ask(config, send, edit, query, message) {
-  const name = resolve(config, send, query);
-  if (!name) return;
+async function ask(config, send, edit, router, query, message) {
+  const found = await resolve(config, send, router, query);
+  if (!found) return;
 
+  const { name, nodeId } = found;
+  const node = router.getNode(nodeId);
   const num = fleet.sessionNum(name);
 
-  const sentMsg = await send(`⏳ <b>Session ${num}</b> — thinking...`, HTML);
+  const sentMsg = await send(`\u23f3 <b>Session ${num}</b> -- thinking...`, HTML);
   const msgId = sentMsg && sentMsg.message_id;
 
-  const result = await relay.ask(config, name, message, {
+  const result = await relay.ask(config, node, name, message, {
     onProgress: () => {},
     onStream: (content, isFinal) => {
       if (!msgId) return;
@@ -357,7 +362,7 @@ async function ask(config, send, edit, query, message) {
       const truncated = formatted.length > 3800
         ? formatted.substring(formatted.length - 3800)
         : formatted;
-      edit(msgId, `⏳ <b>Session ${num}</b> — working...\n\n${truncated}`, HTML);
+      edit(msgId, `\u23f3 <b>Session ${num}</b> -- working...\n\n${truncated}`, HTML);
     },
   });
 
@@ -365,16 +370,16 @@ async function ask(config, send, edit, query, message) {
     const duration = Math.round(result.duration / 1000);
     const formatted = mdToHtml(result.response);
     const truncated = formatted.length > 3800
-      ? formatted.substring(0, 3800) + '\n\n<i>... truncated — /peek for full</i>'
+      ? formatted.substring(0, 3800) + '\n\n<i>... truncated -- /peek for full</i>'
       : formatted;
-    const text = `✅ <b>Session ${num}</b> (${duration}s)\n\n${truncated}`;
+    const text = `\u2705 <b>Session ${num}</b> (${duration}s)\n\n${truncated}`;
     if (msgId) {
       edit(msgId, text, HTML);
     } else {
       send(text, HTML);
     }
   } else {
-    const text = `❌ <b>Session ${num}</b>: ${esc(result.error)}`;
+    const text = `\u274c <b>Session ${num}</b>: ${esc(result.error)}`;
     if (msgId) {
       edit(msgId, text, HTML);
     } else {
@@ -383,54 +388,60 @@ async function ask(config, send, edit, query, message) {
   }
 }
 
-async function tell(config, send, query, message) {
-  const name = resolve(config, send, query);
-  if (!name) return;
+async function tell(config, send, router, query, message) {
+  const found = await resolve(config, send, router, query);
+  if (!found) return;
 
-  const result = await relay.tell(config, name, message);
+  const { name, nodeId } = found;
+  const node = router.getNode(nodeId);
+  const result = await relay.tell(config, node, name, message);
   if (result.success) {
-    send(`📨 Sent to session ${fleet.sessionNum(name)}`, HTML);
+    send(`\ud83d\udce8 Sent to session ${fleet.sessionNum(name)}`, HTML);
   } else {
-    send(`❌ ${esc(result.error)}`, HTML);
+    send(`\u274c ${esc(result.error)}`, HTML);
   }
 }
 
-async function restart(config, send, query) {
-  const name = resolve(config, send, query);
-  if (!name) return;
+async function restart(config, send, router, query) {
+  const found = await resolve(config, send, router, query);
+  if (!found) return;
 
+  const { name, nodeId } = found;
+  const node = router.getNode(nodeId);
   const paneTarget = `${name}:.${config.sessions.claudePane}`;
-  tmux.sendKeys(paneTarget, '', false);
-  tmux.exec(`tmux send-keys -t "${paneTarget}" Escape`);
-  setTimeout(() => {
-    tmux.sendKeys(paneTarget, '/exit', true);
-    send(`♻️ Restarting Claude in session ${fleet.sessionNum(name)}...`, HTML);
-    setTimeout(() => {
-      tmux.sendKeys(paneTarget, 'claude --resume', true);
+  await node.sendKeys(paneTarget, '', false);
+  await node.exec(`tmux send-keys -t "${paneTarget}" Escape`);
+  setTimeout(async () => {
+    await node.sendKeys(paneTarget, '/exit', true);
+    send(`\u267b\ufe0f Restarting Claude in session ${fleet.sessionNum(name)}...`, HTML);
+    setTimeout(async () => {
+      await node.sendKeys(paneTarget, 'claude --resume', true);
     }, 3000);
   }, 500);
 }
 
-async function kill(config, send, query) {
-  const name = resolve(config, send, query);
-  if (!name) return;
+async function kill(config, send, router, query) {
+  const found = await resolve(config, send, router, query);
+  if (!found) return;
 
-  const ok = tmux.killSession(name);
+  const { name, nodeId } = found;
+  const node = router.getNode(nodeId);
+  const ok = await node.killSession(name);
   if (ok) {
-    send(`💀 Session ${fleet.sessionNum(name)} killed.`, HTML);
+    send(`\ud83d\udc80 Session ${fleet.sessionNum(name)} killed.`, HTML);
   } else {
-    send(`❌ Failed to kill session.`, HTML);
+    send(`\u274c Failed to kill session.`, HTML);
   }
 }
 
-async function prs(config, send) {
-  const sessions = fleet.getFleetStatus(config).filter(s => s.pr);
+async function prs(config, send, router) {
+  const sessions = (await fleet.getFleetStatus(config, router)).filter(s => s.pr);
   if (sessions.length === 0) {
     send('<pre>No open PRs.</pre>', HTML);
     return;
   }
 
-  const lines = ['OPEN PRs', '═'.repeat(42)];
+  const lines = ['OPEN PRs', '\u2550'.repeat(42)];
   for (const s of sessions) {
     const num = rpad(s.num, 2);
     const pr = pad(`PR#${s.pr.prNum}`, 10);

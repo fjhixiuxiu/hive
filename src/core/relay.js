@@ -22,7 +22,7 @@ async function captureResponse(node, paneTarget, config) {
  * @returns {Promise<{ success: boolean, response?: string, error?: string, duration?: number }>}
  */
 async function ask(config, node, sessionName, message, callbacks = {}) {
-  const { onProgress, onStream } = typeof callbacks === 'function'
+  const { onProgress, onStream, vimMode } = typeof callbacks === 'function'
     ? { onProgress: callbacks } // backward compat: single function = onProgress
     : callbacks;
 
@@ -40,13 +40,13 @@ async function ask(config, node, sessionName, message, callbacks = {}) {
     return { success: false, error: 'Claude is not running in this session.' };
   }
 
-  // Ensure Claude's TUI is in INSERT mode:
-  // 1. Escape clears any partial input / exits current mode
-  // 2. 'i' re-enters INSERT mode so keystrokes become text input
-  await node.exec(`tmux send-keys -t "${paneTarget}" Escape`);
-  await new Promise(r => setTimeout(r, 150));
-  await node.exec(`tmux send-keys -t "${paneTarget}" i`);
-  await new Promise(r => setTimeout(r, 100));
+  // Ensure Claude's TUI is in INSERT mode (only needed for vim-mode terminals)
+  if (vimMode) {
+    await node.exec(`tmux send-keys -t "${paneTarget}" Escape`);
+    await new Promise(r => setTimeout(r, 150));
+    await node.exec(`tmux send-keys -t "${paneTarget}" i`);
+    await new Promise(r => setTimeout(r, 100));
+  }
 
   // Send the message
   await node.sendKeys(paneTarget, message, true);
@@ -131,7 +131,7 @@ async function ask(config, node, sessionName, message, callbacks = {}) {
  * @param {string} sessionName
  * @param {string} message
  */
-async function tell(config, node, sessionName, message) {
+async function tell(config, node, sessionName, message, { vimMode } = {}) {
   const paneTarget = `${sessionName}:.${config.sessions.claudePane}`;
   const beforeContent = await node.capturePane(paneTarget, { lines: 3 });
   const state = tmux.detectState(beforeContent, config);
@@ -140,11 +140,13 @@ async function tell(config, node, sessionName, message) {
     return { success: false, error: 'Claude is not running in this session.' };
   }
 
-  // Ensure Claude's TUI is in INSERT mode
-  await node.exec(`tmux send-keys -t "${paneTarget}" Escape`);
-  await new Promise(r => setTimeout(r, 200));
-  await node.exec(`tmux send-keys -t "${paneTarget}" i`);
-  await new Promise(r => setTimeout(r, 300));
+  // Ensure Claude's TUI is in INSERT mode (only needed for vim-mode terminals)
+  if (vimMode) {
+    await node.exec(`tmux send-keys -t "${paneTarget}" Escape`);
+    await new Promise(r => setTimeout(r, 200));
+    await node.exec(`tmux send-keys -t "${paneTarget}" i`);
+    await new Promise(r => setTimeout(r, 300));
+  }
 
   await node.sendKeys(paneTarget, message, false);
   await new Promise(r => setTimeout(r, 100));

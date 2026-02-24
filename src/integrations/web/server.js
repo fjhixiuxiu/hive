@@ -149,6 +149,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
             ws.send(JSON.stringify({ type: 'feed:entries', entries: feedData.entries, hasMore: feedData.hasMore }));
             ws.send(JSON.stringify({ type: 'rules:list', rules: taskQueue.getRules() }));
             ws.send(JSON.stringify({ type: 'designations:status', designations: taskQueue.getDesignations() }));
+            ws.send(JSON.stringify({ type: 'vim:status', enabled: taskQueue.vimMode }));
           }
           if (pmManager) {
             ws.send(JSON.stringify({ type: 'pm:list', pms: pmManager.getAll() }));
@@ -318,6 +319,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
             if (ws.readyState !== 1) return;
             ws.send(JSON.stringify({ type: 'ask:stream', session: msg.session, content, final: isFinal }));
           },
+          vimMode: taskQueue ? taskQueue.vimMode : false,
         }).then((result) => {
           if (ws.readyState !== 1) return;
           ws.send(JSON.stringify({
@@ -340,7 +342,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
         }
         const { name, nodeId } = found;
         const node = router.getNode(nodeId);
-        relay.tell(config, node, name, msg.message).then((result) => {
+        relay.tell(config, node, name, msg.message, { vimMode: taskQueue ? taskQueue.vimMode : false }).then((result) => {
           if (ws.readyState !== 1) return;
           ws.send(JSON.stringify({
             type: 'tell:done',
@@ -368,7 +370,14 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
         const node = router.getNode(nodeId);
         const paneTarget = `${name}:.${config.sessions.claudePane}`;
         // msg.keys is an array of tmux key names, e.g. ["Enter"], ["Up"], ["Escape"]
+        const vimTextKeys = new Set(['y', 'n', 'Enter', 'Tab', '1', '2', '3', '4']);
         for (const key of (msg.keys || [])) {
+          if (taskQueue && taskQueue.vimMode && vimTextKeys.has(key)) {
+            await node.exec(`tmux send-keys -t "${paneTarget}" Escape`);
+            await new Promise(r => setTimeout(r, 50));
+            await node.exec(`tmux send-keys -t "${paneTarget}" i`);
+            await new Promise(r => setTimeout(r, 50));
+          }
           await node.exec(`tmux send-keys -t "${paneTarget}" ${key}`);
         }
         ws.send(JSON.stringify({ type: 'keys:done', session: msg.session }));
@@ -550,6 +559,14 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       case 'designation:set': {
         if (!taskQueue) break;
         taskQueue.setDesignation(msg.session, msg.designation);
+        break;
+      }
+
+      // -- VIM mode messages -------------------------------------------------
+      case 'vim:toggle': {
+        if (!taskQueue) break;
+        taskQueue.setVimMode(msg.enabled);
+        broadcast({ type: 'vim:status', enabled: taskQueue.vimMode });
         break;
       }
 
@@ -760,6 +777,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     taskQueue.on('approval:resolved', (approval) => broadcast({ type: 'approval:resolved', approval }));
     taskQueue.on('rules:changed', (rules) => broadcast({ type: 'rules:list', rules }));
     taskQueue.on('designations:changed', (designations) => broadcast({ type: 'designations:status', designations }));
+    taskQueue.on('vim:changed', (enabled) => broadcast({ type: 'vim:status', enabled }));
   }
 
   if (pmManager) {

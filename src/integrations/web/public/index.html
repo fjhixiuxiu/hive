@@ -538,7 +538,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .tasks-session-input .ts-msg {
   flex: 1; background: var(--bg); border: 1px solid var(--bg3); color: var(--fg);
   padding: 8px 12px; border-radius: 6px; font-size: 14px; outline: none;
-  resize: none; font-family: inherit; line-height: 1.4; height: 3em; min-width: 0;
+  resize: none; font-family: inherit; line-height: 1.4; min-height: 3em; max-height: 40vh; overflow-y: auto; min-width: 0;
 }
 .tasks-session-input .ts-msg:focus { border-color: var(--purple); }
 .tasks-session-input .ts-msg::placeholder { color: var(--dim); }
@@ -827,6 +827,8 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 #keys-bar { display: flex; gap: 4px; padding: 6px 10px; background: var(--bg2); border-top: 1px solid var(--bg3); flex-shrink: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .key-btn { background: var(--bg3); border: none; color: var(--fg); font-size: 13px; font-weight: 600; padding: 8px 14px; border-radius: 6px; cursor: pointer; white-space: nowrap; flex-shrink: 0; font-family: 'SF Mono', 'Menlo', monospace; }
 .key-btn:active { background: var(--purple); color: var(--bg); }
+.vim-toggle { font-size: 11px !important; padding: 6px 10px !important; }
+.vim-toggle.active { background: var(--purple); color: var(--bg); }
 .key-btn.num-key { padding: 8px 12px; color: var(--cyan); }
 #cmd-bar { display: flex; gap: 4px; padding: 6px 10px; background: var(--bg2); border-top: 1px solid var(--bg3); flex-shrink: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .cmd-btn { background: rgba(189,147,249,0.12); border: 1px solid rgba(189,147,249,0.25); color: var(--purple); font-size: 12px; font-weight: 600; padding: 6px 10px; border-radius: 6px; cursor: pointer; white-space: nowrap; flex-shrink: 0; font-family: 'SF Mono', 'Menlo', monospace; }
@@ -834,7 +836,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 #input-bar { display: flex; gap: 8px; padding: 8px 12px; background: var(--bg2); border-top: 1px solid var(--bg3); flex-shrink: 0; align-items: flex-end; }
 #mode-toggle { background: var(--bg3); border: none; color: var(--green); font-size: 12px; font-weight: 700; padding: 8px 12px; border-radius: 6px; cursor: pointer; min-width: 48px; text-transform: uppercase; }
 #mode-toggle.tell { color: var(--orange); }
-#msg-input { flex: 1; background: var(--bg); border: 1px solid var(--bg3); color: var(--fg); padding: 8px 12px; border-radius: 6px; font-size: 14px; outline: none; resize: none; font-family: inherit; line-height: 1.4; height: 4.6em; }
+#msg-input { flex: 1; background: var(--bg); border: 1px solid var(--bg3); color: var(--fg); padding: 8px 12px; border-radius: 6px; font-size: 14px; outline: none; resize: none; font-family: inherit; line-height: 1.4; min-height: 3em; max-height: 40vh; overflow-y: auto; }
 #msg-input:focus { border-color: var(--purple); }
 #msg-input::placeholder { color: var(--dim); }
 #msg-input:disabled { opacity: 0.5; }
@@ -1066,6 +1068,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
             </div>
           </div>
           <div class="tasks-session-keys" id="tasks-session-keys" style="display:none">
+            <button class="key-btn vim-toggle">VIM</button>
             <button class="key-btn ts-key-btn" data-key="Enter">Enter</button>
             <button class="key-btn ts-key-btn" data-key="Escape">Esc</button>
             <button class="key-btn ts-key-btn" data-key="Up">Up</button>
@@ -1194,6 +1197,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         </div>
       </div>
       <div id="keys-bar">
+        <button class="key-btn vim-toggle">VIM</button>
         <button class="key-btn" data-key="Enter">Enter</button>
         <button class="key-btn" data-key="Escape">Esc</button>
         <button class="key-btn" data-key="Up">Up</button>
@@ -1343,11 +1347,11 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 
 <!-- Task create/edit dialog -->
 <div class="dialog-overlay" id="task-dialog">
-  <div class="dialog" style="max-width:400px">
+  <div class="dialog" style="max-width:560px">
     <div class="dialog-title" id="task-dialog-title">Create Task</div>
     <div class="task-dialog-field">
       <label class="task-dialog-label">Task Description</label>
-      <textarea class="task-dialog-input" id="task-dialog-text" rows="4" placeholder="Enter task description..." autocomplete="off"></textarea>
+      <textarea class="task-dialog-input" id="task-dialog-text" rows="6" placeholder="Enter task description..." autocomplete="off" style="min-height:8em;max-height:50vh;overflow-y:auto;resize:none"></textarea>
     </div>
     <div class="task-dialog-field">
       <label class="task-dialog-label">Designation</label>
@@ -1407,6 +1411,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   let activeTab = 'fleet-panel';
   let previousTab = 'fleet-panel'; // remember which tab was active before session view
   let taskMode = 'auto';
+  let vimMode = false;
   let manualTarget = null;
   let activeTaskTab = 'inprogress';
   let selectedTaskIds = new Set();
@@ -1725,6 +1730,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         renderDesignationGrid(); updateDesignationSelector();
         if (activeTab === 'fleet-panel') renderGrid();
         break;
+      case 'vim:status': vimMode = msg.enabled; updateVimToggles(); break;
       case 'spawn:slots': renderSpawnSlots(msg.slots || []); break;
       case 'spawn:done':
         if (msg.success) showToast('Spawned', `Session ${msg.num} at ${msg.repoDir || ''}`, 'success');
@@ -2009,11 +2015,35 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     });
   });
 
+  // ── Auto-grow textareas ────────────────────────
+  function autoGrow(el) {
+    el.style.height = 'auto';
+    el.style.height = el.scrollHeight + 'px';
+  }
+  [msgInput, document.getElementById('task-dialog-text')].forEach(el => {
+    if (!el) return;
+    el.addEventListener('input', () => autoGrow(el));
+  });
+
   // ── Key buttons + restart ───────────────────────
   $$('.key-btn').forEach(btn => {
+    if (btn.classList.contains('vim-toggle')) return; // handled separately
     btn.addEventListener('click', () => {
       if (!currentSession || !ws || ws.readyState !== 1) return;
       ws.send(JSON.stringify({ type: 'keys', session: currentSession, keys: [btn.dataset.key] }));
+    });
+  });
+
+  // ── VIM toggle ────────────────────────────────
+  function updateVimToggles() {
+    $$('.vim-toggle').forEach(btn => btn.classList.toggle('active', vimMode));
+  }
+  $$('.vim-toggle').forEach(btn => {
+    btn.addEventListener('click', () => {
+      vimMode = !vimMode;
+      if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'vim:toggle', enabled: vimMode }));
+      updateVimToggles();
+      showToast(vimMode ? 'VIM mode ON' : 'VIM mode OFF', '', 'success');
     });
   });
 
@@ -2059,6 +2089,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     if (mode === 'ask') { if (askPending) return; askPending = true; msgInput.disabled = true; sendBtn.disabled = true; ws.send(JSON.stringify({ type: 'ask', session: currentSession, message: text })); }
     else { ws.send(JSON.stringify({ type: 'tell', session: currentSession, message: text })); }
     msgInput.value = '';
+    msgInput.style.height = 'auto';
   }
 
   sendBtn.addEventListener('click', sendMessage);
@@ -2199,7 +2230,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   });
   document.getElementById('task-dialog-cancel').addEventListener('click', () => { taskDialog.classList.remove('visible'); editingTaskId = null; });
   document.getElementById('task-dialog-text').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); document.getElementById('task-dialog-save').click(); }
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); document.getElementById('task-dialog-save').click(); }
   });
 
   // ── Tasks session pane ─────────────────────────────
@@ -2416,6 +2447,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   const tsModeToggle = document.getElementById('ts-mode-toggle');
   const tsMsgInput = document.getElementById('ts-msg-input');
   const tsSendBtn = document.getElementById('ts-send-btn');
+  tsMsgInput.addEventListener('input', () => autoGrow(tsMsgInput));
 
   tsModeToggle.addEventListener('click', () => {
     tasksSessionMode = tasksSessionMode === 'ask' ? 'tell' : 'ask';
@@ -2428,6 +2460,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     if (!text || !tasksSessionNum || !ws || ws.readyState !== 1) return;
     ws.send(JSON.stringify({ type: tasksSessionMode, session: tasksSessionNum, message: text }));
     tsMsgInput.value = '';
+    tsMsgInput.style.height = 'auto';
     showToast('Sent', `${tasksSessionMode === 'ask' ? 'Ask' : 'Tell'} → session ${tasksSessionNum}`, 'success');
   }
   tsSendBtn.addEventListener('click', sendTasksMessage);

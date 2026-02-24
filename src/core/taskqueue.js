@@ -27,6 +27,7 @@ class TaskQueue extends EventEmitter {
     this.dispatchLock = new Set();    // session numbers currently being dispatched to
     this.activeTaskBySession = new Map(); // session num -> task id
     this.spawnedAgents = new Map();  // slot num -> { repoDir, name }
+    this.vimMode = false;
 
     // Auto-pilot rules
     this.rules = [
@@ -190,12 +191,12 @@ class TaskQueue extends EventEmitter {
     // For auto-dispatched tasks, clear context first so the agent starts fresh
     const sendTask = async () => {
       if (task.mode === 'auto') {
-        const clearResult = await relay.tell(this.config, node, sessionName, '/clear');
+        const clearResult = await relay.tell(this.config, node, sessionName, '/clear', { vimMode: this.vimMode });
         if (clearResult.success) {
           await new Promise(r => setTimeout(r, 2500));
         }
       }
-      return relay.tell(this.config, node, sessionName, task.text);
+      return relay.tell(this.config, node, sessionName, task.text, { vimMode: this.vimMode });
     };
 
     sendTask().then((result) => {
@@ -273,6 +274,14 @@ class TaskQueue extends EventEmitter {
 
   getAutoSessions() {
     return Array.from(this.autoSessions).sort((a, b) => a - b);
+  }
+
+  // -- VIM mode -----------------------------------------------------
+
+  setVimMode(enabled) {
+    this.vimMode = !!enabled;
+    this._saveState();
+    this.emit('vim:changed', this.vimMode);
   }
 
   // -- Designations -------------------------------------------------
@@ -401,7 +410,7 @@ class TaskQueue extends EventEmitter {
       try {
         const node = this.router.nodeFor(s.name);
         if (!node) { failed++; continue; }
-        const result = await relay.tell(this.config, node, s.name, message);
+        const result = await relay.tell(this.config, node, s.name, message, { vimMode: this.vimMode });
         if (result.success) sent++;
         else failed++;
       } catch {
@@ -560,6 +569,7 @@ class TaskQueue extends EventEmitter {
           this.spawnedAgents.set(Number(num), info);
         }
       }
+      if (data.vimMode !== undefined) this.vimMode = data.vimMode;
       // Restore tasks
       if (Array.isArray(data.tasks)) {
         for (const t of data.tasks) {
@@ -593,6 +603,7 @@ class TaskQueue extends EventEmitter {
       designations: this.getDesignations(),
       spawnedAgents: spawnedObj,
       tasks: tasksArr,
+      vimMode: this.vimMode,
     };
     // Merge PM data if pmManager is attached
     if (this._pmManager) {
