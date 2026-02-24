@@ -370,14 +370,8 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
         const node = router.getNode(nodeId);
         const paneTarget = `${name}:.${config.sessions.claudePane}`;
         // msg.keys is an array of tmux key names, e.g. ["Enter"], ["Up"], ["Escape"]
-        const vimTextKeys = new Set(['y', 'n', 'Enter', 'Tab', '1', '2', '3', '4']);
+        // Keys bar buttons always send raw — vim preamble only applies to typed text (ask/tell)
         for (const key of (msg.keys || [])) {
-          if (taskQueue && taskQueue.vimMode && vimTextKeys.has(key)) {
-            await node.exec(`tmux send-keys -t "${paneTarget}" Escape`);
-            await new Promise(r => setTimeout(r, 50));
-            await node.exec(`tmux send-keys -t "${paneTarget}" i`);
-            await new Promise(r => setTimeout(r, 50));
-          }
           await node.exec(`tmux send-keys -t "${paneTarget}" ${key}`);
         }
         ws.send(JSON.stringify({ type: 'keys:done', session: msg.session }));
