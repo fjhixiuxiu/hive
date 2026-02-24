@@ -2,7 +2,9 @@
 
 Command your AI coding fleet from your phone.
 
-hive is a real-time dashboard and control plane for managing multiple [Claude Code](https://docs.anthropic.com/en/docs/claude-code) sessions running in tmux. See what every session is doing, send messages, trigger slash commands, and get notified when things finish — all from a mobile-first web UI or Telegram.
+hive is a real-time dashboard and control plane for managing multiple [Claude Code](https://docs.anthropic.com/en/docs/claude-code) sessions running in tmux. See what every session is doing, send messages, trigger slash commands, manage a task queue, and get notified when things finish — all from a mobile-first web UI or Telegram.
+
+![demo](demo.gif)
 
 ## Why
 
@@ -10,43 +12,90 @@ If you run multiple Claude Code sessions in parallel (code reviews, feature work
 
 ## Features
 
-- **Fleet grid** — See all sessions at a glance with state (idle/working/off), branch, PR number, CI status, and review badges
+### Dashboard
+- **Fleet grid** — See all sessions at a glance with state (idle/working/off), branch, PR number, CI status, review badges, and terminal previews
 - **Live terminal** — Tap a session to view its terminal output with full ANSI colors via xterm.js, refreshing every 2 seconds
 - **Ask/Tell** — Send messages to any Claude session. Ask waits for a response; Tell is fire-and-forget
-- **Key buttons** — Send Enter, Escape, arrow keys, y/n, or number keys to answer Claude's prompts
+- **Key buttons** — Send Enter, Escape, arrow keys, Tab, y/n, or number keys to answer Claude's prompts
 - **Slash commands** — Auto-discovered from your `~/.claude/commands/` directory, rendered as tap-to-send buttons
 - **Quick send** — Message a session directly from the grid without opening the detail view
-- **Notifications** — Toast popups and native browser notifications when sessions finish or CI status changes
+- **Git tab** — View branch diffs, commit history, staged/unstaged changes per session
+- **Fleet search** — Search across all session terminal contents
+
+### Task Queue
+- **Auto/Manual dispatch** — Create tasks that auto-assign to idle sessions or target a specific one
+- **Designations** — Tag sessions (frontend, backend, tests, reviews, etc.) and route tasks to matching sessions
+- **Auto-pilot rules** — Auto-fix CI failures, address review feedback, pick next task on idle
+- **Task session panel** — Live terminal view for dispatched tasks with full key/message controls
+- **Broadcast** — Send a message to all, idle, or working sessions at once
+
+### Approvals
+- **Permission detection** — Automatically detects when Claude is asking for permission (tool approvals, file edits, etc.)
+- **One-tap approve/deny** — Resolve permission prompts from the dashboard without switching terminals
+
+### Activity Feed
+- **Real-time event log** — Session state changes, task dispatch/completion, CI results, approvals
+- **Session previews** — Click a feed entry to preview what that session is showing
+- **Quick actions** — Approve, send messages, or open sessions directly from feed entries
+
+### VIM Mode
+- **Global toggle** — Persisted setting that controls whether relay sends `Escape + i` before text input
+- **ON:** Relay prepends Escape+i to ensure INSERT mode before typing messages via ask/tell
+- **OFF (default):** Messages sent directly — no preamble. Keys bar always sends raw keys regardless.
+
+### Project Managers
+- **Automated workflows** — Define JIRA-driven or manual project managers that poll for work and create tasks
+- **Configurable instructions** — Each PM has a name, poll interval, and instructions template
+- **Enable/disable** — Toggle PMs on and off from the dashboard
+
+### Multi-Computer Fleet
+- **Remote workers** — Run `hive-worker` on additional machines to extend your fleet across computers
+- **WebSocket RPC** — Workers connect to the hive server and execute tmux/file commands on their local sessions
+- **Node router** — Commands are transparently routed to the correct machine
+
+### Notifications
+- **Toast notifications** — In-app popups for task completion, CI changes, errors
+- **Browser notifications** — Native OS notifications when sessions go idle or CI finishes
 - **Telegram bot** — Full fleet control via Telegram for when you're away from the dashboard
+
+### Other
 - **PWA** — Installable as a home screen app on iOS/Android
 - **Configurable links** — PR and CI badge URLs are templates in config, not hardcoded
+- **Spawn agents** — Dynamically create new tmux sessions (slots 17-32) with optional git clone
+- **Restart sessions** — Restart Claude (`/exit` + `claude --resume`) from the dashboard
 
-## How it works
+## Architecture
 
 ```
-┌─────────────────────────────────────────────────┐
-│  Your phone / browser                           │
-│  ┌──────────────┐  ┌─────────────────────────┐  │
-│  │ Web dashboard │  │ Telegram bot             │  │
-│  └──────┬───────┘  └──────────┬──────────────┘  │
-└─────────┼──────────────────────┼────────────────┘
+┌─────────────────────────────────────────────────────┐
+│  Your phone / browser                               │
+│  ┌──────────────┐  ┌─────────────────────────────┐  │
+│  │ Web dashboard │  │ Telegram bot                 │  │
+│  └──────┬───────┘  └──────────┬──────────────────┘  │
+└─────────┼──────────────────────┼────────────────────┘
           │ WebSocket            │ Telegram API
           ▼                      ▼
-┌─────────────────────────────────────────────────┐
-│  hive server (Node.js)                          │
-│  ┌──────────┐ ┌───────┐ ┌───────┐ ┌─────────┐  │
-│  │ fleet.js │ │relay.js│ │tmux.js│ │watcher.js│ │
-│  └────┬─────┘ └───┬───┘ └───┬───┘ └────┬────┘  │
-└───────┼────────────┼─────────┼──────────┼───────┘
-        │            │         │          │
-        ▼            ▼         ▼          ▼
-┌─────────────────────────────────────────────────┐
-│  tmux sessions                                  │
-│  ┌─────┐ ┌─────┐ ┌─────┐       ┌─────┐        │
-│  │  1  │ │  2  │ │  3  │  ...  │ 16  │        │
-│  │Claude│ │Claude│ │Claude│       │Claude│        │
-│  └─────┘ └─────┘ └─────┘       └─────┘        │
-└─────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────┐
+│  hive server (Node.js)                              │
+│  ┌──────────┐ ┌────────┐ ┌─────────┐ ┌──────────┐  │
+│  │ fleet.js │ │relay.js│ │watcher.js│ │taskqueue │  │
+│  └────┬─────┘ └───┬────┘ └────┬────┘ └────┬─────┘  │
+│       └────────────┼──────────┼────────────┘        │
+│                    ▼          ▼                      │
+│              ┌──────────────────┐                    │
+│              │  Node Router     │                    │
+│              └──┬───────────┬──┘                    │
+└─────────────────┼───────────┼───────────────────────┘
+                  │           │
+          ┌───────┘           └──────────┐
+          ▼                              ▼
+┌──────────────────────┐  ┌─────────────────────────┐
+│  Local tmux sessions │  │  Remote worker machines  │
+│  ┌───┐ ┌───┐ ┌───┐  │  │  (via WebSocket RPC)     │
+│  │ 1 │ │ 2 │ │...│  │  │  ┌───┐ ┌───┐ ┌───┐      │
+│  └───┘ └───┘ └───┘  │  │  │17 │ │18 │ │...│      │
+└──────────────────────┘  │  └───┘ └───┘ └───┘      │
+                          └─────────────────────────┘
 ```
 
 Each tmux session runs Claude Code in a pane. hive reads terminal content via `tmux capture-pane`, detects idle/working state from screen patterns, and sends input via `tmux send-keys`. No modifications to Claude Code itself.
@@ -55,12 +104,10 @@ Each tmux session runs Claude Code in a pane. hive reads terminal content via `t
 
 - **Node.js** 18+
 - **tmux** 3.2+ with numbered sessions
-- **tmuxinator** for session templates
+- **tmuxinator** for session templates (optional but recommended)
 - **Claude Code** running in a pane within each tmux session
 - **gh** CLI for PR/CI data (optional)
 - Optional: Telegram bot token for the Telegram integration
-
-> **New to this?** See the **[full setup guide](docs/setup-guide.md)** for step-by-step instructions covering tmux configuration, session templates, background daemons, and phone access.
 
 ## Quick start
 
@@ -94,6 +141,9 @@ WEB_TOKEN=your-secret-token
 # Optional — Telegram bot
 TELEGRAM_BOT_TOKEN=your-bot-token
 TELEGRAM_CHAT_ID=your-chat-id
+
+# Optional — Remote workers (multi-computer setup)
+# HIVE_WORKER_SECRET=your-shared-secret
 ```
 
 ### `hive.config.js`
@@ -150,6 +200,57 @@ module.exports = {
 };
 ```
 
+## Task queue
+
+Tasks are the main way to automate work across your fleet.
+
+### Creating tasks
+
+From the dashboard, click **+ Task** to open the task dialog. Enter a description (supports multi-line — Cmd+Enter to submit), choose a designation filter, and pick auto or manual mode.
+
+- **Auto mode** — Task goes into a queue. hive assigns it to the next idle session that matches the designation. The session gets `/clear` first, then the task text is sent.
+- **Manual mode** — Pick a specific session. The task is dispatched immediately.
+
+### Auto-dispatch flow
+
+1. Task created with `mode: auto`
+2. hive checks for idle sessions that are opted into auto-mode
+3. If a task has a designation (e.g. "backend"), only sessions with that designation are eligible
+4. Session gets `/clear` → waits 2.5s → task text sent via `relay.tell()`
+5. When the session goes idle again, the task is marked complete
+
+### Designations
+
+Tag sessions with roles like `frontend`, `backend`, `tests`, `reviews`, etc. Tasks with a matching designation only dispatch to sessions with that tag. Tasks with no designation go to any auto-enabled session.
+
+### Auto-pilot rules
+
+- **Auto-pick next task on idle** (default: enabled) — When a session finishes and goes idle, dispatch the next queued task
+- **Auto-fix CI failures** — When CI fails, create a fix task for that session
+- **Auto-address review changes** — When PR review requests changes, create a task to address feedback
+
+## VIM mode
+
+If your Claude Code terminal uses vim keybindings, toggle VIM mode ON. This makes `relay.ask()` and `relay.tell()` send `Escape → i` before typing text, ensuring the TUI is in INSERT mode.
+
+**Default is OFF.** Keys bar buttons always send raw keys regardless of VIM mode setting.
+
+The setting persists across server restarts (stored in `.hive-state.json`).
+
+## Remote workers
+
+To extend your fleet across multiple computers:
+
+**On the hive server machine:**
+1. Set `HIVE_WORKER_SECRET=your-secret` in `.env`
+2. Start normally: `npm start`
+
+**On each worker machine:**
+1. Clone hive and install dependencies
+2. Run: `npx hive-worker --server ws://hive-host:3000 --secret your-secret --node-id worker1`
+
+The worker connects via WebSocket and registers itself. All tmux commands for sessions on that machine are routed through the worker's RPC connection.
+
 ## Slash commands
 
 hive auto-discovers Claude Code slash commands from `~/.claude/commands/` and renders them as buttons in the session detail view. Any `.md` file with YAML frontmatter (`name`, `description`) becomes a tappable command.
@@ -172,40 +273,100 @@ hive expects numbered tmux sessions where Claude Code runs in a specific pane. E
 
 Set `sessions.claudePane` in config to match whichever pane runs Claude.
 
+## State persistence
+
+hive persists its state to `.hive-state.json` in the project root. This includes:
+
+- Auto-mode session set
+- Session designations
+- Auto-pilot rule toggles
+- Active tasks (queued + dispatched — completed/cancelled/failed are dropped)
+- Dispatched task session assignments (reattach on restart without re-dispatch)
+- Spawned agent slots
+- VIM mode setting
+- Project manager configurations
+
+On restart, dispatched tasks reattach to their running tmux sessions. No `/clear` is sent, no re-dispatch happens — the server just resumes monitoring.
+
 ## Project structure
 
 ```
 hive/
-├── hive.config.js          # Your fleet configuration
+├── hive.config.js              # Your fleet configuration
+├── .env                        # Secrets (not committed)
+├── .hive-state.json            # Persisted state (auto-generated)
 ├── src/
-│   ├── index.js            # Entry point — starts watcher + integrations
+│   ├── index.js                # Entry point — wires everything together
+│   ├── worker.js               # Remote worker node process
 │   ├── core/
-│   │   ├── fleet.js        # Fleet status queries (sessions, PR, CI, state)
-│   │   ├── relay.js        # Send messages to Claude (ask/tell)
-│   │   ├── tmux.js         # tmux helpers (capture, send-keys, state detection)
-│   │   └── watcher.js      # EventEmitter — polls fleet, emits state changes
+│   │   ├── fleet.js            # Fleet status queries (sessions, git, PR, CI)
+│   │   ├── relay.js            # Send messages to Claude (ask with polling, tell fire-and-forget)
+│   │   ├── taskqueue.js        # Task queue, auto-dispatch, approvals, rules, VIM mode, broadcast
+│   │   ├── tmux.js             # tmux helpers (capture, send-keys, state detection)
+│   │   ├── watcher.js          # EventEmitter — polls fleet, emits state/CI/review changes
+│   │   ├── git.js              # Git operations (log, diff, branch info, changed files)
+│   │   ├── pm.js               # Project manager (automated JIRA/manual workflows)
+│   │   ├── local-node.js       # Local command execution (exec, readFile, capturePane)
+│   │   ├── remote-node.js      # Remote command execution via WebSocket RPC
+│   │   └── node-router.js      # Routes commands to correct node (local or remote)
 │   └── integrations/
-│       ├── telegram/       # Telegram bot integration
-│       │   ├── bot.js
-│       │   └── commands.js
-│       └── web/            # Web dashboard integration
-│           ├── server.js   # Express + WebSocket server
+│       ├── telegram/            # Telegram bot integration
+│       │   ├── bot.js           # Bot setup and middleware
+│       │   └── commands.js      # /fleet, /peek, /ask, /tell, etc.
+│       └── web/                 # Web dashboard integration
+│           ├── server.js        # Express + WebSocket server, all message handlers
 │           └── public/
-│               ├── index.html   # Single-file frontend (CSS + JS)
-│               ├── manifest.json
-│               └── sw.js
-└── .env                    # Secrets (not committed)
+│               ├── index.html   # Single-file frontend (HTML + CSS + JS)
+│               ├── manifest.json # PWA manifest
+│               └── sw.js        # Service worker
+└── package.json
 ```
 
 ## Adding integrations
 
-hive's core layer (`fleet`, `relay`, `tmux`, `watcher`) is integration-agnostic. To add a new integration (Slack, Discord, CLI, etc.):
+hive's core layer (`fleet`, `relay`, `tmux`, `watcher`, `taskqueue`) is integration-agnostic. To add a new integration (Slack, Discord, CLI, etc.):
 
 1. Create `src/integrations/yourservice/`
-2. Export a setup function that takes `(config, watcher)`
-3. Use `fleet.getFleetStatus(config)` for status, `relay.ask()`/`relay.tell()` for messaging
-4. Listen to watcher events: `session:idle`, `session:working`, `ci:changed`
-5. Wire it into `src/index.js`
+2. Export a setup function that takes `(config, watcher, taskQueue, router)`
+3. Use `fleet.getFleetStatus(config, router)` for status
+4. Use `relay.ask()` / `relay.tell()` for messaging (pass `{ vimMode }` option)
+5. Listen to watcher events: `session:idle`, `session:working`, `ci:changed`
+6. Listen to taskQueue events: `task:created`, `task:completed`, `feed:new`, `approval:new`
+7. Wire it into `src/index.js`
+
+## WebSocket API
+
+The dashboard communicates with the server via WebSocket messages (JSON). Key message types:
+
+| Client → Server | Description |
+|---|---|
+| `auth` | Authenticate with token |
+| `fleet:get` | Request fleet status |
+| `fleet:search` | Search terminal contents across all sessions |
+| `peek` | Get terminal snapshot for a session |
+| `terminal:subscribe` / `unsubscribe` | Live terminal polling (2s) |
+| `ask` / `tell` | Send message to Claude |
+| `keys` | Send raw tmux keys (Enter, Escape, Up, Down, etc.) |
+| `restart` | Restart Claude in a session |
+| `task:create` / `task:cancel` / `task:complete` | Task lifecycle |
+| `auto:toggle` / `auto:set` | Auto-mode session management |
+| `designation:set` | Set session designation |
+| `vim:toggle` | Toggle VIM mode |
+| `broadcast` | Send message to multiple sessions |
+| `approval:respond` | Approve or deny a permission prompt |
+| `git:info` / `git:diff` / `git:commit` | Git operations |
+| `spawn` | Create a new agent session |
+
+| Server → Client | Description |
+|---|---|
+| `fleet:status` | Full fleet state (broadcast every 10s) |
+| `terminal:data` | Terminal content update |
+| `ask:stream` / `ask:done` | Ask response streaming |
+| `task:created` / `task:dispatched` / `task:completed` | Task events |
+| `feed:new` | New feed entry |
+| `approval:new` / `approval:resolved` | Approval events |
+| `vim:status` | VIM mode state sync |
+| `notify` | Session state change notifications |
 
 ## License
 
