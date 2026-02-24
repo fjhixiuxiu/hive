@@ -12,7 +12,10 @@ module.exports = {
     repoDir: (n) => path.join(os.homedir(), `ai-dev/webplatform${n}`),
 
     // Which pane index runs Claude Code (depends on your tmux layout)
-    claudePane: 1,
+    claudePane: 0,
+
+    // Set to true if Claude Code is configured with vim keybindings
+    vimMode: false,
 
     // Fixed session roles (optional, for display)
     roles: {
@@ -20,6 +23,18 @@ module.exports = {
       2: 'Ideas',
       3: 'Urgent',
       4: 'Tests',
+      5: 'Slot 5',
+      6: 'Slot 6',
+      7: 'Slot 7',
+      8: 'Slot 8',
+      9: 'Slot 9',
+      10: 'Slot 10',
+      11: 'Slot 11',
+      12: 'Slot 12',
+      13: 'Slot 13',
+      14: 'Slot 14',
+      15: 'Slot 15',
+      16: 'Slot 16',
     },
   },
 
@@ -29,6 +44,7 @@ module.exports = {
     /bypass permissions/,
     /shift\+tab/,
     /ctrl-g to edit/,
+    /\? for shortcuts/,
   ],
 
   // Patterns that indicate Claude isn't running

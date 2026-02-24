@@ -112,6 +112,10 @@ async function getSession(config, node, sessionName, nodeId) {
   };
 }
 
+// Cache: { result, timestamp, pending }
+let _fleetCache = { result: null, ts: 0, pending: null };
+const FLEET_CACHE_TTL = 5000; // 5s
+
 /**
  * Get status for all fleet sessions.
  * @param {object} config - hive config

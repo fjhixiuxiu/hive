@@ -36,6 +36,13 @@ const QUESTION_PATTERNS = [
   /Other$/,              // "Other" option always present in AskUserQuestion
 ];
 
+// Lines that look like questions but are actually Claude UI tips/chrome
+const QUESTION_IGNORE = [
+  /\?\s+for shortcuts/,
+  /\?\s+for help/,
+  /Try "/,
+];
+
 class Watcher extends EventEmitter {
   constructor(config, router) {
     super();
@@ -46,6 +53,7 @@ class Watcher extends EventEmitter {
     this.prevStates = new Map();   // num -> 'idle'|'working'|'off'
     this.notifiedIdle = new Set(); // nums we've already emitted idle for
     this.pendingIdle = new Map();  // num -> count of consecutive idle polls (confirm at 5)
+    this.seenWorking = new Set();  // nums that have been observed working at least once
     this.prevCI = new Map();       // num -> CI result string
     this.prevReview = new Map();   // num -> review status string
     this.detectedWaiting = new Set(); // session nums waiting for user (approvals or questions)
@@ -94,10 +102,18 @@ class Watcher extends EventEmitter {
       const prevState = this.prevStates.get(s.num);
       const currState = s.state;
 
+      // Track sessions that have been observed working at least once.
+      // Only emit session:idle for sessions that have worked — skip sessions
+      // that were idle at startup and never did anything.
+      if (currState === 'working') {
+        this.seenWorking.add(s.num);
+      }
+
       // Detect idle with confirmation: require FIVE consecutive idle polls
       // to avoid false positives from brief idle flickers between tool calls.
       // Also skip if session is waiting for user answer (approval or question).
-      if (currState === 'idle' && !this.notifiedIdle.has(s.num)) {
+      // Only notify for sessions that have been seen working at least once.
+      if (currState === 'idle' && !this.notifiedIdle.has(s.num) && this.seenWorking.has(s.num)) {
         if (this.detectedWaiting.has(s.num)) {
           // Session is waiting for user answer — do NOT count toward idle
           this.pendingIdle.delete(s.num);
@@ -222,6 +238,12 @@ class Watcher extends EventEmitter {
           if (OPTION_PATTERN.test(line) || NUMBERED_OPTION_PATTERN.test(line)) optionCount++;
           for (const pat of QUESTION_PATTERNS) {
             if (pat.test(line)) {
+              // Skip known UI chrome that looks like questions
+              let ignored = false;
+              for (const ign of QUESTION_IGNORE) {
+                if (ign.test(line)) { ignored = true; break; }
+              }
+              if (ignored) break;
               isWaiting = true;
               prompt = line;
               break;

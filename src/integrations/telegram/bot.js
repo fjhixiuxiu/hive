@@ -9,7 +9,7 @@ function createBot(config, watcher, router) {
   const chatId = process.env.TELEGRAM_CHAT_ID;
 
   if (!token || !chatId) {
-    console.error('Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID in .env');
+    console.error('Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID in .env — exiting. See docs/setup-guide.md § Telegram.');
     process.exit(1);
   }
 

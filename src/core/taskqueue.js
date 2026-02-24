@@ -27,7 +27,9 @@ class TaskQueue extends EventEmitter {
     this.feed = [];                   // ring buffer, max 200
     this.approvals = new Map();       // id -> Approval
     this.dispatchLock = new Set();    // session numbers currently being dispatched to
+    this._autoDispatching = false;   // re-entrancy guard for _tryAutoDispatch
     this.activeTaskBySession = new Map(); // session num -> task id
+    this.lastDispatchedAt = new Map();   // session num -> timestamp of last task dispatch
     this.spawnedAgents = new Map();  // slot num -> { repoDir, name }
     this.vimMode = false;
 
@@ -201,9 +203,11 @@ class TaskQueue extends EventEmitter {
 
   async _dispatchTask(task, sessionNum) {
     if (this.dispatchLock.has(sessionNum)) return false;
+    this.dispatchLock.add(sessionNum); // lock immediately before any await
 
     const found = await fleet.findSession(this.config, this.router, sessionNum);
     if (!found) {
+      this.dispatchLock.delete(sessionNum);
       this.failTask(task.id, `Session ${sessionNum} not found`);
       return false;
     }
@@ -215,15 +219,16 @@ class TaskQueue extends EventEmitter {
     const sessions = await fleet.getFleetStatus(this.config, this.router);
     const session = sessions.find(s => s.num === sessionNum);
     if (!session || session.state !== 'idle') {
+      this.dispatchLock.delete(sessionNum);
       return false; // silently skip -- don't fail the task, just don't dispatch yet
     }
 
-    this.dispatchLock.add(sessionNum);
     task.status = 'dispatched';
     task.assignedTo = sessionNum;
     task.dispatchedAt = Date.now();
     task.lastActivityAt = Date.now();
     this.activeTaskBySession.set(sessionNum, task.id);
+    this.lastDispatchedAt.set(sessionNum, Date.now());
 
     this.emit('task:dispatched', task);
     this.pushFeed('task', sessionNum,
@@ -277,31 +282,42 @@ class TaskQueue extends EventEmitter {
   }
 
   async _tryAutoDispatch() {
-    const queuedTasks = Array.from(this.tasks.values())
-      .filter(t => t.status === 'queued' && t.mode === 'auto');
-    if (!queuedTasks.length) return;
+    if (this._autoDispatching) return;
+    this._autoDispatching = true;
+    try {
+      const queuedTasks = Array.from(this.tasks.values())
+        .filter(t => t.status === 'queued' && t.mode === 'auto');
+      if (!queuedTasks.length) return;
 
-    const sessions = await fleet.getFleetStatus(this.config, this.router);
-    const idleAuto = sessions.filter(s =>
-      s.state === 'idle'
-      && this.autoSessions.has(s.num)
-      && !this.dispatchLock.has(s.num)
-      && !this.activeTaskBySession.has(s.num)
-    );
-    if (!idleAuto.length) return;
+      const sessions = await fleet.getFleetStatus(this.config, this.router);
+      const idleAuto = sessions.filter(s =>
+        s.state === 'idle'
+        && this.autoSessions.has(s.num)
+        && !this.dispatchLock.has(s.num)
+        && !this.activeTaskBySession.has(s.num)
+      );
+      if (!idleAuto.length) return;
 
-    // Dispatch one task per idle session (not all at once)
-    for (const session of idleAuto) {
-      const task = queuedTasks.find(t => {
-        if (t.status !== 'queued') return false;
-        if (t.designation) {
-          return this.designations.get(session.num) === t.designation;
+      // Sort by least recently used — sessions idle longest get tasks first
+      idleAuto.sort((a, b) =>
+        (this.lastDispatchedAt.get(a.num) || 0) - (this.lastDispatchedAt.get(b.num) || 0)
+      );
+
+      // Dispatch one task per idle session (not all at once)
+      for (const session of idleAuto) {
+        const task = queuedTasks.find(t => {
+          if (t.status !== 'queued') return false;
+          if (t.designation) {
+            return this.designations.get(session.num) === t.designation;
+          }
+          return true; // no designation -- any session
+        });
+        if (task) {
+          await this._dispatchTask(task, session.num);
         }
-        return true; // no designation -- any session
-      });
-      if (task) {
-        await this._dispatchTask(task, session.num);
       }
+    } finally {
+      this._autoDispatching = false;
     }
   }
 
@@ -505,7 +521,7 @@ class TaskQueue extends EventEmitter {
     // Start tmux session using agent.yml template
     const agentYml = path.join(os.homedir(), 'dev', 'agents', 'tmux', 'agent.yml');
     try {
-      execSync(`tmuxinator start -p ${agentYml} N=${num} ROOT="${repoDir}"`, { timeout: 15000, stdio: 'pipe' });
+      execSync(`/bin/zsh -lc 'tmuxinator start -p ${agentYml} N=${num} ROOT="${repoDir}"'`, { timeout: 15000, stdio: 'pipe' });
     } catch (err) {
       throw new Error(`Failed to start session ${num}: ${err.message}`);
     }
@@ -626,7 +642,10 @@ class TaskQueue extends EventEmitter {
     };
 
     this.feed.push(entry);
-    if (this.feed.length > 200) this.feed.shift();
+    // Prune feed entries older than 3 days
+    const threeDaysAgo = Date.now() - 3 * 24 * 60 * 60 * 1000;
+    while (this.feed.length && this.feed[0].timestamp < threeDaysAgo) this.feed.shift();
+    this._debounceSave();
 
     this.emit('feed:new', entry);
     return entry;
@@ -734,19 +753,36 @@ class TaskQueue extends EventEmitter {
           if (Number(t.id) >= nextTaskId) nextTaskId = Number(t.id) + 1;
         }
       }
+      // Restore feed
+      if (Array.isArray(data.feed)) {
+        this.feed = data.feed;
+      }
       console.log(`Loaded state: ${this.autoSessions.size} auto-sessions, ${this.designations.size} designations, ${this.designationDefs.size} defs, ${this.agentRoots.length} agent roots, ${this.spawnedAgents.size} spawned agents`);
       if (this.tasks.size) console.log(`Restored ${this.tasks.size} tasks`);
+      if (this.feed.length) console.log(`Restored ${this.feed.length} feed entries`);
     } catch {
       // No state file yet -- that's fine
     }
   }
 
+  _debounceSave() {
+    if (this._saveTimer) return;
+    this._saveTimer = setTimeout(() => {
+      this._saveTimer = null;
+      this._saveState();
+    }, 5000);
+  }
+
   _saveState() {
     const spawnedObj = {};
     for (const [num, info] of this.spawnedAgents) spawnedObj[num] = info;
-    // Persist active tasks (queued + dispatched only, not completed/cancelled/failed)
+    // Persist non-cancelled tasks; drop completed/failed older than 2 days
+    const twoDaysAgo = Date.now() - 2 * 24 * 60 * 60 * 1000;
     const tasksArr = Array.from(this.tasks.values())
-      .filter(t => t.status === 'queued' || t.status === 'dispatched')
+      .filter(t => t.status !== 'cancelled')
+      .filter(t => !(
+        (t.status === 'completed' || t.status === 'failed') && t.completedAt && t.completedAt < twoDaysAgo
+      ))
       .map(t => ({ ...t }));
     const data = {
       autoSessions: Array.from(this.autoSessions),
@@ -756,6 +792,7 @@ class TaskQueue extends EventEmitter {
       agentRoots: this.agentRoots,
       spawnedAgents: spawnedObj,
       tasks: tasksArr,
+      feed: this.feed,
       vimMode: this.vimMode,
     };
     // Merge PM data if pmManager is attached

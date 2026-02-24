@@ -1,0 +1,40 @@
+# Usage: tmuxinator start -p worker.yml N=1 ROOT=~/path/to/repo
+# Or via: node start-sessions.js
+name: <%= @settings["N"] %>
+root: <%= @settings["ROOT"] %>
+
+on_project_start:
+  - tmux set-option -t <%= @settings["N"] %> default-terminal "tmux-256color" 2>/dev/null || true
+  - tmux set-option -t <%= @settings["N"] %> terminal-overrides ",xterm-256color:RGB" 2>/dev/null || true
+  - tmux set-option -t <%= @settings["N"] %> history-limit 50000 2>/dev/null || true
+  - tmux set-option -t <%= @settings["N"] %> mouse on 2>/dev/null || true
+
+windows:
+  - work:
+      layout: main-vertical
+      panes:
+        - >
+          PROJECT_DIR=$(echo "$PWD" | sed 's|/|-|g');
+          if ls ~/.claude/projects/"$PROJECT_DIR"/*.jsonl >/dev/null 2>&1;
+          then claude --continue;
+          else claude;
+          fi
+        -                    # Pane 2 (top-right) — dev server
+        -                    # Pane 3 (bottom-right) — shell
+
+post:
+  - tmux select-layout -t <%= @settings["N"] %> main-vertical
+  - tmux resize-pane -t <%= @settings["N"] %>:.0 -x 60%
+  # Auto-accept first-run prompts (theme picker, trust folder)
+  # Polls pane content every 2s for up to 60s. Runs in background so it doesn't block.
+  - >
+    (for i in $(seq 1 30); do
+      PANE="<%= @settings["N"] %>:.0";
+      CONTENT=$(tmux capture-pane -t "$PANE" -p 2>/dev/null);
+      if echo "$CONTENT" | grep -q "Dark mode"; then
+        tmux send-keys -t "$PANE" Enter;
+      elif echo "$CONTENT" | grep -q "Yes, I trust this folder"; then
+        tmux send-keys -t "$PANE" Enter;
+      fi;
+      sleep 2;
+    done) &

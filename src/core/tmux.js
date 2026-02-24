@@ -1,11 +1,14 @@
-const { execSync } = require('child_process');
+const { exec: cpExec } = require('child_process');
+const { promisify } = require('util');
+const execAsync = promisify(cpExec);
 
 /**
- * Execute a command and return trimmed stdout, or null on failure.
+ * Execute a command asynchronously and return trimmed stdout, or null on failure.
  */
-function exec(cmd, opts = {}) {
+async function exec(cmd, opts = {}) {
   try {
-    return execSync(cmd, { encoding: 'utf8', timeout: 10000, ...opts }).trim();
+    const { stdout } = await execAsync(cmd, { encoding: 'utf8', timeout: 10000, ...opts });
+    return stdout.trim();
   } catch {
     return null;
   }
@@ -14,8 +17,8 @@ function exec(cmd, opts = {}) {
 /**
  * List all tmux sessions, returns array of session name strings.
  */
-function listSessions() {
-  const out = exec("tmux list-sessions -F '#S' 2>/dev/null");
+async function listSessions() {
+  const out = await exec("tmux list-sessions -F '#S' 2>/dev/null");
   if (!out) return [];
   return out.split('\n').filter(Boolean).sort((a, b) => {
     const na = parseInt(a), nb = parseInt(b);
@@ -30,9 +33,9 @@ function listSessions() {
  * @param {object} opts
  * @param {number} opts.lines - number of scrollback lines (default: visible only)
  */
-function capturePane(target, { lines } = {}) {
+async function capturePane(target, { lines } = {}) {
   const scrollback = lines ? `-S -${lines}` : '';
-  const out = exec(`tmux capture-pane -t "${target}" -p ${scrollback} 2>/dev/null`);
+  const out = await exec(`tmux capture-pane -t "${target}" -p ${scrollback} 2>/dev/null`);
   return out || '';
 }
 
@@ -42,21 +45,21 @@ function capturePane(target, { lines } = {}) {
  * @param {string} keys - text to send
  * @param {boolean} enter - whether to press Enter after
  */
-function sendKeys(target, keys, enter = true) {
+async function sendKeys(target, keys, enter = true) {
   // Replace newlines with " — " so the entire message is sent as one line
   const oneLine = keys.replace(/\r?\n+/g, ' — ');
   // Escape single quotes in the message
   const escaped = oneLine.replace(/'/g, "'\\''");
   // Use -l for literal text (prevents key name interpretation)
-  exec(`tmux send-keys -t "${target}" -l '${escaped}'`);
-  if (enter) exec(`tmux send-keys -t "${target}" Enter`);
+  await exec(`tmux send-keys -t "${target}" -l '${escaped}'`);
+  if (enter) await exec(`tmux send-keys -t "${target}" Enter`);
 }
 
 /**
  * Check if a tmux session exists.
  */
-function hasSession(name) {
-  return exec(`tmux has-session -t "${name}" 2>/dev/null`) !== null;
+async function hasSession(name) {
+  return (await exec(`tmux has-session -t "${name}" 2>/dev/null`)) !== null;
 }
 
 /**
@@ -85,19 +88,24 @@ function detectState(paneContent, config) {
  * Get git info for a repo directory.
  * @returns {{ branch, staged, modified, untracked }}
  */
-function gitInfo(repoDir) {
-  const branch = exec(`git -C "${repoDir}" branch --show-current 2>/dev/null`) || '';
-  const staged = parseInt(exec(`git -C "${repoDir}" diff --cached --shortstat 2>/dev/null | sed -E 's/^ *([0-9]+) file.*/\\1/'`) || '0') || 0;
-  const modified = parseInt(exec(`git -C "${repoDir}" diff --shortstat 2>/dev/null | sed -E 's/^ *([0-9]+) file.*/\\1/'`) || '0') || 0;
-  const untracked = parseInt(exec(`git -C "${repoDir}" ls-files --others --exclude-standard 2>/dev/null | wc -l`) || '0') || 0;
-  return { branch, staged, modified, untracked };
+async function gitInfo(repoDir) {
+  // Single shell command instead of 4 separate process spawns
+  const out = await exec(`cd "${repoDir}" 2>/dev/null && echo "$(git branch --show-current 2>/dev/null)" && echo "$(git diff --cached --shortstat 2>/dev/null | sed -E 's/^ *([0-9]+) file.*/\\1/')" && echo "$(git diff --shortstat 2>/dev/null | sed -E 's/^ *([0-9]+) file.*/\\1/')" && echo "$(git ls-files --others --exclude-standard 2>/dev/null | wc -l)"`);
+  if (!out) return { branch: '', staged: 0, modified: 0, untracked: 0 };
+  const lines = out.split('\n');
+  return {
+    branch: (lines[0] || '').trim(),
+    staged: parseInt(lines[1]) || 0,
+    modified: parseInt(lines[2]) || 0,
+    untracked: parseInt(lines[3]) || 0,
+  };
 }
 
 /**
  * Kill a tmux session.
  */
-function killSession(name) {
-  return exec(`tmux kill-session -t "${name}:" 2>/dev/null`) !== null;
+async function killSession(name) {
+  return (await exec(`tmux kill-session -t "${name}:" 2>/dev/null`)) !== null;
 }
 
 // Claude Code TUI chrome patterns (status bars, prompt, UI elements)
