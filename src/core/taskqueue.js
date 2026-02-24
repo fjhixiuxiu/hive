@@ -563,11 +563,11 @@ class TaskQueue extends EventEmitter {
       // Restore tasks
       if (Array.isArray(data.tasks)) {
         for (const t of data.tasks) {
-          // Reset dispatched tasks back to queued (session state is unknown after restart)
-          if (t.status === 'dispatched') {
-            t.status = 'queued';
-            t.assignedTo = null;
-            t.dispatchedAt = null;
+          // Preserve dispatched tasks and their session assignments across restarts.
+          // The session is still running in tmux — don't reset to queued or send /clear.
+          if (t.status === 'dispatched' && t.assignedTo) {
+            this.activeTaskBySession.set(t.assignedTo, t.id);
+            this.dispatchLock.add(t.assignedTo);
           }
           this.tasks.set(t.id, t);
           if (Number(t.id) >= nextTaskId) nextTaskId = Number(t.id) + 1;
