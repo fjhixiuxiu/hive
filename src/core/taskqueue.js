@@ -54,6 +54,15 @@ class TaskQueue extends EventEmitter {
     // Wire watcher events
     this._wireWatcher();
 
+    // Seed watcher activity from restored tasks so timestamps show immediately
+    for (const [sessionNum, taskId] of this.activeTaskBySession) {
+      const task = this.tasks.get(taskId);
+      if (task) {
+        const ts = task.lastActivityAt || task.dispatchedAt || task.createdAt;
+        if (ts && this.watcher) this.watcher.sessionActivity.set(sessionNum, ts);
+      }
+    }
+
     // Delayed dispatch after startup -- give sessions time to boot (60s)
     // then check once. Ongoing dispatch is event-driven (session:idle, designation change, etc.)
     setTimeout(() => {
@@ -227,6 +236,8 @@ class TaskQueue extends EventEmitter {
     task.assignedTo = sessionNum;
     task.dispatchedAt = Date.now();
     task.lastActivityAt = Date.now();
+    // Update watcher activity timestamp on dispatch
+    if (this.watcher) this.watcher.sessionActivity.set(sessionNum, Date.now());
     this.activeTaskBySession.set(sessionNum, task.id);
     this.lastDispatchedAt.set(sessionNum, Date.now());
 

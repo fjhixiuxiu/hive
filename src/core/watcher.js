@@ -57,6 +57,7 @@ class Watcher extends EventEmitter {
     this.prevCI = new Map();       // num -> CI result string
     this.prevReview = new Map();   // num -> review status string
     this.detectedWaiting = new Set(); // session nums waiting for user (approvals or questions)
+    this.sessionActivity = new Map(); // num -> timestamp of last meaningful activity
   }
 
   async start() {
@@ -138,6 +139,7 @@ class Watcher extends EventEmitter {
                 paneCols = parseInt(colsStr) || 0;
               }
             } catch {}
+            this.sessionActivity.set(s.num, Date.now());
             this.emit('session:idle', { session: s, name: s.name, num: s.num, preview, ansiSnapshot, paneCols });
           } else {
             this.pendingIdle.set(s.num, count);
@@ -153,6 +155,7 @@ class Watcher extends EventEmitter {
 
       // State transition: idle/off -> working
       if (prevState !== 'working' && currState === 'working') {
+        this.sessionActivity.set(s.num, Date.now());
         this.emit('session:working', { session: s, name: s.name, num: s.num });
       }
 
@@ -194,6 +197,12 @@ class Watcher extends EventEmitter {
       if (currState === 'working' && prevState !== 'working') {
         this.detectedWaiting.delete(s.num);
       }
+    }
+
+    // Clean up stale entries for sessions that no longer exist
+    const currentNums = new Set(sessions.map(s => s.num));
+    for (const num of this.sessionActivity.keys()) {
+      if (!currentNums.has(num)) this.sessionActivity.delete(num);
     }
 
     // Emit poll event with all session states for task completion checks
