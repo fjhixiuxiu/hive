@@ -477,6 +477,15 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
         break;
       }
 
+      case 'task:attach': {
+        if (!taskQueue) break;
+        const task = taskQueue.attachTask(msg.text, msg.session, msg.meta);
+        broadcast({ type: 'task:created', task });
+        broadcast({ type: 'task:dispatched', task });
+        ws.send(JSON.stringify({ type: 'task:attached', task }));
+        break;
+      }
+
       case 'task:update': {
         if (!taskQueue) break;
         const updatedTask = taskQueue.updateTask(msg.taskId, msg.updates || {});
