@@ -819,6 +819,8 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 #back-btn:active { background: var(--bg3); }
 #session-title { font-size: 16px; font-weight: 600; flex: 1; }
 #session-branch { font-size: 12px; color: var(--dim); }
+#track-btn { background: var(--bg3); border: none; color: var(--purple); font-size: 11px; font-weight: 700; padding: 5px 10px; border-radius: 4px; cursor: pointer; }
+#track-btn:active { background: var(--purple); color: var(--bg); }
 #restart-btn { background: var(--bg3); border: none; color: var(--orange); font-size: 11px; font-weight: 700; padding: 5px 10px; border-radius: 4px; cursor: pointer; }
 #restart-btn:active { background: var(--orange); color: var(--bg); }
 #terminal-wrap { flex: 1; overflow: hidden; padding: 4px; position: relative; touch-action: none; }
@@ -1176,6 +1178,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         <button id="back-btn">&larr;</button>
         <span id="session-title"></span>
         <span id="session-branch"></span>
+        <button id="track-btn" title="Attach a tracking task to this session">Track</button>
         <button id="restart-btn" title="Restart Claude">Restart</button>
       </div>
       <div class="session-tabs">
@@ -2047,6 +2050,18 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     });
   });
 
+  $('#track-btn').addEventListener('click', () => {
+    if (!currentSession || !ws || ws.readyState !== 1) return;
+    const s = fleetData.find(x => String(x.num) === currentSession);
+    const branch = s ? s.branch : '';
+    const pr = s && s.pr ? s.pr.prNum : null;
+    const defaultText = pr ? `Working on PR #${pr} (${branch})` : branch ? `Working on ${branch}` : `Tracking session ${currentSession}`;
+    const text = prompt('Task description:', defaultText);
+    if (!text) return;
+    ws.send(JSON.stringify({ type: 'task:attach', text, session: Number(currentSession), meta: { pr } }));
+    showToast('Tracked', `Task attached to session ${currentSession}`, 'success');
+  });
+
   $('#restart-btn').addEventListener('click', () => {
     if (!currentSession || !ws || ws.readyState !== 1) return;
     if (!confirm(`Restart Claude in session ${currentSession}?`)) return;
@@ -2614,18 +2629,22 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     let meta = `${t.mode}`;
     const desigBadge = t.designation ? `<span class="task-designation">${esc(t.designation)}</span>` : '';
     const selected = tasksSelectedTaskId === t.id ? ' selected' : '';
+    // Origin badges: show source session + PR when available
+    const prBadge = t.sourcePR ? `<span class="task-session-badge" style="background:rgba(139,233,253,0.15);color:var(--cyan)">PR #${t.sourcePR}</span>` : '';
+    const originBadge = t.sourceSession ? `<span class="task-session-badge">S:${t.sourceSession}</span>` : '';
+    const sourceBadge = t.source ? `<span class="task-designation" style="background:rgba(255,85,85,0.15);color:var(--red)">${t.source}</span>` : '';
 
     if (tabType === 'inprogress') {
       if (t.assignedTo) meta += ` · ${timeAgo(t.dispatchedAt || t.createdAt)}`;
       const sessionBadge = t.assignedTo ? `<span class="task-session-badge">S:${t.assignedTo}</span>` : '';
       const checked = selectedTaskIds.has(t.id) ? ' checked' : '';
-      return `<div class="task-card-row"><input type="checkbox" class="task-checkbox" data-id="${t.id}"${checked}><div class="task-card dispatched${selected}" data-id="${t.id}"><div class="task-text">${esc(t.text)}</div><div class="task-meta"><span>${meta} · ${ago}</span>${desigBadge}${sessionBadge}</div></div></div>`;
+      return `<div class="task-card-row"><input type="checkbox" class="task-checkbox" data-id="${t.id}"${checked}><div class="task-card dispatched${selected}" data-id="${t.id}"><div class="task-text">${esc(t.text)}</div><div class="task-meta"><span>${meta} · ${ago}</span>${desigBadge}${prBadge}${sessionBadge}</div></div></div>`;
     }
     if (tabType === 'queued') {
       const editBtn = `<button class="task-edit-btn" data-id="${t.id}">Edit</button>`;
       const cancelBtn = `<button class="task-cancel" data-id="${t.id}">Cancel</button>`;
       const checked = selectedTaskIds.has(t.id) ? ' checked' : '';
-      return `<div class="task-card-row"><input type="checkbox" class="task-checkbox" data-id="${t.id}"${checked}><div class="task-card queued" data-id="${t.id}"><div class="task-text">${esc(t.text)}</div><div class="task-meta"><span>${meta} · ${ago}</span>${desigBadge}${editBtn}${cancelBtn}</div></div></div>`;
+      return `<div class="task-card-row"><input type="checkbox" class="task-checkbox" data-id="${t.id}"${checked}><div class="task-card queued" data-id="${t.id}"><div class="task-text">${esc(t.text)}</div><div class="task-meta"><span>${meta} · ${ago}</span>${sourceBadge}${prBadge}${originBadge}${desigBadge}${editBtn}${cancelBtn}</div></div></div>`;
     }
     // completed
     if (t.dispatchedAt && t.completedAt) {
@@ -2635,7 +2654,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     if (t.status === 'failed') meta += ' · failed';
     const snippet = t.result ? `<div class="task-text" style="font-size:12px;color:var(--dim);margin-top:2px">${esc(t.result.substring(0, 80))}</div>` : '';
     const checked = selectedTaskIds.has(t.id) ? ' checked' : '';
-    return `<div class="task-card-row"><input type="checkbox" class="task-checkbox" data-id="${t.id}"${checked}><div class="task-card ${t.status}${selected}" data-id="${t.id}"><div class="task-text">${esc(t.text)}</div>${snippet}<div class="task-meta"><span>${meta} · ${ago}</span>${desigBadge}</div></div></div>`;
+    return `<div class="task-card-row"><input type="checkbox" class="task-checkbox" data-id="${t.id}"${checked}><div class="task-card ${t.status}${selected}" data-id="${t.id}"><div class="task-text">${esc(t.text)}</div>${snippet}<div class="task-meta"><span>${meta} · ${ago}</span>${sourceBadge}${prBadge}${originBadge}${desigBadge}</div></div></div>`;
   }
 
   // ── Feed panel ────────────────────────────────────

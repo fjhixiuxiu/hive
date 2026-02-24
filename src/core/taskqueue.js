@@ -54,7 +54,7 @@ class TaskQueue extends EventEmitter {
 
   // -- Task lifecycle -----------------------------------------------
 
-  createTask(text, mode, targetSession, designation) {
+  createTask(text, mode, targetSession, designation, meta) {
     const task = {
       id: String(nextTaskId++),
       text,
@@ -67,6 +67,9 @@ class TaskQueue extends EventEmitter {
       dispatchedAt: null,
       completedAt: null,
       result: null,
+      source: (meta && meta.source) || null,   // e.g. 'ci-fail', 'review-changes'
+      sourcePR: (meta && meta.pr) || null,      // PR number that triggered this
+      sourceSession: (meta && meta.session) || null, // session that triggered this
     };
     this.tasks.set(task.id, task);
     this.emit('task:created', task);
@@ -81,6 +84,37 @@ class TaskQueue extends EventEmitter {
         console.error('Auto-dispatch error:', err.message));
     }
 
+    return task;
+  }
+
+  /**
+   * Attach a tracking task to an already-working session.
+   * No dispatch, no /clear, no relay — just bookkeeping.
+   */
+  attachTask(text, sessionNum, meta) {
+    const task = {
+      id: String(nextTaskId++),
+      text,
+      mode: 'manual',
+      targetSession: sessionNum,
+      designation: null,
+      status: 'dispatched',
+      assignedTo: sessionNum,
+      createdAt: Date.now(),
+      dispatchedAt: Date.now(),
+      completedAt: null,
+      result: null,
+      source: (meta && meta.source) || 'attached',
+      sourcePR: (meta && meta.pr) || null,
+      sourceSession: sessionNum,
+    };
+    this.tasks.set(task.id, task);
+    this.activeTaskBySession.set(sessionNum, task.id);
+    this.dispatchLock.add(sessionNum);
+    this.emit('task:created', task);
+    this.emit('task:dispatched', task);
+    this.pushFeed('task', sessionNum, `Task attached to session ${sessionNum}: "${text}"`);
+    this._saveState();
     return task;
   }
 
@@ -535,10 +569,15 @@ class TaskQueue extends EventEmitter {
 
         case 'dispatch-fix':
           if (data && data.num && this.autoSessions.has(data.num)) {
+            const pr = data.pr ? ` PR #${data.pr}` : '';
             const message = trigger === 'ci:fail'
-              ? 'CI failed. Please check the build logs and fix any issues.'
-              : 'Review changes requested. Please address the review feedback.';
-            this.createTask(message, 'manual', data.num);
+              ? `CI failed on${pr}. Run /ci-status ${data.pr || ''} to see failures, then fix them.`
+              : `Review changes requested on${pr}. Check the PR review comments and address the feedback.`;
+            this.createTask(message, 'manual', data.num, null, {
+              source: trigger === 'ci:fail' ? 'ci-fail' : 'review-changes',
+              pr: data.pr || null,
+              session: data.num,
+            });
           }
           break;
       }
