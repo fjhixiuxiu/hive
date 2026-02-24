@@ -24,6 +24,7 @@ class ProjectManager extends EventEmitter {
       source: cfg.source || { type: 'jira', jql: '' },
       designation: cfg.designation || null,
       instructions: cfg.instructions || '',
+      targetSession: cfg.targetSession || null,
       autoThreshold: cfg.autoThreshold != null ? cfg.autoThreshold : 3,
       pollInterval: cfg.pollInterval || 60000,
       enabled: false,
@@ -89,7 +90,7 @@ class ProjectManager extends EventEmitter {
   serialize() {
     return this.getAll().map(pm => ({
       ...pm,
-      seenKeys: pm.seenKeys.slice(-500), // cap at 500
+      seenKeys: pm.seenKeys.slice(-5000),
     }));
   }
 
@@ -104,6 +105,7 @@ class ProjectManager extends EventEmitter {
         source: data.source || { type: 'jira', jql: '' },
         designation: data.designation || null,
         instructions: data.instructions || '',
+        targetSession: data.targetSession || null,
         autoThreshold: data.autoThreshold != null ? data.autoThreshold : 3,
         pollInterval: data.pollInterval || 60000,
         enabled: data.enabled || false,
@@ -163,7 +165,7 @@ class ProjectManager extends EventEmitter {
     pm.seenKeys.push(key);
     const mode = 'manual'; // manual tasks always go to manual queue
     const fullText = pm.instructions ? `${text}\n\nInstructions: ${pm.instructions}` : text;
-    this.taskQueue.createTask(fullText, mode, null, pm.designation);
+    this.taskQueue.createTask(fullText, mode, pm.targetSession || null, pm.designation, { source: `pm:${pm.name}` });
     pm.tasksCreated++;
     pm.lastPoll = Date.now();
     pm.lastError = null;
@@ -189,6 +191,7 @@ class ProjectManager extends EventEmitter {
         case 'github-prs':   issues = await this._fetchGithubPrs(pm.source); break;
         case 'jenkins': issues = await this._fetchJenkins(pm.source); break;
         case 'zoho':    issues = await this._fetchZoho(pm.source); break;
+        case 'github-re-reviews': issues = await this._fetchReReviews(pm.source); break;
         default: throw new Error(`Unsupported source type: ${pm.source.type}`);
       }
       pm.lastPoll = Date.now();
@@ -208,14 +211,14 @@ class ProjectManager extends EventEmitter {
         const mode = this._evaluateComplexity(issue, pm.autoThreshold);
         const text = `[${issue.key}] ${issue.summary}`;
         const fullText = pm.instructions ? `${text}\n\nInstructions: ${pm.instructions}` : text;
-        this.taskQueue.createTask(fullText, mode, null, pm.designation);
+        this.taskQueue.createTask(fullText, mode, pm.targetSession || null, pm.designation, { source: `pm:${pm.name}` });
         created++;
         pm.tasksCreated++;
       }
 
-      // Cap seenKeys at 500 (FIFO)
-      if (pm.seenKeys.length > 500) {
-        pm.seenKeys = pm.seenKeys.slice(-500);
+      // Cap seenKeys (FIFO)
+      if (pm.seenKeys.length > 5000) {
+        pm.seenKeys = pm.seenKeys.slice(-5000);
       }
 
       if (created > 0) {
@@ -384,6 +387,84 @@ class ProjectManager extends EventEmitter {
       issueType: 'ticket',
       storyPoints: null,
     }));
+  }
+
+  async _fetchReReviews(source) {
+    if (!source.repo) throw new Error('GitHub repo not configured');
+    if (!source.reviewer) throw new Error('Reviewer username not configured');
+
+    const triggers = (source.triggerPhrases || 'ready for review,ptal,please review,addressed')
+      .split(',').map(t => t.trim().toLowerCase()).filter(Boolean);
+    if (triggers.length === 0) throw new Error('No trigger phrases configured');
+
+    const headers = this._githubHeaders();
+
+    // 1. Fetch open PRs
+    const prsUrl = `https://api.github.com/repos/${source.repo}/pulls?state=open&per_page=50`;
+    const prs = await this._httpRequest(prsUrl, headers);
+    if (!Array.isArray(prs)) return [];
+
+    const results = [];
+    const reviewer = source.reviewer.toLowerCase();
+
+    for (const pr of prs) {
+      if (pr.draft) continue;
+
+      // 2. Fetch reviews for this PR
+      const reviewsUrl = `https://api.github.com/repos/${source.repo}/pulls/${pr.number}/reviews?per_page=100`;
+      let reviews;
+      try { reviews = await this._httpRequest(reviewsUrl, headers); } catch (e) { continue; }
+      if (!Array.isArray(reviews)) continue;
+
+      // 3. Find latest review from configured reviewer
+      const reviewerReviews = reviews
+        .filter(r => (r.user && r.user.login || '').toLowerCase() === reviewer)
+        .sort((a, b) => new Date(b.submitted_at) - new Date(a.submitted_at));
+      if (reviewerReviews.length === 0) continue;
+
+      const latestReview = reviewerReviews[0];
+      if (latestReview.state !== 'CHANGES_REQUESTED') continue;
+
+      const reviewDate = new Date(latestReview.submitted_at);
+
+      // 4. Fetch issue comments after the review (where people say "ready for review")
+      const commentsUrl = `https://api.github.com/repos/${source.repo}/issues/${pr.number}/comments?since=${reviewDate.toISOString()}&per_page=100`;
+      let comments;
+      try { comments = await this._httpRequest(commentsUrl, headers); } catch (e) { continue; }
+      if (!Array.isArray(comments)) continue;
+
+      // 5. Check for trigger phrases in comments posted after the review
+      for (const comment of comments) {
+        if (new Date(comment.created_at) <= reviewDate) continue;
+        // Don't trigger on the reviewer's own comments
+        if ((comment.user && comment.user.login || '').toLowerCase() === reviewer) continue;
+
+        const body = (comment.body || '').toLowerCase();
+        if (!triggers.some(t => body.includes(t))) continue;
+
+        // Skip if there's already a queued/dispatched task for this PR
+        if (this._hasActiveTaskForPR(source.repo, pr.number)) continue;
+
+        results.push({
+          key: `re-review-${source.repo}#${pr.number}-${comment.id}`,
+          summary: `Re-review PR #${pr.number}: ${pr.title}`,
+          issueType: 'pr',
+          storyPoints: null,
+        });
+      }
+    }
+
+    return results;
+  }
+
+  _hasActiveTaskForPR(repo, number) {
+    const pattern = `${repo}#${number}`;
+    for (const task of this.taskQueue.tasks.values()) {
+      if ((task.status === 'queued' || task.status === 'dispatched') && task.text.includes(pattern)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   _httpRequest(urlStr, headers) {

@@ -883,6 +883,62 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   padding: 6px 8px; border-radius: 4px; outline: none;
 }
 
+/* ── Designation Definitions ── */
+.desig-def-row {
+  display: flex; align-items: center; gap: 8px; background: var(--bg); padding: 8px 12px;
+  border-radius: 6px; margin-bottom: 6px;
+}
+.desig-def-row .desig-def-name { font-weight: 700; color: var(--orange); min-width: 80px; }
+.desig-def-row .desig-def-files { font-size: 11px; color: var(--dim); flex: 1; }
+.desig-def-row .desig-def-actions { display: flex; gap: 4px; }
+.desig-def-row .desig-def-actions button {
+  background: var(--bg3); border: none; color: var(--fg); font-size: 11px;
+  padding: 3px 8px; border-radius: 4px; cursor: pointer;
+}
+.desig-def-row .desig-def-actions button:hover { background: var(--purple); color: var(--bg); }
+.desig-add-btn {
+  background: var(--bg3); border: 1px dashed var(--dim); color: var(--dim);
+  padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 12px;
+  margin-top: 4px; display: inline-block;
+}
+.desig-add-btn:hover { border-color: var(--purple); color: var(--purple); }
+
+/* ── Agent Roots section ── */
+.agent-root-row {
+  display: flex; align-items: center; gap: 8px; background: var(--bg); padding: 6px 12px;
+  border-radius: 6px; margin-bottom: 6px;
+}
+.agent-root-row .root-path { flex: 1; font-size: 12px; color: var(--fg); font-family: monospace; }
+.agent-root-row button {
+  background: var(--bg3); border: none; color: var(--red); font-size: 11px;
+  padding: 3px 8px; border-radius: 4px; cursor: pointer;
+}
+.agent-root-row button:hover { background: var(--red); color: var(--bg); }
+.agent-root-add { display: flex; gap: 6px; margin-top: 6px; }
+.agent-root-add input {
+  flex: 1; background: var(--bg); border: 1px solid var(--bg3); color: var(--fg);
+  padding: 6px 10px; border-radius: 4px; font-size: 12px; font-family: monospace; outline: none;
+}
+.agent-root-add input:focus { border-color: var(--purple); }
+.agent-root-add button {
+  background: var(--bg3); border: none; color: var(--fg); padding: 6px 12px;
+  border-radius: 4px; cursor: pointer; font-size: 12px;
+}
+.agent-root-add button:hover { background: var(--purple); color: var(--bg); }
+.agent-root-count { font-size: 11px; color: var(--dim); margin-top: 4px; }
+
+/* ── Designation def dialog ── */
+.desig-file-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
+.desig-file-chip {
+  display: inline-flex; align-items: center; gap: 4px; background: var(--bg3);
+  padding: 3px 8px; border-radius: 4px; font-size: 11px; color: var(--fg);
+}
+.desig-file-chip button {
+  background: none; border: none; color: var(--red); cursor: pointer;
+  font-size: 12px; padding: 0 2px; line-height: 1;
+}
+.desig-file-chip button:hover { color: #fff; }
+
 /* ── Spawn button + dialog ─────────── */
 #spawn-btn {
   position: fixed; bottom: 80px; right: 16px; z-index: 50;
@@ -1031,6 +1087,10 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     <div id="tasks-panel" class="panel">
       <div class="tasks-panes">
         <div class="tasks-list-pane">
+          <div class="fleet-search-bar">
+            <input id="tasks-search-input" type="text" placeholder="Search tasks..." autocomplete="off" style="flex:1;background:var(--bg2);border:1px solid var(--dim);border-radius:6px;color:var(--fg);padding:8px 32px 8px 12px;font:inherit;font-size:14px;outline:none">
+            <button id="tasks-search-clear" class="fleet-search-clear" style="display:none">&times;</button>
+          </div>
           <div class="tasks-tabs">
             <button class="tasks-tab active" data-tab="inprogress">In Progress</button>
             <button class="tasks-tab" data-tab="queued">Queued</button>
@@ -1076,6 +1136,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
             <button class="key-btn ts-key-btn" data-key="Up">Up</button>
             <button class="key-btn ts-key-btn" data-key="Down">Down</button>
             <button class="key-btn ts-key-btn" data-key="Tab">Tab</button>
+            <button class="key-btn ts-key-btn" data-key="BTab">S-Tab</button>
             <button class="key-btn ts-key-btn" data-key="y">y</button>
             <button class="key-btn ts-key-btn" data-key="n">n</button>
             <button class="key-btn num-key ts-key-btn" data-key="1">1</button>
@@ -1162,8 +1223,23 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
           <div id="rules-list"></div>
         </div>
         <div class="more-section">
-          <div class="more-section-title">Designations</div>
+          <div class="more-section-title">Session Designations</div>
           <div class="desig-grid" id="desig-grid"></div>
+        </div>
+        <div class="more-section">
+          <div class="more-section-title">Agent Roots</div>
+          <div id="agent-roots-list"></div>
+          <div class="agent-root-add">
+            <input id="agent-root-input" type="text" placeholder="~/dev/agents/" autocomplete="off">
+            <button id="agent-root-add-btn">Add</button>
+            <button id="agent-root-scan-btn">Refresh</button>
+          </div>
+          <div class="agent-root-count" id="agent-root-count"></div>
+        </div>
+        <div class="more-section">
+          <div class="more-section-title">Designation Definitions</div>
+          <div id="desig-defs-list"></div>
+          <button class="desig-add-btn" id="desig-def-add-btn">+ Add Designation</button>
         </div>
       </div>
     </div>
@@ -1210,6 +1286,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         <button class="key-btn" data-key="Up">Up</button>
         <button class="key-btn" data-key="Down">Down</button>
         <button class="key-btn" data-key="Tab">Tab</button>
+        <button class="key-btn" data-key="BTab">S-Tab</button>
         <button class="key-btn" data-key="y">y</button>
         <button class="key-btn" data-key="n">n</button>
         <button class="key-btn num-key" data-key="1">1</button>
@@ -1271,6 +1348,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         <option value="jira">JIRA</option>
         <option value="github-issues">GitHub Issues</option>
         <option value="github-prs">GitHub PRs</option>
+        <option value="github-re-reviews">GitHub Re-Reviews</option>
         <option value="manual">Manual</option>
         <option value="jenkins">Jenkins (Tests)</option>
         <option value="zoho">Zoho (Support)</option>
@@ -1296,6 +1374,14 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         <option value="all">All</option>
       </select>
     </div>
+    <div class="pm-form-field pm-fields-re-reviews" style="display:none">
+      <label class="pm-form-label">Reviewer Username</label>
+      <input class="pm-form-input" id="pm-form-gh-reviewer" type="text" placeholder="github-username" autocomplete="off">
+    </div>
+    <div class="pm-form-field pm-fields-re-reviews" style="display:none">
+      <label class="pm-form-label">Trigger Phrases <span style="color:var(--dim)">(comma-separated)</span></label>
+      <input class="pm-form-input" id="pm-form-gh-triggers" type="text" placeholder="ready for review, ptal, addressed" autocomplete="off">
+    </div>
     <div class="pm-form-field pm-fields-manual" style="display:none">
       <label class="pm-form-label">Task Instructions</label>
       <textarea class="pm-form-input" id="pm-form-manual-text" rows="4" placeholder="Describe the task..." style="resize:vertical;font-family:inherit"></textarea>
@@ -1320,12 +1406,12 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       <label class="pm-form-label">Designation</label>
       <select class="pm-form-select" id="pm-form-designation">
         <option value="">None</option>
-        <option value="frontend">frontend</option>
-        <option value="backend">backend</option>
-        <option value="tests">tests</option>
-        <option value="reviews">reviews</option>
-        <option value="devops">devops</option>
-        <option value="support">support</option>
+      </select>
+    </div>
+    <div class="pm-form-field">
+      <label class="pm-form-label">Target Session <span style="color:var(--dim)">(optional)</span></label>
+      <select class="pm-form-select" id="pm-form-target-session">
+        <option value="">None (route by designation)</option>
       </select>
     </div>
     <div class="pm-form-field">
@@ -1379,6 +1465,32 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   </div>
 </div>
 
+<!-- Designation definition dialog -->
+<div class="dialog-overlay" id="desig-def-dialog">
+  <div class="dialog" style="max-width:480px">
+    <div class="dialog-title" id="desig-def-dialog-title">Add Designation</div>
+    <div class="task-dialog-field">
+      <label class="task-dialog-label">Name</label>
+      <input class="task-dialog-input" id="desig-def-name" type="text" placeholder="e.g. reviews" autocomplete="off" style="width:100%">
+    </div>
+    <div class="task-dialog-field">
+      <label class="task-dialog-label">Description</label>
+      <input class="task-dialog-input" id="desig-def-description" type="text" placeholder="Optional description" autocomplete="off" style="width:100%">
+    </div>
+    <div class="task-dialog-field">
+      <label class="task-dialog-label">Agent Files</label>
+      <div class="desig-file-chips" id="desig-def-chips"></div>
+      <select class="task-dialog-select" id="desig-def-file-picker" style="width:100%">
+        <option value="">+ Add agent file...</option>
+      </select>
+    </div>
+    <div class="dialog-actions">
+      <button class="dialog-btn primary" id="desig-def-save">Save</button>
+      <button class="dialog-btn" id="desig-def-cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <!-- Toasts -->
 <div id="toasts"></div>
 
@@ -1421,6 +1533,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   let vimMode = false;
   let manualTarget = null;
   let activeTaskTab = 'inprogress';
+  let taskSearchQuery = '';
   let selectedTaskIds = new Set();
   let tasksSessionNum = null;
   let tasksSessionTerm = null;
@@ -1436,6 +1549,9 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   let paneCols = 0;    // last known tmux pane cols for main session terminal
   let tsPaneCols = 0;  // last known tmux pane cols for tasks session terminal
   let designations = {};  // { num: string }
+  let designationDefs = []; // [{ name, agentFiles, description }]
+  let agentRoots = [];      // array of scan paths
+  let agentFilesList = [];  // cached scan results
   let pmList = [];        // PM objects from server
   let editingPmId = null; // PM being edited (null = creating new)
   let activeSessionTab = 'terminal'; // 'terminal' or 'git'
@@ -1603,7 +1719,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       }
     }
     if (tab === 'fleet-panel') renderGrid();
-    if (tab === 'more-panel') renderDesignationGrid();
+    if (tab === 'more-panel') { renderDesignationGrid(); renderAgentRoots(); renderDesigDefs(); }
     const spawnBtn = document.getElementById('spawn-btn');
     if (spawnBtn) spawnBtn.classList.toggle('visible', tab === 'fleet-panel');
     if (tab === 'session-panel' && term && fitAddon && activeSessionTab === 'terminal') {
@@ -1734,8 +1850,21 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       case 'rules:list': rules = msg.rules || []; renderRules(); break;
       case 'designations:status':
         designations = msg.designations || {};
-        renderDesignationGrid(); updateDesignationSelector();
+        renderDesignationGrid(); updateDesignationSelector(); updatePmDesignationSelector();
         if (activeTab === 'fleet-panel') renderGrid();
+        break;
+      case 'designationDefs:list':
+        designationDefs = msg.defs || [];
+        renderDesignationGrid(); updateDesignationSelector(); updatePmDesignationSelector();
+        if (activeTab === 'more-panel') renderDesigDefs();
+        break;
+      case 'agentRoots:list':
+        agentRoots = msg.roots || [];
+        if (activeTab === 'more-panel') renderAgentRoots();
+        break;
+      case 'agentFiles:list':
+        agentFilesList = msg.files || [];
+        if (activeTab === 'more-panel') { renderAgentRoots(); renderDesigDefs(); }
         break;
       case 'vim:status': vimMode = msg.enabled; updateVimToggles(); break;
       case 'spawn:slots': renderSpawnSlots(msg.slots || []); break;
@@ -2168,6 +2297,22 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     });
   });
 
+  // ── Task search ─────────────────────────────────
+  const taskSearchInput = document.getElementById('tasks-search-input');
+  const taskSearchClear = document.getElementById('tasks-search-clear');
+
+  taskSearchInput.addEventListener('input', () => {
+    taskSearchQuery = taskSearchInput.value.trim();
+    taskSearchClear.style.display = taskSearchQuery ? '' : 'none';
+    renderTasks();
+  });
+  taskSearchInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { taskSearchInput.value = ''; taskSearchQuery = ''; taskSearchClear.style.display = 'none'; renderTasks(); }
+  });
+  taskSearchClear.addEventListener('click', () => {
+    taskSearchInput.value = ''; taskSearchQuery = ''; taskSearchClear.style.display = 'none'; renderTasks();
+  });
+
   // ── Task dialog (create/edit) ────────────────────
   const taskDialog = document.getElementById('task-dialog');
   const taskDialogPicker = document.getElementById('task-dialog-picker');
@@ -2491,9 +2636,11 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     const taskIds = new Set(tasks.map(t => t.id));
     for (const id of selectedTaskIds) { if (!taskIds.has(id)) selectedTaskIds.delete(id); }
 
-    const dispatched = tasks.filter(t => t.status === 'dispatched');
-    const queued = tasks.filter(t => t.status === 'queued');
-    const completed = tasks.filter(t => t.status === 'completed' || t.status === 'failed');
+    const q = taskSearchQuery.toLowerCase();
+    const matchesSearch = (t) => !q || t.text.toLowerCase().includes(q) || (t.source || '').toLowerCase().includes(q) || (t.designation || '').toLowerCase().includes(q) || String(t.assignedTo || '').includes(q);
+    const dispatched = tasks.filter(t => t.status === 'dispatched' && matchesSearch(t));
+    const queued = tasks.filter(t => t.status === 'queued' && matchesSearch(t));
+    const completed = tasks.filter(t => (t.status === 'completed' || t.status === 'failed') && matchesSearch(t));
     let html = '';
     let visibleTasks = [];
 
@@ -3291,18 +3438,27 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   }
 
   // ── Designation manager (More tab) ──────────────
-  const PREDEF_DESIGNATIONS = ['', 'frontend', 'backend', 'tests', 'reviews', 'devops', 'support'];
+
+  function getDesignationNames() {
+    // Combine names from definitions + any currently assigned designations
+    const names = new Set(designationDefs.map(d => d.name));
+    for (const des of Object.values(designations)) {
+      if (des) names.add(des);
+    }
+    return ['', ...Array.from(names).sort()];
+  }
 
   function renderDesignationGrid() {
     const grid = document.getElementById('desig-grid');
     if (!grid) return;
     grid.innerHTML = '';
+    const desigNames = getDesignationNames();
     for (const s of fleetData) {
       const item = document.createElement('div'); item.className = 'desig-item';
       const cur = designations[s.num] || '';
-      let opts = PREDEF_DESIGNATIONS.map(d => `<option value="${d}"${d === cur ? ' selected' : ''}>${d || '—'}</option>`).join('');
-      // Add current value if custom
-      if (cur && !PREDEF_DESIGNATIONS.includes(cur)) {
+      let opts = desigNames.map(d => `<option value="${d}"${d === cur ? ' selected' : ''}>${d || '—'}</option>`).join('');
+      // Add current value if it's custom and not in the list
+      if (cur && !desigNames.includes(cur)) {
         opts += `<option value="${esc(cur)}" selected>${esc(cur)}</option>`;
       }
       item.innerHTML = `<span class="desig-num">${s.num}</span><select class="desig-select" data-num="${s.num}">${opts}</select>`;
@@ -3316,13 +3472,173 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   function updateDesignationSelector() {
     const sel = document.getElementById('task-dialog-designation');
     if (!sel) return;
-    const unique = [...new Set(Object.values(designations))].filter(Boolean).sort();
+    const desigNames = getDesignationNames().filter(Boolean);
     const cur = sel.value;
     sel.innerHTML = '<option value="">Any</option>';
-    for (const d of unique) {
+    for (const d of desigNames) {
       sel.innerHTML += `<option value="${esc(d)}"${d === cur ? ' selected' : ''}>${esc(d)}</option>`;
     }
   }
+
+  function updatePmDesignationSelector() {
+    const sel = document.getElementById('pm-form-designation');
+    if (!sel) return;
+    const desigNames = getDesignationNames().filter(Boolean);
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">None</option>';
+    for (const d of desigNames) {
+      sel.innerHTML += `<option value="${esc(d)}"${d === cur ? ' selected' : ''}>${esc(d)}</option>`;
+    }
+  }
+
+  function updatePmTargetSessionSelector() {
+    const sel = document.getElementById('pm-form-target-session');
+    if (!sel) return;
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">None (route by designation)</option>';
+    for (const s of fleetData) {
+      sel.innerHTML += `<option value="${s.num}"${String(s.num) === cur ? ' selected' : ''}>Session ${s.num}${s.branch ? ' — ' + esc(s.branch) : ''}</option>`;
+    }
+  }
+
+  // ── Agent Roots (More tab) ──────────────────────
+
+  function renderAgentRoots() {
+    const list = document.getElementById('agent-roots-list');
+    if (!list) return;
+    list.innerHTML = '';
+    for (const root of agentRoots) {
+      const row = document.createElement('div'); row.className = 'agent-root-row';
+      row.innerHTML = `<span class="root-path">${esc(root)}</span><button>Remove</button>`;
+      row.querySelector('button').addEventListener('click', () => {
+        const updated = agentRoots.filter(r => r !== root);
+        if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'agentRoots:set', roots: updated }));
+      });
+      list.appendChild(row);
+    }
+    const countEl = document.getElementById('agent-root-count');
+    if (countEl) countEl.textContent = `${agentFilesList.length} agent file${agentFilesList.length !== 1 ? 's' : ''} found`;
+  }
+
+  document.getElementById('agent-root-add-btn').addEventListener('click', () => {
+    const input = document.getElementById('agent-root-input');
+    const val = input.value.trim();
+    if (!val) return;
+    const updated = [...agentRoots, val];
+    if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'agentRoots:set', roots: updated }));
+    input.value = '';
+  });
+
+  document.getElementById('agent-root-scan-btn').addEventListener('click', () => {
+    if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'agentFiles:scan' }));
+  });
+
+  // ── Designation Definitions (More tab) ──────────
+
+  function renderDesigDefs() {
+    const list = document.getElementById('desig-defs-list');
+    if (!list) return;
+    list.innerHTML = '';
+    for (const def of designationDefs) {
+      const row = document.createElement('div'); row.className = 'desig-def-row';
+      const fileCount = def.agentFiles ? def.agentFiles.length : 0;
+      row.innerHTML = `
+        <span class="desig-def-name">${esc(def.name)}</span>
+        <span class="desig-def-files">${fileCount} agent file${fileCount !== 1 ? 's' : ''}${def.description ? ' — ' + esc(def.description) : ''}</span>
+        <span class="desig-def-actions">
+          <button class="edit-def">Edit</button>
+          <button class="remove-def">Remove</button>
+        </span>`;
+      row.querySelector('.edit-def').addEventListener('click', () => openDesigDefDialog(def));
+      row.querySelector('.remove-def').addEventListener('click', () => {
+        if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'designationDef:remove', name: def.name }));
+      });
+      list.appendChild(row);
+    }
+  }
+
+  // Designation definition dialog
+  let editingDesigDef = null; // null = creating, object = editing
+  let desigDefSelectedFiles = [];
+
+  document.getElementById('desig-def-add-btn').addEventListener('click', () => openDesigDefDialog(null));
+  document.getElementById('desig-def-cancel').addEventListener('click', closeDesigDefDialog);
+  document.getElementById('desig-def-dialog').addEventListener('click', (e) => { if (e.target.id === 'desig-def-dialog') closeDesigDefDialog(); });
+
+  function openDesigDefDialog(def) {
+    editingDesigDef = def;
+    const nameInput = document.getElementById('desig-def-name');
+    const descInput = document.getElementById('desig-def-description');
+    const titleEl = document.getElementById('desig-def-dialog-title');
+
+    if (def) {
+      titleEl.textContent = 'Edit Designation';
+      nameInput.value = def.name;
+      nameInput.disabled = true;
+      descInput.value = def.description || '';
+      desigDefSelectedFiles = [...(def.agentFiles || [])];
+    } else {
+      titleEl.textContent = 'Add Designation';
+      nameInput.value = '';
+      nameInput.disabled = false;
+      descInput.value = '';
+      desigDefSelectedFiles = [];
+    }
+    renderDesigDefChips();
+    renderDesigDefFilePicker();
+    document.getElementById('desig-def-dialog').classList.add('visible');
+    if (!def) nameInput.focus();
+  }
+
+  function closeDesigDefDialog() {
+    document.getElementById('desig-def-dialog').classList.remove('visible');
+    editingDesigDef = null;
+    desigDefSelectedFiles = [];
+  }
+
+  function renderDesigDefChips() {
+    const chips = document.getElementById('desig-def-chips');
+    chips.innerHTML = '';
+    for (const filePath of desigDefSelectedFiles) {
+      const name = filePath.split('/').pop();
+      const chip = document.createElement('span'); chip.className = 'desig-file-chip';
+      chip.innerHTML = `${esc(name)}<button title="${esc(filePath)}">&times;</button>`;
+      chip.querySelector('button').addEventListener('click', () => {
+        desigDefSelectedFiles = desigDefSelectedFiles.filter(f => f !== filePath);
+        renderDesigDefChips();
+      });
+      chips.appendChild(chip);
+    }
+  }
+
+  function renderDesigDefFilePicker() {
+    const picker = document.getElementById('desig-def-file-picker');
+    picker.innerHTML = '<option value="">+ Add agent file...</option>';
+    const selectedSet = new Set(desigDefSelectedFiles);
+    for (const f of agentFilesList) {
+      if (selectedSet.has(f.path)) continue;
+      picker.innerHTML += `<option value="${esc(f.path)}">${esc(f.relativePath)}</option>`;
+    }
+  }
+
+  document.getElementById('desig-def-file-picker').addEventListener('change', (e) => {
+    const val = e.target.value;
+    if (!val) return;
+    desigDefSelectedFiles.push(val);
+    renderDesigDefChips();
+    renderDesigDefFilePicker();
+    e.target.value = '';
+  });
+
+  document.getElementById('desig-def-save').addEventListener('click', () => {
+    const name = document.getElementById('desig-def-name').value.trim();
+    if (!name) { showToast('Error', 'Name required', 'error'); return; }
+    const description = document.getElementById('desig-def-description').value.trim();
+    if (ws && ws.readyState === 1) {
+      ws.send(JSON.stringify({ type: 'designationDef:set', name, agentFiles: desigDefSelectedFiles, description }));
+    }
+    closeDesigDefDialog();
+  });
 
   // ── Spawn dialog ───────────────────────────────
   const spawnDialog = document.getElementById('spawn-dialog');
@@ -3393,11 +3709,12 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       const card = document.createElement('div');
       card.className = `pm-card${pm.enabled ? '' : ' disabled'}${pm.lastError ? ' has-error' : ''}`;
       const desigBadge = pm.designation ? `<span class="task-designation">${esc(pm.designation)}</span>` : '';
+      const targetBadge = pm.targetSession ? `<span class="task-designation" style="background:rgba(139,233,253,0.15);color:var(--cyan)">→${pm.targetSession}</span>` : '';
       const lastPoll = pm.lastPoll ? timeAgo(pm.lastPoll) : 'never';
       card.innerHTML = `
         <div class="pm-top">
           <span class="pm-name">${esc(pm.name)}</span>
-          ${desigBadge}
+          ${desigBadge}${targetBadge}
           <button class="pm-toggle${pm.enabled ? ' on' : ''}" data-id="${pm.id}"></button>
         </div>
         <div class="pm-meta">
@@ -3435,12 +3752,23 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 
   function togglePmSourceFields() {
     const type = document.getElementById('pm-form-source').value;
-    const isGithub = type === 'github-issues' || type === 'github-prs';
-    const types = ['jira', 'github', 'manual', 'jenkins', 'zoho'];
+    const isGithub = type === 'github-issues' || type === 'github-prs' || type === 'github-re-reviews';
+    const isReReviews = type === 'github-re-reviews';
+    const types = ['jira', 'github', 're-reviews', 'manual', 'jenkins', 'zoho'];
     for (const t of types) {
-      const show = t === type || (t === 'github' && isGithub);
+      let show = false;
+      if (t === type) show = true;
+      else if (t === 'github' && isGithub) show = true;
+      else if (t === 're-reviews' && isReReviews) show = true;
       const els = document.querySelectorAll(`.pm-fields-${t}`);
       els.forEach(el => el.style.display = show ? '' : 'none');
+    }
+    // Hide labels/state for re-reviews (not needed)
+    if (isReReviews) {
+      document.querySelectorAll('.pm-fields-github').forEach((el, i) => {
+        // Show only the first github field (repo), hide labels and state
+        if (i > 0) el.style.display = 'none';
+      });
     }
     // Hide poll interval and threshold for manual (no polling)
     const pollField = document.getElementById('pm-form-interval').closest('.pm-form-field');
@@ -3464,6 +3792,13 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         source.state = document.getElementById('pm-form-gh-state').value;
         if (!source.repo) { showToast('Error', 'Repo required', 'error'); return; }
         break;
+      case 'github-re-reviews':
+        source.repo = document.getElementById('pm-form-gh-repo').value.trim();
+        source.reviewer = document.getElementById('pm-form-gh-reviewer').value.trim();
+        source.triggerPhrases = document.getElementById('pm-form-gh-triggers').value.trim();
+        if (!source.repo) { showToast('Error', 'Repo required', 'error'); return; }
+        if (!source.reviewer) { showToast('Error', 'Reviewer username required', 'error'); return; }
+        break;
       case 'manual':
         source.text = document.getElementById('pm-form-manual-text').value.trim();
         if (!source.text) { showToast('Error', 'Task text required', 'error'); return; }
@@ -3478,10 +3813,12 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         source.query = document.getElementById('pm-form-zoho-query').value.trim();
         break;
     }
+    const targetSessionVal = document.getElementById('pm-form-target-session').value;
     const cfg = {
       name: document.getElementById('pm-form-name').value.trim(),
       source,
       designation: document.getElementById('pm-form-designation').value || null,
+      targetSession: targetSessionVal ? parseInt(targetSessionVal) : null,
       instructions: document.getElementById('pm-form-instructions').value.trim(),
       autoThreshold: parseInt(document.getElementById('pm-form-threshold').value) || 3,
       pollInterval: parseInt(document.getElementById('pm-form-interval').value) || 60000,
@@ -3508,12 +3845,17 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     document.getElementById('pm-form-gh-repo').value = src.repo || '';
     document.getElementById('pm-form-gh-labels').value = src.labels || '';
     document.getElementById('pm-form-gh-state').value = src.state || 'open';
+    document.getElementById('pm-form-gh-reviewer').value = src.reviewer || '';
+    document.getElementById('pm-form-gh-triggers').value = src.triggerPhrases || '';
     document.getElementById('pm-form-manual-text').value = src.text || '';
     document.getElementById('pm-form-jenkins-path').value = src.jobPath || '';
     document.getElementById('pm-form-zoho-dept').value = src.department || '';
     document.getElementById('pm-form-zoho-status').value = src.status || '';
     document.getElementById('pm-form-zoho-query').value = src.query || '';
+    updatePmDesignationSelector();
     document.getElementById('pm-form-designation').value = pm ? (pm.designation || '') : '';
+    updatePmTargetSessionSelector();
+    document.getElementById('pm-form-target-session').value = pm ? (pm.targetSession || '') : '';
     document.getElementById('pm-form-instructions').value = pm ? (pm.instructions || '') : '';
     document.getElementById('pm-form-threshold').value = pm ? pm.autoThreshold : 3;
     document.getElementById('pm-form-interval').value = pm ? pm.pollInterval : 60000;
