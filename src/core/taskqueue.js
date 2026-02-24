@@ -77,6 +77,7 @@ class TaskQueue extends EventEmitter {
       source: (meta && meta.source) || null,   // e.g. 'ci-fail', 'review-changes'
       sourcePR: (meta && meta.pr) || null,      // PR number that triggered this
       sourceSession: (meta && meta.session) || null, // session that triggered this
+      lastActivityAt: Date.now(),
     };
     this.tasks.set(task.id, task);
     this.emit('task:created', task);
@@ -271,6 +272,8 @@ class TaskQueue extends EventEmitter {
     // Complete active task for this session
     const taskId = this.activeTaskBySession.get(num);
     if (taskId) {
+      const task = this.tasks.get(taskId);
+      if (task) task.lastActivityAt = Date.now();
       this.completeTask(taskId, null, preview || null, paneCols);
     }
     this.dispatchLock.delete(num);

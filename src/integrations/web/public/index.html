@@ -200,6 +200,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .card-pr { font-size: 13px; font-weight: 700; color: var(--cyan); margin-left: auto; text-decoration: none; }
 .card-pr:active { opacity: 0.6; }
 .card-badges { display: flex; gap: 4px; align-items: center; margin-left: 4px; }
+.card-activity { font-size: 10px; color: var(--dim); margin-left: 6px; }
 .card-ci { font-size: 10px; font-weight: 700; padding: 2px 5px; border-radius: 3px; text-decoration: none; }
 .card-ci.pass { background: rgba(80,250,123,0.25); color: var(--green); }
 .card-ci.fail { background: rgba(255,85,85,0.25); color: var(--red); }
@@ -823,6 +824,9 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 #track-btn:active { background: var(--purple); color: var(--bg); }
 #restart-btn { background: var(--bg3); border: none; color: var(--orange); font-size: 11px; font-weight: 700; padding: 5px 10px; border-radius: 4px; cursor: pointer; }
 #restart-btn:active { background: var(--orange); color: var(--bg); }
+#session-activity { font-size: 11px; color: var(--dim); opacity: 0.6; }
+#track-btn { background: var(--bg3); border: none; color: var(--purple); font-size: 11px; font-weight: 700; padding: 5px 10px; border-radius: 4px; cursor: pointer; }
+#track-btn:active { background: var(--purple); color: var(--bg); }
 #terminal-wrap { flex: 1; overflow: hidden; padding: 4px; position: relative; touch-action: none; }
 .xterm .xterm-viewport { touch-action: pan-y !important; -webkit-overflow-scrolling: touch !important; overscroll-behavior: contain; }
 #scroll-pause { position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%); background: var(--purple); color: var(--bg); font-size: 12px; font-weight: 600; padding: 6px 14px; border-radius: 16px; cursor: pointer; z-index: 10; opacity: 0.9; white-space: nowrap; }
@@ -960,7 +964,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   max-width: 360px; border: 1px solid var(--bg3);
 }
 .dialog-title { font-size: 16px; font-weight: 700; margin-bottom: 16px; }
-.slot-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 16px; }
+.slot-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 16px; max-height: 150px; overflow-y: auto; }
 .slot-btn {
   background: var(--bg3); border: none; color: var(--fg); font-size: 16px;
   font-weight: 700; height: 44px; border-radius: 8px; cursor: pointer;
@@ -983,6 +987,8 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .spawn-form-input:focus { border-color: var(--purple); }
 .spawn-form-input::placeholder { color: var(--dim); }
 .slot-btn.selected { background: var(--purple); color: var(--bg); }
+.spawn-source-btn { font-size: 12px; padding: 5px 12px; }
+.spawn-source-btn.selected { background: var(--purple); color: var(--bg); border-color: var(--purple); }
 
 /* ── PM cards ──────────────────────── */
 .pm-scroll { flex: 1; overflow-y: auto; padding: 8px 10px; -webkit-overflow-scrolling: touch; }
@@ -1002,6 +1008,8 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .pm-actions { display: flex; gap: 6px; margin-top: 8px; }
 .pm-action-btn { background: var(--bg3); border: none; color: var(--fg); font-size: 11px; font-weight: 600; padding: 5px 10px; border-radius: 4px; cursor: pointer; }
 .pm-action-btn.delete { color: var(--red); }
+.pm-action-btn.spawn-run { background: var(--blue); color: #fff; }
+.pm-action-btn.spawn-run:disabled { opacity: 0.5; cursor: default; }
 .pm-action-btn:active { opacity: 0.7; }
 .pm-error { font-size: 11px; color: var(--red); margin-top: 4px; }
 #pm-bar {
@@ -1195,6 +1203,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       <div class="more-scroll">
         <div class="more-section">
           <div class="more-section-title">Session Modes</div>
+          <span style="font-size:11px;color:var(--dim);display:block;margin-bottom:8px;">Auto sessions pick up queued tasks automatically when idle. Manual sessions only run tasks you assign directly.</span>
           <div class="mode-columns">
             <div class="mode-col">
               <div class="mode-col-header auto-header">Auto</div>
@@ -1220,10 +1229,12 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         </div>
         <div class="more-section">
           <div class="more-section-title">Auto-Pilot Rules</div>
+          <span style="font-size:11px;color:var(--dim);display:block;margin-bottom:8px;">Triggers that automatically create or dispatch tasks based on session events.</span>
           <div id="rules-list"></div>
         </div>
         <div class="more-section">
           <div class="more-section-title">Session Designations</div>
+          <span style="font-size:11px;color:var(--dim);display:block;margin-bottom:8px;">Label sessions by role. Tasks with a matching designation only dispatch to sessions with that label.</span>
           <div class="desig-grid" id="desig-grid"></div>
         </div>
         <div class="more-section">
@@ -1258,6 +1269,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         <button id="back-btn">&larr;</button>
         <span id="session-title"></span>
         <span id="session-branch"></span>
+        <span id="session-activity"></span>
         <button id="track-btn" title="Attach a tracking task to this session">Track</button>
         <button id="restart-btn" title="Restart Claude">Restart</button>
       </div>
@@ -1312,16 +1324,30 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   <div class="dialog">
     <div class="dialog-title">Spawn Agent</div>
     <div class="spawn-form-field">
-      <label class="spawn-form-label">Base Directory</label>
-      <input class="spawn-form-input" id="spawn-base-dir" type="text" value="~/ai-dev" autocomplete="off">
-    </div>
-    <div class="spawn-form-field">
       <label class="spawn-form-label">Name <span style="color:var(--red)">*</span></label>
       <input class="spawn-form-input" id="spawn-name" type="text" placeholder="e.g. ios, backend" autocomplete="off">
     </div>
     <div class="spawn-form-field">
-      <label class="spawn-form-label">Git URL <span style="color:var(--dim)">(optional)</span></label>
-      <input class="spawn-form-input" id="spawn-git-url" type="text" placeholder="git@github.com:org/repo.git" autocomplete="off">
+      <label class="spawn-form-label">Source</label>
+      <div style="display:flex;gap:6px;margin-top:4px;">
+        <button class="dialog-btn spawn-source-btn selected" data-source="worktree">Worktree</button>
+        <button class="dialog-btn spawn-source-btn" data-source="clone">Clone</button>
+        <button class="dialog-btn spawn-source-btn" data-source="empty">Empty</button>
+      </div>
+    </div>
+    <div class="spawn-form-field" id="spawn-worktree-fields">
+      <label class="spawn-form-label">Parent Repo</label>
+      <input class="spawn-form-input" id="spawn-worktree-from" type="text" value="~/Desktop/Viv/webplatform" autocomplete="off">
+      <label class="spawn-form-label" style="margin-top:8px;">Base Branch <span style="color:var(--dim)">(defaults to master)</span></label>
+      <input class="spawn-form-input" id="spawn-base-branch" type="text" placeholder="master" autocomplete="off">
+      <label class="spawn-form-label" style="margin-top:8px;">New Branch <span style="color:var(--dim)">(optional — defaults to hive-slot-N)</span></label>
+      <input class="spawn-form-input" id="spawn-branch" type="text" placeholder="e.g. eric/DEV-12345" autocomplete="off">
+    </div>
+    <div class="spawn-form-field" id="spawn-clone-fields" style="display:none;">
+      <label class="spawn-form-label">Git URL</label>
+      <input class="spawn-form-input" id="spawn-git-url" type="text" placeholder="https://github.com/..." autocomplete="off">
+      <label class="spawn-form-label">Base Directory</label>
+      <input class="spawn-form-input" id="spawn-base-dir" type="text" value="~/Desktop/Viv" autocomplete="off">
     </div>
     <div class="spawn-form-field">
       <label class="spawn-form-label">Select Slot</label>
@@ -1349,6 +1375,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         <option value="github-issues">GitHub Issues</option>
         <option value="github-prs">GitHub PRs</option>
         <option value="github-re-reviews">GitHub Re-Reviews</option>
+        <option value="command">Command</option>
         <option value="manual">Manual</option>
         <option value="jenkins">Jenkins (Tests)</option>
         <option value="zoho">Zoho (Support)</option>
@@ -1385,6 +1412,11 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     <div class="pm-form-field pm-fields-manual" style="display:none">
       <label class="pm-form-label">Task Instructions</label>
       <textarea class="pm-form-input" id="pm-form-manual-text" rows="4" placeholder="Describe the task..." style="resize:vertical;font-family:inherit"></textarea>
+    </div>
+    <div class="pm-form-field pm-fields-command" style="display:none">
+      <label class="pm-form-label">Command</label>
+      <input class="pm-form-input" id="pm-form-command" type="text" placeholder="/cp-review" autocomplete="off">
+      <span style="font-size:11px;color:var(--dim);margin-top:4px;display:block;">A Claude slash command. Runs immediately when enabled, then repeats on the poll interval. The command handles all logic — no instructions or threshold needed.</span>
     </div>
     <div class="pm-form-field pm-fields-jenkins" style="display:none">
       <label class="pm-form-label">Job Path</label>
@@ -1770,6 +1802,13 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         if (activeTab === 'fleet-panel') renderGrid();
         renderAutoGrid();
         updateSidebarSummary();
+        // Update session header activity timestamp
+        if (currentSession) {
+          const cs = fleetData.find(x => String(x.num) === currentSession);
+          if (cs && cs.lastActivity) {
+            document.getElementById('session-activity').textContent = `active ${timeAgo(cs.lastActivity)}`;
+          }
+        }
         // Auto-refresh git tab if active
         if (activeTab === 'session-panel' && activeSessionTab === 'git' && currentSession && ws && ws.readyState === 1) {
           ws.send(JSON.stringify({ type: 'git:info', session: currentSession }));
@@ -1944,8 +1983,10 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         gitRowHtml = `<div class="card-git-row"><span class="card-commit">${esc(gs.lastCommit)}</span>${diffParts.length ? `<span class="card-diff-stat">${diffParts.join('')}</span>` : ''}${changesHtml}</div>`;
       }
 
+      const activityHtml = s.lastActivity ? `<span class="card-activity">${timeAgo(s.lastActivity)}</span>` : '';
+
       card.innerHTML = `${modeHtml}${desigHtml}
-        <div class="card-top"><span class="card-num">${s.num}</span><span class="card-state ${stateCls}">${s.state}</span>${prHtml}${badgesHtml ? `<span class="card-badges">${badgesHtml}</span>` : ''}</div>
+        <div class="card-top"><span class="card-num">${s.num}</span><span class="card-state ${stateCls}">${s.state}</span>${activityHtml}${prHtml}${badgesHtml ? `<span class="card-badges">${badgesHtml}</span>` : ''}</div>
         <div class="card-branch">${esc(branch)}</div>
         ${gitRowHtml}
         <div class="card-preview">${esc(s.preview || '')}</div>
@@ -2048,6 +2089,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     paneCols = 0; // reset until we get pane width from server
     sessionTitle.textContent = `Session ${s.num}`;
     sessionBranch.textContent = shortBranch(s.branch);
+    document.getElementById('session-activity').textContent = s.lastActivity ? `active ${timeAgo(s.lastActivity)}` : '';
     previousTab = activeTab;
     userScrolledUp = false;
     pendingContent = null;
@@ -2098,8 +2140,13 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   function writeTerminalContent(content) {
     if (!term) return;
     lastContent = content; writingContent = true;
+    const el = term.element;
+    if (el) el.style.visibility = 'hidden';
     term.reset(); term.write(content);
-    requestAnimationFrame(() => { term.scrollToBottom(); requestAnimationFrame(() => { writingContent = false; }); });
+    requestAnimationFrame(() => {
+      term.scrollToBottom();
+      requestAnimationFrame(() => { if (el) el.style.visibility = ''; writingContent = false; });
+    });
   }
 
   // Fit terminal to container, but use pane cols if wider (prevents ANSI line wrapping artifacts)
@@ -2200,6 +2247,18 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     if (!confirm(`Restart Claude in session ${currentSession}?`)) return;
     ws.send(JSON.stringify({ type: 'restart', session: currentSession }));
     showToast('Restarting', `Session ${currentSession}`, 'success');
+  });
+
+  $('#track-btn').addEventListener('click', () => {
+    if (!currentSession || !ws || ws.readyState !== 1) return;
+    const s = fleetData.find(x => String(x.num) === currentSession);
+    const branch = s ? s.branch : '';
+    const pr = s && s.pr ? s.pr.prNum : null;
+    const defaultText = pr ? `Working on PR #${pr} (${branch})` : branch ? `Working on ${branch}` : `Tracking session ${currentSession}`;
+    const text = prompt('Task description:', defaultText);
+    if (!text) return;
+    ws.send(JSON.stringify({ type: 'task:attach', text, session: Number(currentSession), meta: { pr } }));
+    showToast('Tracked', `Task attached to session ${currentSession}`, 'success');
   });
 
   // ── Command buttons ────────────────────────────
@@ -2780,6 +2839,11 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     let meta = `${t.mode}`;
     const desigBadge = t.designation ? `<span class="task-designation">${esc(t.designation)}</span>` : '';
     const selected = tasksSelectedTaskId === t.id ? ' selected' : '';
+    // Origin badges: show source session + PR when available
+    const prBadge = t.sourcePR ? `<span class="task-session-badge" style="background:rgba(139,233,253,0.15);color:var(--cyan)">PR #${t.sourcePR}</span>` : '';
+    const originBadge = t.sourceSession ? `<span class="task-session-badge">S:${t.sourceSession}</span>` : '';
+    const sourceBadge = t.source ? `<span class="task-designation" style="background:rgba(255,85,85,0.15);color:var(--red)">${t.source}</span>` : '';
+
     // Origin badges: show source session + PR when available
     const prBadge = t.sourcePR ? `<span class="task-session-badge" style="background:rgba(139,233,253,0.15);color:var(--cyan)">PR #${t.sourcePR}</span>` : '';
     const originBadge = t.sourceSession ? `<span class="task-session-badge">S:${t.sourceSession}</span>` : '';
@@ -3641,6 +3705,10 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   });
 
   // ── Spawn dialog ───────────────────────────────
+  let spawnSource = 'worktree';
+  let lastWorktreeFrom = localStorage.getItem('hive:spawn:worktreeFrom') || '~/Desktop/Viv/webplatform';
+  let lastBaseDir = localStorage.getItem('hive:spawn:baseDir') || '~/Desktop/Viv';
+
   const spawnDialog = document.getElementById('spawn-dialog');
   const spawnBtn = document.getElementById('spawn-btn');
   let selectedSpawnSlot = null;
@@ -3648,8 +3716,11 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   spawnBtn.addEventListener('click', () => {
     if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'spawn:slots' }));
     document.getElementById('spawn-name').value = '';
-    document.getElementById('spawn-git-url').value = '';
-    document.getElementById('spawn-base-dir').value = '~/ai-dev';
+    document.getElementById('spawn-worktree-from').value = lastWorktreeFrom;
+    document.getElementById('spawn-base-branch').value = '';
+    document.getElementById('spawn-branch').value = '';
+    document.getElementById('spawn-base-dir').value = lastBaseDir;
+    setSpawnSource('worktree');
     selectedSpawnSlot = null;
     spawnDialog.classList.add('visible');
   });
@@ -3657,12 +3728,43 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   document.getElementById('spawn-cancel').addEventListener('click', closeSpawnDialog);
   spawnDialog.addEventListener('click', (e) => { if (e.target === spawnDialog) closeSpawnDialog(); });
 
+  function setSpawnSource(source) {
+    spawnSource = source;
+    document.querySelectorAll('.spawn-source-btn').forEach(b => {
+      b.classList.toggle('selected', b.dataset.source === source);
+      b.classList.toggle('primary', b.dataset.source === source);
+    });
+    document.getElementById('spawn-worktree-fields').style.display = source === 'worktree' ? '' : 'none';
+    document.getElementById('spawn-clone-fields').style.display = source === 'clone' ? '' : 'none';
+  }
+
+  document.querySelectorAll('.spawn-source-btn').forEach(btn => {
+    btn.addEventListener('click', () => setSpawnSource(btn.dataset.source));
+  });
+
   function getSpawnParams(slotNum) {
     const name = document.getElementById('spawn-name').value.trim();
     if (!name) { showToast('Error', 'Agent name is required', 'error'); return null; }
-    const baseDir = document.getElementById('spawn-base-dir').value.trim() || '~/ai-dev';
-    const gitUrl = document.getElementById('spawn-git-url').value.trim() || undefined;
-    return { num: slotNum, baseDir, name, gitUrl };
+    const baseDir = document.getElementById('spawn-base-dir').value.trim() || '~/Desktop/Viv';
+    const params = { num: slotNum, baseDir, name };
+    if (spawnSource === 'worktree') {
+      const worktreeFrom = document.getElementById('spawn-worktree-from').value.trim();
+      if (!worktreeFrom) { showToast('Error', 'Parent repo is required for worktree', 'error'); return null; }
+      params.worktreeFrom = worktreeFrom;
+      const baseBranch = document.getElementById('spawn-base-branch').value.trim();
+      if (baseBranch) params.baseBranch = baseBranch;
+      const branch = document.getElementById('spawn-branch').value.trim();
+      if (branch) params.branch = branch;
+    } else if (spawnSource === 'clone') {
+      const gitUrl = document.getElementById('spawn-git-url').value.trim();
+      if (gitUrl) params.gitUrl = gitUrl;
+    }
+    // Cache for next time
+    localStorage.setItem('hive:spawn:baseDir', baseDir);
+    if (params.worktreeFrom) localStorage.setItem('hive:spawn:worktreeFrom', params.worktreeFrom);
+    lastBaseDir = baseDir;
+    if (params.worktreeFrom) lastWorktreeFrom = params.worktreeFrom;
+    return params;
   }
 
   document.getElementById('spawn-next').addEventListener('click', () => {
@@ -3681,7 +3783,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     grid.innerHTML = '';
     const avSet = new Set(available);
     selectedSpawnSlot = null;
-    for (let i = 17; i <= 32; i++) {
+    for (let i = 0; i <= 32; i++) {
       const btn = document.createElement('button');
       btn.className = `slot-btn${avSet.has(i) ? '' : ' occupied'}`;
       btn.textContent = i;
@@ -3726,11 +3828,27 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         <div class="pm-actions">
           <button class="pm-action-btn edit" data-id="${pm.id}">Edit</button>
           <button class="pm-action-btn delete" data-id="${pm.id}">Delete</button>
+          ${pm.source.type === 'command' ? `<button class="pm-action-btn spawn-run" data-id="${pm.id}">Spawn + Run</button>` : ''}
         </div>
       `;
       card.querySelector('.pm-toggle').addEventListener('click', () => {
         if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'pm:toggle', id: pm.id }));
       });
+      const spawnRunBtn = card.querySelector('.pm-action-btn.spawn-run');
+      if (spawnRunBtn) {
+        spawnRunBtn.addEventListener('click', () => {
+          if (ws && ws.readyState === 1) {
+            spawnRunBtn.disabled = true;
+            spawnRunBtn.textContent = 'Spawning...';
+            ws.send(JSON.stringify({
+              type: 'pm:spawn-run',
+              id: pm.id,
+              worktreeFrom: localStorage.getItem('hive:spawn:worktreeFrom') || '~/Desktop/Viv/webplatform',
+              baseBranch: 'master'
+            }));
+          }
+        });
+      }
       card.querySelector('.pm-action-btn.edit').addEventListener('click', () => openPmDialog(pm));
       card.querySelector('.pm-action-btn.delete').addEventListener('click', () => {
         if (confirm(`Delete PM "${pm.name}"?`)) {
@@ -3754,7 +3872,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     const type = document.getElementById('pm-form-source').value;
     const isGithub = type === 'github-issues' || type === 'github-prs' || type === 'github-re-reviews';
     const isReReviews = type === 'github-re-reviews';
-    const types = ['jira', 'github', 're-reviews', 'manual', 'jenkins', 'zoho'];
+    const types = ['jira', 'github', 're-reviews', 'manual', 'command', 'jenkins', 'zoho'];
     for (const t of types) {
       let show = false;
       if (t === type) show = true;
@@ -3774,7 +3892,9 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     const pollField = document.getElementById('pm-form-interval').closest('.pm-form-field');
     const threshField = document.getElementById('pm-form-threshold').closest('.pm-form-field');
     if (pollField) pollField.style.display = type === 'manual' ? 'none' : '';
-    if (threshField) threshField.style.display = type === 'manual' ? 'none' : '';
+    const instrField = document.getElementById('pm-form-instructions').closest('.pm-form-field');
+    if (threshField) threshField.style.display = (type === 'manual' || type === 'command') ? 'none' : '';
+    if (instrField) instrField.style.display = type === 'command' ? 'none' : '';
   }
 
   document.getElementById('pm-form-save').addEventListener('click', () => {
@@ -3806,6 +3926,11 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       case 'jenkins':
         source.jobPath = document.getElementById('pm-form-jenkins-path').value.trim();
         if (!source.jobPath) { showToast('Error', 'Job path required', 'error'); return; }
+        break;
+      case 'command':
+        source.command = document.getElementById('pm-form-command').value.trim();
+        if (!source.command) { showToast('Error', 'Command required', 'error'); return; }
+        if (!source.command.startsWith('/')) source.command = '/' + source.command;
         break;
       case 'zoho':
         source.department = document.getElementById('pm-form-zoho-dept').value.trim();
@@ -3856,6 +3981,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     document.getElementById('pm-form-designation').value = pm ? (pm.designation || '') : '';
     updatePmTargetSessionSelector();
     document.getElementById('pm-form-target-session').value = pm ? (pm.targetSession || '') : '';
+    document.getElementById('pm-form-command').value = src.command || '';
     document.getElementById('pm-form-instructions').value = pm ? (pm.instructions || '') : '';
     document.getElementById('pm-form-threshold').value = pm ? pm.autoThreshold : 3;
     document.getElementById('pm-form-interval').value = pm ? pm.pollInterval : 60000;
