@@ -102,6 +102,7 @@ class TaskQueue extends EventEmitter {
       assignedTo: sessionNum,
       createdAt: Date.now(),
       dispatchedAt: Date.now(),
+      lastActivityAt: Date.now(),
       completedAt: null,
       result: null,
       source: (meta && meta.source) || 'attached',
@@ -214,6 +215,7 @@ class TaskQueue extends EventEmitter {
     task.status = 'dispatched';
     task.assignedTo = sessionNum;
     task.dispatchedAt = Date.now();
+    task.lastActivityAt = Date.now();
     this.activeTaskBySession.set(sessionNum, task.id);
 
     this.emit('task:dispatched', task);
@@ -680,6 +682,15 @@ class TaskQueue extends EventEmitter {
 
     this.watcher.on('session:working', (data) => {
       this.pushFeed('state', data.num, `Session ${data.num} started working`);
+      // Update lastActivityAt on the active task for this session
+      const taskId = this.activeTaskBySession.get(data.num);
+      if (taskId) {
+        const task = this.tasks.get(taskId);
+        if (task) {
+          task.lastActivityAt = Date.now();
+          this.emit('task:updated', task);
+        }
+      }
     });
 
     this.watcher.on('ci:changed', (data) => {

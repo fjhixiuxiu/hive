@@ -2637,8 +2637,21 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     if (tabType === 'inprogress') {
       if (t.assignedTo) meta += ` · ${timeAgo(t.dispatchedAt || t.createdAt)}`;
       const sessionBadge = t.assignedTo ? `<span class="task-session-badge">S:${t.assignedTo}</span>` : '';
+      // Waiting indicator: time since last activity from Claude
+      let waitBadge = '';
+      if (t.lastActivityAt) {
+        const waitMs = Date.now() - t.lastActivityAt;
+        const waitMin = Math.round(waitMs / 60000);
+        const s = fleetData.find(x => x.num === t.assignedTo);
+        const isIdle = s && s.state !== 'working';
+        if (isIdle && waitMin >= 1) {
+          const waitStr = waitMin >= 60 ? `${Math.round(waitMin / 60)}h` : `${waitMin}m`;
+          const color = waitMin >= 15 ? 'var(--red)' : waitMin >= 5 ? 'var(--yellow)' : 'var(--dim)';
+          waitBadge = `<span style="color:${color};font-weight:700;font-size:11px">waiting ${waitStr}</span>`;
+        }
+      }
       const checked = selectedTaskIds.has(t.id) ? ' checked' : '';
-      return `<div class="task-card-row"><input type="checkbox" class="task-checkbox" data-id="${t.id}"${checked}><div class="task-card dispatched${selected}" data-id="${t.id}"><div class="task-text">${esc(t.text)}</div><div class="task-meta"><span>${meta} · ${ago}</span>${desigBadge}${prBadge}${sessionBadge}</div></div></div>`;
+      return `<div class="task-card-row"><input type="checkbox" class="task-checkbox" data-id="${t.id}"${checked}><div class="task-card dispatched${selected}" data-id="${t.id}"><div class="task-text">${esc(t.text)}</div><div class="task-meta"><span>${meta} · ${ago}</span>${waitBadge}${desigBadge}${prBadge}${sessionBadge}</div></div></div>`;
     }
     if (tabType === 'queued') {
       const editBtn = `<button class="task-edit-btn" data-id="${t.id}">Edit</button>`;
