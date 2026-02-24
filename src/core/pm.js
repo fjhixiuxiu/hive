@@ -27,6 +27,7 @@ class ProjectManager extends EventEmitter {
       targetSession: cfg.targetSession || null,
       autoThreshold: cfg.autoThreshold != null ? cfg.autoThreshold : 3,
       pollInterval: cfg.pollInterval || 60000,
+      taskFormat: cfg.taskFormat || null,
       enabled: false,
       seenKeys: [],
       tasksCreated: 0,
@@ -108,6 +109,7 @@ class ProjectManager extends EventEmitter {
         targetSession: data.targetSession || null,
         autoThreshold: data.autoThreshold != null ? data.autoThreshold : 3,
         pollInterval: data.pollInterval || 60000,
+        taskFormat: data.taskFormat || null,
         enabled: data.enabled || false,
         seenKeys: Array.isArray(data.seenKeys) ? data.seenKeys : [],
         tasksCreated: data.tasksCreated || 0,
@@ -164,7 +166,11 @@ class ProjectManager extends EventEmitter {
     const key = `manual-${id}-${Date.now()}`;
     pm.seenKeys.push(key);
     const mode = 'manual'; // manual tasks always go to manual queue
-    const fullText = pm.instructions ? `${text}\n\nInstructions: ${pm.instructions}` : text;
+    let taskText = text;
+    if (pm.taskFormat) {
+      taskText = pm.taskFormat.replace('{key}', key).replace('{summary}', text);
+    }
+    const fullText = pm.instructions ? `${taskText}\n\nInstructions: ${pm.instructions}` : taskText;
     this.taskQueue.createTask(fullText, mode, pm.targetSession || null, pm.designation, { source: `pm:${pm.name}` });
     pm.tasksCreated++;
     pm.lastPoll = Date.now();
@@ -209,7 +215,12 @@ class ProjectManager extends EventEmitter {
 
         // Evaluate complexity; force 'manual' if PM targets a specific session
         const mode = pm.targetSession ? 'manual' : this._evaluateComplexity(issue, pm.autoThreshold);
-        const text = `[${issue.key}] ${issue.summary}`;
+        let text;
+        if (pm.taskFormat) {
+          text = pm.taskFormat.replace('{key}', issue.key).replace('{summary}', issue.summary);
+        } else {
+          text = `[${issue.key}] ${issue.summary}`;
+        }
         const fullText = pm.instructions ? `${text}\n\nInstructions: ${pm.instructions}` : text;
         const task = this.taskQueue.createTask(fullText, mode, pm.targetSession || null, pm.designation, { source: `pm:${pm.name}` });
 
