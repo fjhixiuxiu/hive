@@ -150,6 +150,9 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
             ws.send(JSON.stringify({ type: 'rules:list', rules: taskQueue.getRules() }));
             ws.send(JSON.stringify({ type: 'designations:status', designations: taskQueue.getDesignations() }));
             ws.send(JSON.stringify({ type: 'vim:status', enabled: taskQueue.vimMode }));
+            ws.send(JSON.stringify({ type: 'designationDefs:list', defs: taskQueue.getDesignationDefs() }));
+            ws.send(JSON.stringify({ type: 'agentRoots:list', roots: taskQueue.getAgentRoots() }));
+            ws.send(JSON.stringify({ type: 'agentFiles:list', files: taskQueue.agentFilesList }));
           }
           if (pmManager) {
             ws.send(JSON.stringify({ type: 'pm:list', pms: pmManager.getAll() }));
@@ -565,6 +568,45 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
         break;
       }
 
+      case 'designationDef:set': {
+        if (!taskQueue) break;
+        taskQueue.setDesignationDef(msg.name, { agentFiles: msg.agentFiles, description: msg.description });
+        break;
+      }
+
+      case 'designationDef:remove': {
+        if (!taskQueue) break;
+        taskQueue.removeDesignationDef(msg.name);
+        break;
+      }
+
+      case 'designationDefs:get': {
+        if (!taskQueue) break;
+        ws.send(JSON.stringify({ type: 'designationDefs:list', defs: taskQueue.getDesignationDefs() }));
+        break;
+      }
+
+      case 'agentRoots:set': {
+        if (!taskQueue) break;
+        taskQueue.setAgentRoots(msg.roots);
+        taskQueue.scanAgentFiles();
+        ws.send(JSON.stringify({ type: 'agentFiles:list', files: taskQueue.agentFilesList }));
+        break;
+      }
+
+      case 'agentFiles:scan': {
+        if (!taskQueue) break;
+        const files = taskQueue.scanAgentFiles();
+        ws.send(JSON.stringify({ type: 'agentFiles:list', files }));
+        break;
+      }
+
+      case 'agentFiles:get': {
+        if (!taskQueue) break;
+        ws.send(JSON.stringify({ type: 'agentFiles:list', files: taskQueue.agentFilesList }));
+        break;
+      }
+
       // -- VIM mode messages -------------------------------------------------
       case 'vim:toggle': {
         if (!taskQueue) break;
@@ -780,6 +822,9 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     taskQueue.on('approval:resolved', (approval) => broadcast({ type: 'approval:resolved', approval }));
     taskQueue.on('rules:changed', (rules) => broadcast({ type: 'rules:list', rules }));
     taskQueue.on('designations:changed', (designations) => broadcast({ type: 'designations:status', designations }));
+    taskQueue.on('designationDefs:changed', (defs) => broadcast({ type: 'designationDefs:list', defs }));
+    taskQueue.on('agentRoots:changed', (roots) => broadcast({ type: 'agentRoots:list', roots }));
+    taskQueue.on('agentFiles:scanned', (files) => broadcast({ type: 'agentFiles:list', files }));
     taskQueue.on('vim:changed', (enabled) => broadcast({ type: 'vim:status', enabled }));
   }
 
@@ -794,6 +839,11 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     console.log(`Web dashboard: http://localhost:${port}`);
     if (workerSecret) {
       console.log(`Worker registration enabled (workers connect to ws://localhost:${port})`);
+    }
+    // Initial agent file scan on startup
+    if (taskQueue && taskQueue.agentRoots.length > 0) {
+      taskQueue.scanAgentFiles();
+      console.log(`Scanned ${taskQueue.agentFilesList.length} agent files from ${taskQueue.agentRoots.length} root(s)`);
     }
   });
 
