@@ -287,8 +287,11 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .git-section { margin-bottom: 16px; }
 .git-section-title {
   font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;
-  color: var(--dim); margin-bottom: 8px;
+  color: var(--dim); margin-bottom: 8px; cursor: pointer; user-select: none;
 }
+.git-section-title::before { content: '▾ '; }
+.git-section.collapsed .git-section-title::before { content: '▸ '; }
+.git-section.collapsed .git-section-body { display: none; }
 .git-branch-summary {
   background: var(--bg2); border-radius: 6px; padding: 10px 12px;
   font-size: 13px; display: flex; gap: 12px; flex-wrap: wrap; align-items: center;
@@ -538,7 +541,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .tasks-session-input .ts-msg {
   flex: 1; background: var(--bg); border: 1px solid var(--bg3); color: var(--fg);
   padding: 8px 12px; border-radius: 6px; font-size: 14px; outline: none;
-  resize: none; font-family: inherit; line-height: 1.4; min-height: 3em; max-height: 40vh; overflow-y: auto; min-width: 0;
+  resize: none; font-family: inherit; line-height: 1.4; min-height: 5em; max-height: 40vh; overflow-y: auto; min-width: 0;
 }
 .tasks-session-input .ts-msg:focus { border-color: var(--purple); }
 .tasks-session-input .ts-msg::placeholder { color: var(--dim); }
@@ -838,7 +841,27 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 #input-bar { display: flex; gap: 8px; padding: 8px 12px; background: var(--bg2); border-top: 1px solid var(--bg3); flex-shrink: 0; align-items: flex-end; }
 #mode-toggle { background: var(--bg3); border: none; color: var(--green); font-size: 12px; font-weight: 700; padding: 8px 12px; border-radius: 6px; cursor: pointer; min-width: 48px; text-transform: uppercase; }
 #mode-toggle.tell { color: var(--orange); }
-#msg-input { flex: 1; background: var(--bg); border: 1px solid var(--bg3); color: var(--fg); padding: 8px 12px; border-radius: 6px; font-size: 14px; outline: none; resize: none; font-family: inherit; line-height: 1.4; min-height: 3em; max-height: 40vh; overflow-y: auto; }
+#msg-input { flex: 1; background: var(--bg); border: 1px solid var(--bg3); color: var(--fg); padding: 10px 14px; border-radius: 6px; font-size: 14px; outline: none; resize: none; font-family: inherit; line-height: 1.4; min-height: 5em; max-height: 40vh; overflow-y: auto; }
+
+/* ── Session status line ── */
+#session-status-line {
+  display: flex; gap: 12px; padding: 4px 12px; background: var(--bg2);
+  border-top: 1px solid var(--bg3); flex-shrink: 0; overflow-x: auto;
+  -webkit-overflow-scrolling: touch; align-items: center; min-height: 26px;
+}
+.status-chip {
+  font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 4px;
+  white-space: nowrap; text-decoration: none; cursor: pointer;
+  transition: background 0.1s;
+}
+.status-chip:hover { filter: brightness(1.3); }
+.status-chip.pr { background: rgba(139,233,253,0.15); color: var(--cyan); }
+.status-chip.jira { background: rgba(255,184,108,0.15); color: var(--orange); }
+.status-chip.ci-pass { background: rgba(80,250,123,0.15); color: var(--green); }
+.status-chip.ci-fail { background: rgba(255,85,85,0.15); color: var(--red); }
+.status-chip.ci-run { background: rgba(241,250,140,0.15); color: var(--yellow); }
+.status-chip.review-ok { background: rgba(80,250,123,0.15); color: var(--green); }
+.status-chip.review-chg { background: rgba(255,85,85,0.15); color: var(--red); }
 #msg-input:focus { border-color: var(--purple); }
 #msg-input::placeholder { color: var(--dim); }
 #msg-input:disabled { opacity: 0.5; }
@@ -1147,7 +1170,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
           <div id="ts-cmd-bar" class="ts-cmd-bar" style="display:none"></div>
           <div class="tasks-session-input" id="tasks-session-input" style="display:none">
             <button class="ts-mode" id="ts-mode-toggle">Ask</button>
-            <textarea class="ts-msg" id="ts-msg-input" rows="2" placeholder="Message Claude..." autocomplete="off"></textarea>
+            <textarea class="ts-msg" id="ts-msg-input" rows="4" placeholder="Message Claude..." autocomplete="off"></textarea>
             <button class="ts-send" id="ts-send-btn">Send</button>
           </div>
         </div>
@@ -1295,9 +1318,10 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         <button class="key-btn num-key" data-key="4">4</button>
       </div>
       <div id="cmd-bar"></div>
+      <div id="session-status-line"></div>
       <div id="input-bar">
         <button id="mode-toggle">Ask</button>
-        <textarea id="msg-input" rows="3" placeholder="Message Claude..." autocomplete="off"></textarea>
+        <textarea id="msg-input" rows="4" placeholder="Message Claude..." autocomplete="off"></textarea>
         <button id="send-btn">Send</button>
       </div>
     </div>
@@ -1770,6 +1794,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         if (activeTab === 'fleet-panel') renderGrid();
         renderAutoGrid();
         updateSidebarSummary();
+        if (activeTab === 'session-panel') updateSessionStatusLine();
         // Auto-refresh git tab if active
         if (activeTab === 'session-panel' && activeSessionTab === 'git' && currentSession && ws && ws.readyState === 1) {
           ws.send(JSON.stringify({ type: 'git:info', session: currentSession }));
@@ -2048,6 +2073,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     paneCols = 0; // reset until we get pane width from server
     sessionTitle.textContent = `Session ${s.num}`;
     sessionBranch.textContent = shortBranch(s.branch);
+    updateSessionStatusLine();
     previousTab = activeTab;
     userScrolledUp = false;
     pendingContent = null;
@@ -2100,6 +2126,60 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     lastContent = content; writingContent = true;
     term.reset(); term.write(content);
     requestAnimationFrame(() => { term.scrollToBottom(); requestAnimationFrame(() => { writingContent = false; }); });
+  }
+
+  // ── Session status line ──────────────────────────
+  function updateSessionStatusLine() {
+    const bar = document.getElementById('session-status-line');
+    if (!bar) return;
+    if (!currentSession) { bar.innerHTML = ''; return; }
+    const s = fleetData.find(x => String(x.num) === currentSession);
+    if (!s) { bar.innerHTML = ''; return; }
+
+    const chips = [];
+    const branch = s.branch || '';
+
+    // PR chip
+    if (s.pr && s.pr.prNum) {
+      const prUrl = linkTemplates.pr ? linkTemplates.pr.replace('${prNum}', s.pr.prNum) : null;
+      if (prUrl) {
+        chips.push(`<a class="status-chip pr" href="${prUrl}" target="_blank">PR #${s.pr.prNum}</a>`);
+      } else {
+        chips.push(`<span class="status-chip pr">PR #${s.pr.prNum}</span>`);
+      }
+    }
+
+    // JIRA chips — extract DEV-XXXXX from branch name
+    const jiraMatches = branch.match(/DEV-\d+/g);
+    if (jiraMatches) {
+      for (const ticket of jiraMatches) {
+        const jiraUrl = `https://vivtechnologies.atlassian.net/browse/${ticket}`;
+        chips.push(`<a class="status-chip jira" href="${jiraUrl}" target="_blank">${ticket}</a>`);
+      }
+    }
+
+    // CI chip
+    if (s.pr && s.pr.ciResult) {
+      const ciUrl = (linkTemplates.ci && s.pr.ciBuild) ? linkTemplates.ci.replace('${prNum}', s.pr.prNum).replace('${ciBuild}', s.pr.ciBuild) : null;
+      const cls = s.pr.ciResult === 'SUCCESS' ? 'ci-pass' : s.pr.ciResult === 'FAILURE' ? 'ci-fail' : 'ci-run';
+      const label = s.pr.ciResult === 'SUCCESS' ? 'CI Passing' : s.pr.ciResult === 'FAILURE' ? 'CI Failed' : 'CI Running';
+      if (ciUrl) {
+        chips.push(`<a class="status-chip ${cls}" href="${ciUrl}" target="_blank">${label}</a>`);
+      } else {
+        chips.push(`<span class="status-chip ${cls}">${label}</span>`);
+      }
+    }
+
+    // Review chip
+    if (s.pr && s.pr.review) {
+      if (s.pr.review === 'APPROVED') {
+        chips.push(`<span class="status-chip review-ok">Review Approved</span>`);
+      } else if (s.pr.review === 'CHANGES_REQUESTED') {
+        chips.push(`<span class="status-chip review-chg">Changes Requested</span>`);
+      }
+    }
+
+    bar.innerHTML = chips.join('');
   }
 
   // Fit terminal to container, but use pane cols if wider (prevents ANSI line wrapping artifacts)
@@ -2783,7 +2863,8 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     // Origin badges: show source session + PR when available
     const prBadge = t.sourcePR ? `<span class="task-session-badge" style="background:rgba(139,233,253,0.15);color:var(--cyan)">PR #${t.sourcePR}</span>` : '';
     const originBadge = t.sourceSession ? `<span class="task-session-badge">S:${t.sourceSession}</span>` : '';
-    const sourceBadge = t.source ? `<span class="task-designation" style="background:rgba(255,85,85,0.15);color:var(--red)">${t.source}</span>` : '';
+    const sourceLabel = t.source ? t.source.replace(/^pm:/, '') : '';
+    const sourceBadge = sourceLabel ? `<span class="task-designation" style="background:rgba(255,184,108,0.15);color:var(--orange)">${esc(sourceLabel)}</span>` : '';
 
     if (tabType === 'inprogress') {
       if (t.assignedTo) meta += ` · ${timeAgo(t.dispatchedAt || t.createdAt)}`;
@@ -2802,7 +2883,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         }
       }
       const checked = selectedTaskIds.has(t.id) ? ' checked' : '';
-      return `<div class="task-card-row"><input type="checkbox" class="task-checkbox" data-id="${t.id}"${checked}><div class="task-card dispatched${selected}" data-id="${t.id}"><div class="task-text">${esc(t.text)}</div><div class="task-meta"><span>${meta} · ${ago}</span>${waitBadge}${desigBadge}${prBadge}${sessionBadge}</div></div></div>`;
+      return `<div class="task-card-row"><input type="checkbox" class="task-checkbox" data-id="${t.id}"${checked}><div class="task-card dispatched${selected}" data-id="${t.id}"><div class="task-text">${esc(t.text)}</div><div class="task-meta"><span>${meta} · ${ago}</span>${waitBadge}${sourceBadge}${desigBadge}${prBadge}${sessionBadge}</div></div></div>`;
     }
     if (tabType === 'queued') {
       const editBtn = `<button class="task-edit-btn" data-id="${t.id}">Edit</button>`;
@@ -3613,11 +3694,20 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 
   function renderDesigDefFilePicker() {
     const picker = document.getElementById('desig-def-file-picker');
+    if (!agentFilesList.length) {
+      picker.innerHTML = '<option value="">No agent files — add roots in More tab first</option>';
+      return;
+    }
     picker.innerHTML = '<option value="">+ Add agent file...</option>';
     const selectedSet = new Set(desigDefSelectedFiles);
+    let available = 0;
     for (const f of agentFilesList) {
       if (selectedSet.has(f.path)) continue;
       picker.innerHTML += `<option value="${esc(f.path)}">${esc(f.relativePath)}</option>`;
+      available++;
+    }
+    if (!available && selectedSet.size) {
+      picker.innerHTML = '<option value="">All files already added</option>';
     }
   }
 
@@ -3881,44 +3971,18 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     });
     scroll.innerHTML = '';
 
-    // Branch summary + committed file list
-    const bd = data.branchDiff;
-    if (bd && bd.commitCount > 0) {
-      const totalAdd = bd.files.reduce((s, f) => s + f.added, 0);
-      const totalDel = bd.files.reduce((s, f) => s + f.deleted, 0);
-      const section = document.createElement('div');
-      section.className = 'git-section';
-      let branchFilesHtml = '';
-      for (const f of bd.files) {
-        branchFilesHtml += `<div class="git-file-row" data-file="${esc(f.file)}" data-base="${esc(bd.base)}">
-          <span class="git-file-status M">M</span>
-          <span class="git-file-name">${esc(f.file)}</span>
-          <span class="git-file-stat"><span class="add">+${f.added}</span> <span class="del">-${f.deleted}</span></span>
-        </div>`;
-      }
-      section.innerHTML = `<div class="git-section-title">Branch vs ${esc(bd.base)}</div>
-        <div class="git-branch-summary">
-          <span><span class="stat purple">${bd.commitCount}</span> commits ahead</span>
-          <span><span class="stat green">+${totalAdd}</span> <span class="stat red">-${totalDel}</span></span>
-          <span><span class="stat">${bd.files.length}</span> files</span>
-        </div>
-        ${branchFilesHtml}`;
-      // Click handlers for branch diff files — pass base
-      section.querySelectorAll('.git-file-row').forEach(row => {
-        row.addEventListener('click', () => {
-          if (!sessionForGit || !ws || ws.readyState !== 1) return;
-          ws.send(JSON.stringify({ type: 'git:diff', session: sessionForGit, file: row.dataset.file, base: row.dataset.base }));
-        });
-      });
-      scroll.appendChild(section);
+    // Helper: make section titles toggle collapse
+    function wireCollapse(section) {
+      const title = section.querySelector('.git-section-title');
+      if (title) title.addEventListener('click', () => section.classList.toggle('collapsed'));
     }
 
-    // Uncommitted changed files
+    // 1. Uncommitted changed files (most important — first)
     const files = data.changedFiles || [];
     if (files.length) {
       const section = document.createElement('div');
       section.className = 'git-section';
-      let html = '<div class="git-section-title">Uncommitted Changes</div>';
+      let html = '<div class="git-section-title">Uncommitted Changes</div><div class="git-section-body">';
       // Build stat map from diffStat + stagedStat
       const statMap = {};
       for (const d of (data.diffStat || [])) statMap[d.file] = d;
@@ -3936,6 +4000,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
           ${statHtml}
         </div>`;
       }
+      html += '</div>';
       section.innerHTML = html;
       // Click handlers for uncommitted files — no base
       section.querySelectorAll('.git-file-row').forEach(row => {
@@ -3944,15 +4009,16 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
           ws.send(JSON.stringify({ type: 'git:diff', session: sessionForGit, file: row.dataset.file }));
         });
       });
+      wireCollapse(section);
       scroll.appendChild(section);
     }
 
-    // Commit log
+    // 2. Commit log (second)
     const log = data.log || [];
     if (log.length) {
       const section = document.createElement('div');
       section.className = 'git-section';
-      let html = '<div class="git-section-title">Recent Commits</div>';
+      let html = '<div class="git-section-title">Recent Commits</div><div class="git-section-body">';
       for (const c of log) {
         html += `<div class="git-log-row" data-hash="${esc(c.hash)}">
           <span class="git-log-hash">${esc(c.short)}</span>
@@ -3961,6 +4027,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         </div>
         <div class="git-log-files" data-for-hash="${esc(c.hash)}"></div>`;
       }
+      html += '</div>';
       section.innerHTML = html;
       // Click commit → request files
       section.querySelectorAll('.git-log-row').forEach(row => {
@@ -3983,6 +4050,42 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
           }
         });
       });
+      wireCollapse(section);
+      scroll.appendChild(section);
+    }
+
+    // 3. Branch vs master (least important — last, collapsed by default)
+    const bd = data.branchDiff;
+    if (bd && bd.commitCount > 0) {
+      const totalAdd = bd.files.reduce((s, f) => s + f.added, 0);
+      const totalDel = bd.files.reduce((s, f) => s + f.deleted, 0);
+      const section = document.createElement('div');
+      section.className = 'git-section collapsed';
+      let branchFilesHtml = '';
+      for (const f of bd.files) {
+        branchFilesHtml += `<div class="git-file-row" data-file="${esc(f.file)}" data-base="${esc(bd.base)}">
+          <span class="git-file-status M">M</span>
+          <span class="git-file-name">${esc(f.file)}</span>
+          <span class="git-file-stat"><span class="add">+${f.added}</span> <span class="del">-${f.deleted}</span></span>
+        </div>`;
+      }
+      section.innerHTML = `<div class="git-section-title">Branch vs ${esc(bd.base)} <span style="font-weight:400;text-transform:none;letter-spacing:0">(${bd.commitCount} commits, ${bd.files.length} files)</span></div>
+        <div class="git-section-body">
+        <div class="git-branch-summary">
+          <span><span class="stat purple">${bd.commitCount}</span> commits ahead</span>
+          <span><span class="stat green">+${totalAdd}</span> <span class="stat red">-${totalDel}</span></span>
+          <span><span class="stat">${bd.files.length}</span> files</span>
+        </div>
+        ${branchFilesHtml}
+        </div>`;
+      // Click handlers for branch diff files — pass base
+      section.querySelectorAll('.git-file-row').forEach(row => {
+        row.addEventListener('click', () => {
+          if (!sessionForGit || !ws || ws.readyState !== 1) return;
+          ws.send(JSON.stringify({ type: 'git:diff', session: sessionForGit, file: row.dataset.file, base: row.dataset.base }));
+        });
+      });
+      wireCollapse(section);
       scroll.appendChild(section);
     }
 
