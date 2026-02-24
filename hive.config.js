@@ -12,7 +12,7 @@ module.exports = {
     repoDir: (n) => path.join(os.homedir(), `ai-dev/webplatform${n}`),
 
     // Which pane index runs Claude Code (depends on your tmux layout)
-    claudePane: 0,
+    claudePane: 1,
 
     // Set to true if Claude Code is configured with vim keybindings
     vimMode: false,
