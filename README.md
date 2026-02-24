@@ -109,6 +109,20 @@ Each tmux session runs Claude Code in a pane. hive reads terminal content via `t
 - **gh** CLI for PR/CI data (optional)
 - Optional: Telegram bot token for the Telegram integration
 
+### tmux base index (important)
+
+hive expects panes to start at index 1 (`claudePane: 1` in config). Add this to your `~/.tmux.conf`:
+
+```bash
+set -g base-index 1
+set -g pane-base-index 1
+setw -g pane-base-index 1
+```
+
+Then reload: `tmux source-file ~/.tmux.conf`
+
+Without this, tmux defaults to 0-indexed panes and hive will target the wrong pane.
+
 ## Quick start
 
 ```bash

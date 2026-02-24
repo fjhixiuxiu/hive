@@ -9,8 +9,8 @@ function createBot(config, watcher, router) {
   const chatId = process.env.TELEGRAM_CHAT_ID;
 
   if (!token || !chatId) {
-    console.error('Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID in .env');
-    process.exit(1);
+    console.warn('Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID in .env -- Telegram bot disabled');
+    return null;
   }
 
   const bot = new TelegramBot(token, { polling: true });
@@ -23,22 +23,20 @@ function createBot(config, watcher, router) {
 
   // Helper to send a message (with error handling)
   function send(text, opts = {}) {
-    return bot.sendMessage(allowedChatId, text, opts)
-      .catch(err => {
-        console.error('Send error:', err.message);
-        // Retry without formatting if it fails
-        return bot.sendMessage(allowedChatId, text.replace(/<[^>]+>/g, '')).catch(() => {});
-      });
+    return bot.sendMessage(allowedChatId, text, opts).catch((err) => {
+      console.error('Send error:', err.message);
+      // Retry without formatting if it fails
+      return bot.sendMessage(allowedChatId, text.replace(/<[^>]+>/g, '')).catch(() => {});
+    });
   }
 
   // Helper to edit an existing message
   function edit(messageId, text, opts = {}) {
-    return bot.editMessageText(text, { chat_id: allowedChatId, message_id: messageId, ...opts })
-      .catch(err => {
-        // Ignore "message is not modified" errors (content unchanged)
-        if (err.message && err.message.includes('not modified')) return;
-        console.error('Edit error:', err.message);
-      });
+    return bot.editMessageText(text, { chat_id: allowedChatId, message_id: messageId, ...opts }).catch((err) => {
+      // Ignore "message is not modified" errors (content unchanged)
+      if (err.message && err.message.includes('not modified')) return;
+      console.error('Edit error:', err.message);
+    });
   }
 
   // Wrap command handlers with error catching
@@ -57,20 +55,23 @@ function createBot(config, watcher, router) {
 
   bot.onText(/\/start$/, (msg) => {
     if (!auth(msg)) return;
-    send([
-      '<b>trhive</b> -- AI Fleet Command',
-      '',
-      '<code>/status</code> -- all sessions at a glance',
-      '<code>/idle</code> -- list idle sessions',
-      '<code>/working</code> -- list working sessions',
-      '<code>/session N</code> -- detailed session status',
-      '<code>/peek N</code> -- last output from Claude',
-      '<code>/ask N msg</code> -- send message, get response',
-      '<code>/tell N msg</code> -- fire and forget',
-      '<code>/restart N</code> -- restart Claude',
-      '<code>/kill N</code> -- kill session',
-      '<code>/prs</code> -- all open PRs',
-    ].join('\n'), { parse_mode: 'HTML' });
+    send(
+      [
+        '<b>trhive</b> -- AI Fleet Command',
+        '',
+        '<code>/status</code> -- all sessions at a glance',
+        '<code>/idle</code> -- list idle sessions',
+        '<code>/working</code> -- list working sessions',
+        '<code>/session N</code> -- detailed session status',
+        '<code>/peek N</code> -- last output from Claude',
+        '<code>/ask N msg</code> -- send message, get response',
+        '<code>/tell N msg</code> -- fire and forget',
+        '<code>/restart N</code> -- restart Claude',
+        '<code>/kill N</code> -- kill session',
+        '<code>/prs</code> -- all open PRs',
+      ].join('\n'),
+      { parse_mode: 'HTML' },
+    );
   });
 
   bot.onText(/\/status$/, (msg) => {

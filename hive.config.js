@@ -9,7 +9,7 @@ module.exports = {
     pattern: /^\d+/,
 
     // Map session number → repo directory
-    repoDir: (n) => path.join(os.homedir(), `ai-dev/webplatform${n}`),
+    repoDir: (n) => path.join(os.homedir(), `Desktop/Viv/webplatform${n > 1 ? n : ''}`),
 
     // Which pane index runs Claude Code (depends on your tmux layout)
     claudePane: 1,
@@ -25,16 +25,10 @@ module.exports = {
 
   // ── Idle detection ──────────────────────────────────────
   // Patterns that indicate Claude is waiting for input (idle)
-  idlePatterns: [
-    /bypass permissions/,
-    /shift\+tab/,
-    /ctrl-g to edit/,
-  ],
+  idlePatterns: [/bypass permissions/, /shift\+tab/, /ctrl-g to edit/],
 
   // Patterns that indicate Claude isn't running
-  offPatterns: [
-    /conversation\./,
-  ],
+  offPatterns: [/conversation\./],
 
   // ── Cache (from tmux dashboard scripts) ─────────────────
   cache: {

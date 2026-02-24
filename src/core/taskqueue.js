@@ -21,29 +21,38 @@ class TaskQueue extends EventEmitter {
     this.router = router;
 
     // State
-    this.tasks = new Map();           // id -> Task
-    this.autoSessions = new Set();    // session numbers opted into auto-mode
-    this.designations = new Map();    // session num -> designation string
-    this.feed = [];                   // ring buffer, max 200
-    this.approvals = new Map();       // id -> Approval
-    this.dispatchLock = new Set();    // session numbers currently being dispatched to
+    this.tasks = new Map(); // id -> Task
+    this.autoSessions = new Set(); // session numbers opted into auto-mode
+    this.designations = new Map(); // session num -> designation string
+    this.feed = []; // ring buffer, max 200
+    this.approvals = new Map(); // id -> Approval
+    this.dispatchLock = new Set(); // session numbers currently being dispatched to
     this.activeTaskBySession = new Map(); // session num -> task id
-    this.spawnedAgents = new Map();  // slot num -> { repoDir, name }
+    this.spawnedAgents = new Map(); // slot num -> { repoDir, name }
     this.vimMode = false;
 
     // Designation definitions + agent file scanning
     this.designationDefs = new Map(); // name → { name, agentFiles: [], description: '' }
-    this.agentRoots = [];             // array of scan paths (e.g. '~/dev/agents/')
-    this.agentFilesList = [];         // cached scan results: [{ path, name, relativePath, root }]
+    this.agentRoots = []; // array of scan paths (e.g. '~/dev/agents/')
+    this.agentFilesList = []; // cached scan results: [{ path, name, relativePath, root }]
 
     // Auto-pilot rules
     this.rules = [
-      { id: 'ci-fail-fix', name: 'Auto-fix CI failures', enabled: false,
-        trigger: 'ci:fail', action: 'dispatch-fix' },
-      { id: 'review-changes', name: 'Auto-address review changes', enabled: false,
-        trigger: 'review:changes_requested', action: 'dispatch-fix' },
-      { id: 'idle-next-task', name: 'Auto-pick next task on idle', enabled: true,
-        trigger: 'session:idle', action: 'auto-dispatch' },
+      { id: 'ci-fail-fix', name: 'Auto-fix CI failures', enabled: false, trigger: 'ci:fail', action: 'dispatch-fix' },
+      {
+        id: 'review-changes',
+        name: 'Auto-address review changes',
+        enabled: false,
+        trigger: 'review:changes_requested',
+        action: 'dispatch-fix',
+      },
+      {
+        id: 'idle-next-task',
+        name: 'Auto-pick next task on idle',
+        enabled: true,
+        trigger: 'session:idle',
+        action: 'auto-dispatch',
+      },
     ];
 
     // Load persisted state
@@ -52,11 +61,62 @@ class TaskQueue extends EventEmitter {
     // Wire watcher events
     this._wireWatcher();
 
+    // On startup, complete any dispatched tasks whose sessions are already idle.
+    // The watcher's _seed marks idle sessions as notifiedIdle (to suppress duplicate
+    // notifications), so those sessions won't get a session:idle event. We need to
+    // handle task completion here instead.
+    setTimeout(async () => {
+      try {
+        const sessions = await fleet.getFleetStatus(this.config, this.router);
+        for (const s of sessions) {
+          if (s.state === 'idle' && this.activeTaskBySession.has(s.num)) {
+            this._handleSessionIdle(s.num, null, 0);
+          }
+        }
+      } catch (err) {
+        console.error('Startup idle check error:', err.message);
+      }
+    }, 5000);
+
     // Delayed dispatch after startup -- give sessions time to boot (60s)
     // then check once. Ongoing dispatch is event-driven (session:idle, designation change, etc.)
     setTimeout(() => {
-      this._tryAutoDispatch().catch(err => console.error('Auto-dispatch error:', err.message));
+      this._tryAutoDispatch().catch((err) => console.error('Auto-dispatch error:', err.message));
     }, 60000);
+
+    // Stuck-task watchdog: every 60s, check for dispatched tasks on idle sessions.
+    // This catches cases where the watcher's idle detection is blocked (e.g. by
+    // detectedWaiting false positives from approval/question pattern matching).
+    this._stuckTaskInterval = setInterval(() => {
+      this._checkStuckTasks().catch((err) => console.error('Stuck task check error:', err.message));
+    }, 60000);
+  }
+
+  async _checkStuckTasks() {
+    if (!this.activeTaskBySession.size) return;
+
+    const sessions = await fleet.getFleetStatus(this.config, this.router);
+    for (const s of sessions) {
+      if (s.state !== 'idle') continue;
+      const taskId = this.activeTaskBySession.get(s.num);
+      if (!taskId) continue;
+
+      const task = this.tasks.get(taskId);
+      if (!task || task.status !== 'dispatched') continue;
+
+      // Only force-complete if dispatched for more than 2 minutes
+      const elapsed = Date.now() - (task.dispatchedAt || 0);
+      if (elapsed < 120000) continue;
+
+      this.pushFeed(
+        'task',
+        s.num,
+        `Stuck task watchdog: completing "${task.text}" (idle ${Math.round(elapsed / 60000)}m)`,
+      );
+      this._handleSessionIdle(s.num, null, 0);
+      // Also clear detectedWaiting so future idle detection works
+      this.watcher.detectedWaiting.delete(s.num);
+    }
   }
 
   // -- Task lifecycle -----------------------------------------------
@@ -74,8 +134,8 @@ class TaskQueue extends EventEmitter {
       dispatchedAt: null,
       completedAt: null,
       result: null,
-      source: (meta && meta.source) || null,   // e.g. 'ci-fail', 'review-changes'
-      sourcePR: (meta && meta.pr) || null,      // PR number that triggered this
+      source: (meta && meta.source) || null, // e.g. 'ci-fail', 'review-changes'
+      sourcePR: (meta && meta.pr) || null, // PR number that triggered this
       sourceSession: (meta && meta.session) || null, // session that triggered this
     };
     this.tasks.set(task.id, task);
@@ -83,12 +143,10 @@ class TaskQueue extends EventEmitter {
     this.pushFeed('task', null, `Task created: "${text}" (${mode})`);
 
     if (mode === 'manual' && targetSession) {
-      this._dispatchTask(task, targetSession).catch(err =>
-        console.error('Dispatch error:', err.message));
+      this._dispatchTask(task, targetSession).catch((err) => console.error('Dispatch error:', err.message));
     } else if (mode === 'auto') {
       // Try to dispatch immediately to an idle auto-session
-      this._tryAutoDispatch().catch(err =>
-        console.error('Auto-dispatch error:', err.message));
+      this._tryAutoDispatch().catch((err) => console.error('Auto-dispatch error:', err.message));
     }
 
     return task;
@@ -167,16 +225,12 @@ class TaskQueue extends EventEmitter {
       this.dispatchLock.delete(task.assignedTo);
     }
 
-    const duration = task.dispatchedAt
-      ? Math.round((task.completedAt - task.dispatchedAt) / 60000)
-      : 0;
+    const duration = task.dispatchedAt ? Math.round((task.completedAt - task.dispatchedAt) / 60000) : 0;
     this.emit('task:completed', task);
-    this.pushFeed('task', task.assignedTo,
-      `Task completed: "${task.text}" (${duration}m)`);
+    this.pushFeed('task', task.assignedTo, `Task completed: "${task.text}" (${duration}m)`);
     this._saveState();
     // Dispatch next queued task now that a session is free
-    this._tryAutoDispatch().catch(err =>
-      console.error('Auto-dispatch error:', err.message));
+    this._tryAutoDispatch().catch((err) => console.error('Auto-dispatch error:', err.message));
     return task;
   }
 
@@ -194,8 +248,7 @@ class TaskQueue extends EventEmitter {
     }
 
     this.emit('task:failed', task);
-    this.pushFeed('task', task.assignedTo,
-      `Task failed: "${task.text}" -- ${error}`);
+    this.pushFeed('task', task.assignedTo, `Task failed: "${task.text}" -- ${error}`);
     return task;
   }
 
@@ -213,7 +266,7 @@ class TaskQueue extends EventEmitter {
 
     // Double-check session is actually idle right now (fresh read)
     const sessions = await fleet.getFleetStatus(this.config, this.router);
-    const session = sessions.find(s => s.num === sessionNum);
+    const session = sessions.find((s) => s.num === sessionNum);
     if (!session || session.state !== 'idle') {
       return false; // silently skip -- don't fail the task, just don't dispatch yet
     }
@@ -226,8 +279,7 @@ class TaskQueue extends EventEmitter {
     this.activeTaskBySession.set(sessionNum, task.id);
 
     this.emit('task:dispatched', task);
-    this.pushFeed('task', sessionNum,
-      `Task dispatched to session ${sessionNum}: "${task.text}"`);
+    this.pushFeed('task', sessionNum, `Task dispatched to session ${sessionNum}: "${task.text}"`);
     this._saveState();
 
     // Fire-and-forget: send the task text to Claude
@@ -236,7 +288,7 @@ class TaskQueue extends EventEmitter {
       if (task.mode === 'auto') {
         const clearResult = await relay.tell(this.config, node, sessionName, '/clear', { vimMode: this.vimMode });
         if (clearResult.success) {
-          await new Promise(r => setTimeout(r, 2500));
+          await new Promise((r) => setTimeout(r, 2500));
         }
       }
       // Build message with agent file preamble if designation has agent files
@@ -246,7 +298,9 @@ class TaskQueue extends EventEmitter {
       if (desigDef && desigDef.agentFiles && desigDef.agentFiles.length > 0) {
         const parts = [];
         for (const f of desigDef.agentFiles) {
-          try { parts.push(fs.readFileSync(f, 'utf8')); } catch {}
+          try {
+            parts.push(fs.readFileSync(f, 'utf8'));
+          } catch {}
         }
         if (parts.length > 0) {
           fullMessage = parts.join('\n\n---\n\n') + '\n\n---\n\nTASK:\n' + task.text;
@@ -255,14 +309,16 @@ class TaskQueue extends EventEmitter {
       return relay.tell(this.config, node, sessionName, fullMessage, { vimMode: this.vimMode });
     };
 
-    sendTask().then((result) => {
-      if (!result.success) {
-        this.failTask(task.id, result.error || 'Tell failed');
-      }
-      // Don't unlock dispatchLock here -- wait for session to go idle
-    }).catch((err) => {
-      this.failTask(task.id, err.message);
-    });
+    sendTask()
+      .then((result) => {
+        if (!result.success) {
+          this.failTask(task.id, result.error || 'Tell failed');
+        }
+        // Don't unlock dispatchLock here -- wait for session to go idle
+      })
+      .catch((err) => {
+        this.failTask(task.id, err.message);
+      });
 
     return true;
   }
@@ -277,22 +333,22 @@ class TaskQueue extends EventEmitter {
   }
 
   async _tryAutoDispatch() {
-    const queuedTasks = Array.from(this.tasks.values())
-      .filter(t => t.status === 'queued' && t.mode === 'auto');
+    const queuedTasks = Array.from(this.tasks.values()).filter((t) => t.status === 'queued' && t.mode === 'auto');
     if (!queuedTasks.length) return;
 
     const sessions = await fleet.getFleetStatus(this.config, this.router);
-    const idleAuto = sessions.filter(s =>
-      s.state === 'idle'
-      && this.autoSessions.has(s.num)
-      && !this.dispatchLock.has(s.num)
-      && !this.activeTaskBySession.has(s.num)
+    const idleAuto = sessions.filter(
+      (s) =>
+        s.state === 'idle' &&
+        this.autoSessions.has(s.num) &&
+        !this.dispatchLock.has(s.num) &&
+        !this.activeTaskBySession.has(s.num),
     );
     if (!idleAuto.length) return;
 
     // Dispatch one task per idle session (not all at once)
     for (const session of idleAuto) {
-      const task = queuedTasks.find(t => {
+      const task = queuedTasks.find((t) => {
         if (t.status !== 'queued') return false;
         if (t.designation) {
           return this.designations.get(session.num) === t.designation;
@@ -316,8 +372,7 @@ class TaskQueue extends EventEmitter {
     this._saveState();
     this.emit('auto:changed', this.getAutoSessions());
     // Re-evaluate dispatch with new auto-session set
-    this._tryAutoDispatch().catch(err =>
-      console.error('Auto-dispatch error:', err.message));
+    this._tryAutoDispatch().catch((err) => console.error('Auto-dispatch error:', err.message));
     return this.autoSessions.has(num);
   }
 
@@ -351,8 +406,7 @@ class TaskQueue extends EventEmitter {
     this._saveState();
     this.emit('designations:changed', this.getDesignations());
     // Re-evaluate dispatch with new designation mapping
-    this._tryAutoDispatch().catch(err =>
-      console.error('Auto-dispatch error:', err.message));
+    this._tryAutoDispatch().catch((err) => console.error('Auto-dispatch error:', err.message));
   }
 
   getDesignations() {
@@ -447,7 +501,7 @@ class TaskQueue extends EventEmitter {
 
   async getAvailableSlots() {
     const sessions = await fleet.getFleetStatus(this.config, this.router);
-    const occupied = new Set(sessions.map(s => s.num));
+    const occupied = new Set(sessions.map((s) => s.num));
     const slots = [];
     for (let i = 17; i <= 32; i++) {
       if (!occupied.has(i)) slots.push(i);
@@ -480,7 +534,7 @@ class TaskQueue extends EventEmitter {
     if (num < 17 || num > 32) throw new Error('Spawn slots must be 17-32');
 
     const sessions = await fleet.getFleetStatus(this.config, this.router);
-    if (sessions.find(s => s.num === num)) {
+    if (sessions.find((s) => s.num === num)) {
       throw new Error(`Slot ${num} is already occupied`);
     }
 
@@ -515,7 +569,7 @@ class TaskQueue extends EventEmitter {
     this._saveState();
 
     // Wait for init then rename
-    await new Promise(r => setTimeout(r, 2000));
+    await new Promise((r) => setTimeout(r, 2000));
     try {
       const renameScript = path.join(os.homedir(), 'dev', 'agents', 'tmux', 'rename.sh');
       execSync(`bash "${renameScript}"`, { timeout: 10000, stdio: 'pipe' });
@@ -534,20 +588,24 @@ class TaskQueue extends EventEmitter {
     let targets;
 
     if (specificSessions && specificSessions.length) {
-      targets = sessions.filter(s => specificSessions.includes(s.num));
+      targets = sessions.filter((s) => specificSessions.includes(s.num));
     } else if (target === 'idle') {
-      targets = sessions.filter(s => s.state === 'idle');
+      targets = sessions.filter((s) => s.state === 'idle');
     } else if (target === 'working') {
-      targets = sessions.filter(s => s.state === 'working');
+      targets = sessions.filter((s) => s.state === 'working');
     } else {
-      targets = sessions.filter(s => s.state !== 'off');
+      targets = sessions.filter((s) => s.state !== 'off');
     }
 
-    let sent = 0, failed = 0;
+    let sent = 0,
+      failed = 0;
     for (const s of targets) {
       try {
         const node = this.router.nodeFor(s.name);
-        if (!node) { failed++; continue; }
+        if (!node) {
+          failed++;
+          continue;
+        }
         const result = await relay.tell(this.config, node, s.name, message, { vimMode: this.vimMode });
         if (result.success) sent++;
         else failed++;
@@ -556,8 +614,7 @@ class TaskQueue extends EventEmitter {
       }
     }
 
-    this.pushFeed('broadcast', null,
-      `Broadcast to ${target || 'all'}: "${message}" (${sent} sent, ${failed} failed)`);
+    this.pushFeed('broadcast', null, `Broadcast to ${target || 'all'}: "${message}" (${sent} sent, ${failed} failed)`);
     return { sent, failed };
   }
 
@@ -603,14 +660,12 @@ class TaskQueue extends EventEmitter {
     }
 
     this.emit('approval:resolved', approval);
-    this.pushFeed('approval', approval.session,
-      `Approval ${approved ? 'approved' : 'denied'}: "${approval.prompt}"`);
+    this.pushFeed('approval', approval.session, `Approval ${approved ? 'approved' : 'denied'}: "${approval.prompt}"`);
     return approval;
   }
 
   getPendingApprovals() {
-    return Array.from(this.approvals.values())
-      .filter(a => a.status === 'pending');
+    return Array.from(this.approvals.values()).filter((a) => a.status === 'pending');
   }
 
   // -- Feed ---------------------------------------------------------
@@ -635,7 +690,7 @@ class TaskQueue extends EventEmitter {
   getFeed(before, limit = 50) {
     let entries = this.feed;
     if (before) {
-      const idx = entries.findIndex(e => e.id === before);
+      const idx = entries.findIndex((e) => e.id === before);
       if (idx > 0) entries = entries.slice(0, idx);
     }
     const slice = entries.slice(-limit);
@@ -652,7 +707,7 @@ class TaskQueue extends EventEmitter {
   }
 
   toggleRule(ruleId) {
-    const rule = this.rules.find(r => r.id === ruleId);
+    const rule = this.rules.find((r) => r.id === ruleId);
     if (rule) {
       rule.enabled = !rule.enabled;
       this._saveState();
@@ -667,16 +722,16 @@ class TaskQueue extends EventEmitter {
 
       switch (rule.action) {
         case 'auto-dispatch':
-          this._tryAutoDispatch().catch(err =>
-            console.error('Auto-dispatch error:', err.message));
+          this._tryAutoDispatch().catch((err) => console.error('Auto-dispatch error:', err.message));
           break;
 
         case 'dispatch-fix':
           if (data && data.num && this.autoSessions.has(data.num)) {
             const pr = data.pr ? ` PR #${data.pr}` : '';
-            const message = trigger === 'ci:fail'
-              ? `CI failed on${pr}. Run /ci-status ${data.pr || ''} to see failures, then fix them.`
-              : `Review changes requested on${pr}. Check the PR review comments and address the feedback.`;
+            const message =
+              trigger === 'ci:fail'
+                ? `CI failed on${pr}. Run /ci-status ${data.pr || ''} to see failures, then fix them.`
+                : `Review changes requested on${pr}. Check the PR review comments and address the feedback.`;
             this.createTask(message, 'manual', data.num, null, {
               source: trigger === 'ci:fail' ? 'ci-fail' : 'review-changes',
               pr: data.pr || null,
@@ -698,7 +753,7 @@ class TaskQueue extends EventEmitter {
       }
       if (Array.isArray(data.rules)) {
         for (const saved of data.rules) {
-          const rule = this.rules.find(r => r.id === saved.id);
+          const rule = this.rules.find((r) => r.id === saved.id);
           if (rule) rule.enabled = saved.enabled;
         }
       }
@@ -734,7 +789,9 @@ class TaskQueue extends EventEmitter {
           if (Number(t.id) >= nextTaskId) nextTaskId = Number(t.id) + 1;
         }
       }
-      console.log(`Loaded state: ${this.autoSessions.size} auto-sessions, ${this.designations.size} designations, ${this.designationDefs.size} defs, ${this.agentRoots.length} agent roots, ${this.spawnedAgents.size} spawned agents`);
+      console.log(
+        `Loaded state: ${this.autoSessions.size} auto-sessions, ${this.designations.size} designations, ${this.designationDefs.size} defs, ${this.agentRoots.length} agent roots, ${this.spawnedAgents.size} spawned agents`,
+      );
       if (this.tasks.size) console.log(`Restored ${this.tasks.size} tasks`);
     } catch {
       // No state file yet -- that's fine
@@ -746,11 +803,11 @@ class TaskQueue extends EventEmitter {
     for (const [num, info] of this.spawnedAgents) spawnedObj[num] = info;
     // Persist active tasks (queued + dispatched only, not completed/cancelled/failed)
     const tasksArr = Array.from(this.tasks.values())
-      .filter(t => t.status === 'queued' || t.status === 'dispatched')
-      .map(t => ({ ...t }));
+      .filter((t) => t.status === 'queued' || t.status === 'dispatched')
+      .map((t) => ({ ...t }));
     const data = {
       autoSessions: Array.from(this.autoSessions),
-      rules: this.rules.map(r => ({ id: r.id, enabled: r.enabled })),
+      rules: this.rules.map((r) => ({ id: r.id, enabled: r.enabled })),
       designations: this.getDesignations(),
       designationDefs: this.getDesignationDefs(),
       agentRoots: this.agentRoots,
@@ -807,8 +864,7 @@ class TaskQueue extends EventEmitter {
 
     this.watcher.on('ci:changed', (data) => {
       const label = data.to === 'SUCCESS' ? 'PASS' : data.to === 'FAILURE' ? 'FAIL' : data.to;
-      this.pushFeed('ci', data.num,
-        `CI ${label} -- session ${data.num} PR#${data.pr}`);
+      this.pushFeed('ci', data.num, `CI ${label} -- session ${data.num} PR#${data.pr}`);
 
       if (data.to === 'FAILURE') {
         this.evaluateRules('ci:fail', data);
@@ -820,8 +876,7 @@ class TaskQueue extends EventEmitter {
     });
 
     this.watcher.on('review:changed', (data) => {
-      this.pushFeed('ci', data.num,
-        `Review: ${data.to} -- session ${data.num} PR#${data.pr}`);
+      this.pushFeed('ci', data.num, `Review: ${data.to} -- session ${data.num} PR#${data.pr}`);
 
       if (data.to === 'CHANGES_REQUESTED') {
         this.evaluateRules('review:changes_requested', data);
@@ -833,9 +888,9 @@ class TaskQueue extends EventEmitter {
 
   getTasksList() {
     return Array.from(this.tasks.values())
-      .filter(t => t.status !== 'cancelled')
+      .filter((t) => t.status !== 'cancelled')
       .sort((a, b) => b.createdAt - a.createdAt)
-      .map(t => {
+      .map((t) => {
         const { snapshot, snapshotCols, ...rest } = t;
         return rest;
       });

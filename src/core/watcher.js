@@ -19,7 +19,6 @@ const NUMBERED_OPTION_PATTERN = /^\d+[.)]\s+.{5,}/;
 
 // Patterns that indicate Claude is asking for permission
 const APPROVAL_PATTERNS = [
-  /bypass permissions/i,
   /Do you want to proceed/i,
   /Allow this action/i,
   /\(y\/n\)/i,
@@ -30,10 +29,10 @@ const APPROVAL_PATTERNS = [
 
 // Patterns that indicate Claude is asking the user a question
 const QUESTION_PATTERNS = [
-  /^\s*❯\s+/,           // selection cursor (AskUserQuestion UI)
-  /^\s*>\s+\S/,          // alternate selection cursor
-  /^\s*\?\s+.{5,}/,     // ? prefix on question line
-  /Other$/,              // "Other" option always present in AskUserQuestion
+  /^\s*❯\s+/, // selection cursor (AskUserQuestion UI)
+  /^\s*>\s+\S/, // alternate selection cursor
+  /^\s*\?\s+.{5,}/, // ? prefix on question line
+  /Other$/, // "Other" option always present in AskUserQuestion
 ];
 
 class Watcher extends EventEmitter {
@@ -43,11 +42,11 @@ class Watcher extends EventEmitter {
     this.router = router;
     this.interval = null;
     this.approvalInterval = null;
-    this.prevStates = new Map();   // num -> 'idle'|'working'|'off'
+    this.prevStates = new Map(); // num -> 'idle'|'working'|'off'
     this.notifiedIdle = new Set(); // nums we've already emitted idle for
-    this.pendingIdle = new Map();  // num -> count of consecutive idle polls (confirm at 5)
-    this.prevCI = new Map();       // num -> CI result string
-    this.prevReview = new Map();   // num -> review status string
+    this.pendingIdle = new Map(); // num -> count of consecutive idle polls (confirm at 5)
+    this.prevCI = new Map(); // num -> CI result string
+    this.prevReview = new Map(); // num -> review status string
     this.detectedWaiting = new Set(); // session nums waiting for user (approvals or questions)
   }
 
@@ -58,11 +57,11 @@ class Watcher extends EventEmitter {
     await this._seed();
 
     this.interval = setInterval(() => {
-      this._poll().catch(err => console.error('Watcher poll error:', err.message));
+      this._poll().catch((err) => console.error('Watcher poll error:', err.message));
     }, this.config.watcher.interval);
     // Approval detection: poll working sessions every 10s
     this.approvalInterval = setInterval(() => {
-      this._checkApprovals().catch(err => console.error('Approval check error:', err.message));
+      this._checkApprovals().catch((err) => console.error('Approval check error:', err.message));
     }, 10000);
   }
 
@@ -117,8 +116,11 @@ class Watcher extends EventEmitter {
                 preview = await fleet.peekSession(this.config, node, s.name);
                 // Also capture ANSI version + pane width for task snapshot display
                 const paneTarget = `${s.name}:.${this.config.sessions.claudePane}`;
-                ansiSnapshot = await node.exec(`tmux capture-pane -e -p -S -500 -t "${paneTarget}" 2>/dev/null`) || '';
-                const colsStr = await node.exec(`tmux display-message -p -t "${paneTarget}" "#{pane_width}" 2>/dev/null`);
+                ansiSnapshot =
+                  (await node.exec(`tmux capture-pane -e -p -S -500 -t "${paneTarget}" 2>/dev/null`)) || '';
+                const colsStr = await node.exec(
+                  `tmux display-message -p -t "${paneTarget}" "#{pane_width}" 2>/dev/null`,
+                );
                 paneCols = parseInt(colsStr) || 0;
               }
             } catch {}
@@ -199,7 +201,10 @@ class Watcher extends EventEmitter {
       const content = await node.capturePane(paneTarget, { lines: 8 });
       if (!content) continue;
 
-      const lines = content.split('\n').map(l => l.replace(/[^\x20-\x7E]/g, '').trim()).filter(Boolean);
+      const lines = content
+        .split('\n')
+        .map((l) => l.replace(/[^\x20-\x7E]/g, '').trim())
+        .filter(Boolean);
       let isWaiting = false;
       let prompt = '';
 

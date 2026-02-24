@@ -1195,6 +1195,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       <div class="more-scroll">
         <div class="more-section">
           <div class="more-section-title">Session Modes</div>
+          <span style="font-size:11px;color:var(--dim);display:block;margin-bottom:8px;">Auto sessions pick up queued tasks automatically when idle. Manual sessions only run tasks you assign directly.</span>
           <div class="mode-columns">
             <div class="mode-col">
               <div class="mode-col-header auto-header">Auto</div>
@@ -1220,10 +1221,12 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         </div>
         <div class="more-section">
           <div class="more-section-title">Auto-Pilot Rules</div>
+          <span style="font-size:11px;color:var(--dim);display:block;margin-bottom:8px;">Triggers that automatically create or dispatch tasks based on session events.</span>
           <div id="rules-list"></div>
         </div>
         <div class="more-section">
           <div class="more-section-title">Session Designations</div>
+          <span style="font-size:11px;color:var(--dim);display:block;margin-bottom:8px;">Label sessions by role. Tasks with a matching designation only dispatch to sessions with that label.</span>
           <div class="desig-grid" id="desig-grid"></div>
         </div>
         <div class="more-section">
@@ -2098,8 +2101,13 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   function writeTerminalContent(content) {
     if (!term) return;
     lastContent = content; writingContent = true;
+    const el = term.element;
+    if (el) el.style.visibility = 'hidden';
     term.reset(); term.write(content);
-    requestAnimationFrame(() => { term.scrollToBottom(); requestAnimationFrame(() => { writingContent = false; }); });
+    requestAnimationFrame(() => {
+      term.scrollToBottom();
+      requestAnimationFrame(() => { if (el) el.style.visibility = ''; writingContent = false; });
+    });
   }
 
   // Fit terminal to container, but use pane cols if wider (prevents ANSI line wrapping artifacts)
