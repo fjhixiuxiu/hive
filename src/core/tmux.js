@@ -1,5 +1,6 @@
 const { exec: cpExec } = require('child_process');
 const { promisify } = require('util');
+const { writeFileSync, unlinkSync } = require('fs');
 const execAsync = promisify(cpExec);
 
 /**
@@ -58,13 +59,27 @@ async function capturePane(target, { lines } = {}) {
  * @param {boolean} enter - whether to press Enter after
  */
 async function sendKeys(target, keys, enter = true) {
-  // Replace newlines with " — " so the entire message is sent as one line
-  const oneLine = keys.replace(/\r?\n+/g, ' — ');
-  // Escape single quotes in the message
-  const escaped = oneLine.replace(/'/g, "'\\''");
-  // Use -l for literal text (prevents key name interpretation)
-  await exec(`tmux send-keys -t "${target}" -l '${escaped}'`);
-  if (enter) await exec(`tmux send-keys -t "${target}" Enter`);
+  // Collapse newlines so the message is sent as one line
+  const oneLine = keys.replace(/\r?\n+/g, ' ').trim();
+  if (!oneLine && !enter) return;
+
+  if (oneLine) {
+    // Write to temp file + tmux load-buffer/paste-buffer to avoid all shell
+    // escaping issues with quotes, backticks, $, !, etc.
+    const tmpFile = `/tmp/hive-sendkeys-${process.pid}-${Date.now()}`;
+    try {
+      writeFileSync(tmpFile, oneLine, 'utf8');
+      const r = await exec(`tmux load-buffer "${tmpFile}" && tmux paste-buffer -t "${target}" -d`);
+      if (r === null) {
+        throw new Error(`tmux paste failed for target=${target}, len=${oneLine.length}`);
+      }
+    } finally {
+      try { unlinkSync(tmpFile); } catch {}
+    }
+  }
+  if (enter) {
+    await exec(`tmux send-keys -t "${target}" Enter`);
+  }
 }
 
 /**

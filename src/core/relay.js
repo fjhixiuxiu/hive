@@ -49,7 +49,11 @@ async function ask(config, node, sessionName, message, callbacks = {}) {
   }
 
   // Send the message
-  await node.sendKeys(paneTarget, message, true);
+  try {
+    await node.sendKeys(paneTarget, message, true);
+  } catch (err) {
+    return { success: false, error: `Failed to send message: ${err.message}` };
+  }
   const startTime = Date.now();
 
   if (onProgress) onProgress('Message sent, waiting for response...');
@@ -148,7 +152,11 @@ async function tell(config, node, sessionName, message, { vimMode } = {}) {
     await new Promise(r => setTimeout(r, 300));
   }
 
-  await node.sendKeys(paneTarget, message, false);
+  try {
+    await node.sendKeys(paneTarget, message, false);
+  } catch (err) {
+    return { success: false, error: `Failed to send message: ${err.message}` };
+  }
   await new Promise(r => setTimeout(r, 100));
   await node.exec(`tmux send-keys -t "${paneTarget}" Enter`);
   return { success: true };
