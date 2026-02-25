@@ -432,8 +432,10 @@ class ProjectManager extends EventEmitter {
 
     // Double-check: filter out any PRs not targeting allowed bases
     const baseSet = new Set(allowedBases);
+    const authorFilter = source.author ? source.author.toLowerCase() : null;
     return allPrs
       .filter(pr => baseSet.has(pr.base && pr.base.ref) && !pr.draft)
+      .filter(pr => !authorFilter || (pr.user && pr.user.login.toLowerCase() === authorFilter))
       .map(pr => ({
         key: `${source.repo}#${pr.number}`,
         summary: pr.title,
