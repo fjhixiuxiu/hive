@@ -1415,6 +1415,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         <option value="github-issues">GitHub Issues</option>
         <option value="github-prs">GitHub PRs</option>
         <option value="github-re-reviews">GitHub Re-Reviews</option>
+        <option value="command">Command</option>
         <option value="manual">Manual</option>
         <option value="jenkins">Jenkins (Tests)</option>
         <option value="zoho">Zoho (Support)</option>
@@ -1447,6 +1448,11 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     <div class="pm-form-field pm-fields-re-reviews" style="display:none">
       <label class="pm-form-label">Trigger Phrases <span style="color:var(--dim)">(comma-separated)</span></label>
       <input class="pm-form-input" id="pm-form-gh-triggers" type="text" placeholder="ready for review, ptal, addressed" autocomplete="off">
+    </div>
+    <div class="pm-form-field pm-fields-command" style="display:none">
+      <label class="pm-form-label">Command</label>
+      <input class="pm-form-input" id="pm-form-command" type="text" placeholder="/cp-review" autocomplete="off">
+      <span style="font-size:11px;color:var(--dim);margin-top:4px;display:block;">A Claude slash command. Runs immediately when enabled, then repeats on the poll interval. The command handles all logic — no instructions or threshold needed.</span>
     </div>
     <div class="pm-form-field pm-fields-manual" style="display:none">
       <label class="pm-form-label">Task Instructions</label>
@@ -4112,7 +4118,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     const type = document.getElementById('pm-form-source').value;
     const isGithub = type === 'github-issues' || type === 'github-prs' || type === 'github-re-reviews';
     const isReReviews = type === 'github-re-reviews';
-    const types = ['jira', 'github', 're-reviews', 'manual', 'jenkins', 'zoho'];
+    const types = ['jira', 'github', 're-reviews', 'manual', 'command', 'jenkins', 'zoho'];
     for (const t of types) {
       let show = false;
       if (t === type) show = true;
@@ -4132,7 +4138,9 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     const pollField = document.getElementById('pm-form-interval').closest('.pm-form-field');
     const threshField = document.getElementById('pm-form-threshold').closest('.pm-form-field');
     if (pollField) pollField.style.display = type === 'manual' ? 'none' : '';
-    if (threshField) threshField.style.display = type === 'manual' ? 'none' : '';
+    if (threshField) threshField.style.display = (type === 'manual' || type === 'command') ? 'none' : '';
+    const instrField = document.getElementById('pm-form-instructions').closest('.pm-form-field');
+    if (instrField) instrField.style.display = type === 'command' ? 'none' : '';
   }
 
   document.getElementById('pm-form-save').addEventListener('click', () => {
@@ -4156,6 +4164,11 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         source.triggerPhrases = document.getElementById('pm-form-gh-triggers').value.trim();
         if (!source.repo) { showToast('Error', 'Repo required', 'error'); return; }
         if (!source.reviewer) { showToast('Error', 'Reviewer username required', 'error'); return; }
+        break;
+      case 'command':
+        source.command = document.getElementById('pm-form-command').value.trim();
+        if (!source.command) { showToast('Error', 'Command required', 'error'); return; }
+        if (!source.command.startsWith('/')) source.command = '/' + source.command;
         break;
       case 'manual':
         source.text = document.getElementById('pm-form-manual-text').value.trim();
@@ -4206,6 +4219,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     document.getElementById('pm-form-gh-state').value = src.state || 'open';
     document.getElementById('pm-form-gh-reviewer').value = src.reviewer || '';
     document.getElementById('pm-form-gh-triggers').value = src.triggerPhrases || '';
+    document.getElementById('pm-form-command').value = src.command || '';
     document.getElementById('pm-form-manual-text').value = src.text || '';
     document.getElementById('pm-form-jenkins-path').value = src.jobPath || '';
     document.getElementById('pm-form-zoho-dept').value = src.department || '';

@@ -137,6 +137,17 @@ class ProjectManager extends EventEmitter {
       return;
     }
 
+    // Command source: run immediately, then repeat on interval
+    if (pm.source.type === 'command') {
+      this._createCommandTask(id);
+      const interval = setInterval(
+        () => this._createCommandTask(id),
+        pm.pollInterval,
+      );
+      this.timers.set(id, interval);
+      return;
+    }
+
     // Poll immediately, then on interval
     this._poll(id);
     const interval = setInterval(() => this._poll(id), pm.pollInterval);
@@ -155,7 +166,7 @@ class ProjectManager extends EventEmitter {
     const pm = this.pms.get(id);
     if (!pm) return;
 
-    const text = (pm.source.text || '').trim();
+    const text = (pm.source.command || pm.source.text || '').trim();
     if (!text) {
       pm.lastError = 'No task text provided';
       this._save();
@@ -181,6 +192,67 @@ class ProjectManager extends EventEmitter {
     this._stopPolling(id);
 
     this.taskQueue.pushFeed('task', null, `PM "${pm.name}" created manual task`);
+    this._save();
+    this.emit('pm:changed');
+  }
+
+  async _createCommandTask(id) {
+    const pm = this.pms.get(id);
+    if (!pm || !pm.enabled) return;
+
+    const command = (pm.source.command || '').trim();
+    if (!command) return;
+
+    // Skip if there's already a queued or active task for this command
+    const existing = [...this.taskQueue.tasks.values()].find(
+      (t) =>
+        t.text === command &&
+        (t.status === 'queued' ||
+          t.status === 'dispatched' ||
+          t.status === 'in-progress'),
+    );
+    if (existing) return;
+
+    // Find any idle session (bypass auto-mode requirement)
+    const fleet = require('./fleet');
+    const sessions = await fleet.getFleetStatus(
+      this.taskQueue.config,
+      this.taskQueue.router,
+    );
+    const idle = sessions.find(
+      (s) =>
+        s.state === 'idle' &&
+        !this.taskQueue.dispatchLock.has(s.num) &&
+        !this.taskQueue.activeTaskBySession.has(s.num) &&
+        (!pm.designation ||
+          this.taskQueue.designations.get(s.num) === pm.designation),
+    );
+
+    if (idle) {
+      const task = this.taskQueue.createTask(
+        command,
+        'auto',
+        idle.num,
+        pm.designation,
+      );
+      pm.tasksCreated++;
+      this.taskQueue.pushFeed(
+        'task',
+        null,
+        `PM "${pm.name}" dispatched ${command} to session ${idle.num}`,
+      );
+    } else {
+      this.taskQueue.createTask(command, 'auto', null, pm.designation);
+      pm.tasksCreated++;
+      this.taskQueue.pushFeed(
+        'task',
+        null,
+        `PM "${pm.name}" queued ${command} (no idle session)`,
+      );
+    }
+
+    pm.lastPoll = Date.now();
+    pm.lastError = null;
     this._save();
     this.emit('pm:changed');
   }
