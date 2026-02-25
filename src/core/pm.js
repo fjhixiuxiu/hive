@@ -455,10 +455,14 @@ class ProjectManager extends EventEmitter {
       if (!Array.isArray(comments)) continue;
 
       for (const comment of comments) {
-        // Skip bot comments (from hive itself)
+        // Skip bot comments (hive 🐝 prefix, GitHub [bot] users, and HTML/markdown-heavy bot posts)
         if (comment.body && comment.body.startsWith('🐝')) continue;
+        const login = (comment.user && comment.user.login) || '';
+        if (login.endsWith('[bot]') || comment.user?.type === 'Bot') continue;
 
-        const body = (comment.body || '').toLowerCase();
+        const rawBody = comment.body || '';
+        if (rawBody.length > 500) continue; // Skip long bot summaries / auto-generated comments
+        const body = rawBody.toLowerCase();
         if (!triggers.some(t => body.includes(t))) continue;
 
         // If there's already a queued/dispatched task, flag it for "already queued" reply
