@@ -404,8 +404,10 @@ class ProjectManager extends EventEmitter {
     const urlStr = `https://api.github.com/repos/${source.repo}/issues?${params}`;
 
     const data = await this._httpRequest(urlStr, this._githubHeaders());
+    const authorFilter = source.author ? source.author.toLowerCase() : null;
     return (Array.isArray(data) ? data : [])
       .filter(i => !i.pull_request) // exclude PRs from issues endpoint
+      .filter(i => !authorFilter || (i.user && i.user.login.toLowerCase() === authorFilter))
       .map(i => ({
         key: `${source.repo}#${i.number}`,
         summary: i.title,
