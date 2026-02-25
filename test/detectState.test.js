@@ -9,7 +9,7 @@ const config = {
     /shift\+tab/,
     /ctrl-g to edit/,
     /\? for shortcuts/,
-    /Try "create a/,
+    /Try "/,
     /❯\s*$/m,
   ],
   offPatterns: [
@@ -49,6 +49,18 @@ describe('detectState', () => {
       '❯ ',
       SEP,
       '  Model: Opus 4.6 | Ctx: 0.0% | ⎇ jeffh...',
+      '  cwd: /Users/jeffheifetz/Coding/webpla...',
+    );
+    assert.equal(detectState(content, config), 'idle');
+  });
+
+  it('detects idle: welcome screen with different suggestion text', () => {
+    // Claude shows different suggestions: "fix typecheck errors", "create a todo app", etc.
+    const content = pane(
+      SEP,
+      '❯ Try "fix typecheck errors"',
+      SEP,
+      '  Model: Opus 4.6 | Ctx: 0.0% | ⎇ no gi...',
       '  cwd: /Users/jeffheifetz/Coding/webpla...',
     );
     assert.equal(detectState(content, config), 'idle');
