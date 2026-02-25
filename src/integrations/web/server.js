@@ -710,7 +710,16 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       case 'spawn:slots': {
         if (!taskQueue) break;
         const slots = await taskQueue.getAvailableSlots();
-        ws.send(JSON.stringify({ type: 'spawn:slots', slots }));
+        ws.send(JSON.stringify({ type: 'spawn:slots', slots, slotMin: taskQueue.spawnSlotMin, slotMax: taskQueue.spawnSlotMax }));
+        break;
+      }
+
+      case 'spawn:config': {
+        if (!taskQueue) break;
+        if (msg.min !== undefined && msg.max !== undefined) {
+          taskQueue.setSpawnSlotRange(msg.min, msg.max);
+        }
+        ws.send(JSON.stringify({ type: 'spawn:config', min: taskQueue.spawnSlotMin, max: taskQueue.spawnSlotMax }));
         break;
       }
 
@@ -938,6 +947,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     taskQueue.on('agentRoots:changed', (roots) => broadcast({ type: 'agentRoots:list', roots }));
     taskQueue.on('agentFiles:scanned', (files) => broadcast({ type: 'agentFiles:list', files }));
     taskQueue.on('vim:changed', (enabled) => broadcast({ type: 'vim:status', enabled }));
+    taskQueue.on('spawnSlotRange:changed', (range) => broadcast({ type: 'spawn:config', min: range.min, max: range.max }));
   }
 
   if (pmManager) {
