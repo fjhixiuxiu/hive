@@ -154,16 +154,25 @@ npm start
 
 You can also start individual sessions: `node start-sessions.js 1 3`
 
-Open `http://localhost:3000` on your phone (same network), enter your token, and you're in.
+Open `http://localhost:3000` on your phone (same network), enter your token (or log in with GitHub if OAuth is configured), and you're in.
 
 ## Configuration
 
 ### `.env`
 
 ```bash
-# Required for web dashboard
+# Required for web dashboard (pick one auth method)
 WEB_PORT=3000
-WEB_TOKEN=your-secret-token
+WEB_TOKEN=your-secret-token           # Simple token auth (single user)
+
+# GitHub OAuth (team auth — replaces WEB_TOKEN)
+# GITHUB_CLIENT_ID=your-client-id
+# GITHUB_CLIENT_SECRET=your-client-secret
+# HIVE_ALLOWED_USERS=nukulb,jeff       # Comma-separated GitHub logins (optional — omit to allow any GitHub user)
+# JWT_SECRET=random-secret             # Optional — auto-generated if not set
+
+# Bind to specific interfaces (default: 127.0.0.1 + Tailscale if available)
+# WEB_BIND=127.0.0.1,10.99.88.5
 
 # Optional — Telegram bot
 TELEGRAM_BOT_TOKEN=your-bot-token
@@ -328,6 +337,7 @@ hive/
 │   ├── index.js                # Entry point — wires everything together
 │   ├── worker.js               # Remote worker node process
 │   ├── core/
+│   │   ├── auth.js             # GitHub OAuth + JWT authentication
 │   │   ├── fleet.js            # Fleet status queries (sessions, git, PR, CI)
 │   │   ├── relay.js            # Send messages to Claude (ask with polling, tell fire-and-forget)
 │   │   ├── taskqueue.js        # Task queue, auto-dispatch, approvals, rules, VIM mode, broadcast
@@ -518,13 +528,43 @@ hive's core layer (`fleet`, `relay`, `tmux`, `watcher`, `taskqueue`) is integrat
 6. Listen to taskQueue events: `task:created`, `task:completed`, `feed:new`, `approval:new`
 7. Wire it into `src/index.js`
 
+## Authentication
+
+hive supports two authentication modes:
+
+### Simple token (default)
+
+Set `WEB_TOKEN` in `.env`. Users enter the token on the login screen. Good for single-user or trusted-network setups.
+
+### GitHub OAuth (team use)
+
+For multi-user access with identity tracking:
+
+1. Create a GitHub OAuth App at [github.com/settings/developers](https://github.com/settings/developers)
+   - **Homepage URL:** `http://your-hive-host:3000`
+   - **Callback URL:** `http://your-hive-host:3000/auth/github/callback`
+2. Add to `.env`:
+   ```bash
+   GITHUB_CLIENT_ID=your-client-id
+   GITHUB_CLIENT_SECRET=your-client-secret
+   HIVE_ALLOWED_USERS=nukulb,jeff    # optional allowlist
+   ```
+3. Restart hive — the dashboard now redirects to GitHub login
+
+When OAuth is enabled:
+- Users see their GitHub avatar and name in the sidebar
+- Tasks and feed entries are attributed to the user who created them
+- `WEB_TOKEN` still works as a fallback for WebSocket-only clients
+
+GitHub allows `localhost` / `127.0.0.1` callback URLs for development. Update the URLs when you move to a real hostname.
+
 ## WebSocket API
 
 The dashboard communicates with the server via WebSocket messages (JSON). Key message types:
 
 | Client → Server | Description |
 |---|---|
-| `auth` | Authenticate with token |
+| `auth` | Authenticate with token or JWT cookie |
 | `fleet:get` | Request fleet status |
 | `fleet:search` | Search terminal contents across all sessions |
 | `peek` | Get terminal snapshot for a session |
