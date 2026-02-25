@@ -126,6 +126,43 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
   const app = express();
   app.use(express.static(path.join(__dirname, 'public')));
 
+  // -- Image upload endpoint -----------------------------------------------
+  const uploadDir = path.join(os.tmpdir(), 'hive-uploads');
+  fs.mkdirSync(uploadDir, { recursive: true });
+
+  app.post('/upload/image', express.raw({ type: 'image/*', limit: '10mb' }), (req, res) => {
+    const ct = req.headers['content-type'] || '';
+    if (!ct.startsWith('image/')) {
+      return res.status(400).json({ success: false, error: 'Content-Type must be image/*' });
+    }
+    const extMap = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp', 'image/bmp': 'bmp', 'image/svg+xml': 'svg' };
+    const ext = extMap[ct] || 'png';
+    const filename = `hive-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+    const filepath = path.join(uploadDir, filename);
+    fs.writeFileSync(filepath, req.body);
+    res.json({ success: true, path: filepath, filename });
+  });
+
+  // TTL cleanup: delete uploaded images older than 1 hour, every 10 minutes
+  const uploadTtlInterval = setInterval(() => {
+    try {
+      const now = Date.now();
+      const files = fs.readdirSync(uploadDir);
+      let cleaned = 0;
+      for (const f of files) {
+        const fp = path.join(uploadDir, f);
+        try {
+          const stat = fs.statSync(fp);
+          if (now - stat.mtimeMs > 60 * 60 * 1000) {
+            fs.unlinkSync(fp);
+            cleaned++;
+          }
+        } catch {}
+      }
+      if (cleaned > 0) console.log(`[upload] Cleaned ${cleaned} expired file(s)`);
+    } catch {}
+  }, 10 * 60 * 1000);
+
   const wss = new WebSocketServer({ noServer: true });
 
   // Discover available slash commands
@@ -945,6 +982,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
   // Cleanup
   function close() {
     clearInterval(fleetInterval);
+    clearInterval(uploadTtlInterval);
     for (const ws of clients) {
       clearTermSub(ws);
       ws.close();

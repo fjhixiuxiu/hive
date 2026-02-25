@@ -557,6 +557,33 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 }
 .tasks-session-input .ts-send:active { opacity: 0.8; }
 
+/* ── Attachment strip (drag-drop uploads) ── */
+.attachment-strip {
+  display: none; gap: 8px; padding: 6px 12px;
+  background: var(--bg2); border-top: 1px solid var(--bg3);
+  flex-shrink: 0; overflow-x: auto; flex-wrap: nowrap;
+}
+.attachment-strip.has-items { display: flex; }
+.attachment-thumb {
+  position: relative; display: flex; align-items: center; gap: 6px;
+  background: var(--bg3); border-radius: 6px; padding: 4px 8px; flex-shrink: 0;
+}
+.attachment-thumb img {
+  width: 40px; height: 40px; object-fit: cover; border-radius: 4px;
+}
+.attachment-thumb .attachment-name {
+  font-size: 11px; color: var(--dim); max-width: 100px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.attachment-remove {
+  background: none; border: none; color: var(--red); cursor: pointer;
+  font-size: 14px; font-weight: 700; padding: 0 2px;
+}
+.drag-over {
+  border-color: var(--purple) !important;
+  background: rgba(189,147,249,0.08) !important;
+}
+
 /* ── Task create/edit dialog ────────── */
 .task-dialog-field { margin-bottom: 12px; }
 .task-dialog-label { font-size: 12px; font-weight: 600; color: var(--dim); margin-bottom: 4px; display: block; }
@@ -1176,6 +1203,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
             <button class="key-btn num-key ts-key-btn" data-key="4">4</button>
           </div>
           <div id="ts-cmd-bar" class="ts-cmd-bar" style="display:none"></div>
+          <div id="ts-attachment-strip" class="attachment-strip"></div>
           <div class="tasks-session-input" id="tasks-session-input" style="display:none">
             <button class="ts-mode" id="ts-mode-toggle">Ask</button>
             <textarea class="ts-msg" id="ts-msg-input" rows="4" placeholder="Message Claude..." autocomplete="off"></textarea>
@@ -1328,6 +1356,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       </div>
       <div id="cmd-bar"></div>
       <div id="session-status-line"></div>
+      <div id="attachment-strip" class="attachment-strip"></div>
       <div id="input-bar">
         <button id="mode-toggle">Ask</button>
         <textarea id="msg-input" rows="4" placeholder="Message Claude..." autocomplete="off"></textarea>
@@ -2366,10 +2395,18 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   let lastSentMessage = '';
   function sendMessage() {
     const text = msgInput.value.trim();
-    if (!text || !currentSession || !ws || ws.readyState !== 1) return;
-    lastSentMessage = text;
-    if (mode === 'ask') { if (askPending) return; askPending = true; msgInput.disabled = true; sendBtn.disabled = true; ws.send(JSON.stringify({ type: 'ask', session: currentSession, message: text })); }
-    else { ws.send(JSON.stringify({ type: 'tell', session: currentSession, message: text })); }
+    const hasImages = attachedImages.length > 0;
+    if ((!text && !hasImages) || !currentSession || !ws || ws.readyState !== 1) return;
+    let message = text;
+    if (hasImages) {
+      const paths = attachedImages.map(i => i.path).join(', ');
+      const prefix = `[Attached images: ${paths}]`;
+      message = text ? `${prefix}\n\n${text}` : `${prefix}\n\nLook at the attached screenshot.`;
+      clearAttachments(attachedImages, attachmentStrip);
+    }
+    lastSentMessage = message;
+    if (mode === 'ask') { if (askPending) return; askPending = true; msgInput.disabled = true; sendBtn.disabled = true; ws.send(JSON.stringify({ type: 'ask', session: currentSession, message })); }
+    else { ws.send(JSON.stringify({ type: 'tell', session: currentSession, message })); }
     msgInput.value = '';
     msgInput.style.height = 'auto';
   }
@@ -2789,6 +2826,76 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   const tsSendBtn = document.getElementById('ts-send-btn');
   tsMsgInput.addEventListener('input', () => autoGrow(tsMsgInput));
 
+  // ── Image drag-drop / paste upload ───────────────────
+  const attachmentStrip = document.getElementById('attachment-strip');
+  const tsAttachmentStrip = document.getElementById('ts-attachment-strip');
+  const attachedImages = [];
+  const tsAttachedImages = [];
+
+  async function uploadImage(file, targetArray, stripEl) {
+    try {
+      const res = await fetch('/upload/image', { method: 'POST', headers: { 'Content-Type': file.type }, body: file });
+      const data = await res.json();
+      if (data.success) {
+        targetArray.push({ path: data.path, filename: data.filename, previewUrl: URL.createObjectURL(file) });
+        renderAttachments(targetArray, stripEl);
+      }
+    } catch (err) {
+      console.error('Upload failed:', err);
+    }
+  }
+
+  function renderAttachments(arr, stripEl) {
+    stripEl.innerHTML = '';
+    stripEl.classList.toggle('has-items', arr.length > 0);
+    arr.forEach((img, i) => {
+      const thumb = document.createElement('div');
+      thumb.className = 'attachment-thumb';
+      thumb.innerHTML = `<img src="${img.previewUrl}"><span class="attachment-name">${img.filename}</span><button class="attachment-remove">\u00d7</button>`;
+      thumb.querySelector('.attachment-remove').addEventListener('click', () => {
+        URL.revokeObjectURL(img.previewUrl);
+        arr.splice(i, 1);
+        renderAttachments(arr, stripEl);
+      });
+      stripEl.appendChild(thumb);
+    });
+  }
+
+  function clearAttachments(arr, stripEl) {
+    arr.forEach(img => URL.revokeObjectURL(img.previewUrl));
+    arr.length = 0;
+    renderAttachments(arr, stripEl);
+  }
+
+  function handleImageFiles(files, targetArray, stripEl) {
+    for (const file of files) {
+      if (file.type.startsWith('image/')) uploadImage(file, targetArray, stripEl);
+    }
+  }
+
+  function setupDragDrop(textarea, targetArray, stripEl) {
+    textarea.addEventListener('dragover', (e) => { e.preventDefault(); textarea.classList.add('drag-over'); });
+    textarea.addEventListener('dragleave', () => { textarea.classList.remove('drag-over'); });
+    textarea.addEventListener('drop', (e) => {
+      e.preventDefault();
+      textarea.classList.remove('drag-over');
+      if (e.dataTransfer.files.length) handleImageFiles(e.dataTransfer.files, targetArray, stripEl);
+    });
+    textarea.addEventListener('paste', (e) => {
+      const files = e.clipboardData && e.clipboardData.files;
+      if (files && files.length) {
+        const imageFiles = Array.from(files).filter(f => f.type.startsWith('image/'));
+        if (imageFiles.length) {
+          e.preventDefault();
+          handleImageFiles(imageFiles, targetArray, stripEl);
+        }
+      }
+    });
+  }
+
+  setupDragDrop(msgInput, attachedImages, attachmentStrip);
+  setupDragDrop(tsMsgInput, tsAttachedImages, tsAttachmentStrip);
+
   tsModeToggle.addEventListener('click', () => {
     tasksSessionMode = tasksSessionMode === 'ask' ? 'tell' : 'ask';
     tsModeToggle.textContent = tasksSessionMode === 'ask' ? 'Ask' : 'Tell';
@@ -2797,8 +2904,16 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 
   function sendTasksMessage() {
     const text = tsMsgInput.value.trim();
-    if (!text || !tasksSessionNum || !ws || ws.readyState !== 1) return;
-    ws.send(JSON.stringify({ type: tasksSessionMode, session: tasksSessionNum, message: text }));
+    const hasImages = tsAttachedImages.length > 0;
+    if ((!text && !hasImages) || !tasksSessionNum || !ws || ws.readyState !== 1) return;
+    let message = text;
+    if (hasImages) {
+      const paths = tsAttachedImages.map(i => i.path).join(', ');
+      const prefix = `[Attached images: ${paths}]`;
+      message = text ? `${prefix}\n\n${text}` : `${prefix}\n\nLook at the attached screenshot.`;
+      clearAttachments(tsAttachedImages, tsAttachmentStrip);
+    }
+    ws.send(JSON.stringify({ type: tasksSessionMode, session: tasksSessionNum, message }));
     tsMsgInput.value = '';
     tsMsgInput.style.height = 'auto';
     showToast('Sent', `${tasksSessionMode === 'ask' ? 'Ask' : 'Tell'} → session ${tasksSessionNum}`, 'success');
