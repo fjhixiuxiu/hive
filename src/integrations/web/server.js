@@ -787,6 +787,9 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       const t0 = Date.now();
       const sessions = await fleet.getFleetStatus(config, router);
       for (const s of sessions) {
+        // Prefer watcher-tracked activity (state transitions), fall back to tmux window_activity
+        const watcherActivity = watcher.sessionActivity.get(s.num);
+        if (watcherActivity) s.lastActivity = watcherActivity;
         try {
           const node = router.nodeFor(s.name);
           if (node) {

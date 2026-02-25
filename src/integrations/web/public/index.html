@@ -197,6 +197,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .state-idle { background: rgba(80,250,123,0.15); color: var(--green); }
 .state-working { background: rgba(241,250,140,0.15); color: var(--yellow); }
 .state-off { background: rgba(98,114,164,0.15); color: var(--dim); }
+.card-activity { font-size: 10px; color: var(--dim); margin-left: 6px; }
 .card-pr { font-size: 13px; font-weight: 700; color: var(--cyan); margin-left: auto; text-decoration: none; }
 .card-pr:active { opacity: 0.6; }
 .card-badges { display: flex; gap: 4px; align-items: center; margin-left: 4px; }
@@ -824,6 +825,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 #session-branch { font-size: 12px; color: var(--dim); }
 #track-btn { background: var(--bg3); border: none; color: var(--purple); font-size: 11px; font-weight: 700; padding: 5px 10px; border-radius: 4px; cursor: pointer; }
 #track-btn:active { background: var(--purple); color: var(--bg); }
+#session-activity { font-size: 11px; color: var(--dim); opacity: 0.6; }
 #restart-btn { background: var(--bg3); border: none; color: var(--orange); font-size: 11px; font-weight: 700; padding: 5px 10px; border-radius: 4px; cursor: pointer; }
 #restart-btn:active { background: var(--orange); color: var(--bg); }
 #terminal-wrap { flex: 1; overflow: hidden; padding: 4px; position: relative; touch-action: none; min-height: 0; }
@@ -1283,6 +1285,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         <span id="session-title"></span>
         <span id="session-branch"></span>
         <button id="track-btn" title="Attach a tracking task to this session">Track</button>
+        <span id="session-activity"></span>
         <button id="restart-btn" title="Restart Claude">Restart</button>
       </div>
       <div class="session-tabs">
@@ -1799,6 +1802,13 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         renderAutoGrid();
         updateSidebarSummary();
         if (activeTab === 'session-panel') updateSessionStatusLine();
+        // Update session header activity timestamp
+        if (currentSession) {
+          const cs = fleetData.find(x => String(x.num) === currentSession);
+          if (cs && cs.lastActivity) {
+            document.getElementById('session-activity').textContent = `active ${timeAgo(cs.lastActivity)}`;
+          }
+        }
         // Auto-refresh git tab if active
         if (activeTab === 'session-panel' && activeSessionTab === 'git' && currentSession && ws && ws.readyState === 1) {
           ws.send(JSON.stringify({ type: 'git:info', session: currentSession }));
@@ -1973,8 +1983,9 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         gitRowHtml = `<div class="card-git-row"><span class="card-commit">${esc(gs.lastCommit)}</span>${diffParts.length ? `<span class="card-diff-stat">${diffParts.join('')}</span>` : ''}${changesHtml}</div>`;
       }
 
+      const activityHtml = s.lastActivity ? `<span class="card-activity">${timeAgo(s.lastActivity)}</span>` : '';
       card.innerHTML = `${modeHtml}${desigHtml}
-        <div class="card-top"><span class="card-num">${s.num}</span><span class="card-state ${stateCls}">${s.state}</span>${prHtml}${badgesHtml ? `<span class="card-badges">${badgesHtml}</span>` : ''}</div>
+        <div class="card-top"><span class="card-num">${s.num}</span><span class="card-state ${stateCls}">${s.state}</span>${activityHtml}${prHtml}${badgesHtml ? `<span class="card-badges">${badgesHtml}</span>` : ''}</div>
         <div class="card-branch">${esc(branch)}</div>
         ${gitRowHtml}
         <div class="card-preview">${esc(s.preview || '')}</div>
@@ -2078,6 +2089,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     sessionTitle.textContent = `Session ${s.num}`;
     sessionBranch.textContent = shortBranch(s.branch);
     updateSessionStatusLine();
+    document.getElementById('session-activity').textContent = s.lastActivity ? `active ${timeAgo(s.lastActivity)}` : '';
     previousTab = activeTab;
     userScrolledUp = false;
     pendingContent = null;

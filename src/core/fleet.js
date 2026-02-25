@@ -127,10 +127,10 @@ async function getFleetStatus(config, router) {
     const nc = getNodeConfig(config, nodeId);
     return nc.sessions.pattern.test(name);
   });
-  return Promise.all(matching.map(async ({ name, nodeId }) => {
+  return Promise.all(matching.map(async ({ name, nodeId, lastActivity }) => {
     const node = router.getNode(nodeId);
     const session = await getSession(config, node, name, nodeId);
-    return { ...session, nodeId };
+    return { ...session, nodeId, lastActivity };
   }));
 }
 

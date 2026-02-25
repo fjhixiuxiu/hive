@@ -18,12 +18,24 @@ async function exec(cmd, opts = {}) {
  * List all tmux sessions, returns array of session name strings.
  */
 async function listSessions() {
-  const out = await exec("tmux list-sessions -F '#S' 2>/dev/null");
+  // Use list-windows to get window_activity (last output time), which is more
+  // accurate than session_activity (last input time)
+  const out = await exec("tmux list-windows -a -F '#{session_name}|#{window_activity}' 2>/dev/null");
   if (!out) return [];
-  return out.split('\n').filter(Boolean).sort((a, b) => {
-    const na = parseInt(a), nb = parseInt(b);
+  // Sessions with multiple windows: take the most recent window_activity
+  const map = new Map();
+  for (const line of out.split('\n').filter(Boolean)) {
+    const [name, ts] = line.split('|');
+    const ms = ts ? parseInt(ts) * 1000 : null;
+    const prev = map.get(name);
+    if (!prev || (ms && (!prev.lastActivity || ms > prev.lastActivity))) {
+      map.set(name, { name, lastActivity: ms });
+    }
+  }
+  return Array.from(map.values()).sort((a, b) => {
+    const na = parseInt(a.name), nb = parseInt(b.name);
     if (!isNaN(na) && !isNaN(nb)) return na - nb;
-    return a.localeCompare(b);
+    return a.name.localeCompare(b.name);
   });
 }
 
