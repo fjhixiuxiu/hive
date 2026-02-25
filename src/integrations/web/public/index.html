@@ -1390,6 +1390,15 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       <input class="spawn-form-input" id="spawn-git-url" type="text" placeholder="git@github.com:org/repo.git" autocomplete="off">
     </div>
     <div class="spawn-form-field">
+      <label class="spawn-form-label">Slot Range</label>
+      <div style="display:flex;gap:6px;align-items:center">
+        <input class="spawn-form-input" id="spawn-slot-min" type="number" min="1" max="99" style="width:60px;text-align:center">
+        <span style="color:var(--dim)">to</span>
+        <input class="spawn-form-input" id="spawn-slot-max" type="number" min="1" max="99" style="width:60px;text-align:center">
+        <button class="dialog-btn" id="spawn-slot-range-save" style="padding:4px 10px;font-size:12px">Apply</button>
+      </div>
+    </div>
+    <div class="spawn-form-field">
       <label class="spawn-form-label">Select Slot</label>
       <div class="slot-grid" id="slot-grid"></div>
     </div>
@@ -1656,6 +1665,8 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   let designationDefs = []; // [{ name, agentFiles, description }]
   let agentRoots = [];      // array of scan paths
   let agentFilesList = [];  // cached scan results
+  let spawnSlotMin = 17;
+  let spawnSlotMax = 32;
   let pmList = [];        // PM objects from server
   let editingPmId = null; // PM being edited (null = creating new)
   let activeSessionTab = 'terminal'; // 'terminal' or 'git'
@@ -1983,7 +1994,15 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         if (activeTab === 'more-panel') { renderAgentRoots(); renderDesigDefs(); }
         break;
       case 'vim:status': vimMode = msg.enabled; updateVimToggles(); break;
-      case 'spawn:slots': renderSpawnSlots(msg.slots || []); break;
+      case 'spawn:slots':
+        if (msg.slotMin !== undefined) spawnSlotMin = msg.slotMin;
+        if (msg.slotMax !== undefined) spawnSlotMax = msg.slotMax;
+        renderSpawnSlots(msg.slots || [], msg.slotMin, msg.slotMax);
+        break;
+      case 'spawn:config':
+        if (msg.min !== undefined) spawnSlotMin = msg.min;
+        if (msg.max !== undefined) spawnSlotMax = msg.max;
+        break;
       case 'spawn:done':
         if (msg.success) showToast('Spawned', `Session ${msg.num} at ${msg.repoDir || ''}`, 'success');
         else showToast('Spawn failed', msg.error || 'Unknown error', 'error');
@@ -4014,12 +4033,25 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     document.getElementById('spawn-name').value = '';
     document.getElementById('spawn-git-url').value = '';
     document.getElementById('spawn-base-dir').value = '~/ai-dev';
+    document.getElementById('spawn-slot-min').value = spawnSlotMin;
+    document.getElementById('spawn-slot-max').value = spawnSlotMax;
     selectedSpawnSlot = null;
     spawnDialog.classList.add('visible');
   });
 
   document.getElementById('spawn-cancel').addEventListener('click', closeSpawnDialog);
   spawnDialog.addEventListener('click', (e) => { if (e.target === spawnDialog) closeSpawnDialog(); });
+
+  document.getElementById('spawn-slot-range-save').addEventListener('click', () => {
+    const min = parseInt(document.getElementById('spawn-slot-min').value);
+    const max = parseInt(document.getElementById('spawn-slot-max').value);
+    if (!min || !max || min > max) { showToast('Error', 'Invalid slot range', 'error'); return; }
+    if (ws && ws.readyState === 1) {
+      ws.send(JSON.stringify({ type: 'spawn:config', min, max }));
+      // Refresh slots with new range
+      ws.send(JSON.stringify({ type: 'spawn:slots' }));
+    }
+  });
 
   function getSpawnParams(slotNum) {
     const name = document.getElementById('spawn-name').value.trim();
@@ -4040,12 +4072,14 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 
   function closeSpawnDialog() { spawnDialog.classList.remove('visible'); selectedSpawnSlot = null; }
 
-  function renderSpawnSlots(available) {
+  function renderSpawnSlots(available, slotMin, slotMax) {
     const grid = document.getElementById('slot-grid');
     grid.innerHTML = '';
     const avSet = new Set(available);
     selectedSpawnSlot = null;
-    for (let i = 17; i <= 32; i++) {
+    const lo = slotMin || spawnSlotMin || 17;
+    const hi = slotMax || spawnSlotMax || 32;
+    for (let i = lo; i <= hi; i++) {
       const btn = document.createElement('button');
       btn.className = `slot-btn${avSet.has(i) ? '' : ' occupied'}`;
       btn.textContent = i;
