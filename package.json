@@ -10,7 +10,8 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
-    "test": "node --test test/"
+    "test": "node --test test/",
+    "prepare": "git config core.hooksPath .githooks"
   },
   "keywords": [
     "ai",
