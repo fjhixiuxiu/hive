@@ -1584,6 +1584,17 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 (function() {
   'use strict';
 
+  // ── Clipboard: enable Cmd+C / Ctrl+C copy from xterm terminals ──
+  function enableTerminalCopy(terminal) {
+    terminal.attachCustomKeyEventHandler((e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'c' && terminal.hasSelection()) {
+        navigator.clipboard.writeText(terminal.getSelection());
+        return false; // prevent xterm from handling it
+      }
+      return true;
+    });
+  }
+
   // ── State ─────────────────────────────────────────
   let ws = null;
   let authenticated = false;
@@ -2166,6 +2177,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       fitAddon = new FitAddon.FitAddon();
       term.loadAddon(fitAddon);
       term.loadAddon(new WebLinksAddon.WebLinksAddon((e, uri) => window.open(uri, '_blank')));
+      enableTerminalCopy(term);
       term.open(termWrap);
       term.element.addEventListener('wheel', () => { setTimeout(checkScrollPosition, 50); });
       let touchStartY = 0;
@@ -2636,6 +2648,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     tasksSessionFit = new FitAddon.FitAddon();
     tasksSessionTerm.loadAddon(tasksSessionFit);
     tasksSessionTerm.loadAddon(new WebLinksAddon.WebLinksAddon((e, uri) => window.open(uri, '_blank')));
+    enableTerminalCopy(tasksSessionTerm);
     tasksSessionTerm.open(container);
     // Wire scroll-pause detection
     tasksSessionTerm.element.addEventListener('wheel', () => { setTimeout(tsCheckScroll, 50); });
@@ -3642,6 +3655,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     feedPreviewFit = new FitAddon.FitAddon();
     feedPreviewTerm.loadAddon(feedPreviewFit);
     feedPreviewTerm.loadAddon(new WebLinksAddon.WebLinksAddon((e, uri) => window.open(uri, '_blank')));
+    enableTerminalCopy(feedPreviewTerm);
     feedPreviewTerm.open(container);
     requestAnimationFrame(() => feedPreviewFit.fit());
   }
