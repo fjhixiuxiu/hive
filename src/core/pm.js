@@ -207,6 +207,16 @@ class ProjectManager extends EventEmitter {
         pm.seenKeys.push(issue.key);
         seenSet.add(issue.key);
 
+        // Already-queued: reply on GitHub instead of creating a duplicate task
+        if (issue._alreadyQueued) {
+          const assignee = pm.source.reviewer || 'hive';
+          const body = `🐝 Already queued for review by \`${assignee}\``;
+          this._commentOnPR(issue._repo, issue._prNumber, body).catch(err => {
+            console.error(`Failed to comment on PR #${issue._prNumber}:`, err.message);
+          });
+          continue;
+        }
+
         // Evaluate complexity; force 'manual' if PM targets a specific session
         const mode = pm.targetSession ? 'manual' : this._evaluateComplexity(issue, pm.autoThreshold);
         const text = `[${issue.key}] ${issue.summary}`;
@@ -426,18 +436,33 @@ class ProjectManager extends EventEmitter {
     for (const pr of prs) {
       if (pr.draft) continue;
 
-      // 2. Fetch issue comments and check for trigger phrases
-      const commentsUrl = `https://api.github.com/repos/${source.repo}/issues/${pr.number}/comments?per_page=100`;
+      // 2. Fetch recent issue comments (last 48h) and check for trigger phrases
+      const since = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+      const commentsUrl = `https://api.github.com/repos/${source.repo}/issues/${pr.number}/comments?since=${since}&per_page=100`;
       let comments;
       try { comments = await this._httpRequest(commentsUrl, headers); } catch (e) { continue; }
       if (!Array.isArray(comments)) continue;
 
       for (const comment of comments) {
+        // Skip bot comments (from hive itself)
+        if (comment.body && comment.body.startsWith('🐝')) continue;
+
         const body = (comment.body || '').toLowerCase();
         if (!triggers.some(t => body.includes(t))) continue;
 
-        // Skip if there's already a queued/dispatched task for this PR
-        if (this._hasActiveTaskForPR(source.repo, pr.number)) continue;
+        // If there's already a queued/dispatched task, flag it for "already queued" reply
+        if (this._hasActiveTaskForPR(source.repo, pr.number)) {
+          results.push({
+            key: `re-review-${source.repo}#${pr.number}-${comment.id}`,
+            summary: `Re-review PR #${pr.number}: ${pr.title}`,
+            issueType: 'pr',
+            storyPoints: null,
+            _alreadyQueued: true,
+            _repo: source.repo,
+            _prNumber: pr.number,
+          });
+          continue;
+        }
 
         results.push({
           key: `re-review-${source.repo}#${pr.number}-${comment.id}`,
