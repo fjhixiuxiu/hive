@@ -1300,6 +1300,8 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .spawn-form-input:focus { border-color: var(--purple); }
 .spawn-form-input::placeholder { color: var(--dim); }
 .slot-btn.selected { background: var(--purple); color: var(--bg); }
+.spawn-source-btn { font-size: 12px; padding: 5px 12px; }
+.spawn-source-btn.selected { background: var(--purple); color: var(--bg); border-color: var(--purple); }
 
 /* ── PM cards ──────────────────────── */
 .pm-scroll { flex: 1; overflow-y: auto; padding: 8px 10px; -webkit-overflow-scrolling: touch; }
@@ -1890,16 +1892,32 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   <div class="dialog">
     <div class="dialog-title">Spawn Agent</div>
     <div class="spawn-form-field">
-      <label class="spawn-form-label">Base Directory</label>
-      <input class="spawn-form-input" id="spawn-base-dir" type="text" value="~/ai-dev" autocomplete="off">
-    </div>
-    <div class="spawn-form-field">
       <label class="spawn-form-label">Name <span style="color:var(--red)">*</span></label>
       <input class="spawn-form-input" id="spawn-name" type="text" placeholder="e.g. ios, backend" autocomplete="off">
     </div>
     <div class="spawn-form-field">
-      <label class="spawn-form-label">Git URL <span style="color:var(--dim)">(optional)</span></label>
+      <label class="spawn-form-label">Source</label>
+      <div style="display:flex;gap:6px;margin-top:4px;">
+        <button class="dialog-btn spawn-source-btn selected" data-source="empty">Empty</button>
+        <button class="dialog-btn spawn-source-btn" data-source="worktree">Worktree</button>
+        <button class="dialog-btn spawn-source-btn" data-source="clone">Clone</button>
+      </div>
+    </div>
+    <div class="spawn-form-field" id="spawn-worktree-fields" style="display:none;">
+      <label class="spawn-form-label">Parent Repo</label>
+      <input class="spawn-form-input" id="spawn-worktree-from" type="text" value="~/Desktop/Viv/webplatform" autocomplete="off">
+      <label class="spawn-form-label" style="margin-top:8px;">Base Branch <span style="color:var(--dim)">(defaults to master)</span></label>
+      <input class="spawn-form-input" id="spawn-base-branch" type="text" placeholder="master" autocomplete="off">
+      <label class="spawn-form-label" style="margin-top:8px;">New Branch <span style="color:var(--dim)">(optional — defaults to hive-slot-N)</span></label>
+      <input class="spawn-form-input" id="spawn-branch" type="text" placeholder="e.g. eric/DEV-12345" autocomplete="off">
+    </div>
+    <div class="spawn-form-field" id="spawn-clone-fields" style="display:none;">
+      <label class="spawn-form-label">Git URL</label>
       <input class="spawn-form-input" id="spawn-git-url" type="text" placeholder="git@github.com:org/repo.git" autocomplete="off">
+    </div>
+    <div class="spawn-form-field">
+      <label class="spawn-form-label">Base Directory</label>
+      <input class="spawn-form-input" id="spawn-base-dir" type="text" value="~/Desktop/Viv" autocomplete="off">
     </div>
     <div class="spawn-form-field">
       <label class="spawn-form-label">Slot Range</label>
@@ -6690,15 +6708,36 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   let selectedSpawnSlot = null;
   let spawnToast = null;
 
+  let spawnSource = 'empty';
+  let lastWorktreeFrom = localStorage.getItem('hive:spawn:worktreeFrom') || '~/Desktop/Viv/webplatform';
+  let lastBaseDir = localStorage.getItem('hive:spawn:baseDir') || '~/Desktop/Viv';
+
   spawnBtn.addEventListener('click', () => {
     if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'spawn:slots' }));
     document.getElementById('spawn-name').value = '';
     document.getElementById('spawn-git-url').value = '';
-    document.getElementById('spawn-base-dir').value = spawnBaseDir;
+    document.getElementById('spawn-worktree-from').value = lastWorktreeFrom;
+    document.getElementById('spawn-base-branch').value = '';
+    document.getElementById('spawn-branch').value = '';
+    document.getElementById('spawn-base-dir').value = lastBaseDir;
     document.getElementById('spawn-slot-min').value = spawnSlotMin;
     document.getElementById('spawn-slot-max').value = spawnSlotMax;
+    setSpawnSource('empty');
     selectedSpawnSlot = null;
     spawnDialog.classList.add('visible');
+  });
+
+  function setSpawnSource(source) {
+    spawnSource = source;
+    document.querySelectorAll('.spawn-source-btn').forEach(b => {
+      b.classList.toggle('selected', b.dataset.source === source);
+    });
+    document.getElementById('spawn-worktree-fields').style.display = source === 'worktree' ? '' : 'none';
+    document.getElementById('spawn-clone-fields').style.display = source === 'clone' ? '' : 'none';
+  }
+
+  document.querySelectorAll('.spawn-source-btn').forEach(btn => {
+    btn.addEventListener('click', () => setSpawnSource(btn.dataset.source));
   });
 
   document.getElementById('spawn-cancel').addEventListener('click', closeSpawnDialog);
@@ -6718,9 +6757,26 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   function getSpawnParams(slotNum) {
     const name = document.getElementById('spawn-name').value.trim();
     if (!name) { showToast('Error', 'Agent name is required', 'error'); return null; }
-    const baseDir = document.getElementById('spawn-base-dir').value.trim() || '~/ai-dev';
-    const gitUrl = document.getElementById('spawn-git-url').value.trim() || undefined;
-    return { num: slotNum, baseDir, name, gitUrl };
+    const baseDir = document.getElementById('spawn-base-dir').value.trim() || '~/Desktop/Viv';
+    const params = { num: slotNum, baseDir, name };
+    if (spawnSource === 'worktree') {
+      const worktreeFrom = document.getElementById('spawn-worktree-from').value.trim();
+      if (!worktreeFrom) { showToast('Error', 'Parent repo is required for worktree', 'error'); return null; }
+      params.worktreeFrom = worktreeFrom;
+      const baseBranch = document.getElementById('spawn-base-branch').value.trim();
+      if (baseBranch) params.baseBranch = baseBranch;
+      const branch = document.getElementById('spawn-branch').value.trim();
+      if (branch) params.branch = branch;
+    } else if (spawnSource === 'clone') {
+      const gitUrl = document.getElementById('spawn-git-url').value.trim();
+      if (gitUrl) params.gitUrl = gitUrl;
+    }
+    // Cache for next time
+    localStorage.setItem('hive:spawn:baseDir', baseDir);
+    if (params.worktreeFrom) localStorage.setItem('hive:spawn:worktreeFrom', params.worktreeFrom);
+    lastBaseDir = baseDir;
+    if (params.worktreeFrom) lastWorktreeFrom = params.worktreeFrom;
+    return params;
   }
 
   document.getElementById('spawn-next').addEventListener('click', () => {
@@ -6731,7 +6787,10 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       if (spawnToast) spawnToast.remove();
       spawnToast = document.createElement('div');
       spawnToast.className = 'toast spawning';
-      spawnToast.innerHTML = `<div class="toast-title">Spawning agent...</div><div class="toast-body">Cloning repository</div>`;
+      const modeLabel = spawnSource === 'worktree' ? 'Creating worktree'
+                      : spawnSource === 'clone'    ? 'Cloning repository'
+                      : 'Creating directory';
+      spawnToast.innerHTML = `<div class="toast-title">Spawning agent...</div><div class="toast-body">${modeLabel}</div>`;
       toasts.appendChild(spawnToast);
       closeSpawnDialog();
     }

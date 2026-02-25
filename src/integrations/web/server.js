@@ -1038,6 +1038,9 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
           baseDir: msg.baseDir,
           name: msg.name,
           gitUrl: msg.gitUrl,
+          worktreeFrom: msg.worktreeFrom,
+          branch: msg.branch,
+          baseBranch: msg.baseBranch,
         }).then((result) => {
           if (ws.readyState === 1) {
             ws.send(JSON.stringify({ type: 'spawn:done', success: true, num: result.num, repoDir: result.repoDir }));

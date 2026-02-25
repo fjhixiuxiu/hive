@@ -3,7 +3,7 @@ const EventEmitter = require('events');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { execSync, exec } = require('child_process');
+const { execSync, execFileSync, exec } = require('child_process');
 const { promisify } = require('util');
 const execAsync = promisify(exec);
 const relay = require('./relay');
@@ -829,12 +829,13 @@ class TaskQueue extends EventEmitter {
     return this.config.sessions.repoDir(num);
   }
 
-  async spawnSession({ num, baseDir, name, gitUrl } = {}) {
+  async spawnSession({ num, baseDir, name, gitUrl, worktreeFrom, branch, baseBranch } = {}) {
     if (!name) throw new Error('Agent name is required');
+    if (!/^[a-zA-Z0-9_-]+$/.test(name)) throw new Error('Agent name must contain only letters, numbers, hyphens, and underscores');
     log.info(`[spawn] starting: name=${name}, num=${num ?? 'auto'}, baseDir=${baseDir || 'default'}, gitUrl=${gitUrl || 'none'}`);
 
     // Resolve base directory
-    baseDir = (baseDir || process.env.HIVE_REPO_DIR || '~/ai-dev').replace(/^~/, os.homedir());
+    baseDir = (baseDir || process.env.HIVE_REPO_DIR || '~/Desktop/Viv').replace(/^~(?=\/|$)/, os.homedir());
     log.info(`[spawn] resolved baseDir=${baseDir}`);
 
     // Pick slot
@@ -851,32 +852,55 @@ class TaskQueue extends EventEmitter {
       throw new Error(`Slot ${num} is already occupied`);
     }
 
-    // Build repo path: baseDir/name+num (e.g. ~/ai-dev/ios17)
-    const repoDir = path.join(baseDir, `${name}${num}`);
+    // Build repo path: baseDir/num-name (e.g. ~/Desktop/Viv/0-ascend)
+    const repoDir = path.join(baseDir, `${num}-${name}`);
     log.info(`[spawn] repoDir=${repoDir}`);
 
-    // Clone or create directory
-    if (gitUrl) {
+    // Create repo: worktree, clone, or empty directory
+    if (worktreeFrom) {
+      const parentRepo = worktreeFrom.replace(/^~(?=\/|$)/, os.homedir());
+      if (!path.isAbsolute(parentRepo)) throw new Error('Parent repo must be an absolute path');
+      if (!fs.existsSync(path.join(parentRepo, '.git'))) throw new Error('Parent repo is not a git repository');
+      const branchName = branch || `hive-slot-${num}`;
+      const baseBranchRef = baseBranch || 'master';
+      try {
+        if (fs.existsSync(repoDir)) {
+          // Verify it's a valid linked worktree before reusing
+          const gitPath = path.join(repoDir, '.git');
+          if (!fs.existsSync(gitPath) || fs.statSync(gitPath).isDirectory()) {
+            throw new Error(`Directory ${repoDir} exists but is not a linked worktree. Remove it manually first.`);
+          }
+          log.info(`[spawn] reusing existing worktree at ${repoDir}`);
+        } else {
+          execFileSync('git', ['-C', parentRepo, 'worktree', 'add', repoDir, '-b', branchName, baseBranchRef], {
+            timeout: 30000,
+            stdio: 'pipe',
+          });
+        }
+      } catch (err) {
+        throw new Error(`Worktree creation failed: ${err.message}`);
+      }
+    } else if (gitUrl) {
       if (fs.existsSync(path.join(repoDir, '.git'))) {
         // Directory already cloned — fetch and reset to latest default branch
         log.info(`[spawn] Reusing existing clone at ${repoDir}`);
         try {
           await execAsync(`git -C "${repoDir}" fetch origin`, { timeout: 60000 });
           // Determine default branch — try main, fall back to master
-          let branch = 'main';
+          let defaultBranch = 'main';
           try {
             await execAsync(`git -C "${repoDir}" rev-parse --verify origin/main`, { timeout: 5000 });
           } catch {
-            branch = 'master';
+            defaultBranch = 'master';
           }
-          await execAsync(`git -C "${repoDir}" checkout ${branch}`, { timeout: 10000 });
-          await execAsync(`git -C "${repoDir}" reset --hard origin/${branch}`, { timeout: 10000 });
+          await execAsync(`git -C "${repoDir}" checkout ${defaultBranch}`, { timeout: 10000 });
+          await execAsync(`git -C "${repoDir}" reset --hard origin/${defaultBranch}`, { timeout: 10000 });
         } catch (err) {
           throw new Error(`Git reset of existing clone failed: ${err.message}`);
         }
       } else {
         try {
-          await execAsync(`git clone ${gitUrl} "${repoDir}"`, { timeout: 300000 });
+          execFileSync('git', ['clone', gitUrl, repoDir], { timeout: 300000, stdio: 'pipe' });
         } catch (err) {
           throw new Error(`Git clone failed: ${err.message}`);
         }
@@ -892,8 +916,8 @@ class TaskQueue extends EventEmitter {
     // Start tmux session using agent.yml template
     const agentYml = (
       process.env.HIVE_AGENT_YML ||
-      path.join(os.homedir(), 'dev', 'agents', 'tmux', 'agent.yml')
-    ).replace(/^~/, os.homedir());
+      path.join(os.homedir(), 'Desktop', 'Viv', 'hive-agents', 'agent.yml')
+    ).replace(/^~(?=\/|$)/, os.homedir());
     const tmuxCmd = `/bin/zsh -lc 'tmuxinator start -p ${agentYml} N=${num} ROOT="${repoDir}" --no-attach'`;
     log.info(`[spawn] running: ${tmuxCmd}`);
     try {
@@ -907,17 +931,6 @@ class TaskQueue extends EventEmitter {
     // Register spawned agent
     this.spawnedAgents.set(num, { repoDir, name });
     this._saveState();
-
-    // Wait for init then rename
-    await new Promise(r => setTimeout(r, 2000));
-    const renameScript = process.env.HIVE_RENAME_SCRIPT;
-    if (renameScript) {
-      try {
-        execSync(`bash "${renameScript}"`, { timeout: 10000, stdio: 'pipe' });
-      } catch {
-        // Rename is best-effort
-      }
-    }
 
     this.pushFeed('state', num, `Agent "${name}" spawned in slot ${num}`);
     return { num, repoDir };
