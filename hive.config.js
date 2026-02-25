@@ -76,6 +76,15 @@ module.exports = {
     interval: 10000,
   },
 
+  // ── GitHub + Jenkins (for PR/CI status) ───────────────
+  github: {
+    repo: 'mavencare/webplatform', // owner/repo
+  },
+  jenkins: {
+    baseUrl: 'https://jenkins.vivtechnologies.com',
+    jobPath: 'job/webplatform/job', // PR jobs at {baseUrl}/{jobPath}/PR-{prNum}/
+  },
+
   // ── Web dashboard links ───────────────────────────────
   // URL templates for PR and CI links in the dashboard.
   // Use ${prNum} and ${ciBuild} as placeholders.
