@@ -1,5 +1,6 @@
 const path = require('path');
 const tmux = require('./tmux');
+const prStatus = require('./pr-status');
 
 /**
  * Get node-specific config, merging overrides from config.nodes[nodeId].
@@ -15,32 +16,6 @@ function getNodeConfig(config, nodeId) {
     sessions: { ...config.sessions, ...(nc.sessions || {}) },
     cache: { ...config.cache, ...(nc.cache || {}) },
   };
-}
-
-/**
- * Read the cache file for a session number.
- * Returns { prNum, prAdds, prDels, prFiles, ciResult, ciBuild, review } or null.
- */
-async function readCache(cacheConfig, node, num) {
-  const file = `${cacheConfig.statusPrefix}${num}`;
-  try {
-    const content = await node.readFile(file);
-    if (!content) return null;
-    const lines = content.split('\n');
-    const prNum = lines[0] || '';
-    if (!prNum) return null;
-    return {
-      prNum,
-      prAdds: lines[1] || '0',
-      prDels: lines[2] || '0',
-      prFiles: lines[3] || '0',
-      ciResult: lines[4] || '',
-      ciBuild: lines[5] || '',
-      review: lines[6] || '',
-    };
-  } catch {
-    return null;
-  }
 }
 
 /**
@@ -98,8 +73,8 @@ async function getSession(config, node, sessionName, nodeId) {
   const git = isRepo ? await node.gitInfo(repoDir) : { branch: '', staged: 0, modified: 0, untracked: 0 };
   const ticket = ticketFromBranch(git.branch);
 
-  // PR/CI from cache
-  const cache = num ? await readCache(nc.cache, node, num) : null;
+  // PR/CI from API (replaces file-based cache)
+  const pr = git.branch ? await prStatus.fetch(git.branch, config) : null;
 
   return {
     name: sessionName,
@@ -108,7 +83,7 @@ async function getSession(config, node, sessionName, nodeId) {
     branch: git.branch,
     ticket,
     git,
-    pr: cache,
+    pr,
   };
 }
 
@@ -170,7 +145,6 @@ async function findSession(config, router, query) {
 
 module.exports = {
   getNodeConfig,
-  readCache,
   readState,
   sessionNum,
   ticketFromBranch,
