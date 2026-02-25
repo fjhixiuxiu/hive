@@ -117,10 +117,12 @@ class TaskQueue extends EventEmitter {
       source: (meta && meta.source) || null,   // e.g. 'ci-fail', 'review-changes'
       sourcePR: (meta && meta.pr) || null,      // PR number that triggered this
       sourceSession: (meta && meta.session) || null, // session that triggered this
+      createdBy: (meta && meta.createdBy) || null,   // GitHub login of creator
     };
     this.tasks.set(task.id, task);
     this.emit('task:created', task);
-    this.pushFeed('task', null, `Task created: "${text}" (${mode})`);
+    const byWho = task.createdBy ? ` by ${task.createdBy}` : '';
+    this.pushFeed('task', null, `Task created${byWho}: "${text}" (${mode})`);
 
     if (mode === 'manual' && targetSession) {
       this._dispatchTask(task, targetSession).catch(err =>

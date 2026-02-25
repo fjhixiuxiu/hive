@@ -90,6 +90,22 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   margin-top: auto; padding: 8px 4px; text-align: center;
   font-size: 9px; color: var(--dim); line-height: 1.5;
 }
+#user-badge {
+  padding: 8px 4px; text-align: center; border-top: 1px solid var(--bg3);
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+}
+#user-avatar {
+  width: 28px; height: 28px; border-radius: 50%;
+}
+#user-name {
+  font-size: 9px; color: var(--dim); max-width: 56px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+#user-logout {
+  font-size: 10px; color: var(--dim); text-decoration: none;
+  opacity: 0.6; transition: opacity 0.15s;
+}
+#user-logout:hover { opacity: 1; color: var(--red); }
 
 /* ── Content area ────────────────────── */
 #content-area {
@@ -1122,6 +1138,11 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       <span class="nav-icon">&#8943;</span>More
     </button>
     <div id="sidebar-summary"></div>
+    <div id="user-badge" style="display:none">
+      <img id="user-avatar" src="" alt="">
+      <span id="user-name"></span>
+      <a id="user-logout" href="/auth/logout" title="Logout">&#x2716;</a>
+    </div>
   </div>
 
   <!-- Content area -->
@@ -1703,14 +1724,34 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   let quickSession = null;
   let quickSendMode = 'tell';
 
-  // ── Token management ──────────────────────────────
+  // ── Auth management ──────────────────────────────
   const TOKEN_KEY = 'hive_token';
   let token = localStorage.getItem(TOKEN_KEY);
+  let currentUser = null; // { login, name, avatar } from OAuth, or null for token auth
 
-  if (token) {
-    authScreen.style.display = 'none';
-    connect();
-  }
+  // Check if we have OAuth cookie auth (page wouldn't load without it when OAuth is enabled)
+  // Try connecting immediately — if OAuth is active, cookie handles auth
+  // If token mode, show token prompt only if no saved token
+  fetch('/auth/me').then(r => r.json()).then(data => {
+    if (data.authenticated) {
+      // OAuth mode — already authenticated via cookie
+      currentUser = { login: data.login, name: data.name, avatar: data.avatar };
+      token = 'cookie'; // marker so connect() works
+      authScreen.style.display = 'none';
+      connect();
+    } else if (token) {
+      // Legacy token mode — have saved token
+      authScreen.style.display = 'none';
+      connect();
+    }
+    // Otherwise show auth screen (token mode, no saved token)
+  }).catch(() => {
+    // /auth/me failed — legacy mode, try saved token
+    if (token) {
+      authScreen.style.display = 'none';
+      connect();
+    }
+  });
 
   authInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
@@ -1731,7 +1772,12 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     connBar.className = 'connecting';
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
     ws = new WebSocket(`${proto}//${location.host}`);
-    ws.onopen = () => { console.time('auth→fleet'); ws.send(JSON.stringify({ type: 'auth', token })); };
+    ws.onopen = () => {
+      console.time('auth→fleet');
+      // Cookie auth: server reads JWT from upgrade request headers automatically
+      // Token auth: send token in message
+      ws.send(JSON.stringify({ type: 'auth', token: token === 'cookie' ? '' : token }));
+    };
     ws.onmessage = (e) => { handleMessage(JSON.parse(e.data)); };
     ws.onclose = () => { connBar.className = 'disconnected'; authenticated = false; askPending = false; msgInput.disabled = false; sendBtn.disabled = false; scheduleReconnect(); };
     ws.onerror = () => {};
@@ -1860,13 +1906,26 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     else { badge.classList.remove('visible'); }
   }
 
+  function updateUserBadge() {
+    const badge = $('#user-badge');
+    if (!currentUser) { badge.style.display = 'none'; return; }
+    badge.style.display = 'flex';
+    const avatar = $('#user-avatar');
+    const name = $('#user-name');
+    if (currentUser.avatar) { avatar.src = currentUser.avatar; avatar.style.display = 'block'; }
+    else { avatar.style.display = 'none'; }
+    name.textContent = currentUser.name || currentUser.login || '';
+  }
+
   // ── Message handling ──────────────────────────────
   function handleMessage(msg) {
     switch (msg.type) {
       case 'auth':
         if (msg.ok) {
           authenticated = true; connBar.className = 'connected';
+          if (msg.user) currentUser = msg.user;
           authScreen.style.display = 'none'; mainView.style.display = 'flex';
+          updateUserBadge();
           if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
           applyHash();
         } else {
