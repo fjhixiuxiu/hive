@@ -90,6 +90,22 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   margin-top: auto; padding: 8px 4px; text-align: center;
   font-size: 9px; color: var(--dim); line-height: 1.5;
 }
+#user-badge {
+  padding: 8px 4px; text-align: center; border-top: 1px solid var(--bg3);
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+}
+#user-avatar {
+  width: 28px; height: 28px; border-radius: 50%;
+}
+#user-name {
+  font-size: 9px; color: var(--dim); max-width: 56px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+#user-logout {
+  font-size: 10px; color: var(--dim); text-decoration: none;
+  opacity: 0.6; transition: opacity 0.15s;
+}
+#user-logout:hover { opacity: 1; color: var(--red); }
 
 /* ── Content area ────────────────────── */
 #content-area {
@@ -1122,6 +1138,11 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       <span class="nav-icon">&#8943;</span>More
     </button>
     <div id="sidebar-summary"></div>
+    <div id="user-badge" style="display:none">
+      <img id="user-avatar" src="" alt="">
+      <span id="user-name"></span>
+      <a id="user-logout" href="/auth/logout" title="Logout">&#x2716;</a>
+    </div>
   </div>
 
   <!-- Content area -->
@@ -1388,6 +1409,15 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     <div class="spawn-form-field">
       <label class="spawn-form-label">Git URL <span style="color:var(--dim)">(optional)</span></label>
       <input class="spawn-form-input" id="spawn-git-url" type="text" placeholder="git@github.com:org/repo.git" autocomplete="off">
+    </div>
+    <div class="spawn-form-field">
+      <label class="spawn-form-label">Slot Range</label>
+      <div style="display:flex;gap:6px;align-items:center">
+        <input class="spawn-form-input" id="spawn-slot-min" type="number" min="1" max="99" style="width:60px;text-align:center">
+        <span style="color:var(--dim)">to</span>
+        <input class="spawn-form-input" id="spawn-slot-max" type="number" min="1" max="99" style="width:60px;text-align:center">
+        <button class="dialog-btn" id="spawn-slot-range-save" style="padding:4px 10px;font-size:12px">Apply</button>
+      </div>
     </div>
     <div class="spawn-form-field">
       <label class="spawn-form-label">Select Slot</label>
@@ -1664,6 +1694,8 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   let designationDefs = []; // [{ name, agentFiles, description }]
   let agentRoots = [];      // array of scan paths
   let agentFilesList = [];  // cached scan results
+  let spawnSlotMin = 17;
+  let spawnSlotMax = 32;
   let pmList = [];        // PM objects from server
   let editingPmId = null; // PM being edited (null = creating new)
   let activeSessionTab = 'terminal'; // 'terminal' or 'git'
@@ -1700,14 +1732,34 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   let quickSession = null;
   let quickSendMode = 'tell';
 
-  // ── Token management ──────────────────────────────
+  // ── Auth management ──────────────────────────────
   const TOKEN_KEY = 'hive_token';
   let token = localStorage.getItem(TOKEN_KEY);
+  let currentUser = null; // { login, name, avatar } from OAuth, or null for token auth
 
-  if (token) {
-    authScreen.style.display = 'none';
-    connect();
-  }
+  // Check if we have OAuth cookie auth (page wouldn't load without it when OAuth is enabled)
+  // Try connecting immediately — if OAuth is active, cookie handles auth
+  // If token mode, show token prompt only if no saved token
+  fetch('/auth/me').then(r => r.json()).then(data => {
+    if (data.authenticated) {
+      // OAuth mode — already authenticated via cookie
+      currentUser = { login: data.login, name: data.name, avatar: data.avatar };
+      token = 'cookie'; // marker so connect() works
+      authScreen.style.display = 'none';
+      connect();
+    } else if (token) {
+      // Legacy token mode — have saved token
+      authScreen.style.display = 'none';
+      connect();
+    }
+    // Otherwise show auth screen (token mode, no saved token)
+  }).catch(() => {
+    // /auth/me failed — legacy mode, try saved token
+    if (token) {
+      authScreen.style.display = 'none';
+      connect();
+    }
+  });
 
   authInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
@@ -1728,7 +1780,12 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     connBar.className = 'connecting';
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
     ws = new WebSocket(`${proto}//${location.host}`);
-    ws.onopen = () => { console.time('auth→fleet'); ws.send(JSON.stringify({ type: 'auth', token })); };
+    ws.onopen = () => {
+      console.time('auth→fleet');
+      // Cookie auth: server reads JWT from upgrade request headers automatically
+      // Token auth: send token in message
+      ws.send(JSON.stringify({ type: 'auth', token: token === 'cookie' ? '' : token }));
+    };
     ws.onmessage = (e) => { handleMessage(JSON.parse(e.data)); };
     ws.onclose = () => { connBar.className = 'disconnected'; authenticated = false; askPending = false; msgInput.disabled = false; sendBtn.disabled = false; scheduleReconnect(); };
     ws.onerror = () => {};
@@ -1857,13 +1914,26 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     else { badge.classList.remove('visible'); }
   }
 
+  function updateUserBadge() {
+    const badge = $('#user-badge');
+    if (!currentUser) { badge.style.display = 'none'; return; }
+    badge.style.display = 'flex';
+    const avatar = $('#user-avatar');
+    const name = $('#user-name');
+    if (currentUser.avatar) { avatar.src = currentUser.avatar; avatar.style.display = 'block'; }
+    else { avatar.style.display = 'none'; }
+    name.textContent = currentUser.name || currentUser.login || '';
+  }
+
   // ── Message handling ──────────────────────────────
   function handleMessage(msg) {
     switch (msg.type) {
       case 'auth':
         if (msg.ok) {
           authenticated = true; connBar.className = 'connected';
+          if (msg.user) currentUser = msg.user;
           authScreen.style.display = 'none'; mainView.style.display = 'flex';
+          updateUserBadge();
           if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
           applyHash();
         } else {
@@ -1924,12 +1994,22 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       case 'ask:stream': break;
       case 'ask:done':
         askPending = false; msgInput.disabled = false; sendBtn.disabled = false; msgInput.focus();
-        if (msg.success) { const dur = msg.duration ? `${Math.round(msg.duration / 1000)}s` : ''; showToast('Done', `Session ${msg.session} responded ${dur}`, 'success'); }
-        else { showToast('Error', msg.error || 'Ask failed', 'error'); msgInput.value = lastSentMessage; }
+        if (tsPendingSession && String(msg.session) === tsPendingSession) {
+          tsPendingSession = null;
+          if (!msg.success) { showToast('Failed', msg.error || 'Ask failed', 'error'); tsMsgInput.value = tsLastSentMessage; }
+        } else {
+          if (msg.success) { const dur = msg.duration ? `${Math.round(msg.duration / 1000)}s` : ''; showToast('Done', `Session ${msg.session} responded ${dur}`, 'success'); }
+          else { showToast('Error', msg.error || 'Ask failed', 'error'); msgInput.value = lastSentMessage; }
+        }
         break;
       case 'tell:done':
-        if (msg.success) showToast('Sent', `Message sent to session ${msg.session}`, 'success');
-        else { showToast('Error', msg.error || 'Tell failed', 'error'); msgInput.value = lastSentMessage; }
+        if (tsPendingSession && String(msg.session) === tsPendingSession) {
+          tsPendingSession = null;
+          if (!msg.success) { showToast('Failed', msg.error || 'Tell failed', 'error'); tsMsgInput.value = tsLastSentMessage; }
+        } else {
+          if (msg.success) showToast('Sent', `Message sent to session ${msg.session}`, 'success');
+          else { showToast('Error', msg.error || 'Tell failed', 'error'); msgInput.value = lastSentMessage; }
+        }
         break;
       case 'notify': handleNotify(msg); break;
       case 'restart:done': showToast('Restarted', `Session ${msg.session} — claude --resume`, 'success'); break;
@@ -1991,7 +2071,15 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         if (activeTab === 'more-panel') { renderAgentRoots(); renderDesigDefs(); }
         break;
       case 'vim:status': vimMode = msg.enabled; updateVimToggles(); break;
-      case 'spawn:slots': renderSpawnSlots(msg.slots || []); break;
+      case 'spawn:slots':
+        if (msg.slotMin !== undefined) spawnSlotMin = msg.slotMin;
+        if (msg.slotMax !== undefined) spawnSlotMax = msg.slotMax;
+        renderSpawnSlots(msg.slots || [], msg.slotMin, msg.slotMax);
+        break;
+      case 'spawn:config':
+        if (msg.min !== undefined) spawnSlotMin = msg.min;
+        if (msg.max !== undefined) spawnSlotMax = msg.max;
+        break;
       case 'spawn:done':
         if (msg.success) showToast('Spawned', `Session ${msg.num} at ${msg.repoDir || ''}`, 'success');
         else showToast('Spawn failed', msg.error || 'Unknown error', 'error');
@@ -2956,6 +3044,9 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     tsModeToggle.classList.toggle('tell', tasksSessionMode === 'tell');
   });
 
+  let tsLastSentMessage = '';
+  let tsPendingSession = null; // track which session the tasks panel sent to
+
   function sendTasksMessage() {
     const text = tsMsgInput.value.trim();
     const hasImages = tsAttachedImages.length > 0;
@@ -2967,6 +3058,8 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       message = text ? `${prefix}\n\n${text}` : `${prefix}\n\nLook at the attached screenshot.`;
       clearAttachments(tsAttachedImages, tsAttachmentStrip);
     }
+    tsLastSentMessage = text;
+    tsPendingSession = tasksSessionNum;
     ws.send(JSON.stringify({ type: tasksSessionMode, session: tasksSessionNum, message }));
     tsMsgInput.value = '';
     tsMsgInput.style.height = 'auto';
@@ -4022,12 +4115,25 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     document.getElementById('spawn-name').value = '';
     document.getElementById('spawn-git-url').value = '';
     document.getElementById('spawn-base-dir').value = '~/ai-dev';
+    document.getElementById('spawn-slot-min').value = spawnSlotMin;
+    document.getElementById('spawn-slot-max').value = spawnSlotMax;
     selectedSpawnSlot = null;
     spawnDialog.classList.add('visible');
   });
 
   document.getElementById('spawn-cancel').addEventListener('click', closeSpawnDialog);
   spawnDialog.addEventListener('click', (e) => { if (e.target === spawnDialog) closeSpawnDialog(); });
+
+  document.getElementById('spawn-slot-range-save').addEventListener('click', () => {
+    const min = parseInt(document.getElementById('spawn-slot-min').value);
+    const max = parseInt(document.getElementById('spawn-slot-max').value);
+    if (!min || !max || min > max) { showToast('Error', 'Invalid slot range', 'error'); return; }
+    if (ws && ws.readyState === 1) {
+      ws.send(JSON.stringify({ type: 'spawn:config', min, max }));
+      // Refresh slots with new range
+      ws.send(JSON.stringify({ type: 'spawn:slots' }));
+    }
+  });
 
   function getSpawnParams(slotNum) {
     const name = document.getElementById('spawn-name').value.trim();
@@ -4048,12 +4154,14 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 
   function closeSpawnDialog() { spawnDialog.classList.remove('visible'); selectedSpawnSlot = null; }
 
-  function renderSpawnSlots(available) {
+  function renderSpawnSlots(available, slotMin, slotMax) {
     const grid = document.getElementById('slot-grid');
     grid.innerHTML = '';
     const avSet = new Set(available);
     selectedSpawnSlot = null;
-    for (let i = 17; i <= 32; i++) {
+    const lo = slotMin || spawnSlotMin || 17;
+    const hi = slotMax || spawnSlotMax || 32;
+    for (let i = lo; i <= hi; i++) {
       const btn = document.createElement('button');
       btn.className = `slot-btn${avSet.has(i) ? '' : ' occupied'}`;
       btn.textContent = i;

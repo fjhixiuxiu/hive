@@ -8,6 +8,7 @@ const fleet = require('../../core/fleet');
 const relay = require('../../core/relay');
 const git = require('../../core/git');
 const RemoteNode = require('../../core/remote-node');
+const auth = require('../../core/auth');
 
 /**
  * Detect the Tailscale interface IP address.
@@ -118,12 +119,32 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
   const token = process.env.WEB_TOKEN;
   const workerSecret = process.env.HIVE_WORKER_SECRET;
 
-  if (!token) {
-    console.warn('WEB_TOKEN not set in .env -- web dashboard disabled');
+  if (!token && !auth.isOAuthEnabled()) {
+    console.warn('Neither WEB_TOKEN nor GitHub OAuth configured -- web dashboard disabled');
     return null;
   }
 
   const app = express();
+
+  // Wire GitHub OAuth routes (before static files so /auth/* routes take priority)
+  auth.wireAuthRoutes(app);
+
+  // Serve dashboard — if OAuth enabled, protect with cookie check
+  if (auth.isOAuthEnabled()) {
+    app.use((req, res, next) => {
+      // Allow auth routes and static assets through
+      if (req.path.startsWith('/auth/') || req.path.startsWith('/upload/')) return next();
+      // Check for valid JWT cookie
+      const cookieToken = auth.parseCookie(req.headers.cookie);
+      const user = cookieToken ? auth.verifyToken(cookieToken) : null;
+      if (!user) {
+        // Redirect to GitHub OAuth login
+        return res.redirect('/auth/github');
+      }
+      next();
+    });
+  }
+
   app.use(express.static(path.join(__dirname, 'public')));
 
   // -- Image upload endpoint -----------------------------------------------
@@ -177,12 +198,55 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
 
   // -- WebSocket handling -----------------------------------------------
 
-  function handleWsConnection(ws) {
+  // Track user identity per WebSocket connection
+  const wsUser = new WeakMap(); // ws → { login, name, avatar } | null
+
+  function sendInitialState(ws) {
+    ws.send(JSON.stringify({ type: 'config', links: config.links || {} }));
+    ws.send(JSON.stringify({ type: 'commands:list', commands }));
+    sendFleetStatus(ws);
+    if (taskQueue) {
+      ws.send(JSON.stringify({ type: 'tasks:list', tasks: taskQueue.getTasksList() }));
+      ws.send(JSON.stringify({ type: 'auto:status', sessions: taskQueue.getAutoSessions() }));
+      ws.send(JSON.stringify({ type: 'approvals:list', approvals: taskQueue.getPendingApprovals() }));
+      const feedData = taskQueue.getFeed(null, 50);
+      ws.send(JSON.stringify({ type: 'feed:entries', entries: feedData.entries, hasMore: feedData.hasMore }));
+      ws.send(JSON.stringify({ type: 'rules:list', rules: taskQueue.getRules() }));
+      ws.send(JSON.stringify({ type: 'designations:status', designations: taskQueue.getDesignations() }));
+      ws.send(JSON.stringify({ type: 'vim:status', enabled: taskQueue.vimMode }));
+      ws.send(JSON.stringify({ type: 'designationDefs:list', defs: taskQueue.getDesignationDefs() }));
+      ws.send(JSON.stringify({ type: 'agentRoots:list', roots: taskQueue.getAgentRoots() }));
+      ws.send(JSON.stringify({ type: 'agentFiles:list', files: taskQueue.agentFilesList }));
+    }
+    if (pmManager) {
+      ws.send(JSON.stringify({ type: 'pm:list', pms: pmManager.getAll() }));
+    }
+    const workerNodes = Array.from(workers.values()).map(n => ({
+      id: n.id, type: n.type, connected: n.connected,
+    }));
+    ws.send(JSON.stringify({ type: 'nodes:list', nodes: workerNodes }));
+  }
+
+  function handleWsConnection(ws, request) {
     let authenticated = false;
     let isWorker = false;
 
+    // Try cookie-based auth immediately for OAuth mode
+    if (auth.isOAuthEnabled()) {
+      const cookieToken = auth.parseCookie(request?.headers?.cookie);
+      const user = cookieToken ? auth.verifyToken(cookieToken) : null;
+      if (user) {
+        authenticated = true;
+        const userInfo = { login: user.sub, name: user.name, avatar: user.avatar };
+        wsUser.set(ws, userInfo);
+        clients.add(ws);
+        ws.send(JSON.stringify({ type: 'auth', ok: true, user: userInfo }));
+        sendInitialState(ws);
+      }
+    }
+
     // Auth timeout -- must authenticate within 5s
-    const authTimeout = setTimeout(() => {
+    const authTimeout = authenticated ? null : setTimeout(() => {
       if (!authenticated) {
         ws.send(JSON.stringify({ type: 'error', message: 'Auth timeout' }));
         ws.close();
@@ -199,38 +263,15 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
 
       // First message must be auth or worker registration
       if (!authenticated) {
-        if (msg.type === 'auth' && msg.token === token) {
+        const authResult = auth.authenticateWebSocket(msg, request);
+        if (authResult.authenticated) {
           // Dashboard client
           authenticated = true;
-          clearTimeout(authTimeout);
+          if (authTimeout) clearTimeout(authTimeout);
+          wsUser.set(ws, authResult.user);
           clients.add(ws);
-          ws.send(JSON.stringify({ type: 'auth', ok: true }));
-          // Send config, available commands, and initial fleet status
-          ws.send(JSON.stringify({ type: 'config', links: config.links || {} }));
-          ws.send(JSON.stringify({ type: 'commands:list', commands }));
-          sendFleetStatus(ws);
-          // Send task queue initial state
-          if (taskQueue) {
-            ws.send(JSON.stringify({ type: 'tasks:list', tasks: taskQueue.getTasksList() }));
-            ws.send(JSON.stringify({ type: 'auto:status', sessions: taskQueue.getAutoSessions() }));
-            ws.send(JSON.stringify({ type: 'approvals:list', approvals: taskQueue.getPendingApprovals() }));
-            const feedData = taskQueue.getFeed(null, 50);
-            ws.send(JSON.stringify({ type: 'feed:entries', entries: feedData.entries, hasMore: feedData.hasMore }));
-            ws.send(JSON.stringify({ type: 'rules:list', rules: taskQueue.getRules() }));
-            ws.send(JSON.stringify({ type: 'designations:status', designations: taskQueue.getDesignations() }));
-            ws.send(JSON.stringify({ type: 'vim:status', enabled: taskQueue.vimMode }));
-            ws.send(JSON.stringify({ type: 'designationDefs:list', defs: taskQueue.getDesignationDefs() }));
-            ws.send(JSON.stringify({ type: 'agentRoots:list', roots: taskQueue.getAgentRoots() }));
-            ws.send(JSON.stringify({ type: 'agentFiles:list', files: taskQueue.agentFilesList }));
-          }
-          if (pmManager) {
-            ws.send(JSON.stringify({ type: 'pm:list', pms: pmManager.getAll() }));
-          }
-          // Send connected worker nodes info
-          const workerNodes = Array.from(workers.values()).map(n => ({
-            id: n.id, type: n.type, connected: n.connected,
-          }));
-          ws.send(JSON.stringify({ type: 'nodes:list', nodes: workerNodes }));
+          ws.send(JSON.stringify({ type: 'auth', ok: true, user: authResult.user }));
+          sendInitialState(ws);
         } else if (msg.type === 'worker:register' && workerSecret && msg.secret === workerSecret) {
           // Worker node registration
           authenticated = true;
@@ -261,7 +302,8 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       }
 
       // Dashboard client message routing
-      handleMessage(ws, msg).catch(err => {
+      const user = wsUser.get(ws) || null;
+      handleMessage(ws, msg, user).catch(err => {
         console.error('Message handler error:', err.message);
         if (ws.readyState === 1) {
           ws.send(JSON.stringify({ type: 'error', message: err.message }));
@@ -301,7 +343,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
 
   // -- Message handlers --------------------------------------------------
 
-  async function handleMessage(ws, msg) {
+  async function handleMessage(ws, msg, user) {
     switch (msg.type) {
       case 'fleet:get':
         await sendFleetStatus(ws);
@@ -397,6 +439,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
         const { name, nodeId } = found;
         const node = router.getNode(nodeId);
         relay.ask(config, node, name, msg.message, {
+          force: true, // manual user input — always send, even if Claude is working
           onStream: (content, isFinal) => {
             if (ws.readyState !== 1) return;
             ws.send(JSON.stringify({ type: 'ask:stream', session: msg.session, content, final: isFinal }));
@@ -554,7 +597,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       // -- Task queue messages ----------------------------------------------
       case 'task:create': {
         if (!taskQueue) break;
-        const task = taskQueue.createTask(msg.text, msg.mode, msg.targetSession, msg.designation);
+        const task = taskQueue.createTask(msg.text, msg.mode, msg.targetSession, msg.designation, { createdBy: user?.login || null });
         ws.send(JSON.stringify({ type: 'task:created', task }));
         break;
       }
@@ -709,7 +752,16 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       case 'spawn:slots': {
         if (!taskQueue) break;
         const slots = await taskQueue.getAvailableSlots();
-        ws.send(JSON.stringify({ type: 'spawn:slots', slots }));
+        ws.send(JSON.stringify({ type: 'spawn:slots', slots, slotMin: taskQueue.spawnSlotMin, slotMax: taskQueue.spawnSlotMax }));
+        break;
+      }
+
+      case 'spawn:config': {
+        if (!taskQueue) break;
+        if (msg.min !== undefined && msg.max !== undefined) {
+          taskQueue.setSpawnSlotRange(msg.min, msg.max);
+        }
+        ws.send(JSON.stringify({ type: 'spawn:config', min: taskQueue.spawnSlotMin, max: taskQueue.spawnSlotMax }));
         break;
       }
 
@@ -937,6 +989,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     taskQueue.on('agentRoots:changed', (roots) => broadcast({ type: 'agentRoots:list', roots }));
     taskQueue.on('agentFiles:scanned', (files) => broadcast({ type: 'agentFiles:list', files }));
     taskQueue.on('vim:changed', (enabled) => broadcast({ type: 'vim:status', enabled }));
+    taskQueue.on('spawnSlotRange:changed', (range) => broadcast({ type: 'spawn:config', min: range.min, max: range.max }));
   }
 
   if (pmManager) {

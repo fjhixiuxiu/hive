@@ -31,6 +31,8 @@ class TaskQueue extends EventEmitter {
     this.activeTaskBySession = new Map(); // session num -> task id
     this.lastDispatchedAt = new Map();   // session num -> timestamp of last task dispatch
     this.spawnedAgents = new Map();  // slot num -> { repoDir, name }
+    this.spawnSlotMin = 17;
+    this.spawnSlotMax = 32;
     this.vimMode = false;
 
     // Designation definitions + agent file scanning
@@ -58,16 +60,23 @@ class TaskQueue extends EventEmitter {
     // If hive was stopped while a task was dispatched, the session may have finished
     // and gone idle while hive wasn't running. On restart, these tasks stay "dispatched"
     // forever because no session:idle event fires (no state *transition* occurs).
-    // After the first watcher poll (10s), check each dispatched task's session —
-    // if it's idle, complete the task and release the dispatch lock.
+    // We DON'T auto-complete here — sessions may be idle due to crashes/API outages,
+    // not because the task is done. Instead, just log and let the watcher's normal
+    // session:idle events handle completion going forward.
     setTimeout(async () => {
       try {
         const sessions = await fleet.getFleetStatus(this.config, this.router);
+        let staleCount = 0;
         for (const [num, taskId] of this.activeTaskBySession) {
           const s = sessions.find(s => s.num === num);
           if (s && s.state === 'idle') {
-            this._handleSessionIdle(num);
+            staleCount++;
+            const task = this.tasks.get(taskId);
+            console.log(`[reconcile] S:${num} is idle with dispatched task: "${(task?.text || '').slice(0, 60)}"`);
           }
+        }
+        if (staleCount > 0) {
+          console.log(`[reconcile] ${staleCount} dispatched task(s) on idle sessions — watcher will handle transitions`);
         }
       } catch (err) {
         console.error('Startup reconcile error:', err.message);
@@ -108,10 +117,12 @@ class TaskQueue extends EventEmitter {
       source: (meta && meta.source) || null,   // e.g. 'ci-fail', 'review-changes'
       sourcePR: (meta && meta.pr) || null,      // PR number that triggered this
       sourceSession: (meta && meta.session) || null, // session that triggered this
+      createdBy: (meta && meta.createdBy) || null,   // GitHub login of creator
     };
     this.tasks.set(task.id, task);
     this.emit('task:created', task);
-    this.pushFeed('task', null, `Task created: "${text}" (${mode})`);
+    const byWho = task.createdBy ? ` by ${task.createdBy}` : '';
+    this.pushFeed('task', null, `Task created${byWho}: "${text}" (${mode})`);
 
     if (mode === 'manual' && targetSession) {
       this._dispatchTask(task, targetSession).catch(err =>
@@ -399,6 +410,18 @@ class TaskQueue extends EventEmitter {
     this.emit('vim:changed', this.vimMode);
   }
 
+  setSpawnSlotRange(min, max) {
+    min = parseInt(min) || 17;
+    max = parseInt(max) || 32;
+    if (min < 1) min = 1;
+    if (max > 99) max = 99;
+    if (min > max) [min, max] = [max, min];
+    this.spawnSlotMin = min;
+    this.spawnSlotMax = max;
+    this._saveState();
+    this.emit('spawnSlotRange:changed', { min: this.spawnSlotMin, max: this.spawnSlotMax });
+  }
+
   // -- Designations -------------------------------------------------
 
   setDesignation(num, designation) {
@@ -508,7 +531,7 @@ class TaskQueue extends EventEmitter {
     const sessions = await fleet.getFleetStatus(this.config, this.router);
     const occupied = new Set(sessions.map(s => s.num));
     const slots = [];
-    for (let i = 17; i <= 32; i++) {
+    for (let i = this.spawnSlotMin; i <= this.spawnSlotMax; i++) {
       if (!occupied.has(i)) slots.push(i);
     }
     return slots;
@@ -533,10 +556,10 @@ class TaskQueue extends EventEmitter {
     // Pick slot
     if (num === undefined || num === null) {
       const slots = await this.getAvailableSlots();
-      if (!slots.length) throw new Error('No available slots (17-32 all occupied)');
+      if (!slots.length) throw new Error(`No available slots (${this.spawnSlotMin}-${this.spawnSlotMax} all occupied)`);
       num = slots[0];
     }
-    if (num < 17 || num > 32) throw new Error('Spawn slots must be 17-32');
+    if (num < this.spawnSlotMin || num > this.spawnSlotMax) throw new Error(`Spawn slots must be ${this.spawnSlotMin}-${this.spawnSlotMax}`);
 
     const sessions = await fleet.getFleetStatus(this.config, this.router);
     if (sessions.find(s => s.num === num)) {
@@ -783,6 +806,8 @@ class TaskQueue extends EventEmitter {
         this.agentRoots = data.agentRoots;
       }
       if (data.vimMode !== undefined) this.vimMode = data.vimMode;
+      if (data.spawnSlotMin !== undefined) this.spawnSlotMin = data.spawnSlotMin;
+      if (data.spawnSlotMax !== undefined) this.spawnSlotMax = data.spawnSlotMax;
       // Restore tasks
       if (Array.isArray(data.tasks)) {
         for (const t of data.tasks) {
@@ -837,6 +862,8 @@ class TaskQueue extends EventEmitter {
       tasks: tasksArr,
       feed: this.feed,
       vimMode: this.vimMode,
+      spawnSlotMin: this.spawnSlotMin,
+      spawnSlotMax: this.spawnSlotMax,
     };
     // Merge PM data if pmManager is attached
     if (this._pmManager) {
