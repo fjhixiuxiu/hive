@@ -54,6 +54,26 @@ class TaskQueue extends EventEmitter {
     // Wire watcher events
     this._wireWatcher();
 
+    // Reconcile stale dispatched tasks on startup.
+    // If hive was stopped while a task was dispatched, the session may have finished
+    // and gone idle while hive wasn't running. On restart, these tasks stay "dispatched"
+    // forever because no session:idle event fires (no state *transition* occurs).
+    // After the first watcher poll (10s), check each dispatched task's session —
+    // if it's idle, complete the task and release the dispatch lock.
+    setTimeout(async () => {
+      try {
+        const sessions = await fleet.getFleetStatus(this.config, this.router);
+        for (const [num, taskId] of this.activeTaskBySession) {
+          const s = sessions.find(s => s.num === num);
+          if (s && s.state === 'idle') {
+            this._handleSessionIdle(num);
+          }
+        }
+      } catch (err) {
+        console.error('Startup reconcile error:', err.message);
+      }
+    }, 12000);
+
     // Seed watcher activity from restored tasks so timestamps show immediately
     for (const [sessionNum, taskId] of this.activeTaskBySession) {
       const task = this.tasks.get(taskId);

@@ -19,7 +19,6 @@ const NUMBERED_OPTION_PATTERN = /^\d+[.)]\s+.{5,}/;
 
 // Patterns that indicate Claude is asking for permission
 const APPROVAL_PATTERNS = [
-  /bypass permissions/i,
   /Do you want to proceed/i,
   /Allow this action/i,
   /\(y\/n\)/i,
