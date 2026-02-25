@@ -426,35 +426,13 @@ class ProjectManager extends EventEmitter {
     for (const pr of prs) {
       if (pr.draft) continue;
 
-      // 2. Fetch reviews for this PR
-      const reviewsUrl = `https://api.github.com/repos/${source.repo}/pulls/${pr.number}/reviews?per_page=100`;
-      let reviews;
-      try { reviews = await this._httpRequest(reviewsUrl, headers); } catch (e) { continue; }
-      if (!Array.isArray(reviews)) continue;
-
-      // 3. Find latest review from configured reviewer
-      const reviewerReviews = reviews
-        .filter(r => (r.user && r.user.login || '').toLowerCase() === reviewer)
-        .sort((a, b) => new Date(b.submitted_at) - new Date(a.submitted_at));
-      if (reviewerReviews.length === 0) continue;
-
-      const latestReview = reviewerReviews[0];
-      if (latestReview.state !== 'CHANGES_REQUESTED') continue;
-
-      const reviewDate = new Date(latestReview.submitted_at);
-
-      // 4. Fetch issue comments after the review (where people say "ready for review")
-      const commentsUrl = `https://api.github.com/repos/${source.repo}/issues/${pr.number}/comments?since=${reviewDate.toISOString()}&per_page=100`;
+      // 2. Fetch issue comments and check for trigger phrases
+      const commentsUrl = `https://api.github.com/repos/${source.repo}/issues/${pr.number}/comments?per_page=100`;
       let comments;
       try { comments = await this._httpRequest(commentsUrl, headers); } catch (e) { continue; }
       if (!Array.isArray(comments)) continue;
 
-      // 5. Check for trigger phrases in comments posted after the review
       for (const comment of comments) {
-        if (new Date(comment.created_at) <= reviewDate) continue;
-        // Don't trigger on the reviewer's own comments
-        if ((comment.user && comment.user.login || '').toLowerCase() === reviewer) continue;
-
         const body = (comment.body || '').toLowerCase();
         if (!triggers.some(t => body.includes(t))) continue;
 

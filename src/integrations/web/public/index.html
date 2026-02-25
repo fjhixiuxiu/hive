@@ -879,7 +879,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 #msg-input { flex: 1; background: var(--bg); border: 1px solid var(--bg3); color: var(--fg); padding: 10px 14px; border-radius: 6px; font-size: 14px; outline: none; resize: none; font-family: inherit; line-height: 1.4; min-height: 5em; max-height: 40vh; overflow-y: auto; }
 
 /* ── Session status line ── */
-#session-status-line {
+#session-status-line, .session-status-line {
   display: flex; gap: 12px; padding: 4px 12px; background: var(--bg2);
   border-top: 1px solid var(--bg3); flex-shrink: 0; overflow-x: auto;
   -webkit-overflow-scrolling: touch; align-items: center; min-height: 26px;
@@ -1203,6 +1203,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
             <button class="key-btn num-key ts-key-btn" data-key="4">4</button>
           </div>
           <div id="ts-cmd-bar" class="ts-cmd-bar" style="display:none"></div>
+          <div id="ts-status-line" class="session-status-line"></div>
           <div id="ts-attachment-strip" class="attachment-strip"></div>
           <div class="tasks-session-input" id="tasks-session-input" style="display:none">
             <button class="ts-mode" id="ts-mode-toggle">Ask</button>
@@ -1853,6 +1854,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         renderAutoGrid();
         updateSidebarSummary();
         if (activeTab === 'session-panel') updateSessionStatusLine();
+        if (activeTab === 'tasks-panel') updateTasksStatusLine();
         // Update session header activity timestamp
         if (currentSession) {
           const cs = fleetData.find(x => String(x.num) === currentSession);
@@ -2199,14 +2201,10 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     requestAnimationFrame(() => { term.scrollToBottom(); requestAnimationFrame(() => { writingContent = false; }); });
   }
 
-  // ── Session status line ──────────────────────────
-  function updateSessionStatusLine() {
-    const bar = document.getElementById('session-status-line');
-    if (!bar) return;
-    if (!currentSession) { bar.innerHTML = ''; return; }
-    const s = fleetData.find(x => String(x.num) === currentSession);
-    if (!s) { bar.innerHTML = ''; return; }
-
+  // ── Session status line (shared) ─────────────────
+  function renderStatusChips(sessionNum) {
+    const s = fleetData.find(x => String(x.num) === String(sessionNum));
+    if (!s) return '';
     const chips = [];
     const branch = s.branch || '';
 
@@ -2250,7 +2248,19 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       }
     }
 
-    bar.innerHTML = chips.join('');
+    return chips.join('');
+  }
+
+  function updateSessionStatusLine() {
+    const bar = document.getElementById('session-status-line');
+    if (!bar) return;
+    bar.innerHTML = currentSession ? renderStatusChips(currentSession) : '';
+  }
+
+  function updateTasksStatusLine() {
+    const bar = document.getElementById('ts-status-line');
+    if (!bar) return;
+    bar.innerHTML = tasksSessionNum ? renderStatusChips(tasksSessionNum) : '';
   }
 
   // Fit terminal to container, but use pane cols if wider (prevents ANSI line wrapping artifacts)
@@ -2734,6 +2744,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     };
 
     showTsSessionControls(true);
+    updateTasksStatusLine();
 
     // Subscribe
     if (ws && ws.readyState === 1) {
@@ -2748,6 +2759,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     }
     tasksSessionNum = null;
     tsUserScrolledUp = false; tsPendingContent = null; tsLastContent = '';
+    updateTasksStatusLine();
   }
 
   function showTasksEmptyState(message) {
