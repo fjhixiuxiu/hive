@@ -22,7 +22,7 @@ async function captureResponse(node, paneTarget, config) {
  * @returns {Promise<{ success: boolean, response?: string, error?: string, duration?: number }>}
  */
 async function ask(config, node, sessionName, message, callbacks = {}) {
-  const { onProgress, onStream, vimMode } = typeof callbacks === 'function'
+  const { onProgress, onStream, vimMode, force } = typeof callbacks === 'function'
     ? { onProgress: callbacks } // backward compat: single function = onProgress
     : callbacks;
 
@@ -30,10 +30,10 @@ async function ask(config, node, sessionName, message, callbacks = {}) {
   const { pollInterval, cooldown, timeout } = config.relay;
   const streamInterval = config.relay.streamInterval || 3000;
 
-  // Check if session is idle first
+  // Check if session is idle first (skip if force=true for manual user input)
   const beforeContent = await node.capturePane(paneTarget, { lines: 3 });
   const currentState = tmux.detectState(beforeContent, config);
-  if (currentState === 'working') {
+  if (currentState === 'working' && !force) {
     return { success: false, error: 'Session is busy. Use /peek to see what it\'s doing.' };
   }
   if (currentState === 'off') {
