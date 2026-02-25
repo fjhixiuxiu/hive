@@ -437,6 +437,11 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   font-weight: 600; cursor: pointer; padding: 2px 6px;
 }
 .task-edit-btn:hover { color: var(--purple); }
+.task-assign-btn {
+  background: none; border: none; color: var(--green); font-size: 11px;
+  font-weight: 700; cursor: pointer; padding: 2px 6px;
+}
+.task-assign-btn:hover { color: var(--fg); }
 .task-session-badge {
   background: rgba(241,250,140,0.15); color: var(--yellow); font-size: 11px;
   font-weight: 700; padding: 2px 6px; border-radius: 3px; margin-left: auto;
@@ -1493,6 +1498,22 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   </div>
 </div>
 
+<!-- Assign task dialog -->
+<div class="dialog-overlay" id="assign-dialog">
+  <div class="dialog">
+    <div class="dialog-title">Assign to Session</div>
+    <div id="assign-dialog-task" style="font-size:12px;color:var(--dim);margin-bottom:14px;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden"></div>
+    <div class="spawn-form-field">
+      <label class="spawn-form-label">Session</label>
+      <select class="spawn-form-input" id="assign-dialog-session" style="cursor:pointer"></select>
+    </div>
+    <div class="dialog-actions">
+      <button class="dialog-btn primary" id="assign-dialog-submit">Assign</button>
+      <button class="dialog-btn" id="assign-dialog-cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <!-- Designation definition dialog -->
 <div class="dialog-overlay" id="desig-def-dialog">
   <div class="dialog" style="max-width:480px">
@@ -1524,6 +1545,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 
 <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@xterm/addon-web-links@0.11.0/lib/addon-web-links.min.js"></script>
 <script>
 (function() {
   'use strict';
@@ -2108,6 +2130,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       });
       fitAddon = new FitAddon.FitAddon();
       term.loadAddon(fitAddon);
+      term.loadAddon(new WebLinksAddon.WebLinksAddon((e, uri) => window.open(uri, '_blank')));
       term.open(termWrap);
       term.element.addEventListener('wheel', () => { setTimeout(checkScrollPosition, 50); });
       let touchStartY = 0;
@@ -2508,6 +2531,47 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); document.getElementById('task-dialog-save').click(); }
   });
 
+  // ── Assign dialog ──────────────────────────────────
+  let assigningTaskId = null;
+  const assignDialog = document.getElementById('assign-dialog');
+  const assignSessionSel = document.getElementById('assign-dialog-session');
+
+  function openAssignDialog(taskId) {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+    assigningTaskId = taskId;
+    document.getElementById('assign-dialog-task').textContent = task.text;
+    // Populate dropdown: idle sessions with no active task
+    const activeTaskSessions = new Set(tasks.filter(t => t.status === 'dispatched').map(t => t.assignedTo));
+    const available = fleetData.filter(s => s.state === 'idle' && !activeTaskSessions.has(s.num)).sort((a, b) => a.num - b.num);
+    assignSessionSel.innerHTML = '';
+    if (!available.length) {
+      assignSessionSel.innerHTML = '<option value="">No available sessions</option>';
+    } else {
+      for (const s of available) {
+        assignSessionSel.innerHTML += `<option value="${s.num}">S:${s.num} — ${s.branch ? esc(shortBranch(s.branch)) : 'master'}</option>`;
+      }
+    }
+    assignDialog.classList.add('visible');
+  }
+
+  document.getElementById('assign-dialog-submit').addEventListener('click', () => {
+    const sessionNum = parseInt(assignSessionSel.value);
+    if (!sessionNum || !assigningTaskId || !ws || ws.readyState !== 1) {
+      showToast('No session', 'Select an available session', 'error');
+      return;
+    }
+    ws.send(JSON.stringify({ type: 'task:dispatch', taskId: assigningTaskId, session: sessionNum }));
+    showToast('Assigning', `Dispatching to session ${sessionNum}`, 'success');
+    assignDialog.classList.remove('visible');
+    assigningTaskId = null;
+  });
+
+  document.getElementById('assign-dialog-cancel').addEventListener('click', () => {
+    assignDialog.classList.remove('visible');
+    assigningTaskId = null;
+  });
+
   // ── Tasks session pane ─────────────────────────────
   function ensureTasksSessionTerm() {
     const container = document.getElementById('tasks-session-terminal');
@@ -2520,6 +2584,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     });
     tasksSessionFit = new FitAddon.FitAddon();
     tasksSessionTerm.loadAddon(tasksSessionFit);
+    tasksSessionTerm.loadAddon(new WebLinksAddon.WebLinksAddon((e, uri) => window.open(uri, '_blank')));
     tasksSessionTerm.open(container);
     // Wire scroll-pause detection
     tasksSessionTerm.element.addEventListener('wheel', () => { setTimeout(tsCheckScroll, 50); });
@@ -2792,6 +2857,14 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       btn.addEventListener('click', (e) => { e.stopPropagation(); openTaskDialog(btn.dataset.id); });
     });
 
+    // Wire assign buttons (queued tab)
+    tasksScroll.querySelectorAll('.task-assign-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openAssignDialog(btn.dataset.id);
+      });
+    });
+
     // Wire card clicks
     tasksScroll.querySelectorAll('.task-card').forEach(card => {
       card.addEventListener('click', () => {
@@ -2919,8 +2992,9 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     if (tabType === 'queued') {
       const editBtn = `<button class="task-edit-btn" data-id="${t.id}">Edit</button>`;
       const cancelBtn = `<button class="task-cancel" data-id="${t.id}">Cancel</button>`;
+      const assignBtn = `<button class="task-assign-btn" data-id="${t.id}">Assign →</button>`;
       const checked = selectedTaskIds.has(t.id) ? ' checked' : '';
-      return `<div class="task-card-row"><input type="checkbox" class="task-checkbox" data-id="${t.id}"${checked}><div class="task-card queued" data-id="${t.id}"><div class="task-text">${esc(t.text)}</div><div class="task-meta"><span>${meta} · ${ago}</span>${sourceBadge}${prBadge}${originBadge}${desigBadge}${editBtn}${cancelBtn}</div></div></div>`;
+      return `<div class="task-card-row"><input type="checkbox" class="task-checkbox" data-id="${t.id}"${checked}><div class="task-card queued" data-id="${t.id}"><div class="task-text">${esc(t.text)}</div><div class="task-meta"><span>${meta} · ${ago}</span>${sourceBadge}${prBadge}${originBadge}${desigBadge}${editBtn}${assignBtn}${cancelBtn}</div></div></div>`;
     }
     // completed
     if (t.dispatchedAt && t.completedAt) {
@@ -3436,6 +3510,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     });
     feedPreviewFit = new FitAddon.FitAddon();
     feedPreviewTerm.loadAddon(feedPreviewFit);
+    feedPreviewTerm.loadAddon(new WebLinksAddon.WebLinksAddon((e, uri) => window.open(uri, '_blank')));
     feedPreviewTerm.open(container);
     requestAnimationFrame(() => feedPreviewFit.fit());
   }
