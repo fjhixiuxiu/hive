@@ -405,9 +405,13 @@ class ProjectManager extends EventEmitter {
 
     const data = await this._httpRequest(urlStr, this._githubHeaders());
     const authorFilter = source.author ? source.author.toLowerCase() : null;
+    const excludeSet = source.excludeLabels
+      ? new Set(source.excludeLabels.split(',').map(l => l.trim().toLowerCase()).filter(Boolean))
+      : null;
     return (Array.isArray(data) ? data : [])
       .filter(i => !i.pull_request) // exclude PRs from issues endpoint
       .filter(i => !authorFilter || (i.user && i.user.login.toLowerCase() === authorFilter))
+      .filter(i => !excludeSet || !i.labels.some(l => excludeSet.has(l.name.toLowerCase())))
       .map(i => ({
         key: `${source.repo}#${i.number}`,
         summary: i.title,
@@ -435,9 +439,13 @@ class ProjectManager extends EventEmitter {
     // Double-check: filter out any PRs not targeting allowed bases
     const baseSet = new Set(allowedBases);
     const authorFilter = source.author ? source.author.toLowerCase() : null;
+    const excludeSet = source.excludeLabels
+      ? new Set(source.excludeLabels.split(',').map(l => l.trim().toLowerCase()).filter(Boolean))
+      : null;
     return allPrs
       .filter(pr => baseSet.has(pr.base && pr.base.ref) && !pr.draft)
       .filter(pr => !authorFilter || (pr.user && pr.user.login.toLowerCase() === authorFilter))
+      .filter(pr => !excludeSet || !pr.labels.some(l => excludeSet.has(l.name.toLowerCase())))
       .map(pr => ({
         key: `${source.repo}#${pr.number}`,
         summary: pr.title,
