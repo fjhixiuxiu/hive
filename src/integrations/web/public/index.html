@@ -472,6 +472,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .tasks-bulk-bar .bulk-btn.cancel { color: var(--red); }
 .tasks-bulk-bar .bulk-btn.done { background: var(--green); color: var(--bg); }
 .tasks-bulk-bar .bulk-btn:active { opacity: 0.7; }
+.tasks-bulk-bar .bulk-btn:disabled { opacity: 0.3; cursor: default; pointer-events: none; }
 .tasks-select-all {
   background: none; border: none; color: var(--dim); font-size: 11px;
   font-weight: 600; cursor: pointer; padding: 2px 6px; margin-left: auto;
@@ -1155,7 +1156,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
             <button class="tasks-tab" data-tab="completed">Completed</button>
             <button class="tasks-create-btn" id="tasks-create-btn">+ Create</button>
           </div>
-          <div class="tasks-bulk-bar" id="tasks-bulk-bar" style="display:none">
+          <div class="tasks-bulk-bar" id="tasks-bulk-bar">
             <span class="bulk-count" id="tasks-bulk-count">0 selected</span>
             <button class="bulk-btn cancel" id="tasks-bulk-cancel">Cancel</button>
             <button class="bulk-btn done" id="tasks-bulk-done">Mark Done</button>
@@ -3064,17 +3065,23 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   function updateTasksBulkBar() {
     const bar = document.getElementById('tasks-bulk-bar');
     const count = selectedTaskIds.size;
-    if (count === 0) { bar.style.display = 'none'; return; }
-    bar.style.display = '';
     document.getElementById('tasks-bulk-count').textContent = `${count} selected`;
     const cancelBtn = document.getElementById('tasks-bulk-cancel');
     const doneBtn = document.getElementById('tasks-bulk-done');
-    const hasQueued = [...selectedTaskIds].some(id => { const t = tasks.find(x => x.id === id); return t && t.status === 'queued'; });
-    const hasDispatched = [...selectedTaskIds].some(id => { const t = tasks.find(x => x.id === id); return t && t.status === 'dispatched'; });
-    const hasCompleted = [...selectedTaskIds].some(id => { const t = tasks.find(x => x.id === id); return t && (t.status === 'completed' || t.status === 'failed'); });
-    cancelBtn.style.display = (hasQueued || hasDispatched) ? '' : 'none';
-    doneBtn.style.display = (hasDispatched || hasCompleted) ? '' : 'none';
-    doneBtn.textContent = hasDispatched ? 'Mark Done' : 'Clear';
+    if (count === 0) {
+      cancelBtn.disabled = true; doneBtn.disabled = true;
+      cancelBtn.style.display = ''; doneBtn.style.display = '';
+      doneBtn.textContent = 'Mark Done';
+    } else {
+      const hasQueued = [...selectedTaskIds].some(id => { const t = tasks.find(x => x.id === id); return t && t.status === 'queued'; });
+      const hasDispatched = [...selectedTaskIds].some(id => { const t = tasks.find(x => x.id === id); return t && t.status === 'dispatched'; });
+      const hasCompleted = [...selectedTaskIds].some(id => { const t = tasks.find(x => x.id === id); return t && (t.status === 'completed' || t.status === 'failed'); });
+      cancelBtn.style.display = (hasQueued || hasDispatched) ? '' : 'none';
+      cancelBtn.disabled = false;
+      doneBtn.style.display = (hasDispatched || hasCompleted) ? '' : 'none';
+      doneBtn.disabled = false;
+      doneBtn.textContent = hasDispatched ? 'Mark Done' : 'Clear';
+    }
   }
 
   // Bulk action handlers
