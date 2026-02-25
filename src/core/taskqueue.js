@@ -60,16 +60,23 @@ class TaskQueue extends EventEmitter {
     // If hive was stopped while a task was dispatched, the session may have finished
     // and gone idle while hive wasn't running. On restart, these tasks stay "dispatched"
     // forever because no session:idle event fires (no state *transition* occurs).
-    // After the first watcher poll (10s), check each dispatched task's session —
-    // if it's idle, complete the task and release the dispatch lock.
+    // We DON'T auto-complete here — sessions may be idle due to crashes/API outages,
+    // not because the task is done. Instead, just log and let the watcher's normal
+    // session:idle events handle completion going forward.
     setTimeout(async () => {
       try {
         const sessions = await fleet.getFleetStatus(this.config, this.router);
+        let staleCount = 0;
         for (const [num, taskId] of this.activeTaskBySession) {
           const s = sessions.find(s => s.num === num);
           if (s && s.state === 'idle') {
-            this._handleSessionIdle(num);
+            staleCount++;
+            const task = this.tasks.get(taskId);
+            console.log(`[reconcile] S:${num} is idle with dispatched task: "${(task?.text || '').slice(0, 60)}"`);
           }
+        }
+        if (staleCount > 0) {
+          console.log(`[reconcile] ${staleCount} dispatched task(s) on idle sessions — watcher will handle transitions`);
         }
       } catch (err) {
         console.error('Startup reconcile error:', err.message);
