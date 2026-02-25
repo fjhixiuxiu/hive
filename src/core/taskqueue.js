@@ -141,6 +141,18 @@ class TaskQueue extends EventEmitter {
     return task;
   }
 
+  /**
+   * Manually dispatch a queued task to a specific session.
+   */
+  async dispatchTaskTo(taskId, sessionNum) {
+    const task = this.tasks.get(taskId);
+    if (!task || task.status !== 'queued') return null;
+    task.mode = 'manual';
+    task.targetSession = sessionNum;
+    await this._dispatchTask(task, sessionNum);
+    return task;
+  }
+
   cancelTask(taskId) {
     const task = this.tasks.get(taskId);
     if (!task || task.status === 'completed' || task.status === 'failed') return null;
@@ -867,6 +879,14 @@ class TaskQueue extends EventEmitter {
   }
 
   // -- Serialization (for sending to clients) -----------------------
+
+  getQueuePosition(taskId) {
+    const queued = Array.from(this.tasks.values())
+      .filter(t => t.status === 'queued')
+      .sort((a, b) => a.createdAt - b.createdAt);
+    const idx = queued.findIndex(t => t.id === taskId);
+    return idx >= 0 ? idx + 1 : null;
+  }
 
   getTasksList() {
     return Array.from(this.tasks.values())

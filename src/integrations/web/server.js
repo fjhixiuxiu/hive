@@ -547,6 +547,17 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
         break;
       }
 
+      case 'task:dispatch': {
+        if (!taskQueue) break;
+        taskQueue.dispatchTaskTo(msg.taskId, msg.session).then((task) => {
+          if (task) broadcast({ type: 'task:dispatched', task });
+          else if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'error', message: 'Could not dispatch task — not queued or session unavailable' }));
+        }).catch((err) => {
+          if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'error', message: err.message }));
+        });
+        break;
+      }
+
       case 'task:cancel': {
         if (!taskQueue) break;
         const cancelledTask = taskQueue.cancelTask(msg.taskId);

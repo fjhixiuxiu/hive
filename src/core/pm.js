@@ -207,11 +207,27 @@ class ProjectManager extends EventEmitter {
         pm.seenKeys.push(issue.key);
         seenSet.add(issue.key);
 
-        // Evaluate complexity
-        const mode = this._evaluateComplexity(issue, pm.autoThreshold);
+        // Evaluate complexity; force 'manual' if PM targets a specific session
+        const mode = pm.targetSession ? 'manual' : this._evaluateComplexity(issue, pm.autoThreshold);
         const text = `[${issue.key}] ${issue.summary}`;
         const fullText = pm.instructions ? `${text}\n\nInstructions: ${pm.instructions}` : text;
-        this.taskQueue.createTask(fullText, mode, pm.targetSession || null, pm.designation, { source: `pm:${pm.name}` });
+        const task = this.taskQueue.createTask(fullText, mode, pm.targetSession || null, pm.designation, { source: `pm:${pm.name}` });
+
+        // Post GitHub PR comment if this is a PR-sourced task
+        if (pm.source.type === 'github-prs' || pm.source.type === 'github-re-reviews') {
+          const prInfo = this._parsePRFromKey(issue.key);
+          if (prInfo) {
+            const pos = this.taskQueue.getQueuePosition(task.id);
+            const desig = pm.designation || 'general';
+            const posText = pos === 1 ? 'next up' : `#${pos} in queue`;
+            const assignee = pm.source.reviewer || 'hive';
+            const body = `🐝 **Queued for review** by \`${assignee}\` — ${posText} (${desig})`;
+            this._commentOnPR(prInfo.repo, prInfo.prNumber, body).catch(err => {
+              console.error(`Failed to comment on PR #${prInfo.prNumber}:`, err.message);
+            });
+          }
+        }
+
         created++;
         pm.tasksCreated++;
       }
@@ -465,6 +481,49 @@ class ProjectManager extends EventEmitter {
       }
     }
     return false;
+  }
+
+  _httpPost(urlStr, headers, body) {
+    return new Promise((resolve, reject) => {
+      const url = new URL(urlStr);
+      const mod = url.protocol === 'https:' ? https : http;
+      const data = JSON.stringify(body);
+      const req = mod.request(urlStr, {
+        method: 'POST',
+        headers: { ...headers, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) },
+        timeout: 15000,
+      }, (res) => {
+        let resBody = '';
+        res.on('data', (chunk) => resBody += chunk);
+        res.on('end', () => {
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            try { resolve(JSON.parse(resBody)); } catch { resolve(resBody); }
+          } else {
+            reject(new Error(`HTTP ${res.statusCode}: ${resBody.slice(0, 200)}`));
+          }
+        });
+      });
+      req.on('error', (err) => reject(new Error(`Request failed: ${err.message}`)));
+      req.on('timeout', () => { req.destroy(); reject(new Error('Request timed out')); });
+      req.write(data);
+      req.end();
+    });
+  }
+
+  async _commentOnPR(repo, prNumber, body) {
+    const headers = this._githubHeaders();
+    const url = `https://api.github.com/repos/${repo}/issues/${prNumber}/comments`;
+    await this._httpPost(url, headers, { body });
+  }
+
+  _parsePRFromKey(key) {
+    // re-review-org/repo#123-commentId
+    let m = key.match(/^re-review-(.+?)#(\d+)/);
+    if (m) return { repo: m[1], prNumber: parseInt(m[2]) };
+    // org/repo#123
+    m = key.match(/^(.+?)#(\d+)/);
+    if (m) return { repo: m[1], prNumber: parseInt(m[2]) };
+    return null;
   }
 
   _httpRequest(urlStr, headers) {
