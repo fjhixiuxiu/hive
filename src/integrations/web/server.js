@@ -397,6 +397,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
         const { name, nodeId } = found;
         const node = router.getNode(nodeId);
         relay.ask(config, node, name, msg.message, {
+          force: true, // manual user input — always send, even if Claude is working
           onStream: (content, isFinal) => {
             if (ws.readyState !== 1) return;
             ws.send(JSON.stringify({ type: 'ask:stream', session: msg.session, content, final: isFinal }));
