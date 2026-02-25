@@ -1191,6 +1191,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
             <button class="key-btn vim-toggle">VIM</button>
             <button class="key-btn ts-key-btn" data-key="Enter">Enter</button>
             <button class="key-btn ts-key-btn" data-key="Escape">Esc</button>
+            <button class="key-btn ts-key-btn" data-key="C-c">Ctrl-C</button>
             <button class="key-btn ts-key-btn" data-key="Up">Up</button>
             <button class="key-btn ts-key-btn" data-key="Down">Down</button>
             <button class="key-btn ts-key-btn" data-key="Tab">Tab</button>
@@ -1344,6 +1345,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         <button class="key-btn vim-toggle">VIM</button>
         <button class="key-btn" data-key="Enter">Enter</button>
         <button class="key-btn" data-key="Escape">Esc</button>
+        <button class="key-btn" data-key="C-c">Ctrl-C</button>
         <button class="key-btn" data-key="Up">Up</button>
         <button class="key-btn" data-key="Down">Down</button>
         <button class="key-btn" data-key="Tab">Tab</button>
@@ -1713,7 +1715,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     ws = new WebSocket(`${proto}//${location.host}`);
     ws.onopen = () => { console.time('auth→fleet'); ws.send(JSON.stringify({ type: 'auth', token })); };
     ws.onmessage = (e) => { handleMessage(JSON.parse(e.data)); };
-    ws.onclose = () => { connBar.className = 'disconnected'; authenticated = false; scheduleReconnect(); };
+    ws.onclose = () => { connBar.className = 'disconnected'; authenticated = false; askPending = false; msgInput.disabled = false; sendBtn.disabled = false; scheduleReconnect(); };
     ws.onerror = () => {};
   }
 
@@ -2422,7 +2424,9 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   function sendMessage() {
     const text = msgInput.value.trim();
     const hasImages = attachedImages.length > 0;
-    if ((!text && !hasImages) || !currentSession || !ws || ws.readyState !== 1) return;
+    if (!text && !hasImages) return;
+    if (!currentSession) { showToast('Error', 'No session selected', 'error'); return; }
+    if (!ws || ws.readyState !== 1) { showToast('Error', 'Not connected to server', 'error'); return; }
     let message = text;
     if (hasImages) {
       const paths = attachedImages.map(i => i.path).join(', ');
@@ -2431,7 +2435,13 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       clearAttachments(attachedImages, attachmentStrip);
     }
     lastSentMessage = message;
-    if (mode === 'ask') { if (askPending) return; askPending = true; msgInput.disabled = true; sendBtn.disabled = true; ws.send(JSON.stringify({ type: 'ask', session: currentSession, message })); }
+    if (mode === 'ask') {
+      if (askPending) { showToast('Busy', 'Still waiting for previous ask to complete', 'error'); return; }
+      askPending = true; msgInput.disabled = true; sendBtn.disabled = true;
+      ws.send(JSON.stringify({ type: 'ask', session: currentSession, message }));
+      // Safety timeout: unlock input if ask:done never arrives
+      setTimeout(() => { if (askPending) { askPending = false; msgInput.disabled = false; sendBtn.disabled = false; showToast('Timeout', 'Ask timed out — input unlocked', 'error'); } }, 5 * 60 * 1000);
+    }
     else { ws.send(JSON.stringify({ type: 'tell', session: currentSession, message })); }
     msgInput.value = '';
     msgInput.style.height = 'auto';
