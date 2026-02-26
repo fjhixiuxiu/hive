@@ -134,6 +134,10 @@ function isSeparator(line) {
 // (Note: shift+tab appears in the status bar so is intentionally excluded.)
 const INTERACTIVE_PATTERNS = [/Do you want to proceed/, /Esc to cancel/, /Enter to select/, /^\s*❯/];
 
+// Active Claude status indicators — the ❯ prompt is visible but not usable.
+// Active lines use ellipsis (Doodling…, Doing...), completed lines don't (Sautéed for 14m).
+const ACTIVE_STATUS_RE = /[⏺✢✳✻☵⚡]\s+\S+(?:…|\.{3})/;
+
 function detectState(paneContent, config) {
   const lines = paneContent.split('\n');
 
@@ -162,6 +166,12 @@ function detectState(paneContent, config) {
   const checkLines = separatorIdx >= 0
     ? lines.slice(Math.max(0, separatorIdx - 5), separatorIdx)
     : lines;
+
+  // Check for active Claude status (Doodling…, Doing…, Churning...) before idle.
+  // When Claude is working, the ❯ prompt is visible but not interactive.
+  for (const line of checkLines) {
+    if (ACTIVE_STATUS_RE.test(line)) return 'working';
+  }
 
   // Scan upward from the bottom of the check region
   let checked = 0;

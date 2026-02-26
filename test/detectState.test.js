@@ -163,6 +163,58 @@ describe('detectState', () => {
     assert.equal(detectState(content, config), 'working');
   });
 
+  it('detects working: Doodling with ❯ prompt visible (ASCII dots)', () => {
+    // Claude is actively generating — ❯ prompt is visible but not usable
+    const content = pane(
+      '⏺ Doodling... (1m 6s · ↓ 2.8k tokens · thought for 3s)',
+      '',
+      SEP,
+      '❯ ',
+      SEP,
+      '  Model: Opus 4.6 | Ctx: 39.7% | ⎇ clau...',
+      '  cwd: /Users/jeffheifetz/Coding/webpla...',
+      '  PR #26669',
+    );
+    assert.equal(detectState(content, config), 'working');
+  });
+
+  it('detects working: Doing with ❯ prompt visible (Unicode ellipsis)', () => {
+    const content = pane(
+      '✢ Doing… (1m 10s · ↓ 1.9k tokens · thought for 3s)',
+      '',
+      SEP,
+      '❯ ',
+      SEP,
+      '  Model: Opus 4.6 | Ctx: 41.8%',
+    );
+    assert.equal(detectState(content, config), 'working');
+  });
+
+  it('detects working: Choreographing with ❯ prompt visible', () => {
+    const content = pane(
+      '✳ Choreographing…',
+      '',
+      SEP,
+      '❯ ',
+      SEP,
+      '  Model: Opus 4.6 | Ctx: 64.4%',
+    );
+    assert.equal(detectState(content, config), 'working');
+  });
+
+  it('detects idle: completed status (Sautéed) with ❯ prompt', () => {
+    // Past tense = completed, no ellipsis → idle
+    const content = pane(
+      '✻ Sautéed for 14m 34s',
+      '',
+      SEP,
+      '❯ /ship-it DEV-43846',
+      SEP,
+      '  Model: Opus 4.6 | Ctx: 75.7%',
+    );
+    assert.equal(detectState(content, config), 'idle');
+  });
+
   it('detects idle: ❯ with user-typed command (waiting for Enter)', () => {
     // User has typed "/resume" but hasn't pressed Enter yet — Claude is idle
     const content = pane(
