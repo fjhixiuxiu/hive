@@ -78,6 +78,18 @@ class ProjectManager extends EventEmitter {
     this.emit('pm:changed');
   }
 
+  rescan(id) {
+    const pm = this.pms.get(id);
+    if (!pm) return;
+    // Clear per-PM poll timestamp so next poll does a full scan
+    if (this._reReviewPollTimes) delete this._reReviewPollTimes[id];
+    // Trigger an immediate poll
+    if (pm.enabled) {
+      this._poll(id).catch(err => console.error(`Rescan error for ${pm.name}:`, err.message));
+    }
+    console.log(`[pm] Rescan triggered for "${pm.name}"`);
+  }
+
   getAll() {
     return Array.from(this.pms.values());
   }

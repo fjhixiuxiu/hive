@@ -879,6 +879,14 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
         break;
       }
 
+      case 'pm:rescan': {
+        if (!pmManager) break;
+        if (!checkPermission(ws, user, 'admin')) break;
+        pmManager.rescan(msg.id);
+        ws.send(JSON.stringify({ type: 'pm:rescan:done', id: msg.id }));
+        break;
+      }
+
       case 'pm:list': {
         if (!pmManager) break;
         ws.send(JSON.stringify({ type: 'pm:list', pms: pmManager.getAll() }));
