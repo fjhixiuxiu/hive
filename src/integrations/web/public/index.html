@@ -4596,12 +4596,18 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         </div>
         ${pm.lastError ? `<div class="pm-error">${esc(pm.lastError)}</div>` : ''}
         <div class="pm-actions">
+          <button class="pm-action-btn rescan" data-id="${pm.id}">Rescan</button>
           <button class="pm-action-btn edit" data-id="${pm.id}">Edit</button>
           <button class="pm-action-btn delete" data-id="${pm.id}">Delete</button>
         </div>
       `;
       card.querySelector('.pm-toggle').addEventListener('click', () => {
         if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'pm:toggle', id: pm.id }));
+      });
+      card.querySelector('.pm-action-btn.rescan').addEventListener('click', (e) => {
+        e.target.textContent = 'Scanning...';
+        if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'pm:rescan', id: pm.id }));
+        setTimeout(() => { e.target.textContent = 'Rescan'; }, 3000);
       });
       card.querySelector('.pm-action-btn.edit').addEventListener('click', () => openPmDialog(pm));
       card.querySelector('.pm-action-btn.delete').addEventListener('click', () => {
