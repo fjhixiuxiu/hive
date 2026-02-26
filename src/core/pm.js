@@ -1,6 +1,7 @@
 const EventEmitter = require('events');
 const https = require('https');
 const http = require('http');
+const log = require('./log');
 
 let nextPmId = 1;
 
@@ -86,9 +87,9 @@ class ProjectManager extends EventEmitter {
     if (this._reReviewPollTimes) delete this._reReviewPollTimes[id];
     // Trigger an immediate poll
     if (pm.enabled) {
-      this._poll(id).catch(err => console.error(`Rescan error for ${pm.name}:`, err.message));
+      this._poll(id).catch(err => log.error(`Rescan error for ${pm.name}:`, err.message));
     }
-    console.log(`[pm] Rescan triggered for "${pm.name}"`);
+    log.info(`[pm] Rescan triggered for "${pm.name}"`);
   }
 
   getAll() {
@@ -135,7 +136,7 @@ class ProjectManager extends EventEmitter {
         this._startPolling(id);
       }
     }
-    console.log(`Loaded ${this.pms.size} project managers`);
+    log.info(`Loaded ${this.pms.size} project managers`);
   }
 
   // ── Polling ─────────────────────────────────────────
@@ -313,7 +314,7 @@ class ProjectManager extends EventEmitter {
           const assignee = pm.source.reviewer || 'hive';
           const body = `🐝 Already queued for review by \`${assignee}\``;
           this._commentOnPR(issue._repo, issue._prNumber, body).catch(err => {
-            console.error(`Failed to comment on PR #${issue._prNumber}:`, err.message);
+            log.error(`Failed to comment on PR #${issue._prNumber}:`, err.message);
           });
           continue;
         }
@@ -343,7 +344,7 @@ class ProjectManager extends EventEmitter {
             const assignee = pm.source.reviewer || 'hive';
             const body = `🐝 **Queued for review** by \`${assignee}\` — ${posText} (${desig})`;
             this._commentOnPR(prInfo.repo, prInfo.prNumber, body).catch(err => {
-              console.error(`Failed to comment on PR #${prInfo.prNumber}:`, err.message);
+              log.error(`Failed to comment on PR #${prInfo.prNumber}:`, err.message);
             });
           }
         }
