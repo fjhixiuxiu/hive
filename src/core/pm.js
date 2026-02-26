@@ -28,6 +28,7 @@ class ProjectManager extends EventEmitter {
       autoThreshold: cfg.autoThreshold != null ? cfg.autoThreshold : 3,
       pollInterval: cfg.pollInterval || 60000,
       taskFormat: cfg.taskFormat || null,
+      checklistTemplate: cfg.checklistTemplate || null,
       enabled: false,
       seenKeys: [],
       tasksCreated: 0,
@@ -122,6 +123,7 @@ class ProjectManager extends EventEmitter {
         autoThreshold: data.autoThreshold != null ? data.autoThreshold : 3,
         pollInterval: data.pollInterval || 60000,
         taskFormat: data.taskFormat || null,
+        checklistTemplate: data.checklistTemplate || null,
         enabled: data.enabled || false,
         seenKeys: Array.isArray(data.seenKeys) ? data.seenKeys : [],
         tasksCreated: data.tasksCreated || 0,
@@ -194,7 +196,8 @@ class ProjectManager extends EventEmitter {
       taskText = pm.taskFormat.replace('{key}', key).replace('{summary}', text);
     }
     const fullText = pm.instructions ? `${taskText}\n\nInstructions: ${pm.instructions}` : taskText;
-    this.taskQueue.createTask(fullText, mode, pm.targetSession || null, pm.designation, { source: `pm:${pm.name}` });
+    const task = this.taskQueue.createTask(fullText, mode, pm.targetSession || null, pm.designation, { source: `pm:${pm.name}` });
+    this._seedChecklist(pm, task);
     pm.tasksCreated++;
     pm.lastPoll = Date.now();
     pm.lastError = null;
@@ -247,6 +250,7 @@ class ProjectManager extends EventEmitter {
         idle.num,
         pm.designation,
       );
+      this._seedChecklist(pm, task);
       pm.tasksCreated++;
       this.taskQueue.pushFeed(
         'task',
@@ -254,7 +258,8 @@ class ProjectManager extends EventEmitter {
         `PM "${pm.name}" dispatched ${command} to session ${idle.num}`,
       );
     } else {
-      this.taskQueue.createTask(command, 'auto', null, pm.designation);
+      const task = this.taskQueue.createTask(command, 'auto', null, pm.designation);
+      this._seedChecklist(pm, task);
       pm.tasksCreated++;
       this.taskQueue.pushFeed(
         'task',
@@ -320,6 +325,7 @@ class ProjectManager extends EventEmitter {
         }
         const fullText = pm.instructions ? `${text}\n\nInstructions: ${pm.instructions}` : text;
         const task = this.taskQueue.createTask(fullText, mode, pm.targetSession || null, pm.designation, { source: `pm:${pm.name}` });
+        this._seedChecklist(pm, task);
 
         // Post GitHub PR comment if this is a PR-sourced task
         if (pm.source.type === 'github-prs' || pm.source.type === 'github-re-reviews') {
@@ -666,6 +672,22 @@ class ProjectManager extends EventEmitter {
       req.on('error', (err) => reject(new Error(`Request failed: ${err.message}`)));
       req.on('timeout', () => { req.destroy(); reject(new Error('Request timed out')); });
     });
+  }
+
+  // ── Checklist seeding ───────────────────────────────
+
+  _seedChecklist(pm, task) {
+    if (!pm.checklistTemplate || !task) return;
+    const tpl = this.taskQueue.checklistTemplates.get(pm.checklistTemplate);
+    if (!tpl || !tpl.items || !tpl.items.length) return;
+    const checklist = tpl.items.map(text => ({
+      id: `cl-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      text,
+      checked: false,
+    }));
+    task.checklist = checklist;
+    this.taskQueue.emit('task:updated', task);
+    this.taskQueue._saveState();
   }
 
   // ── Helpers ─────────────────────────────────────────

@@ -1136,6 +1136,36 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .admin-perm-chip.admin-perm { background: rgba(189,147,249,0.15); color: var(--purple); border-color: var(--purple); }
 .admin-perm-chip:hover { border-color: var(--fg); }
 .perm-hidden { display: none !important; }
+
+/* ── Checklist popup ────────────────────── */
+.checklist-tab { margin-left: auto !important; }
+.checklist-tab.partial { color: var(--cyan) !important; }
+.checklist-tab.done { color: var(--green) !important; }
+.checklist-popup { position: absolute; top: 100%; right: 8px; background: var(--bg2); border: 1px solid var(--bg3); border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); z-index: 1000; margin-top: 4px; max-height: 320px; display: flex; flex-direction: column; width: 280px; }
+.checklist-popup-header { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid var(--bg3); font-size: 12px; font-weight: 700; color: var(--dim); text-transform: uppercase; letter-spacing: 0.5px; }
+.checklist-popup-close { background: none; border: none; color: var(--dim); cursor: pointer; font-size: 16px; padding: 0 4px; }
+.checklist-popup-items { overflow-y: auto; flex: 1; padding: 4px 0; }
+.checklist-item { display: flex; align-items: center; gap: 8px; padding: 6px 12px; font-size: 13px; }
+.checklist-item:hover { background: var(--bg3); }
+.checklist-item input[type="checkbox"] { accent-color: var(--cyan); cursor: pointer; }
+.checklist-item-text { flex: 1; }
+.checklist-item-text.checked { text-decoration: line-through; color: var(--dim); }
+.checklist-item-del { background: none; border: none; color: var(--dim); cursor: pointer; font-size: 14px; padding: 0 2px; opacity: 0; }
+.checklist-item:hover .checklist-item-del { opacity: 1; }
+.checklist-popup-add { display: flex; gap: 6px; padding: 6px 12px; border-top: 1px solid var(--bg3); }
+.checklist-popup-add input { flex: 1; background: var(--bg); border: 1px solid var(--bg3); color: var(--fg); font-size: 12px; padding: 4px 8px; border-radius: 4px; outline: none; }
+.checklist-popup-add input:focus { border-color: var(--purple); }
+.checklist-popup-add button { background: var(--purple); border: none; color: var(--bg); font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 4px; cursor: pointer; }
+.checklist-popup-template { padding: 6px 12px; border-top: 1px solid var(--bg3); }
+.checklist-popup-template select { width: 100%; background: var(--bg); border: 1px solid var(--bg3); color: var(--fg); font-size: 12px; padding: 4px 8px; border-radius: 4px; outline: none; }
+.checklist-badge { font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 4px; background: rgba(139,233,253,0.12); color: var(--cyan); white-space: nowrap; }
+.checklist-badge.done { background: rgba(80,250,123,0.12); color: var(--green); }
+.checklist-tpl-item { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--bg3); font-size: 13px; }
+.checklist-tpl-item:last-child { border-bottom: none; }
+.checklist-tpl-name { flex: 1; font-weight: 600; }
+.checklist-tpl-count { color: var(--dim); font-size: 11px; }
+.checklist-tpl-actions button { background: none; border: none; color: var(--dim); cursor: pointer; font-size: 12px; padding: 2px 6px; }
+.checklist-tpl-actions button:hover { color: var(--fg); }
 </style>
 </head>
 <body>
@@ -1229,6 +1259,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
             <button class="session-tab active" data-tstab="terminal">Terminal</button>
             <button class="session-tab" data-tstab="git">Git</button>
             <button class="session-tab" data-tstab="comments">Comments</button>
+            <button class="session-tab checklist-tab" id="ts-checklist-tab" style="display:none">&#9745; Checklist</button>
           </div>
           <div class="tasks-session-empty" id="tasks-session-empty">Select an in-progress task to view its session</div>
           <div class="session-tab-content active" id="ts-terminal-content" style="display:none">
@@ -1361,6 +1392,11 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
           <div id="desig-defs-list"></div>
           <button class="desig-add-btn" id="desig-def-add-btn">+ Add Designation</button>
         </div>
+        <div class="more-section">
+          <div class="more-section-title">Checklist Templates</div>
+          <div id="checklist-tpl-list"></div>
+          <button class="desig-add-btn" id="checklist-tpl-add-btn">+ Add Template</button>
+        </div>
         <div class="more-section perm-hidden" id="admin-users-section">
           <div class="more-section-title">User Permissions</div>
           <div id="admin-users-list"></div>
@@ -1394,6 +1430,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         <button class="session-tab active" data-stab="terminal">Terminal</button>
         <button class="session-tab" data-stab="git">Git</button>
         <button class="session-tab" data-stab="comments">Comments</button>
+        <button class="session-tab checklist-tab" id="session-checklist-tab" style="display:none">&#9745; Checklist</button>
       </div>
       <div class="session-tab-content active" id="session-terminal-content">
         <div id="terminal-wrap"></div>
@@ -1572,6 +1609,12 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       <textarea class="pm-form-input" id="pm-form-instructions" rows="3" placeholder="e.g. Post a review comment on the PR — DO NOT approve" style="resize:vertical;font-family:inherit"></textarea>
     </div>
     <div class="pm-form-field">
+      <label class="pm-form-label">Checklist Template <span style="color:var(--dim)">(auto-seed on task creation)</span></label>
+      <select class="pm-form-select" id="pm-form-checklist-tpl">
+        <option value="">None</option>
+      </select>
+    </div>
+    <div class="pm-form-field">
       <label class="pm-form-label">Auto Threshold (story points)</label>
       <input class="pm-form-input" id="pm-form-threshold" type="number" value="3" min="0" max="100">
     </div>
@@ -1660,6 +1703,25 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   </div>
 </div>
 
+<!-- Checklist template dialog -->
+<div class="dialog-overlay" id="checklist-tpl-dialog">
+  <div class="dialog" style="max-width:420px">
+    <div class="dialog-title" id="checklist-tpl-dialog-title">New Checklist Template</div>
+    <div class="task-dialog-field">
+      <label class="task-dialog-label">Name</label>
+      <input class="task-dialog-input" id="checklist-tpl-form-name" type="text" placeholder="e.g. Review Checklist" autocomplete="off" style="width:100%">
+    </div>
+    <div class="task-dialog-field">
+      <label class="task-dialog-label">Items <span style="color:var(--dim)">(one per line)</span></label>
+      <textarea class="task-dialog-input" id="checklist-tpl-form-items" rows="6" placeholder="Check CI&#10;Post review comment&#10;Approve PR" style="width:100%;resize:vertical;font-family:inherit"></textarea>
+    </div>
+    <div class="dialog-actions">
+      <button class="dialog-btn primary" id="checklist-tpl-save">Save</button>
+      <button class="dialog-btn" id="checklist-tpl-cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <!-- Toasts -->
 <div id="toasts"></div>
 
@@ -1707,6 +1769,8 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   let feedPreviewFit = null;
   let pendingApprovals = [];
   let rules = [];
+  let checklistTemplates = [];
+  let checklistPopupTaskId = null;
   let unreadFeedCount = 0;
   let activeTab = 'fleet-panel';
   let previousTab = 'fleet-panel'; // remember which tab was active before session view
@@ -1938,7 +2002,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       }
     }
     if (tab === 'fleet-panel') renderGrid();
-    if (tab === 'more-panel') { renderDesignationGrid(); renderAgentRoots(); renderDesigDefs(); renderAdminUsers(); }
+    if (tab === 'more-panel') { renderDesignationGrid(); renderAgentRoots(); renderDesigDefs(); renderAdminUsers(); renderChecklistTemplates(); }
     const spawnBtn = document.getElementById('spawn-btn');
     if (spawnBtn) spawnBtn.classList.toggle('visible', tab === 'fleet-panel');
     if (tab === 'session-panel' && term && fitAddon && activeSessionTab === 'terminal') {
@@ -2138,12 +2202,12 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       case 'task:created': case 'task:dispatched': case 'task:completed': case 'task:failed': {
         const idx = tasks.findIndex(t => t.id === msg.task.id);
         if (idx >= 0) tasks[idx] = msg.task; else tasks.unshift(msg.task);
-        renderTasks(); updateTasksBadge(); break;
+        renderTasks(); updateTasksBadge(); updateChecklistButtons(); break;
       }
       case 'task:updated': {
         const idx = tasks.findIndex(t => t.id === msg.task.id);
         if (idx >= 0) tasks[idx] = msg.task; else tasks.unshift(msg.task);
-        renderTasks(); updateTasksBadge(); break;
+        renderTasks(); updateTasksBadge(); updateChecklistButtons(); refreshChecklistPopup(); break;
       }
       case 'task:cancelled': {
         const idx = tasks.findIndex(t => t.id === msg.task.id);
@@ -2171,6 +2235,11 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       case 'approvals:list': pendingApprovals = msg.approvals || []; break;
       case 'broadcast:done': showToast('Broadcast', `${msg.sent} sent, ${msg.failed} failed`, msg.failed ? 'error' : 'success'); break;
       case 'rules:list': rules = msg.rules || []; renderRules(); break;
+      case 'checklistTemplates:list':
+        checklistTemplates = msg.templates || [];
+        if (activeTab === 'more-panel') renderChecklistTemplates();
+        updatePmChecklistTplSelector();
+        break;
       case 'designations:status':
         designations = msg.designations || {};
         renderDesignationGrid(); updateDesignationSelector(); updatePmDesignationSelector();
@@ -2430,6 +2499,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     const sessionTask = tasks.find(t => t.assignedTo === s.num);
     if (sessionTask) renderCommentPanel(sessionTask.id, 'session');
     updateCommentBadge('session', sessionTask);
+    updateChecklistButtons();
 
     if (!term) {
       term = new Terminal({
@@ -2992,18 +3062,21 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     document.getElementById('tasks-session-empty').style.display = 'none';
     document.getElementById('tasks-session-header').style.display = '';
 
+    // Checklist bar is always visible when a task is selected
+    updateChecklistButtons();
+
+    // Always show tabs (checklist tab needs it); hide interactive-only controls
+    tabs.style.display = '';
     if (interactive) {
       keysBar.style.display = '';
       cmdBar.style.display = '';
       inputBar.style.display = '';
-      tabs.style.display = '';
       openBtn.style.display = '';
       renderTsCmdBar();
     } else {
       keysBar.style.display = 'none';
       cmdBar.style.display = 'none';
       inputBar.style.display = 'none';
-      tabs.style.display = 'none';
       openBtn.style.display = 'none';
     }
     // Reset to terminal tab
@@ -3040,6 +3113,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 
     showTsSessionControls(true);
     updateTasksStatusLine();
+    updateChecklistButtons();
 
     // Subscribe
     if (ws && ws.readyState === 1) {
@@ -3068,6 +3142,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     document.getElementById('tasks-session-input').style.display = 'none';
     document.getElementById('tasks-session-tabs').style.display = 'none';
     document.getElementById('ts-open-session').style.display = 'none';
+    document.getElementById('ts-checklist-tab').style.display = 'none';
   }
 
   function showTaskSnapshot(taskId) {
@@ -3253,6 +3328,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       showTaskSnapshot(task.id);
     }
     renderCommentPanel(task.id);
+    updateChecklistButtons();
     // Scroll selected card into view
     requestAnimationFrame(() => {
       const card = tasksScroll.querySelector(`.task-card[data-id="${taskId}"]`);
@@ -3336,6 +3412,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
           tasksSelectedTaskId = task.id;
           openTaskSession(task.assignedTo);
           renderCommentPanel(task.id);
+          updateChecklistButtons();
           // Update selection highlight
           tasksScroll.querySelectorAll('.task-card').forEach(c => c.classList.remove('selected'));
           card.classList.add('selected');
@@ -3343,12 +3420,14 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
           tasksSelectedTaskId = task.id;
           showTaskSnapshot(task.id);
           renderCommentPanel(task.id);
+          updateChecklistButtons();
           // Update selection highlight
           tasksScroll.querySelectorAll('.task-card').forEach(c => c.classList.remove('selected'));
           card.classList.add('selected');
         } else if (activeTaskTab === 'queued') {
           tasksSelectedTaskId = task.id;
           renderCommentPanel(task.id);
+          updateChecklistButtons();
           tasksScroll.querySelectorAll('.task-card').forEach(c => c.classList.remove('selected'));
           card.classList.add('selected');
         }
@@ -3451,6 +3530,14 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     // Comment count badge
     const commentCount = (t.comments && t.comments.length) || 0;
     const commentBadge = commentCount > 0 ? `<span class="comment-count" title="${commentCount} comment(s)">&#128172; ${commentCount}</span>` : '';
+    // Checklist badge
+    let clBadge = '';
+    if (t.checklist && t.checklist.length > 0) {
+      const clDone = t.checklist.filter(i => i.checked).length;
+      const clTotal = t.checklist.length;
+      const clClass = clDone === clTotal ? 'done' : '';
+      clBadge = `<span class="checklist-badge ${clClass}" title="Checklist">\u2611 ${clDone}/${clTotal}</span>`;
+    }
 
     if (tabType === 'inprogress') {
       if (t.assignedTo) meta += ` · ${timeAgo(t.dispatchedAt || t.createdAt)}`;
@@ -3470,7 +3557,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       }
       const linkBtn = `<button class="task-link-btn" data-id="${t.id}" title="Copy link">&#128279;</button>`;
       const checked = selectedTaskIds.has(t.id) ? ' checked' : '';
-      return `<div class="task-card-row"><input type="checkbox" class="task-checkbox" data-id="${t.id}"${checked}><div class="task-card dispatched${selected}" data-id="${t.id}"><div class="task-text">${esc(t.text)}</div><div class="task-meta"><span>${meta} · ${ago}</span>${waitBadge}${sourceBadge}${desigBadge}${prBadge}${commentBadge}${linkBtn}${sessionBadge}</div></div></div>`;
+      return `<div class="task-card-row"><input type="checkbox" class="task-checkbox" data-id="${t.id}"${checked}><div class="task-card dispatched${selected}" data-id="${t.id}"><div class="task-text">${esc(t.text)}</div><div class="task-meta"><span>${meta} · ${ago}</span>${waitBadge}${sourceBadge}${desigBadge}${prBadge}${clBadge}${commentBadge}${linkBtn}${sessionBadge}</div></div></div>`;
     }
     if (tabType === 'queued') {
       const editBtn = hasPerm('create-tasks') ? `<button class="task-edit-btn" data-id="${t.id}">Edit</button>` : '';
@@ -3478,7 +3565,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       const assignBtn = hasPerm('dispatch') ? `<button class="task-assign-btn" data-id="${t.id}">Assign →</button>` : '';
       const linkBtn = `<button class="task-link-btn" data-id="${t.id}" title="Copy link">&#128279;</button>`;
       const checked = selectedTaskIds.has(t.id) ? ' checked' : '';
-      return `<div class="task-card-row"><input type="checkbox" class="task-checkbox" data-id="${t.id}"${checked}><div class="task-card queued" data-id="${t.id}"><div class="task-text">${esc(t.text)}</div><div class="task-meta"><span>${meta} · ${ago}</span>${sourceBadge}${prBadge}${originBadge}${desigBadge}${commentBadge}${linkBtn}${editBtn}${assignBtn}${cancelBtn}</div></div></div>`;
+      return `<div class="task-card-row"><input type="checkbox" class="task-checkbox" data-id="${t.id}"${checked}><div class="task-card queued" data-id="${t.id}"><div class="task-text">${esc(t.text)}</div><div class="task-meta"><span>${meta} · ${ago}</span>${sourceBadge}${prBadge}${originBadge}${desigBadge}${clBadge}${commentBadge}${linkBtn}${editBtn}${assignBtn}${cancelBtn}</div></div></div>`;
     }
     // completed
     if (t.dispatchedAt && t.completedAt) {
@@ -3489,7 +3576,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     const snippet = t.result ? `<div class="task-text" style="font-size:12px;color:var(--dim);margin-top:2px">${esc(t.result.substring(0, 80))}</div>` : '';
     const linkBtn = `<button class="task-link-btn" data-id="${t.id}" title="Copy link">&#128279;</button>`;
     const checked = selectedTaskIds.has(t.id) ? ' checked' : '';
-    return `<div class="task-card-row"><input type="checkbox" class="task-checkbox" data-id="${t.id}"${checked}><div class="task-card ${t.status}${selected}" data-id="${t.id}"><div class="task-text">${esc(t.text)}</div>${snippet}<div class="task-meta"><span>${meta} · ${ago}</span>${sourceBadge}${prBadge}${originBadge}${desigBadge}${commentBadge}${linkBtn}</div></div></div>`;
+    return `<div class="task-card-row"><input type="checkbox" class="task-checkbox" data-id="${t.id}"${checked}><div class="task-card ${t.status}${selected}" data-id="${t.id}"><div class="task-text">${esc(t.text)}</div>${snippet}<div class="task-meta"><span>${meta} · ${ago}</span>${sourceBadge}${prBadge}${originBadge}${desigBadge}${clBadge}${commentBadge}${linkBtn}</div></div></div>`;
   }
 
   // ── Comment panel (rendered into tab content divs) ─────
@@ -3666,6 +3753,250 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     btn.addEventListener('click', doAdd);
     input.addEventListener('keydown', (e) => { if (e.key === 'Enter') doAdd(); });
   })();
+
+  // ── Checklist popup + templates ────────────────────
+
+  function getActiveTaskForChecklist(context) {
+    // context: 'session' or 'tasks'
+    if (context === 'session' && currentSession) {
+      return tasks.find(t => t.status === 'dispatched' && String(t.assignedTo) === String(currentSession));
+    }
+    if (context === 'tasks') {
+      // Use the selected task in the tasks panel
+      if (tasksSelectedTaskId) {
+        return tasks.find(t => t.id === tasksSelectedTaskId);
+      }
+      // Fallback to dispatched task for session
+      if (tasksSessionNum) {
+        return tasks.find(t => t.status === 'dispatched' && String(t.assignedTo) === String(tasksSessionNum));
+      }
+    }
+    return null;
+  }
+
+  function updateChecklistButtons() {
+    ['session', 'tasks'].forEach(ctx => {
+      const tab = document.getElementById(ctx === 'session' ? 'session-checklist-tab' : 'ts-checklist-tab');
+      if (!tab) return;
+      const task = getActiveTaskForChecklist(ctx);
+      if (!task) { tab.style.display = 'none'; return; }
+      tab.style.display = '';
+      const cl = task.checklist || [];
+      const done = cl.filter(i => i.checked).length;
+      const total = cl.length;
+      tab.textContent = total > 0 ? `Checklist (${done}/${total})` : 'Checklist';
+      tab.className = 'session-tab checklist-tab';
+      if (total > 0 && done === total) tab.classList.add('done');
+      else if (total > 0 && done > 0) tab.classList.add('partial');
+    });
+  }
+
+  function closeChecklistPopup() {
+    checklistPopupTaskId = null;
+    document.querySelectorAll('.checklist-popup').forEach(p => p.remove());
+  }
+
+  function renderChecklistPopup(taskId, anchorBtn) {
+    closeChecklistPopup();
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+    checklistPopupTaskId = taskId;
+
+    const popup = document.createElement('div');
+    popup.className = 'checklist-popup';
+
+    const cl = task.checklist || [];
+    const done = cl.filter(i => i.checked).length;
+
+    let html = `<div class="checklist-popup-header"><span>Checklist ${cl.length > 0 ? done + '/' + cl.length : ''}</span><button class="checklist-popup-close">&times;</button></div>`;
+    html += '<div class="checklist-popup-items">';
+    for (const item of cl) {
+      html += `<div class="checklist-item" data-item-id="${item.id}">
+        <input type="checkbox" ${item.checked ? 'checked' : ''}>
+        <span class="checklist-item-text ${item.checked ? 'checked' : ''}">${esc(item.text)}</span>
+        <button class="checklist-item-del" title="Remove">&times;</button>
+      </div>`;
+    }
+    if (cl.length === 0) {
+      html += '<div style="padding:12px;color:var(--dim);font-size:12px;text-align:center">No items yet. Add one below or use a template.</div>';
+    }
+    html += '</div>';
+    html += `<div class="checklist-popup-add">
+      <input type="text" placeholder="Add item..." autocomplete="off">
+      <button>Add</button>
+    </div>`;
+    if (checklistTemplates.length > 0) {
+      html += '<div class="checklist-popup-template"><select><option value="">Use template...</option>';
+      for (const tpl of checklistTemplates) {
+        html += `<option value="${esc(tpl.name)}">${esc(tpl.name)} (${tpl.items.length} items)</option>`;
+      }
+      html += '</select></div>';
+    }
+    popup.innerHTML = html;
+
+    // Position anchored to the tab bar (drops down from tabs)
+    const tabBar = anchorBtn.closest('.tasks-session-tabs, .session-tabs');
+    if (tabBar) {
+      tabBar.style.position = 'relative';
+      tabBar.appendChild(popup);
+    } else {
+      anchorBtn.parentElement.style.position = 'relative';
+      anchorBtn.parentElement.appendChild(popup);
+    }
+
+    // Wire events
+    popup.querySelector('.checklist-popup-close').addEventListener('click', closeChecklistPopup);
+
+    popup.querySelectorAll('.checklist-item input[type="checkbox"]').forEach(cb => {
+      cb.addEventListener('change', () => {
+        const itemId = cb.closest('.checklist-item').dataset.itemId;
+        if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'task:checklist:toggle', taskId, itemId }));
+      });
+    });
+
+    popup.querySelectorAll('.checklist-item-del').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const itemId = btn.closest('.checklist-item').dataset.itemId;
+        if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'task:checklist:remove', taskId, itemId }));
+      });
+    });
+
+    const addInput = popup.querySelector('.checklist-popup-add input');
+    const addBtn = popup.querySelector('.checklist-popup-add button');
+    function doAdd() {
+      const text = addInput.value.trim();
+      if (!text) return;
+      if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'task:checklist:add', taskId, text }));
+      addInput.value = '';
+    }
+    addBtn.addEventListener('click', doAdd);
+    addInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') doAdd(); });
+
+    const tplSelect = popup.querySelector('.checklist-popup-template select');
+    if (tplSelect) {
+      tplSelect.addEventListener('change', () => {
+        const templateName = tplSelect.value;
+        if (!templateName) return;
+        if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'task:checklist:seed', taskId, templateName }));
+        tplSelect.value = '';
+      });
+    }
+  }
+
+  // Wire checklist tab buttons
+  document.getElementById('session-checklist-tab').addEventListener('click', (e) => {
+    e.stopPropagation();
+    const task = getActiveTaskForChecklist('session');
+    if (!task) return;
+    if (checklistPopupTaskId === task.id) { closeChecklistPopup(); return; }
+    renderChecklistPopup(task.id, e.currentTarget);
+  });
+
+  document.getElementById('ts-checklist-tab').addEventListener('click', (e) => {
+    e.stopPropagation();
+    const task = getActiveTaskForChecklist('tasks');
+    if (!task) return;
+    if (checklistPopupTaskId === task.id) { closeChecklistPopup(); return; }
+    renderChecklistPopup(task.id, e.currentTarget);
+  });
+
+  // Close popup on click outside
+  document.addEventListener('click', (e) => {
+    if (!checklistPopupTaskId) return;
+    if (e.target.closest('.checklist-popup') || e.target.closest('.checklist-tab')) return;
+    closeChecklistPopup();
+  });
+
+  // Re-render popup when task updates come in
+  function refreshChecklistPopup() {
+    if (!checklistPopupTaskId) return;
+    const task = tasks.find(t => t.id === checklistPopupTaskId);
+    if (!task) { closeChecklistPopup(); return; }
+    const existingPopup = document.querySelector('.checklist-popup');
+    if (!existingPopup) return;
+    const anchorTab = existingPopup.parentElement.querySelector('.checklist-tab');
+    if (anchorTab) renderChecklistPopup(checklistPopupTaskId, anchorTab);
+  }
+
+  // ── Checklist template management (More panel) ─────
+
+  function renderChecklistTemplates() {
+    const list = document.getElementById('checklist-tpl-list');
+    if (!list) return;
+    if (!checklistTemplates.length) {
+      list.innerHTML = '<div style="color:var(--dim);font-size:12px;padding:4px">No templates yet.</div>';
+      return;
+    }
+    let html = '';
+    for (const tpl of checklistTemplates) {
+      html += `<div class="checklist-tpl-item" data-name="${esc(tpl.name)}">
+        <span class="checklist-tpl-name">${esc(tpl.name)}</span>
+        <span class="checklist-tpl-count">${tpl.items.length} item${tpl.items.length !== 1 ? 's' : ''}</span>
+        <span class="checklist-tpl-actions">
+          <button class="cl-tpl-edit" title="Edit">Edit</button>
+          <button class="cl-tpl-del" title="Delete">&times;</button>
+        </span>
+      </div>`;
+    }
+    list.innerHTML = html;
+    list.querySelectorAll('.cl-tpl-edit').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const name = btn.closest('.checklist-tpl-item').dataset.name;
+        const tpl = checklistTemplates.find(t => t.name === name);
+        if (tpl) openChecklistTplDialog(tpl);
+      });
+    });
+    list.querySelectorAll('.cl-tpl-del').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const name = btn.closest('.checklist-tpl-item').dataset.name;
+        if (confirm(`Delete template "${name}"?`)) {
+          if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'checklistTemplate:delete', name }));
+        }
+      });
+    });
+  }
+
+  let editingChecklistTplName = null;
+  const checklistTplDialog = document.getElementById('checklist-tpl-dialog');
+
+  document.getElementById('checklist-tpl-add-btn').addEventListener('click', () => openChecklistTplDialog(null));
+  document.getElementById('checklist-tpl-cancel').addEventListener('click', closeChecklistTplDialog);
+  checklistTplDialog.addEventListener('click', (e) => { if (e.target === checklistTplDialog) closeChecklistTplDialog(); });
+
+  function openChecklistTplDialog(tpl) {
+    editingChecklistTplName = tpl ? tpl.name : null;
+    document.getElementById('checklist-tpl-dialog-title').textContent = tpl ? 'Edit Checklist Template' : 'New Checklist Template';
+    document.getElementById('checklist-tpl-form-name').value = tpl ? tpl.name : '';
+    document.getElementById('checklist-tpl-form-items').value = tpl ? tpl.items.join('\n') : '';
+    checklistTplDialog.classList.add('visible');
+  }
+
+  function closeChecklistTplDialog() { checklistTplDialog.classList.remove('visible'); editingChecklistTplName = null; }
+
+  document.getElementById('checklist-tpl-save').addEventListener('click', () => {
+    const name = document.getElementById('checklist-tpl-form-name').value.trim();
+    const itemsRaw = document.getElementById('checklist-tpl-form-items').value;
+    const items = itemsRaw.split('\n').map(s => s.trim()).filter(Boolean);
+    if (!name) { showToast('Error', 'Name required', 'error'); return; }
+    if (!items.length) { showToast('Error', 'At least one item required', 'error'); return; }
+    // If renaming, delete old first
+    if (editingChecklistTplName && editingChecklistTplName !== name) {
+      if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'checklistTemplate:delete', name: editingChecklistTplName }));
+    }
+    if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'checklistTemplate:set', name, items }));
+    closeChecklistTplDialog();
+  });
+
+  function updatePmChecklistTplSelector() {
+    const sel = document.getElementById('pm-form-checklist-tpl');
+    if (!sel) return;
+    const val = sel.value;
+    sel.innerHTML = '<option value="">None</option>';
+    for (const tpl of checklistTemplates) {
+      sel.innerHTML += `<option value="${esc(tpl.name)}">${esc(tpl.name)}</option>`;
+    }
+    sel.value = val;
+  }
 
   // ── Feed panel ────────────────────────────────────
   $$('.feed-tab').forEach(tab => {
@@ -4706,6 +5037,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       targetSession: targetSessionVal ? parseInt(targetSessionVal) : null,
       taskFormat: document.getElementById('pm-form-taskformat').value.trim() || null,
       instructions: document.getElementById('pm-form-instructions').value.trim(),
+      checklistTemplate: document.getElementById('pm-form-checklist-tpl').value || null,
       autoThreshold: parseInt(document.getElementById('pm-form-threshold').value) || 3,
       pollInterval: parseInt(document.getElementById('pm-form-interval').value) || 60000,
     };
@@ -4747,6 +5079,8 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     document.getElementById('pm-form-instructions').value = pm ? (pm.instructions || '') : '';
     document.getElementById('pm-form-threshold').value = pm ? pm.autoThreshold : 3;
     document.getElementById('pm-form-interval').value = pm ? pm.pollInterval : 60000;
+    updatePmChecklistTplSelector();
+    document.getElementById('pm-form-checklist-tpl').value = pm ? (pm.checklistTemplate || '') : '';
     togglePmSourceFields();
     pmDialog.classList.add('visible');
   }

@@ -35,6 +35,7 @@ class TaskQueue extends EventEmitter {
     this.spawnSlotMin = 17;
     this.spawnSlotMax = 32;
     this.vimMode = false;
+    this.checklistTemplates = new Map(); // name → { name, items: [string] }
 
     // Designation definitions + agent file scanning
     this.designationDefs = new Map(); // name → { name, agentFiles: [], description: '' }
@@ -567,6 +568,81 @@ class TaskQueue extends EventEmitter {
     return true;
   }
 
+  // -- Checklist Templates -------------------------------------------
+
+  getChecklistTemplates() {
+    return Array.from(this.checklistTemplates.values());
+  }
+
+  setChecklistTemplate(name, items) {
+    if (!name) return null;
+    const template = { name, items: Array.isArray(items) ? items : [] };
+    this.checklistTemplates.set(name, template);
+    this.emit('checklistTemplates:changed', this.getChecklistTemplates());
+    this._saveState();
+    return template;
+  }
+
+  removeChecklistTemplate(name) {
+    if (!this.checklistTemplates.has(name)) return false;
+    this.checklistTemplates.delete(name);
+    this.emit('checklistTemplates:changed', this.getChecklistTemplates());
+    this._saveState();
+    return true;
+  }
+
+  // -- Task Checklist -----------------------------------------------
+
+  toggleChecklistItem(taskId, itemId) {
+    const task = this.tasks.get(taskId);
+    if (!task || !task.checklist) return null;
+    const item = task.checklist.find(i => i.id === itemId);
+    if (!item) return null;
+    item.checked = !item.checked;
+    this.emit('task:updated', task);
+    this._saveState();
+    return task;
+  }
+
+  addChecklistItem(taskId, text) {
+    const task = this.tasks.get(taskId);
+    if (!task) return null;
+    if (!task.checklist) task.checklist = [];
+    const item = {
+      id: `cl-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      text,
+      checked: false,
+    };
+    task.checklist.push(item);
+    this.emit('task:updated', task);
+    this._saveState();
+    return task;
+  }
+
+  removeChecklistItem(taskId, itemId) {
+    const task = this.tasks.get(taskId);
+    if (!task || !task.checklist) return null;
+    const idx = task.checklist.findIndex(i => i.id === itemId);
+    if (idx < 0) return null;
+    task.checklist.splice(idx, 1);
+    this.emit('task:updated', task);
+    this._saveState();
+    return task;
+  }
+
+  setTaskChecklist(taskId, checklist) {
+    const task = this.tasks.get(taskId);
+    if (!task) return null;
+    task.checklist = (checklist || []).map(item => ({
+      id: item.id || `cl-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      text: item.text,
+      checked: !!item.checked,
+    }));
+    this.emit('task:updated', task);
+    this._saveState();
+    return task;
+  }
+
   // -- Designations -------------------------------------------------
 
   setDesignation(num, designation) {
@@ -950,6 +1026,11 @@ class TaskQueue extends EventEmitter {
       if (Array.isArray(data.agentRoots)) {
         this.agentRoots = data.agentRoots;
       }
+      if (Array.isArray(data.checklistTemplates)) {
+        for (const tpl of data.checklistTemplates) {
+          if (tpl.name) this.checklistTemplates.set(tpl.name, tpl);
+        }
+      }
       if (data.users && typeof data.users === 'object') {
         for (const [login, info] of Object.entries(data.users)) {
           this.users.set(login, info);
@@ -1017,6 +1098,7 @@ class TaskQueue extends EventEmitter {
       vimMode: this.vimMode,
       spawnSlotMin: this.spawnSlotMin,
       spawnSlotMax: this.spawnSlotMax,
+      checklistTemplates: this.getChecklistTemplates(),
     };
     // Merge PM data if pmManager is attached
     if (this._pmManager) {

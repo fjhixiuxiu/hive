@@ -238,6 +238,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       ws.send(JSON.stringify({ type: 'designationDefs:list', defs: taskQueue.getDesignationDefs() }));
       ws.send(JSON.stringify({ type: 'agentRoots:list', roots: taskQueue.getAgentRoots() }));
       ws.send(JSON.stringify({ type: 'agentFiles:list', files: taskQueue.agentFilesList }));
+      ws.send(JSON.stringify({ type: 'checklistTemplates:list', templates: taskQueue.getChecklistTemplates() }));
       // Send users list to admins
       if (user && user.login && taskQueue.hasPermission(user.login, 'admin')) {
         ws.send(JSON.stringify({ type: 'users:list', users: taskQueue.getUsersList() }));
@@ -916,6 +917,54 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
         break;
       }
 
+      // -- Checklist template messages ------------------------------------------
+      case 'checklistTemplate:set': {
+        if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'admin')) break;
+        taskQueue.setChecklistTemplate(msg.name, msg.items);
+        break;
+      }
+
+      case 'checklistTemplate:delete': {
+        if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'admin')) break;
+        taskQueue.removeChecklistTemplate(msg.name);
+        break;
+      }
+
+      // -- Task checklist messages ---------------------------------------------
+      case 'task:checklist:toggle': {
+        if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'create-tasks')) break;
+        taskQueue.toggleChecklistItem(msg.taskId, msg.itemId);
+        break;
+      }
+
+      case 'task:checklist:add': {
+        if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'create-tasks')) break;
+        taskQueue.addChecklistItem(msg.taskId, msg.text);
+        break;
+      }
+
+      case 'task:checklist:remove': {
+        if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'create-tasks')) break;
+        taskQueue.removeChecklistItem(msg.taskId, msg.itemId);
+        break;
+      }
+
+      case 'task:checklist:seed': {
+        if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'create-tasks')) break;
+        const tpl = taskQueue.checklistTemplates.get(msg.templateName);
+        if (tpl) {
+          const checklist = tpl.items.map(text => ({ text, checked: false }));
+          taskQueue.setTaskChecklist(msg.taskId, checklist);
+        }
+        break;
+      }
+
       // -- User permission messages -------------------------------------------
       case 'users:list': {
         if (!taskQueue) break;
@@ -1161,6 +1210,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     taskQueue.on('spawnSlotRange:changed', (range) => broadcast({ type: 'spawn:config', min: range.min, max: range.max }));
     taskQueue.on('task:comment:added', (data) => broadcast({ type: 'task:comment:added', taskId: data.taskId, comment: data.comment }));
     taskQueue.on('task:comment:deleted', (data) => broadcast({ type: 'task:comment:deleted', taskId: data.taskId, commentId: data.commentId }));
+    taskQueue.on('checklistTemplates:changed', (templates) => broadcast({ type: 'checklistTemplates:list', templates }));
     taskQueue.on('users:changed', (users) => {
       // Only send full users list to admins
       for (const client of clients) {
