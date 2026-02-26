@@ -104,13 +104,21 @@ function isSeparator(line) {
  * divides content/prompt from the status bar below. We find that separator,
  * then check the lines above it for idle/off patterns.
  *
- * TUI layout when idle:
+ * TUI layout when idle (prompt between separators):
  *   [content]
  *   ──────────────    ← 2nd separator (prompt top)
- *   ❯ [input]        ← prompt line
+ *   ❯ [input]        ← prompt line (may have typed text)
  *   ──────────────    ← 1st separator from bottom (prompt bottom / status bar top)
  *   Model: ...        ← status bar (ignored)
  *   cwd: ...
+ *
+ * TUI layout when idle (permission/choice prompt below separator):
+ *   [content]
+ *   ──────────────    ← separator
+ *   Do you want to proceed?
+ *   ❯ 1. Yes
+ *   2. No
+ *   Esc to cancel
  *
  * TUI layout when working:
  *   [tool output]
@@ -121,6 +129,11 @@ function isSeparator(line) {
  * @param {object} config - hive config with idlePatterns/offPatterns
  * @returns {'idle'|'working'|'off'}
  */
+// Interactive prompt patterns safe to check below the separator.
+// These only appear in permission/choice prompts, never in the status bar.
+// (Note: shift+tab appears in the status bar so is intentionally excluded.)
+const INTERACTIVE_PATTERNS = [/Do you want to proceed/, /Esc to cancel/, /Enter to select/, /^\s*❯/];
+
 function detectState(paneContent, config) {
   const lines = paneContent.split('\n');
 
@@ -130,6 +143,18 @@ function detectState(paneContent, config) {
     if (isSeparator(lines[i])) {
       separatorIdx = i;
       break;
+    }
+  }
+
+  // Check below separator for interactive prompts (permission/choice menus).
+  // Newer Claude Code renders these below the separator instead of above it.
+  if (separatorIdx >= 0) {
+    for (let i = separatorIdx + 1; i < lines.length; i++) {
+      const raw = lines[i];
+      if (!raw.trim()) continue;
+      for (const pat of INTERACTIVE_PATTERNS) {
+        if (pat.test(raw)) return 'idle';
+      }
     }
   }
 

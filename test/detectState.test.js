@@ -19,9 +19,11 @@ describe('detectState', () => {
 
   // ── Config sanity checks ───────────────────────────────────
 
-  it('production config has ❯ bare prompt pattern', () => {
+  it('production config has ❯ prompt pattern', () => {
     const hasPrompt = config.idlePatterns.some(p => p.test('❯ '));
-    assert.ok(hasPrompt, 'hive.config.js must include a pattern matching "❯ " (bare prompt)');
+    assert.ok(hasPrompt, 'hive.config.js must include a pattern matching "❯ " (prompt)');
+    const hasTyped = config.idlePatterns.some(p => p.test('❯ /resume'));
+    assert.ok(hasTyped, 'hive.config.js must also match "❯ /resume" (prompt with typed text)');
   });
 
   it('production config has Try " welcome pattern', () => {
@@ -161,9 +163,8 @@ describe('detectState', () => {
     assert.equal(detectState(content, config), 'working');
   });
 
-  it('detects working: ❯ with user-typed command is not bare prompt', () => {
-    // User has typed "/resume" — the ❯ line has text after it, so the
-    // bare-prompt pattern /❯\s*$/m should NOT match
+  it('detects idle: ❯ with user-typed command (waiting for Enter)', () => {
+    // User has typed "/resume" but hasn't pressed Enter yet — Claude is idle
     const content = pane(
       SEP,
       '❯ /resume',
@@ -171,7 +172,7 @@ describe('detectState', () => {
       '  Model: Opus 4.6 | Ctx: 0.0% | ⎇ jeffh...',
       '  cwd: /Users/jeffheifetz/Coding/webpla...',
     );
-    assert.equal(detectState(content, config), 'working');
+    assert.equal(detectState(content, config), 'idle');
   });
 
   it('detects working: active tool execution with spinner', () => {
@@ -195,15 +196,48 @@ describe('detectState', () => {
     assert.equal(detectState(content, config), 'working');
   });
 
-  it('detects working: permission prompt is not idle prompt', () => {
-    // Claude asking "Do you want to run this command?" is working, not idle
+  it('detects idle: permission prompt below separator', () => {
+    // Claude asking "Do you want to proceed?" renders below the separator
     const content = pane(
-      '  Do you want to run this command?',
-      '  npm test',
+      '  Reading file: src/core/tmux.js',
       SEP,
-      '  Model: Opus 4.6 | Ctx: 10.0%',
+      ' Read file',
+      '',
+      '  Read(~/Coding/webplatform6/src/core/tmux.js)',
+      '',
+      ' Do you want to proceed?',
+      ' ❯ 1. Yes',
+      '   2. No',
+      '',
+      ' Esc to cancel · Tab to amend',
     );
-    assert.equal(detectState(content, config), 'working');
+    assert.equal(detectState(content, config), 'idle');
+  });
+
+  it('detects idle: permission prompt without separator', () => {
+    // Permission prompt fills entire pane (no separator visible)
+    const content = pane(
+      '',
+      ' Command contains brace expansion that could alter command parsing',
+      '',
+      ' Do you want to proceed?',
+      ' ❯ 1. Yes',
+      '   2. No',
+      '',
+      ' Esc to cancel · Tab to amend · ctrl+e to explain',
+    );
+    assert.equal(detectState(content, config), 'idle');
+  });
+
+  it('detects idle: choice menu below separator', () => {
+    const content = pane(
+      '  Some output',
+      SEP,
+      '  4. Chat about this',
+      '',
+      'Enter to select · ↑/↓ to navigate · Esc to cancel',
+    );
+    assert.equal(detectState(content, config), 'idle');
   });
 
   // ── Off ────────────────────────────────────────────────────
@@ -309,8 +343,8 @@ describe('detectState', () => {
     assert.equal(detectState(content, config), 'idle');
   });
 
-  it('detects working when Cogitated/Baked line is above separator', () => {
-    // "Cogitated for 34s" is content output, not a prompt
+  it('detects idle when user has typed response in prompt', () => {
+    // User typed "yes, re-kick it" but hasn't pressed Enter — still idle
     const content = pane(
       '  Want me to re-kick CI to get a clean run?',
       '',
@@ -321,9 +355,6 @@ describe('detectState', () => {
       SEP,
       '  Model: Opus 4.6 | Ctx: 24.6%',
     );
-    // User typed "yes, re-kick it" — prompt has text, so not bare ❯
-    // The line above the prompt separator is blank/Cogitated, but
-    // the prompt line itself has user input → working
-    assert.equal(detectState(content, config), 'working');
+    assert.equal(detectState(content, config), 'idle');
   });
 });
