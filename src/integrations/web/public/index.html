@@ -2158,7 +2158,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
           authError.style.display = 'block'; authInput.value = ''; authInput.focus();
         }
         break;
-      case 'config': linkTemplates = msg.links || {}; break;
+      case 'config': linkTemplates = msg.links || {}; if (msg.spawnBaseDir) spawnBaseDir = msg.spawnBaseDir; break;
       case 'commands:list': tsCommands = msg.commands || []; renderCommands(tsCommands); break;
       case 'fleet:search:result':
         renderFleetSearchResults(msg.query, msg.results);

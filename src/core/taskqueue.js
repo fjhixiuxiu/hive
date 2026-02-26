@@ -371,6 +371,9 @@ class TaskQueue extends EventEmitter {
     this.activeTaskBySession.delete(num);
     this.dispatchLock.delete(num);
     this.spawnedAgents.delete(num);
+    this.autoSessions.delete(num);
+    this.lastDispatchedAt.delete(num);
+    this.designations.delete(num);
     this._saveState();
   }
 
