@@ -311,7 +311,10 @@ class ProjectManager extends EventEmitter {
         const mode = pm.targetSession ? 'manual' : this._evaluateComplexity(issue, pm.autoThreshold);
         let text;
         if (pm.taskFormat) {
-          text = pm.taskFormat.replace('{key}', issue.key).replace('{summary}', issue.summary);
+          text = pm.taskFormat
+            .replace('{key}', issue.key)
+            .replace('{summary}', issue.summary)
+            .replace('{prNumber}', issue._prNumber || '');
         } else {
           text = `[${issue.key}] ${issue.summary}`;
         }
@@ -572,6 +575,8 @@ class ProjectManager extends EventEmitter {
           summary: `Re-review PR #${pr.number}: ${pr.title}`,
           issueType: 'pr',
           storyPoints: null,
+          _repo: source.repo,
+          _prNumber: pr.number,
         });
       }
     }
