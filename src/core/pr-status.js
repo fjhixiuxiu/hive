@@ -236,4 +236,14 @@ function stats() {
   };
 }
 
-module.exports = { fetch, clearCache, stats };
+/**
+ * Return cached PR data for a branch without triggering any API call.
+ * Returns null if not cached.
+ */
+function getCached(branch) {
+  if (!branch || SKIP_BRANCHES.has(branch)) return null;
+  const cached = cache.get(branch);
+  return (cached && cached.data) || null;
+}
+
+module.exports = { fetch, getCached, clearCache, stats };
