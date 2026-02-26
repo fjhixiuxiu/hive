@@ -127,7 +127,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
   const app = express();
 
   // Wire GitHub OAuth routes (before static files so /auth/* routes take priority)
-  auth.wireAuthRoutes(app);
+  auth.wireAuthRoutes(app, taskQueue);
 
   // Serve dashboard — if OAuth enabled, protect with cookie check
   if (auth.isOAuthEnabled()) {
@@ -201,9 +201,29 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
   // Track user identity per WebSocket connection
   const wsUser = new WeakMap(); // ws → { login, name, avatar } | null
 
+  // Permission check helper. Returns true if allowed, sends error and returns false otherwise.
+  // In legacy token mode (no OAuth), all actions are allowed.
+  function checkPermission(ws, user, capability) {
+    if (!auth.isOAuthEnabled()) return true; // legacy token mode — no enforcement
+    if (!user || !user.login) {
+      ws.send(JSON.stringify({ type: 'error', message: 'Not authenticated' }));
+      return false;
+    }
+    if (!taskQueue) return true; // no task queue = no permission system
+    if (taskQueue.hasPermission(user.login, capability)) return true;
+    ws.send(JSON.stringify({ type: 'error', message: `Permission denied: requires "${capability}"` }));
+    return false;
+  }
+
   function sendInitialState(ws) {
+    const user = wsUser.get(ws) || null;
     ws.send(JSON.stringify({ type: 'config', links: config.links || {} }));
     ws.send(JSON.stringify({ type: 'commands:list', commands }));
+    // Send user permissions
+    if (auth.isOAuthEnabled() && user && user.login && taskQueue) {
+      const u = taskQueue.getUser(user.login);
+      ws.send(JSON.stringify({ type: 'user:permissions', permissions: u ? u.permissions : ['view', 'comment'] }));
+    }
     sendFleetStatus(ws);
     if (taskQueue) {
       ws.send(JSON.stringify({ type: 'tasks:list', tasks: taskQueue.getTasksList() }));
@@ -217,6 +237,10 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       ws.send(JSON.stringify({ type: 'designationDefs:list', defs: taskQueue.getDesignationDefs() }));
       ws.send(JSON.stringify({ type: 'agentRoots:list', roots: taskQueue.getAgentRoots() }));
       ws.send(JSON.stringify({ type: 'agentFiles:list', files: taskQueue.agentFilesList }));
+      // Send users list to admins
+      if (user && user.login && taskQueue.hasPermission(user.login, 'admin')) {
+        ws.send(JSON.stringify({ type: 'users:list', users: taskQueue.getUsersList() }));
+      }
     }
     if (pmManager) {
       ws.send(JSON.stringify({ type: 'pm:list', pms: pmManager.getAll() }));
@@ -238,9 +262,12 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       if (user) {
         authenticated = true;
         const userInfo = { login: user.sub, name: user.name, avatar: user.avatar };
+        // Register user in permission system
+        if (taskQueue) taskQueue.ensureUser(userInfo.login, userInfo.name, userInfo.avatar);
         wsUser.set(ws, userInfo);
         clients.add(ws);
-        ws.send(JSON.stringify({ type: 'auth', ok: true, user: userInfo }));
+        const perms = taskQueue ? (taskQueue.getUser(userInfo.login) || {}).permissions || ['view', 'comment'] : [];
+        ws.send(JSON.stringify({ type: 'auth', ok: true, user: userInfo, permissions: perms }));
         sendInitialState(ws);
       }
     }
@@ -268,9 +295,16 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
           // Dashboard client
           authenticated = true;
           if (authTimeout) clearTimeout(authTimeout);
+          // Register user in permission system
+          if (authResult.user && authResult.user.login && taskQueue) {
+            taskQueue.ensureUser(authResult.user.login, authResult.user.name, authResult.user.avatar);
+          }
           wsUser.set(ws, authResult.user);
           clients.add(ws);
-          ws.send(JSON.stringify({ type: 'auth', ok: true, user: authResult.user }));
+          const perms = (authResult.user && authResult.user.login && taskQueue)
+            ? (taskQueue.getUser(authResult.user.login) || {}).permissions || ['view', 'comment']
+            : [];
+          ws.send(JSON.stringify({ type: 'auth', ok: true, user: authResult.user, permissions: perms }));
           sendInitialState(ws);
         } else if (msg.type === 'worker:register' && workerSecret && msg.secret === workerSecret) {
           // Worker node registration
@@ -431,6 +465,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
         break;
 
       case 'ask': {
+        if (!checkPermission(ws, user, 'send-messages')) break;
         const found = await fleet.findSession(config, router, msg.session);
         if (!found) {
           ws.send(JSON.stringify({ type: 'error', message: `No session matching "${msg.session}"` }));
@@ -460,6 +495,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       }
 
       case 'tell': {
+        if (!checkPermission(ws, user, 'send-messages')) break;
         const found = await fleet.findSession(config, router, msg.session);
         if (!found) {
           ws.send(JSON.stringify({ type: 'error', message: `No session matching "${msg.session}"` }));
@@ -485,6 +521,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       }
 
       case 'keys': {
+        if (!checkPermission(ws, user, 'send-messages')) break;
         // Send raw tmux keys (Enter, Up, Down, Escape, Tab, etc.)
         const found = await fleet.findSession(config, router, msg.session);
         if (!found) {
@@ -504,6 +541,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       }
 
       case 'restart': {
+        if (!checkPermission(ws, user, 'restart')) break;
         const found = await fleet.findSession(config, router, msg.session);
         if (!found) {
           ws.send(JSON.stringify({ type: 'error', message: `No session matching "${msg.session}"` }));
@@ -597,6 +635,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       // -- Task queue messages ----------------------------------------------
       case 'task:create': {
         if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'create-tasks')) break;
         const task = taskQueue.createTask(msg.text, msg.mode, msg.targetSession, msg.designation, { createdBy: user?.login || null });
         ws.send(JSON.stringify({ type: 'task:created', task }));
         break;
@@ -604,6 +643,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
 
       case 'task:attach': {
         if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'create-tasks')) break;
         const task = taskQueue.attachTask(msg.text, msg.session, msg.meta);
         broadcast({ type: 'task:created', task });
         broadcast({ type: 'task:dispatched', task });
@@ -613,6 +653,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
 
       case 'task:update': {
         if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'create-tasks')) break;
         const updatedTask = taskQueue.updateTask(msg.taskId, msg.updates || {});
         if (updatedTask) broadcast({ type: 'task:updated', task: updatedTask });
         break;
@@ -629,6 +670,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
 
       case 'task:dispatch': {
         if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'dispatch')) break;
         taskQueue.dispatchTaskTo(msg.taskId, msg.session).then((task) => {
           if (task) broadcast({ type: 'task:dispatched', task });
           else if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'error', message: 'Could not dispatch task — not queued or session unavailable' }));
@@ -640,6 +682,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
 
       case 'task:cancel': {
         if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'cancel')) break;
         const cancelledTask = taskQueue.cancelTask(msg.taskId);
         if (cancelledTask) broadcast({ type: 'task:cancelled', task: cancelledTask });
         break;
@@ -647,6 +690,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
 
       case 'task:complete': {
         if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'cancel')) break;
         const task = taskQueue.completeTask(msg.taskId, msg.result || 'Manually completed');
         if (task) broadcast({ type: 'task:completed', task });
         break;
@@ -654,18 +698,21 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
 
       case 'auto:toggle': {
         if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'dispatch')) break;
         taskQueue.toggleAutoSession(msg.session);
         break;
       }
 
       case 'auto:set': {
         if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'dispatch')) break;
         taskQueue.setAutoSessions(msg.sessions || []);
         break;
       }
 
       case 'broadcast': {
         if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'send-messages')) break;
         taskQueue.broadcast(msg.message, msg.target, msg.sessions).then((result) => {
           if (ws.readyState === 1) {
             ws.send(JSON.stringify({ type: 'broadcast:done', sent: result.sent, failed: result.failed }));
@@ -676,6 +723,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
 
       case 'approval:respond': {
         if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'send-messages')) break;
         const approval = await taskQueue.resolveApproval(msg.approvalId, msg.approved);
         if (approval) ws.send(JSON.stringify({ type: 'approval:resolved', approval }));
         break;
@@ -690,6 +738,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
 
       case 'rule:toggle': {
         if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'admin')) break;
         taskQueue.toggleRule(msg.ruleId);
         break;
       }
@@ -697,18 +746,21 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       // -- Designation messages ---------------------------------------------
       case 'designation:set': {
         if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'admin')) break;
         taskQueue.setDesignation(msg.session, msg.designation);
         break;
       }
 
       case 'designationDef:set': {
         if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'admin')) break;
         taskQueue.setDesignationDef(msg.name, { agentFiles: msg.agentFiles, description: msg.description });
         break;
       }
 
       case 'designationDef:remove': {
         if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'admin')) break;
         taskQueue.removeDesignationDef(msg.name);
         break;
       }
@@ -721,6 +773,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
 
       case 'agentRoots:set': {
         if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'admin')) break;
         taskQueue.setAgentRoots(msg.roots);
         taskQueue.scanAgentFiles();
         ws.send(JSON.stringify({ type: 'agentFiles:list', files: taskQueue.agentFilesList }));
@@ -743,6 +796,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       // -- VIM mode messages -------------------------------------------------
       case 'vim:toggle': {
         if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'admin')) break;
         taskQueue.setVimMode(msg.enabled);
         broadcast({ type: 'vim:status', enabled: taskQueue.vimMode });
         break;
@@ -758,6 +812,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
 
       case 'spawn:config': {
         if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'admin')) break;
         if (msg.min !== undefined && msg.max !== undefined) {
           taskQueue.setSpawnSlotRange(msg.min, msg.max);
         }
@@ -767,6 +822,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
 
       case 'spawn': {
         if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'admin')) break;
         taskQueue.spawnSession({
           num: msg.num,
           baseDir: msg.baseDir,
@@ -791,6 +847,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       // -- PM messages -------------------------------------------------------
       case 'pm:create': {
         if (!pmManager) break;
+        if (!checkPermission(ws, user, 'admin')) break;
         const pm = pmManager.create(msg.config);
         ws.send(JSON.stringify({ type: 'pm:created', pm }));
         broadcast({ type: 'pm:list', pms: pmManager.getAll() });
@@ -799,6 +856,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
 
       case 'pm:update': {
         if (!pmManager) break;
+        if (!checkPermission(ws, user, 'admin')) break;
         pmManager.update(msg.id, msg.updates);
         broadcast({ type: 'pm:list', pms: pmManager.getAll() });
         break;
@@ -806,6 +864,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
 
       case 'pm:delete': {
         if (!pmManager) break;
+        if (!checkPermission(ws, user, 'admin')) break;
         pmManager.remove(msg.id);
         broadcast({ type: 'pm:list', pms: pmManager.getAll() });
         break;
@@ -813,6 +872,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
 
       case 'pm:toggle': {
         if (!pmManager) break;
+        if (!checkPermission(ws, user, 'admin')) break;
         pmManager.toggle(msg.id);
         broadcast({ type: 'pm:list', pms: pmManager.getAll() });
         break;
@@ -821,6 +881,86 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       case 'pm:list': {
         if (!pmManager) break;
         ws.send(JSON.stringify({ type: 'pm:list', pms: pmManager.getAll() }));
+        break;
+      }
+
+      // -- Task comment messages ----------------------------------------------
+      case 'task:comment:add': {
+        if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'comment')) break;
+        const comment = taskQueue.addComment(msg.taskId, user?.login, user?.name, msg.text);
+        if (!comment) {
+          ws.send(JSON.stringify({ type: 'error', message: 'Task not found' }));
+        }
+        // Broadcast handled by event bridge below
+        break;
+      }
+
+      case 'task:comment:delete': {
+        if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'comment')) break;
+        const deleted = taskQueue.deleteComment(msg.taskId, msg.commentId, user?.login);
+        if (!deleted) {
+          ws.send(JSON.stringify({ type: 'error', message: 'Cannot delete comment' }));
+        }
+        // Broadcast handled by event bridge below
+        break;
+      }
+
+      // -- User permission messages -------------------------------------------
+      case 'users:list': {
+        if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'admin')) break;
+        ws.send(JSON.stringify({ type: 'users:list', users: taskQueue.getUsersList() }));
+        break;
+      }
+
+      case 'users:setPermissions': {
+        if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'admin')) break;
+        // Self-demotion prevention: can't remove own admin
+        if (msg.login === user?.login && !(msg.permissions || []).includes('admin')) {
+          ws.send(JSON.stringify({ type: 'error', message: 'Cannot remove your own admin permission' }));
+          break;
+        }
+        const updated = taskQueue.setUserPermissions(msg.login, msg.permissions || []);
+        if (updated) {
+          // Broadcast updated permissions to all clients
+          broadcast({ type: 'users:updated', user: updated });
+          // Send updated permissions to the affected user's connections
+          for (const client of clients) {
+            const clientUser = wsUser.get(client);
+            if (clientUser && clientUser.login === msg.login && client.readyState === 1) {
+              client.send(JSON.stringify({ type: 'user:permissions', permissions: updated.permissions }));
+            }
+          }
+        }
+        break;
+      }
+
+      case 'users:add': {
+        if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'admin')) break;
+        const login = (msg.login || '').trim();
+        if (!login) {
+          ws.send(JSON.stringify({ type: 'error', message: 'GitHub username is required' }));
+          break;
+        }
+        taskQueue.addUser(login, msg.permissions);
+        break;
+      }
+
+      case 'users:remove': {
+        if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'admin')) break;
+        const login = (msg.login || '').trim().toLowerCase();
+        if (!login) break;
+        // Can't remove yourself
+        if (login === user?.login?.toLowerCase()) {
+          ws.send(JSON.stringify({ type: 'error', message: 'Cannot remove yourself' }));
+          break;
+        }
+        taskQueue.removeUser(login);
         break;
       }
     }
@@ -990,6 +1130,17 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     taskQueue.on('agentFiles:scanned', (files) => broadcast({ type: 'agentFiles:list', files }));
     taskQueue.on('vim:changed', (enabled) => broadcast({ type: 'vim:status', enabled }));
     taskQueue.on('spawnSlotRange:changed', (range) => broadcast({ type: 'spawn:config', min: range.min, max: range.max }));
+    taskQueue.on('task:comment:added', (data) => broadcast({ type: 'task:comment:added', taskId: data.taskId, comment: data.comment }));
+    taskQueue.on('task:comment:deleted', (data) => broadcast({ type: 'task:comment:deleted', taskId: data.taskId, commentId: data.commentId }));
+    taskQueue.on('users:changed', (users) => {
+      // Only send full users list to admins
+      for (const client of clients) {
+        const clientUser = wsUser.get(client);
+        if (clientUser && clientUser.login && taskQueue.hasPermission(clientUser.login, 'admin') && client.readyState === 1) {
+          client.send(JSON.stringify({ type: 'users:list', users }));
+        }
+      }
+    });
   }
 
   if (pmManager) {

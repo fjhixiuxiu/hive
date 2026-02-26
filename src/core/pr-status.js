@@ -15,7 +15,7 @@ const http = require('http');
 
 // In-memory cache: branch → { data, ts, pending }
 const cache = new Map();
-const CACHE_TTL = 60_000; // 60s
+const CACHE_TTL = 300_000; // 5 minutes
 const HTTP_TIMEOUT = 5_000; // 5s per API call
 
 // Branches to skip (no PR to look up)
