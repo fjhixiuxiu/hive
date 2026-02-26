@@ -145,6 +145,11 @@ class ProjectManager extends EventEmitter {
     if (!pm) return;
     this._stopPolling(id); // clear any existing
 
+    // Slack source: config-only, no polling (bot reads PM on demand)
+    if (pm.source.type === 'slack') {
+      return;
+    }
+
     // Manual source: create one task immediately, no polling
     if (pm.source.type === 'manual') {
       this._createManualTask(id);
@@ -277,6 +282,7 @@ class ProjectManager extends EventEmitter {
   async _poll(id) {
     const pm = this.pms.get(id);
     if (!pm || !pm.enabled) return;
+    if (pm.source.type === 'slack') return; // config-only, no polling
 
     try {
       let issues;

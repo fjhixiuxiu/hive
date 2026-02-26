@@ -15,7 +15,7 @@ const relay = require('../../core/relay');
  *   SLACK_APP_TOKEN  (xapp-... app-level token with connections:write)
  *   SLACK_BOT_TOKEN  (xoxb-... bot token with app_mentions:read, chat:write)
  */
-function createSlackBot(taskQueue, config, router) {
+function createSlackBot(taskQueue, config, router, pmManager) {
   const appToken = process.env.SLACK_APP_TOKEN;
   const botToken = process.env.SLACK_BOT_TOKEN;
 
@@ -108,6 +108,17 @@ function createSlackBot(taskQueue, config, router) {
     );
   }
 
+  // Find a PM with source.type === 'slack' matching the channel
+  function findSlackPM(channel) {
+    if (!pmManager) return null;
+    const pms = pmManager.getAll().filter(pm => pm.enabled && pm.source.type === 'slack');
+    // Exact channel match first
+    const exact = pms.find(pm => pm.source.channel && pm.source.channel === channel);
+    if (exact) return exact;
+    // Fallback: catch-all (no channel set)
+    return pms.find(pm => !pm.source.channel) || null;
+  }
+
   // ── Shared handler for both @mentions and DMs ──────
   async function handleMessage(event, say) {
     const text = stripMention(event.text);
@@ -138,9 +149,29 @@ function createSlackBot(taskQueue, config, router) {
     // ── Help command ──
     if (lower === 'help') {
       await say({
-        text: `:bee: *Hive Commands*\n• \`@hive <task>\` — create a task (with thread/channel context)\n• \`@hive <follow-up>\` — send follow-up to active task in same thread\n• \`@hive status\` — show queue summary\n• \`@hive help\` — this message\n\nWorks in channels (@mention), DMs, and threads.`,
+        text: `:bee: *Hive Commands*\n• \`@hive <task>\` — create a task (with thread/channel context)\n• \`@hive <follow-up>\` — send follow-up to active task in same thread\n• \`@hive close\` — close the task in this thread\n• \`@hive status\` — show queue summary\n• \`@hive help\` — this message\n\nWorks in channels (@mention), DMs, and threads.`,
         thread_ts: event.thread_ts || event.ts,
       });
+      return;
+    }
+
+    // ── Close task command ──
+    if (lower === 'close' || lower === 'done' || lower === 'close task') {
+      if (!event.thread_ts) {
+        await say({ text: 'Use this command in a task thread.', thread_ts: event.ts });
+        return;
+      }
+      const activeTask = findActiveTaskForThread(event.thread_ts);
+      if (!activeTask) {
+        await say({ text: 'No active task in this thread.', thread_ts: event.thread_ts });
+        return;
+      }
+      if (activeTask.status === 'dispatched') {
+        taskQueue.completeTask(activeTask.id, 'Closed via Slack');
+      } else {
+        taskQueue.cancelTask(activeTask.id);
+      }
+      await say({ text: ':white_check_mark: Task closed.', thread_ts: event.thread_ts });
       return;
     }
 
@@ -174,6 +205,9 @@ function createSlackBot(taskQueue, config, router) {
       }
     }
 
+    // ── PM-based routing: find a matching Slack PM for this channel ──
+    const slackPm = findSlackPM(event.channel);
+
     // ── New task: gather context ──
     let context = '';
     if (threadTs) {
@@ -191,13 +225,38 @@ function createSlackBot(taskQueue, config, router) {
     if (context) {
       fullText += `Context (Slack ${threadTs ? 'thread' : 'channel'}):\n${context}\n\n---\n\n`;
     }
-    fullText += `Instructions:\n${text}`;
+    if (slackPm && slackPm.taskFormat) {
+      fullText += slackPm.taskFormat.replace('{key}', `slack-${Date.now()}`).replace('{summary}', text);
+    } else {
+      fullText += `Instructions:\n${text}`;
+    }
+    if (slackPm && slackPm.instructions) {
+      fullText += `\n\nInstructions: ${slackPm.instructions}`;
+    }
     if (permalink) fullText += `\n\nSlack link: ${permalink}`;
 
-    const task = taskQueue.createTask(fullText, 'auto', null, null, {
+    // Use PM config for routing if available, otherwise defaults
+    const mode = slackPm && slackPm.targetSession ? 'manual' : 'auto';
+    const targetSession = (slackPm && slackPm.targetSession) || null;
+    const designation = (slackPm && slackPm.designation) || null;
+
+    const task = taskQueue.createTask(fullText, mode, targetSession, designation, {
       source: `slack:${authorName}`,
       createdBy: authorName,
     });
+
+    // Seed checklist from PM if configured
+    if (slackPm && slackPm.checklistTemplate && pmManager) {
+      pmManager._seedChecklist(slackPm, task);
+    }
+
+    // Track PM stats
+    if (slackPm) {
+      slackPm.tasksCreated++;
+      slackPm.lastPoll = Date.now();
+      pmManager._save();
+      pmManager.emit('pm:changed');
+    }
 
     task.slackChannel = event.channel;
     task.slackThreadTs = threadTs || event.ts;

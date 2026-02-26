@@ -1538,6 +1538,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         <option value="github-prs">GitHub PRs</option>
         <option value="github-re-reviews">GitHub Re-Reviews</option>
         <option value="command">Command</option>
+        <option value="slack">Slack</option>
         <option value="manual">Manual</option>
         <option value="jenkins">Jenkins (Tests)</option>
         <option value="zoho">Zoho (Support)</option>
@@ -1579,6 +1580,11 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     <div class="pm-form-field pm-fields-manual" style="display:none">
       <label class="pm-form-label">Task Instructions</label>
       <textarea class="pm-form-input" id="pm-form-manual-text" rows="4" placeholder="Describe the task..." style="resize:vertical;font-family:inherit"></textarea>
+    </div>
+    <div class="pm-form-field pm-fields-slack" style="display:none">
+      <label class="pm-form-label">Channel ID <span style="color:var(--dim)">(optional)</span></label>
+      <input class="pm-form-input" id="pm-form-slack-channel" type="text" placeholder="Leave blank for all channels" autocomplete="off">
+      <span style="font-size:11px;color:var(--dim);margin-top:4px;display:block;">Tasks from @hive in this channel use this PM's routing config (designation, target session, instructions, checklist).</span>
     </div>
     <div class="pm-form-field pm-fields-jenkins" style="display:none">
       <label class="pm-form-label">Job Path</label>
@@ -4978,7 +4984,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     const type = document.getElementById('pm-form-source').value;
     const isGithub = type === 'github-issues' || type === 'github-prs' || type === 'github-re-reviews';
     const isReReviews = type === 'github-re-reviews';
-    const types = ['jira', 'github', 're-reviews', 'manual', 'command', 'jenkins', 'zoho'];
+    const types = ['jira', 'github', 're-reviews', 'manual', 'command', 'jenkins', 'zoho', 'slack'];
     for (const t of types) {
       let show = false;
       if (t === type) show = true;
@@ -4994,11 +5000,11 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         if (i > 0) el.style.display = 'none';
       });
     }
-    // Hide poll interval and threshold for manual (no polling)
+    // Hide poll interval and threshold for manual/slack (no polling)
     const pollField = document.getElementById('pm-form-interval').closest('.pm-form-field');
     const threshField = document.getElementById('pm-form-threshold').closest('.pm-form-field');
-    if (pollField) pollField.style.display = type === 'manual' ? 'none' : '';
-    if (threshField) threshField.style.display = (type === 'manual' || type === 'command') ? 'none' : '';
+    if (pollField) pollField.style.display = (type === 'manual' || type === 'slack') ? 'none' : '';
+    if (threshField) threshField.style.display = (type === 'manual' || type === 'command' || type === 'slack') ? 'none' : '';
     const instrField = document.getElementById('pm-form-instructions').closest('.pm-form-field');
     if (instrField) instrField.style.display = type === 'command' ? 'none' : '';
   }
@@ -5029,6 +5035,9 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         source.command = document.getElementById('pm-form-command').value.trim();
         if (!source.command) { showToast('Error', 'Command required', 'error'); return; }
         if (!source.command.startsWith('/')) source.command = '/' + source.command;
+        break;
+      case 'slack':
+        source.channel = document.getElementById('pm-form-slack-channel').value.trim() || null;
         break;
       case 'manual':
         source.text = document.getElementById('pm-form-manual-text').value.trim();
@@ -5082,6 +5091,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     document.getElementById('pm-form-gh-triggers').value = src.triggerPhrases || '';
     document.getElementById('pm-form-command').value = src.command || '';
     document.getElementById('pm-form-manual-text').value = src.text || '';
+    document.getElementById('pm-form-slack-channel').value = src.channel || '';
     document.getElementById('pm-form-jenkins-path').value = src.jobPath || '';
     document.getElementById('pm-form-zoho-dept').value = src.department || '';
     document.getElementById('pm-form-zoho-status').value = src.status || '';
