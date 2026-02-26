@@ -2,19 +2,11 @@ const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const { detectState } = require('../src/core/tmux');
 
-// Default config matching hive.config.js
+// Use the ACTUAL production config to ensure patterns stay in sync
+const hiveConfig = require('../hive.config');
 const config = {
-  idlePatterns: [
-    /bypass permissions/,
-    /shift\+tab/,
-    /ctrl-g to edit/,
-    /\? for shortcuts/,
-    /Try "/,
-    /❯\s*$/m,
-  ],
-  offPatterns: [
-    /conversation\./,
-  ],
+  idlePatterns: hiveConfig.idlePatterns,
+  offPatterns: hiveConfig.offPatterns,
 };
 
 // Helper to join lines into pane content
@@ -24,6 +16,23 @@ const pane = (...lines) => lines.join('\n');
 const SEP = '─'.repeat(80);
 
 describe('detectState', () => {
+
+  // ── Config sanity checks ───────────────────────────────────
+
+  it('production config has ❯ bare prompt pattern', () => {
+    const hasPrompt = config.idlePatterns.some(p => p.test('❯ '));
+    assert.ok(hasPrompt, 'hive.config.js must include a pattern matching "❯ " (bare prompt)');
+  });
+
+  it('production config has Try " welcome pattern', () => {
+    const hasTry = config.idlePatterns.some(p => p.test('Try "fix typecheck errors"'));
+    assert.ok(hasTry, 'hive.config.js must include a pattern matching Try "..." suggestions');
+  });
+
+  it('production config has conversation. off pattern', () => {
+    const hasOff = config.offPatterns.some(p => p.test('Your conversation.'));
+    assert.ok(hasOff, 'hive.config.js must include an off pattern matching "conversation."');
+  });
 
   // ── Idle: ❯ prompt between separators ──────────────────────
 
@@ -101,6 +110,16 @@ describe('detectState', () => {
     assert.equal(detectState(content, config), 'idle');
   });
 
+  it('detects idle: shift+tab vim mode prompt', () => {
+    const content = pane(
+      SEP,
+      '  shift+tab for vim mode',
+      SEP,
+      '  Model: Opus 4.6 | Ctx: 0.0%',
+    );
+    assert.equal(detectState(content, config), 'idle');
+  });
+
   // ── Idle: no separator (fallback) ─────────────────────────
 
   it('detects idle: ❯ prompt without status bar (fallback)', () => {
@@ -142,13 +161,47 @@ describe('detectState', () => {
     assert.equal(detectState(content, config), 'working');
   });
 
-  it('detects working: ❯ with command text is not bare prompt', () => {
+  it('detects working: ❯ with user-typed command is not bare prompt', () => {
+    // User has typed "/resume" — the ❯ line has text after it, so the
+    // bare-prompt pattern /❯\s*$/m should NOT match
     const content = pane(
       SEP,
       '❯ /resume',
       SEP,
       '  Model: Opus 4.6 | Ctx: 0.0% | ⎇ jeffh...',
       '  cwd: /Users/jeffheifetz/Coding/webpla...',
+    );
+    assert.equal(detectState(content, config), 'working');
+  });
+
+  it('detects working: active tool execution with spinner', () => {
+    const content = pane(
+      '  ⎿ Searching for files matching "*.test.js"...',
+      '  ⠸ Running grep...',
+      SEP,
+      '  Model: Opus 4.6 | Ctx: 33.1%',
+    );
+    assert.equal(detectState(content, config), 'working');
+  });
+
+  it('detects working: mid-response text output', () => {
+    const content = pane(
+      'Let me analyze the test failures:',
+      '',
+      '1. The first failure is in booking.spec.js',
+      SEP,
+      '  Model: Opus 4.6 | Ctx: 22.0%',
+    );
+    assert.equal(detectState(content, config), 'working');
+  });
+
+  it('detects working: permission prompt is not idle prompt', () => {
+    // Claude asking "Do you want to run this command?" is working, not idle
+    const content = pane(
+      '  Do you want to run this command?',
+      '  npm test',
+      SEP,
+      '  Model: Opus 4.6 | Ctx: 10.0%',
     );
     assert.equal(detectState(content, config), 'working');
   });
@@ -169,6 +222,15 @@ describe('detectState', () => {
 
   it('detects off: only blank lines', () => {
     assert.equal(detectState('\n\n\n', config), 'off');
+  });
+
+  it('detects off: shell prompt only (no Claude)', () => {
+    const content = pane(
+      '',
+      '',
+      '',
+    );
+    assert.equal(detectState(content, config), 'off');
   });
 
   // ── Separator handling ─────────────────────────────────────
@@ -214,5 +276,54 @@ describe('detectState', () => {
       '  totally unexpected status bar line!!!',
     );
     assert.equal(detectState(content, config), 'idle');
+  });
+
+  // ── Real-world captures ────────────────────────────────────
+
+  it('detects idle from real session with PR status bar', () => {
+    // Actual capture from a session that was being detected as "working"
+    // because the old code checked the last non-empty line (PR #26793)
+    const content = pane(
+      '  ⎿ Found 3 test files',
+      '',
+      '  All tests pass.',
+      '',
+      SEP,
+      '❯ ',
+      SEP,
+      '  Model: Opus 4.6 | Ctx: 88.2% | ⎇ jeffh...',
+      '  cwd: /Users/jeffheifetz/Coding/webpla...',
+      '  CI PASS | PR #26793 | 2 reviews',
+    );
+    assert.equal(detectState(content, config), 'idle');
+  });
+
+  it('detects idle with thick separator (━) variant', () => {
+    const thickSep = '━'.repeat(80);
+    const content = pane(
+      thickSep,
+      '❯ ',
+      thickSep,
+      '  Model: Opus 4.6',
+    );
+    assert.equal(detectState(content, config), 'idle');
+  });
+
+  it('detects working when Cogitated/Baked line is above separator', () => {
+    // "Cogitated for 34s" is content output, not a prompt
+    const content = pane(
+      '  Want me to re-kick CI to get a clean run?',
+      '',
+      '✻ Cogitated for 34s',
+      '',
+      SEP,
+      '❯ yes, re-kick it',
+      SEP,
+      '  Model: Opus 4.6 | Ctx: 24.6%',
+    );
+    // User typed "yes, re-kick it" — prompt has text, so not bare ❯
+    // The line above the prompt separator is blank/Cogitated, but
+    // the prompt line itself has user input → working
+    assert.equal(detectState(content, config), 'working');
   });
 });
