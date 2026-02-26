@@ -219,7 +219,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
 
   function sendInitialState(ws) {
     const user = wsUser.get(ws) || null;
-    ws.send(JSON.stringify({ type: 'config', links: config.links || {} }));
+    ws.send(JSON.stringify({ type: 'config', links: config.links || {}, spawnBaseDir: process.env.HIVE_REPO_DIR || '~/ai-dev' }));
     ws.send(JSON.stringify({ type: 'commands:list', commands }));
     // Send user permissions
     if (auth.isOAuthEnabled() && user && user.login && taskQueue) {
@@ -838,6 +838,30 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
         break;
       }
 
+      case 'kill': {
+        if (!checkPermission(ws, user, 'restart')) break;
+        const found = await fleet.findSession(config, router, msg.session);
+        if (!found) {
+          ws.send(JSON.stringify({ type: 'error', message: `No session matching "${msg.session}"` }));
+          return;
+        }
+        const { name, nodeId } = found;
+        const num = fleet.sessionNum(name);
+        const node = router.getNode(nodeId);
+        await node.exec(`tmux kill-session -t "${name}:" 2>/dev/null`);
+        if (num) taskQueue.cleanupSession(num);
+        if (ws.readyState === 1) {
+          ws.send(JSON.stringify({ type: 'kill:done', session: msg.session }));
+        }
+        setTimeout(() => {
+          fleet.invalidateCache();
+          _previewCache.result = null;
+          _previewCache.ts = 0;
+          broadcastFleetStatus().catch(() => {});
+        }, 500);
+        break;
+      }
+
       // -- Spawn messages ---------------------------------------------------
       case 'spawn:slots': {
         if (!taskQueue) break;
@@ -870,8 +894,11 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
           }
           // Refresh fleet for all clients after a delay
           setTimeout(() => {
+            fleet.invalidateCache();
+            _previewCache.result = null;
+            _previewCache.ts = 0;
             broadcastFleetStatus().catch(() => {});
-          }, 3000);
+          }, 500);
         }).catch((err) => {
           if (ws.readyState === 1) {
             ws.send(JSON.stringify({ type: 'spawn:done', success: false, error: err.message }));

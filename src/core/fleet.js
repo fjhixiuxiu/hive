@@ -122,6 +122,11 @@ async function getFleetStatus(config, router) {
   return _fleetCache.pending;
 }
 
+function invalidateCache() {
+  _fleetCache.result = null;
+  _fleetCache.ts = 0;
+}
+
 /**
  * Get Claude's pane content with TUI chrome stripped.
  * @param {object} config
@@ -163,6 +168,7 @@ module.exports = {
   ticketFromBranch,
   getSession,
   getFleetStatus,
+  invalidateCache,
   peekSession,
   findSession,
 };

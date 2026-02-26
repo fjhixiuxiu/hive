@@ -33,7 +33,7 @@ class TaskQueue extends EventEmitter {
     this.activeTaskBySession = new Map(); // session num -> task id
     this.lastDispatchedAt = new Map();   // session num -> timestamp of last task dispatch
     this.spawnedAgents = new Map();  // slot num -> { repoDir, name }
-    this.spawnSlotMin = 17;
+    this.spawnSlotMin = 1;
     this.spawnSlotMax = 32;
     this.vimMode = false;
     this.checklistTemplates = new Map(); // name → { name, items: [string] }
@@ -359,6 +359,21 @@ class TaskQueue extends EventEmitter {
     return true;
   }
 
+  /**
+   * Clean up all TaskQueue state for a killed session.
+   * Fails active task, removes dispatch lock and spawned agent tracking.
+   */
+  cleanupSession(num) {
+    const taskId = this.activeTaskBySession.get(num);
+    if (taskId) {
+      this.failTask(taskId, 'Session killed');
+    }
+    this.activeTaskBySession.delete(num);
+    this.dispatchLock.delete(num);
+    this.spawnedAgents.delete(num);
+    this._saveState();
+  }
+
   _handleSessionIdle(num, preview, paneCols) {
     // Complete active task for this session
     const taskId = this.activeTaskBySession.get(num);
@@ -468,7 +483,7 @@ class TaskQueue extends EventEmitter {
   }
 
   setSpawnSlotRange(min, max) {
-    min = parseInt(min) || 17;
+    min = parseInt(min) || 1;
     max = parseInt(max) || 32;
     if (min < 1) min = 1;
     if (max > 99) max = 99;
@@ -804,15 +819,18 @@ class TaskQueue extends EventEmitter {
 
   async spawnSession({ num, baseDir, name, gitUrl } = {}) {
     if (!name) throw new Error('Agent name is required');
+    console.log(`[spawn] starting: name=${name}, num=${num ?? 'auto'}, baseDir=${baseDir || 'default'}, gitUrl=${gitUrl || 'none'}`);
 
     // Resolve base directory
-    baseDir = (baseDir || '~/ai-dev').replace(/^~/, os.homedir());
+    baseDir = (baseDir || process.env.HIVE_REPO_DIR || '~/ai-dev').replace(/^~/, os.homedir());
+    console.log(`[spawn] resolved baseDir=${baseDir}`);
 
     // Pick slot
     if (num === undefined || num === null) {
       const slots = await this.getAvailableSlots();
       if (!slots.length) throw new Error(`No available slots (${this.spawnSlotMin}-${this.spawnSlotMax} all occupied)`);
       num = slots[0];
+      console.log(`[spawn] auto-picked slot ${num}`);
     }
     if (num < this.spawnSlotMin || num > this.spawnSlotMax) throw new Error(`Spawn slots must be ${this.spawnSlotMin}-${this.spawnSlotMax}`);
 
@@ -823,6 +841,7 @@ class TaskQueue extends EventEmitter {
 
     // Build repo path: baseDir/name+num (e.g. ~/ai-dev/ios17)
     const repoDir = path.join(baseDir, `${name}${num}`);
+    console.log(`[spawn] repoDir=${repoDir}`);
 
     // Clone or create directory
     if (gitUrl) {
@@ -840,10 +859,17 @@ class TaskQueue extends EventEmitter {
     }
 
     // Start tmux session using agent.yml template
-    const agentYml = path.join(os.homedir(), 'dev', 'agents', 'tmux', 'agent.yml');
+    const agentYml = (
+      process.env.HIVE_AGENT_YML ||
+      path.join(os.homedir(), 'dev', 'agents', 'tmux', 'agent.yml')
+    ).replace(/^~/, os.homedir());
+    const tmuxCmd = `/bin/zsh -lc 'tmuxinator start -p ${agentYml} N=${num} ROOT="${repoDir}" --no-attach'`;
+    console.log(`[spawn] running: ${tmuxCmd}`);
     try {
-      execSync(`/bin/zsh -lc 'tmuxinator start -p ${agentYml} N=${num} ROOT="${repoDir}"'`, { timeout: 15000, stdio: 'pipe' });
+      await execAsync(tmuxCmd, { timeout: 15000 });
+      console.log(`[spawn] tmuxinator started session ${num}`);
     } catch (err) {
+      console.error(`[spawn] tmuxinator failed: ${err.message}`);
       throw new Error(`Failed to start session ${num}: ${err.message}`);
     }
 
@@ -853,11 +879,13 @@ class TaskQueue extends EventEmitter {
 
     // Wait for init then rename
     await new Promise(r => setTimeout(r, 2000));
-    try {
-      const renameScript = path.join(os.homedir(), 'dev', 'agents', 'tmux', 'rename.sh');
-      execSync(`bash "${renameScript}"`, { timeout: 10000, stdio: 'pipe' });
-    } catch {
-      // Rename is best-effort
+    const renameScript = process.env.HIVE_RENAME_SCRIPT;
+    if (renameScript) {
+      try {
+        execSync(`bash "${renameScript}"`, { timeout: 10000, stdio: 'pipe' });
+      } catch {
+        // Rename is best-effort
+      }
     }
 
     this.pushFeed('state', num, `Agent "${name}" spawned in slot ${num}`);
