@@ -269,7 +269,7 @@ class ProjectManager extends EventEmitter {
         case 'github-prs':   issues = await this._fetchGithubPrs(pm.source); break;
         case 'jenkins': issues = await this._fetchJenkins(pm.source); break;
         case 'zoho':    issues = await this._fetchZoho(pm.source); break;
-        case 'github-re-reviews': issues = await this._fetchReReviews(pm.source); break;
+        case 'github-re-reviews': issues = await this._fetchReReviews(pm.source, pm.id); break;
         default: throw new Error(`Unsupported source type: ${pm.source.type}`);
       }
       pm.lastPoll = Date.now();
@@ -498,7 +498,7 @@ class ProjectManager extends EventEmitter {
     }));
   }
 
-  async _fetchReReviews(source) {
+  async _fetchReReviews(source, pmId) {
     if (!source.repo) throw new Error('GitHub repo not configured');
     if (!source.reviewer) throw new Error('Reviewer username not configured');
 
@@ -518,8 +518,10 @@ class ProjectManager extends EventEmitter {
 
     for (const pr of prs) {
       if (pr.draft) continue;
-      // Skip PRs not updated since our last poll (no new comments to check)
-      if (this._lastReReviewPoll && new Date(pr.updated_at).getTime() < this._lastReReviewPoll) continue;
+      // Skip PRs not updated since this PM's last poll (2 min buffer for clock/propagation lag)
+      if (!this._reReviewPollTimes) this._reReviewPollTimes = {};
+      const lastPoll = this._reReviewPollTimes[pmId];
+      if (lastPoll && new Date(pr.updated_at).getTime() < lastPoll - 120000) continue;
 
       // 2. Fetch recent issue comments (last 48h) and check for trigger phrases
       const since = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
@@ -562,7 +564,8 @@ class ProjectManager extends EventEmitter {
       }
     }
 
-    this._lastReReviewPoll = Date.now();
+    if (!this._reReviewPollTimes) this._reReviewPollTimes = {};
+    this._reReviewPollTimes[pmId] = Date.now();
     return results;
   }
 
