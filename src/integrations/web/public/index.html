@@ -2123,7 +2123,14 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       case 'notify': handleNotify(msg); break;
       case 'restart:done': showToast('Restarted', `Session ${msg.session} — claude --resume`, 'success'); break;
       case 'keys:done': break;
-      case 'error': showToast('Error', msg.message, 'error'); break;
+      case 'error':
+        // Suppress noisy permission toasts — only show for explicit user actions
+        if (msg.message && msg.message.startsWith('Permission denied')) {
+          console.warn('[hive]', msg.message);
+        } else {
+          showToast('Error', msg.message, 'error');
+        }
+        break;
       case 'tasks:list':
         tasks = msg.tasks || []; renderTasks(); updateTasksBadge();
         if (pendingRouteTask) { selectTaskById(pendingRouteTask); pendingRouteTask = null; }
