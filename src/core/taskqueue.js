@@ -717,9 +717,19 @@ class TaskQueue extends EventEmitter {
     // Clone or create directory
     if (gitUrl) {
       if (fs.existsSync(path.join(repoDir, '.git'))) {
-        // Directory already cloned — reset to latest default branch
+        // Directory already cloned — fetch and reset to latest default branch
+        console.log(`[spawn] Reusing existing clone at ${repoDir}`);
         try {
-          await execAsync(`git -C "${repoDir}" fetch origin && git -C "${repoDir}" checkout main 2>/dev/null || git -C "${repoDir}" checkout master 2>/dev/null && git -C "${repoDir}" reset --hard origin/HEAD`, { timeout: 120000 });
+          await execAsync(`git -C "${repoDir}" fetch origin`, { timeout: 60000 });
+          // Determine default branch — try main, fall back to master
+          let branch = 'main';
+          try {
+            await execAsync(`git -C "${repoDir}" rev-parse --verify origin/main`, { timeout: 5000 });
+          } catch {
+            branch = 'master';
+          }
+          await execAsync(`git -C "${repoDir}" checkout ${branch}`, { timeout: 10000 });
+          await execAsync(`git -C "${repoDir}" reset --hard origin/${branch}`, { timeout: 10000 });
         } catch (err) {
           throw new Error(`Git reset of existing clone failed: ${err.message}`);
         }
