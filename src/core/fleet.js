@@ -89,24 +89,37 @@ async function getSession(config, node, sessionName, nodeId) {
 
 // Cache: { result, timestamp, pending }
 let _fleetCache = { result: null, ts: 0, pending: null };
-const FLEET_CACHE_TTL = 5000; // 5s
+const FLEET_CACHE_TTL = 10000; // 10s
 
 /**
- * Get status for all fleet sessions.
+ * Get status for all fleet sessions (cached for 5s to avoid hammering tmux/git/API).
  * @param {object} config - hive config
  * @param {NodeRouter} router
  */
 async function getFleetStatus(config, router) {
-  const all = await router.listAllSessions();
-  const matching = all.filter(({ name, nodeId }) => {
-    const nc = getNodeConfig(config, nodeId);
-    return nc.sessions.pattern.test(name);
-  });
-  return Promise.all(matching.map(async ({ name, nodeId, lastActivity }) => {
-    const node = router.getNode(nodeId);
-    const session = await getSession(config, node, name, nodeId);
-    return { ...session, nodeId, lastActivity };
-  }));
+  const now = Date.now();
+  if (_fleetCache.result && now - _fleetCache.ts < FLEET_CACHE_TTL) {
+    return _fleetCache.result;
+  }
+  if (_fleetCache.pending) return _fleetCache.pending;
+
+  _fleetCache.pending = (async () => {
+    const all = await router.listAllSessions();
+    const matching = all.filter(({ name, nodeId }) => {
+      const nc = getNodeConfig(config, nodeId);
+      return nc.sessions.pattern.test(name);
+    });
+    const result = await Promise.all(matching.map(async ({ name, nodeId, lastActivity }) => {
+      const node = router.getNode(nodeId);
+      const session = await getSession(config, node, name, nodeId);
+      return { ...session, nodeId, lastActivity };
+    }));
+    _fleetCache.result = result;
+    _fleetCache.ts = Date.now();
+    _fleetCache.pending = null;
+    return result;
+  })();
+  return _fleetCache.pending;
 }
 
 /**
