@@ -518,6 +518,8 @@ class ProjectManager extends EventEmitter {
 
     for (const pr of prs) {
       if (pr.draft) continue;
+      // Skip PRs not updated since our last poll (no new comments to check)
+      if (this._lastReReviewPoll && new Date(pr.updated_at).getTime() < this._lastReReviewPoll) continue;
 
       // 2. Fetch recent issue comments (last 48h) and check for trigger phrases
       const since = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
@@ -560,6 +562,7 @@ class ProjectManager extends EventEmitter {
       }
     }
 
+    this._lastReReviewPoll = Date.now();
     return results;
   }
 
