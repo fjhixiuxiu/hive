@@ -1101,6 +1101,39 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   background: var(--bg3); border: none; color: var(--fg); font-size: 13px;
   padding: 8px 10px; border-radius: 6px; width: 100%; outline: none;
 }
+
+/* ── Task comments ─────────────────── */
+.comment-panel { padding: 8px 12px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; }
+.comment-panel-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--dim); margin-bottom: 6px; }
+.comment-item { display: flex; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--bg3); font-size: 13px; align-items: flex-start; }
+.comment-item:last-child { border-bottom: none; }
+.comment-avatar { width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0; }
+.comment-body { flex: 1; min-width: 0; }
+.comment-author { font-weight: 700; font-size: 12px; color: var(--fg); }
+.comment-time { font-size: 10px; color: var(--dim); margin-left: 6px; }
+.comment-text { color: var(--fg); line-height: 1.4; word-break: break-word; }
+.comment-delete { background: none; border: none; color: var(--dim); font-size: 12px; cursor: pointer; padding: 2px 4px; flex-shrink: 0; opacity: 0.5; }
+.comment-delete:hover { opacity: 1; color: var(--red); }
+.comment-input-row { display: flex; gap: 6px; margin-top: 6px; }
+.comment-input { flex: 1; background: var(--bg); border: 1px solid var(--bg3); color: var(--fg); padding: 6px 10px; border-radius: 6px; font-size: 12px; outline: none; min-width: 0; }
+.comment-input:focus { border-color: var(--purple); }
+.comment-input::placeholder { color: var(--dim); }
+.comment-send { background: var(--purple); border: none; color: var(--bg); font-size: 11px; font-weight: 700; padding: 6px 10px; border-radius: 6px; cursor: pointer; }
+.comment-send:active { opacity: 0.8; }
+.comment-count { font-size: 11px; color: var(--dim); margin-left: 4px; }
+
+/* ── Admin panel (user permissions) ── */
+.admin-user-row { display: flex; align-items: center; gap: 10px; padding: 10px; background: var(--bg); border-radius: 6px; margin-bottom: 6px; flex-wrap: wrap; }
+.admin-user-avatar { width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0; }
+.admin-user-info { min-width: 100px; }
+.admin-user-name { font-weight: 700; font-size: 13px; }
+.admin-user-login { font-size: 11px; color: var(--dim); }
+.admin-perms { display: flex; gap: 4px; flex-wrap: wrap; flex: 1; }
+.admin-perm-chip { font-size: 10px; padding: 3px 8px; border-radius: 4px; cursor: pointer; border: 1px solid var(--bg3); background: var(--bg2); color: var(--dim); transition: all 0.15s; user-select: none; }
+.admin-perm-chip.active { background: rgba(80,250,123,0.15); color: var(--green); border-color: var(--green); }
+.admin-perm-chip.admin-perm { background: rgba(189,147,249,0.15); color: var(--purple); border-color: var(--purple); }
+.admin-perm-chip:hover { border-color: var(--fg); }
+.perm-hidden { display: none !important; }
 </style>
 </head>
 <body>
@@ -1193,6 +1226,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
           <div class="tasks-session-tabs" id="tasks-session-tabs" style="display:none">
             <button class="session-tab active" data-tstab="terminal">Terminal</button>
             <button class="session-tab" data-tstab="git">Git</button>
+            <button class="session-tab" data-tstab="comments">Comments</button>
           </div>
           <div class="tasks-session-empty" id="tasks-session-empty">Select an in-progress task to view its session</div>
           <div class="session-tab-content active" id="ts-terminal-content" style="display:none">
@@ -1209,6 +1243,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
               </div>
             </div>
           </div>
+          <div class="session-tab-content" id="ts-comments-content" style="display:none"></div>
           <div class="tasks-session-keys" id="tasks-session-keys" style="display:none">
             <button class="key-btn vim-toggle">VIM</button>
             <button class="key-btn ts-key-btn" data-key="Enter">Enter</button>
@@ -1291,7 +1326,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
             </div>
           </div>
         </div>
-        <div class="more-section">
+        <div class="more-section" id="broadcast-section">
           <div class="more-section-title">Broadcast</div>
           <select id="broadcast-target">
             <option value="all">All active sessions</option>
@@ -1324,6 +1359,14 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
           <div id="desig-defs-list"></div>
           <button class="desig-add-btn" id="desig-def-add-btn">+ Add Designation</button>
         </div>
+        <div class="more-section perm-hidden" id="admin-users-section">
+          <div class="more-section-title">User Permissions</div>
+          <div id="admin-users-list"></div>
+          <div id="admin-add-user-form" style="display:flex;gap:6px;margin-top:8px;align-items:center">
+            <input id="admin-add-user-input" type="text" placeholder="GitHub username" style="flex:1;background:#1a1a3a;color:#e2e2f0;border:1px solid #333;border-radius:4px;padding:4px 8px;font-size:13px">
+            <button id="admin-add-user-btn" style="padding:4px 12px;background:#50fa7b;color:#0f0f23;border:none;border-radius:4px;cursor:pointer;font-size:13px;font-weight:600">Add</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -1348,6 +1391,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       <div class="session-tabs">
         <button class="session-tab active" data-stab="terminal">Terminal</button>
         <button class="session-tab" data-stab="git">Git</button>
+        <button class="session-tab" data-stab="comments">Comments</button>
       </div>
       <div class="session-tab-content active" id="session-terminal-content">
         <div id="terminal-wrap"></div>
@@ -1363,6 +1407,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
           </div>
         </div>
       </div>
+      <div class="session-tab-content" id="session-comments-content"></div>
       <div id="keys-bar">
         <button class="key-btn vim-toggle">VIM</button>
         <button class="key-btn" data-key="Enter">Enter</button>
@@ -1690,8 +1735,10 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   let spawnSlotMax = 32;
   let pmList = [];        // PM objects from server
   let editingPmId = null; // PM being edited (null = creating new)
-  let activeSessionTab = 'terminal'; // 'terminal' or 'git'
+  let activeSessionTab = 'terminal'; // 'terminal', 'git', or 'comments'
   let fleetSearchTimer = null; // debounce timer for fleet search
+  let myPermissions = []; // current user's permissions (empty = legacy token mode, all allowed)
+  let allUsers = []; // all users (admin only)
 
   // ── DOM refs ──────────────────────────────────────
   const $ = (s) => document.querySelector(s);
@@ -1880,7 +1927,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       }
     }
     if (tab === 'fleet-panel') renderGrid();
-    if (tab === 'more-panel') { renderDesignationGrid(); renderAgentRoots(); renderDesigDefs(); }
+    if (tab === 'more-panel') { renderDesignationGrid(); renderAgentRoots(); renderDesigDefs(); renderAdminUsers(); }
     const spawnBtn = document.getElementById('spawn-btn');
     if (spawnBtn) spawnBtn.classList.toggle('visible', tab === 'fleet-panel');
     if (tab === 'session-panel' && term && fitAddon && activeSessionTab === 'terminal') {
@@ -1917,6 +1964,64 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     name.textContent = currentUser.name || currentUser.login || '';
   }
 
+  // ── Permission helpers ───────────────────────────
+  function hasPerm(cap) {
+    // Legacy token mode (no OAuth / no permissions sent) = all allowed
+    if (!myPermissions.length) return true;
+    if (myPermissions.includes('admin')) return true;
+    return myPermissions.includes(cap);
+  }
+
+  function applyPermissionGates() {
+    // Create task button
+    const createBtn = document.getElementById('tasks-create-btn');
+    if (createBtn) createBtn.classList.toggle('perm-hidden', !hasPerm('create-tasks'));
+
+    // Quick-send bar (fleet panel)
+    const quickBar = document.getElementById('quick-bar');
+    if (quickBar) quickBar.classList.toggle('perm-hidden', !hasPerm('send-messages'));
+
+    // Session input bar
+    const inputBar = document.getElementById('input-bar');
+    if (inputBar) inputBar.classList.toggle('perm-hidden', !hasPerm('send-messages'));
+
+    // Session keys bar
+    const keysBar = document.getElementById('keys-bar');
+    if (keysBar) keysBar.classList.toggle('perm-hidden', !hasPerm('send-messages'));
+
+    // Restart button
+    const restartBtn = document.getElementById('restart-btn');
+    if (restartBtn) restartBtn.classList.toggle('perm-hidden', !hasPerm('restart'));
+
+    // Track button (attach task)
+    const trackBtn = document.getElementById('track-btn');
+    if (trackBtn) trackBtn.classList.toggle('perm-hidden', !hasPerm('create-tasks'));
+
+    // Tasks session input (sidebar in tasks panel)
+    const tsInput = document.getElementById('tasks-session-input');
+    if (tsInput) tsInput.classList.toggle('perm-hidden', !hasPerm('send-messages'));
+
+    // Tasks session keys
+    const tsKeys = document.getElementById('tasks-session-keys');
+    if (tsKeys) tsKeys.classList.toggle('perm-hidden', !hasPerm('send-messages'));
+
+    // Broadcast section in more panel
+    const broadcastSection = document.getElementById('broadcast-section');
+    if (broadcastSection) broadcastSection.classList.toggle('perm-hidden', !hasPerm('send-messages'));
+
+    // Spawn button
+    const spawnBtn = document.getElementById('spawn-btn');
+    if (spawnBtn && !hasPerm('admin')) spawnBtn.classList.add('perm-hidden');
+
+    // Admin users section in More
+    const adminSection = document.getElementById('admin-users-section');
+    if (adminSection) adminSection.classList.toggle('perm-hidden', !hasPerm('admin'));
+
+    // Cmd bar (slash commands)
+    const cmdBar = document.getElementById('cmd-bar');
+    if (cmdBar) cmdBar.classList.toggle('perm-hidden', !hasPerm('send-messages'));
+  }
+
   // ── Message handling ──────────────────────────────
   function handleMessage(msg) {
     switch (msg.type) {
@@ -1924,6 +2029,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         if (msg.ok) {
           authenticated = true; connBar.className = 'connected';
           if (msg.user) currentUser = msg.user;
+          if (msg.permissions) { myPermissions = msg.permissions; applyPermissionGates(); }
           authScreen.style.display = 'none'; mainView.style.display = 'flex';
           updateUserBadge();
           if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
@@ -2080,6 +2186,40 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       case 'pm:list': pmList = msg.pms || []; renderPMs(); break;
       case 'pm:created': showToast('PM Created', msg.pm.name, 'success'); break;
       case 'pm:error': showToast('PM Error', `${msg.id}: ${msg.error}`, 'error'); break;
+      case 'user:permissions':
+        myPermissions = msg.permissions || [];
+        applyPermissionGates();
+        renderTasks(); // re-render to show/hide cancel buttons etc.
+        break;
+      case 'users:list':
+        allUsers = msg.users || [];
+        if (activeTab === 'more-panel') renderAdminUsers();
+        break;
+      case 'users:updated': {
+        const idx = allUsers.findIndex(u => u.login === msg.user.login);
+        if (idx >= 0) allUsers[idx] = msg.user; else allUsers.push(msg.user);
+        if (activeTab === 'more-panel') renderAdminUsers();
+        break;
+      }
+      case 'task:comment:added': {
+        const t = tasks.find(x => x.id === msg.taskId);
+        if (t) {
+          if (!t.comments) t.comments = [];
+          t.comments.push(msg.comment);
+          renderTasks();
+          renderCommentPanel(msg.taskId);
+        }
+        break;
+      }
+      case 'task:comment:deleted': {
+        const t = tasks.find(x => x.id === msg.taskId);
+        if (t && t.comments) {
+          t.comments = t.comments.filter(c => c.id !== msg.commentId);
+          renderTasks();
+          renderCommentPanel(msg.taskId);
+        }
+        break;
+      }
       case 'git:info':
         if (currentSession === String(msg.session)) renderGitPanel(msg, 'git-sidebar');
         if (tasksSessionNum === String(msg.session) && activeTab === 'tasks-panel') renderGitPanel(msg, 'ts-git-sidebar');
@@ -2264,6 +2404,11 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     $$('.session-tab').forEach(t => t.classList.toggle('active', t.dataset.stab === 'terminal'));
     document.getElementById('session-terminal-content').classList.add('active');
     document.getElementById('session-git-content').classList.remove('active');
+    document.getElementById('session-comments-content').classList.remove('active');
+    // Render comments for the tracked task and update badge
+    const sessionTask = tasks.find(t => t.assignedTo === s.num);
+    if (sessionTask) renderCommentPanel(sessionTask.id, 'session');
+    updateCommentBadge('session', sessionTask);
 
     if (!term) {
       term = new Terminal({
@@ -2416,11 +2561,16 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       $$('.session-tab').forEach(t => t.classList.toggle('active', t.dataset.stab === activeSessionTab));
       document.getElementById('session-terminal-content').classList.toggle('active', activeSessionTab === 'terminal');
       document.getElementById('session-git-content').classList.toggle('active', activeSessionTab === 'git');
+      document.getElementById('session-comments-content').classList.toggle('active', activeSessionTab === 'comments');
       if (activeSessionTab === 'terminal' && term && fitAddon) {
         requestAnimationFrame(() => fitTerminal());
       }
       if (activeSessionTab === 'git' && currentSession && ws && ws.readyState === 1) {
         ws.send(JSON.stringify({ type: 'git:info', session: currentSession }));
+      }
+      if (activeSessionTab === 'comments' && currentSession) {
+        const task = tasks.find(t => t.assignedTo === Number(currentSession));
+        if (task) renderCommentPanel(task.id, 'session');
       }
     });
   });
@@ -2841,6 +2991,8 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     termContent.classList.add('active');
     document.getElementById('ts-git-content').style.display = 'none';
     document.getElementById('ts-git-content').classList.remove('active');
+    document.getElementById('ts-comments-content').style.display = 'none';
+    document.getElementById('ts-comments-content').classList.remove('active');
   }
 
   function openTaskSession(sessionNum) {
@@ -2929,10 +3081,13 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       document.querySelectorAll('[data-tstab]').forEach(t => t.classList.toggle('active', t.dataset.tstab === tsActiveTab));
       const termContent = document.getElementById('ts-terminal-content');
       const gitContent = document.getElementById('ts-git-content');
+      const commentsContent = document.getElementById('ts-comments-content');
       termContent.classList.toggle('active', tsActiveTab === 'terminal');
       termContent.style.display = tsActiveTab === 'terminal' ? '' : 'none';
       gitContent.classList.toggle('active', tsActiveTab === 'git');
       gitContent.style.display = tsActiveTab === 'git' ? '' : 'none';
+      commentsContent.classList.toggle('active', tsActiveTab === 'comments');
+      commentsContent.style.display = tsActiveTab === 'comments' ? '' : 'none';
       // Show/hide keys + cmd + input bars (only for terminal tab)
       document.getElementById('tasks-session-keys').style.display = tsActiveTab === 'terminal' ? '' : 'none';
       document.getElementById('ts-cmd-bar').style.display = tsActiveTab === 'terminal' ? '' : 'none';
@@ -3135,13 +3290,20 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
           // Desktop: load in tasks session pane
           tasksSelectedTaskId = task.id;
           openTaskSession(task.assignedTo);
+          renderCommentPanel(task.id);
           // Update selection highlight
           tasksScroll.querySelectorAll('.task-card').forEach(c => c.classList.remove('selected'));
           card.classList.add('selected');
         } else if (activeTaskTab === 'completed' && (task.status === 'completed' || task.status === 'failed')) {
           tasksSelectedTaskId = task.id;
           showTaskSnapshot(task.id);
+          renderCommentPanel(task.id);
           // Update selection highlight
+          tasksScroll.querySelectorAll('.task-card').forEach(c => c.classList.remove('selected'));
+          card.classList.add('selected');
+        } else if (activeTaskTab === 'queued') {
+          tasksSelectedTaskId = task.id;
+          renderCommentPanel(task.id);
           tasksScroll.querySelectorAll('.task-card').forEach(c => c.classList.remove('selected'));
           card.classList.add('selected');
         }
@@ -3229,6 +3391,9 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     const originBadge = t.sourceSession ? `<span class="task-session-badge">S:${t.sourceSession}</span>` : '';
     const sourceLabel = t.source ? t.source.replace(/^pm:/, '') : '';
     const sourceBadge = sourceLabel ? `<span class="task-designation" style="background:rgba(255,184,108,0.15);color:var(--orange)">${esc(sourceLabel)}</span>` : '';
+    // Comment count badge
+    const commentCount = (t.comments && t.comments.length) || 0;
+    const commentBadge = commentCount > 0 ? `<span class="comment-count" title="${commentCount} comment(s)">&#128172; ${commentCount}</span>` : '';
 
     if (tabType === 'inprogress') {
       if (t.assignedTo) meta += ` · ${timeAgo(t.dispatchedAt || t.createdAt)}`;
@@ -3247,14 +3412,14 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         }
       }
       const checked = selectedTaskIds.has(t.id) ? ' checked' : '';
-      return `<div class="task-card-row"><input type="checkbox" class="task-checkbox" data-id="${t.id}"${checked}><div class="task-card dispatched${selected}" data-id="${t.id}"><div class="task-text">${esc(t.text)}</div><div class="task-meta"><span>${meta} · ${ago}</span>${waitBadge}${sourceBadge}${desigBadge}${prBadge}${sessionBadge}</div></div></div>`;
+      return `<div class="task-card-row"><input type="checkbox" class="task-checkbox" data-id="${t.id}"${checked}><div class="task-card dispatched${selected}" data-id="${t.id}"><div class="task-text">${esc(t.text)}</div><div class="task-meta"><span>${meta} · ${ago}</span>${waitBadge}${sourceBadge}${desigBadge}${prBadge}${commentBadge}${sessionBadge}</div></div></div>`;
     }
     if (tabType === 'queued') {
-      const editBtn = `<button class="task-edit-btn" data-id="${t.id}">Edit</button>`;
-      const cancelBtn = `<button class="task-cancel" data-id="${t.id}">Cancel</button>`;
-      const assignBtn = `<button class="task-assign-btn" data-id="${t.id}">Assign →</button>`;
+      const editBtn = hasPerm('create-tasks') ? `<button class="task-edit-btn" data-id="${t.id}">Edit</button>` : '';
+      const cancelBtn = hasPerm('cancel') ? `<button class="task-cancel" data-id="${t.id}">Cancel</button>` : '';
+      const assignBtn = hasPerm('dispatch') ? `<button class="task-assign-btn" data-id="${t.id}">Assign →</button>` : '';
       const checked = selectedTaskIds.has(t.id) ? ' checked' : '';
-      return `<div class="task-card-row"><input type="checkbox" class="task-checkbox" data-id="${t.id}"${checked}><div class="task-card queued" data-id="${t.id}"><div class="task-text">${esc(t.text)}</div><div class="task-meta"><span>${meta} · ${ago}</span>${sourceBadge}${prBadge}${originBadge}${desigBadge}${editBtn}${assignBtn}${cancelBtn}</div></div></div>`;
+      return `<div class="task-card-row"><input type="checkbox" class="task-checkbox" data-id="${t.id}"${checked}><div class="task-card queued" data-id="${t.id}"><div class="task-text">${esc(t.text)}</div><div class="task-meta"><span>${meta} · ${ago}</span>${sourceBadge}${prBadge}${originBadge}${desigBadge}${commentBadge}${editBtn}${assignBtn}${cancelBtn}</div></div></div>`;
     }
     // completed
     if (t.dispatchedAt && t.completedAt) {
@@ -3264,8 +3429,183 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     if (t.status === 'failed') meta += ' · failed';
     const snippet = t.result ? `<div class="task-text" style="font-size:12px;color:var(--dim);margin-top:2px">${esc(t.result.substring(0, 80))}</div>` : '';
     const checked = selectedTaskIds.has(t.id) ? ' checked' : '';
-    return `<div class="task-card-row"><input type="checkbox" class="task-checkbox" data-id="${t.id}"${checked}><div class="task-card ${t.status}${selected}" data-id="${t.id}"><div class="task-text">${esc(t.text)}</div>${snippet}<div class="task-meta"><span>${meta} · ${ago}</span>${sourceBadge}${prBadge}${originBadge}${desigBadge}</div></div></div>`;
+    return `<div class="task-card-row"><input type="checkbox" class="task-checkbox" data-id="${t.id}"${checked}><div class="task-card ${t.status}${selected}" data-id="${t.id}"><div class="task-text">${esc(t.text)}</div>${snippet}<div class="task-meta"><span>${meta} · ${ago}</span>${sourceBadge}${prBadge}${originBadge}${desigBadge}${commentBadge}</div></div></div>`;
   }
+
+  // ── Comment panel (rendered into tab content divs) ─────
+  let commentPanelTaskId = null;
+
+  // target: 'tasks' (default) renders into #ts-comments-content, 'session' into #session-comments-content
+  function renderCommentPanel(taskId, target) {
+    if (!taskId) taskId = commentPanelTaskId;
+    if (!taskId) return;
+    commentPanelTaskId = taskId;
+    const task = tasks.find(t => t.id === taskId);
+    const comments = (task && task.comments) || [];
+
+    // Render into both containers so switching between views stays in sync
+    const containers = [];
+    const tsEl = document.getElementById('ts-comments-content');
+    const sessEl = document.getElementById('session-comments-content');
+    if (tsEl) containers.push(tsEl);
+    if (sessEl) containers.push(sessEl);
+    if (!containers.length) return;
+
+    // Build HTML
+    let html = `<div class="comment-panel"><div class="comment-panel-title">Comments (${comments.length})</div>`;
+    for (const c of comments) {
+      const canDelete = currentUser && (c.author === currentUser.login || hasPerm('admin'));
+      const delBtn = canDelete ? `<button class="comment-delete" data-task-id="${taskId}" data-comment-id="${c.id}" title="Delete">&times;</button>` : '';
+      html += `<div class="comment-item">
+        <div class="comment-body">
+          <span class="comment-author">${esc(c.authorName || c.author)}</span>
+          <span class="comment-time">${timeAgo(c.createdAt)}</span>
+          <div class="comment-text">${esc(c.text)}</div>
+        </div>
+        ${delBtn}
+      </div>`;
+    }
+    if (hasPerm('comment')) {
+      html += `<div class="comment-input-row">
+        <input class="comment-input" type="text" placeholder="Add a comment..." autocomplete="off">
+        <button class="comment-send">Post</button>
+      </div>`;
+    }
+    html += '</div>';
+
+    for (const container of containers) {
+      container.innerHTML = html;
+      // Wire comment send
+      const commentInput = container.querySelector('.comment-input');
+      const commentSendBtn = container.querySelector('.comment-send');
+      if (commentSendBtn && commentInput) {
+        commentSendBtn.addEventListener('click', () => sendComment(taskId, commentInput));
+        commentInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); sendComment(taskId, commentInput); } });
+      }
+      // Wire delete buttons
+      container.querySelectorAll('.comment-delete').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (ws && ws.readyState === 1) {
+            ws.send(JSON.stringify({ type: 'task:comment:delete', taskId: btn.dataset.taskId, commentId: btn.dataset.commentId }));
+          }
+        });
+      });
+    }
+
+    // Update badges
+    updateCommentBadge('tasks', task);
+    updateCommentBadge('session', task);
+  }
+
+  function updateCommentBadge(target, task) {
+    const count = (task && task.comments && task.comments.length) || 0;
+    const label = count > 0 ? `Comments (${count})` : 'Comments';
+    if (target === 'tasks') {
+      const btn = document.querySelector('[data-tstab="comments"]');
+      if (btn) btn.textContent = label;
+    } else {
+      const btn = document.querySelector('[data-stab="comments"]');
+      if (btn) btn.textContent = label;
+    }
+  }
+
+  function sendComment(taskId, inputEl) {
+    const text = inputEl.value.trim();
+    if (!text || !ws || ws.readyState !== 1) return;
+    ws.send(JSON.stringify({ type: 'task:comment:add', taskId, text }));
+    inputEl.value = '';
+  }
+
+  // ── Admin panel (user permissions in More tab) ───
+  const PERM_LABELS = {
+    'view': 'View', 'comment': 'Comment', 'create-tasks': 'Create Tasks',
+    'send-messages': 'Send Messages', 'cancel': 'Cancel', 'restart': 'Restart',
+    'dispatch': 'Dispatch', 'admin': 'Admin',
+  };
+
+  function renderAdminUsers() {
+    const section = document.getElementById('admin-users-section');
+    const list = document.getElementById('admin-users-list');
+    if (!section || !list) return;
+    if (!hasPerm('admin')) { section.classList.add('perm-hidden'); return; }
+    section.classList.remove('perm-hidden');
+    if (!allUsers.length) { list.innerHTML = '<div class="git-empty">No users registered yet.</div>'; return; }
+    let html = '';
+    for (const u of allUsers) {
+      const avatarHtml = u.avatar ? `<img class="admin-user-avatar" src="${esc(u.avatar)}" alt="">` : '';
+      const isSelf = currentUser && currentUser.login && u.login.toLowerCase() === currentUser.login.toLowerCase();
+      const removeBtnHtml = isSelf ? '' : `<button class="admin-remove-user-btn" data-login="${esc(u.login)}" title="Remove user" style="background:none;border:none;color:#ff5555;cursor:pointer;font-size:16px;padding:2px 6px;line-height:1">&times;</button>`;
+      let permsHtml = '';
+      const allPerms = ['view', 'comment', 'create-tasks', 'send-messages', 'cancel', 'restart', 'dispatch', 'admin'];
+      for (const p of allPerms) {
+        const active = u.permissions.includes(p);
+        const cls = active ? (p === 'admin' ? 'active admin-perm' : 'active') : '';
+        permsHtml += `<span class="admin-perm-chip ${cls}" data-login="${esc(u.login)}" data-perm="${p}">${PERM_LABELS[p]}</span>`;
+      }
+      html += `<div class="admin-user-row">
+        ${avatarHtml}
+        <div class="admin-user-info">
+          <div class="admin-user-name">${esc(u.name || u.login)}</div>
+          <div class="admin-user-login">${esc(u.login)}</div>
+        </div>
+        <div class="admin-perms">${permsHtml}</div>
+        ${removeBtnHtml}
+      </div>`;
+    }
+    list.innerHTML = html;
+    // Wire perm chip clicks
+    list.querySelectorAll('.admin-perm-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        const login = chip.dataset.login;
+        const perm = chip.dataset.perm;
+        const u = allUsers.find(x => x.login === login);
+        if (!u) return;
+        // Prevent self-demotion of admin
+        if (login === (currentUser && currentUser.login) && perm === 'admin') {
+          showToast('Denied', 'Cannot remove your own admin permission', 'error');
+          return;
+        }
+        let newPerms;
+        if (u.permissions.includes(perm)) {
+          newPerms = u.permissions.filter(p => p !== perm);
+        } else {
+          newPerms = [...u.permissions, perm];
+        }
+        if (ws && ws.readyState === 1) {
+          ws.send(JSON.stringify({ type: 'users:setPermissions', login, permissions: newPerms }));
+        }
+      });
+    });
+    // Wire remove user buttons
+    list.querySelectorAll('.admin-remove-user-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const login = btn.dataset.login;
+        if (confirm(`Remove user "${login}"? They will no longer be able to log in.`)) {
+          if (ws && ws.readyState === 1) {
+            ws.send(JSON.stringify({ type: 'users:remove', login }));
+          }
+        }
+      });
+    });
+  }
+
+  // Wire add user form
+  (function wireAddUserForm() {
+    const btn = document.getElementById('admin-add-user-btn');
+    const input = document.getElementById('admin-add-user-input');
+    if (!btn || !input) return;
+    function doAdd() {
+      const login = input.value.trim();
+      if (!login) return;
+      if (ws && ws.readyState === 1) {
+        ws.send(JSON.stringify({ type: 'users:add', login }));
+        input.value = '';
+      }
+    }
+    btn.addEventListener('click', doAdd);
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') doAdd(); });
+  })();
 
   // ── Feed panel ────────────────────────────────────
   $$('.feed-tab').forEach(tab => {

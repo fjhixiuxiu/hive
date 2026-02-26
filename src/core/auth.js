@@ -28,17 +28,6 @@ function isOAuthEnabled() {
 }
 
 /**
- * Get the allowed users list from env.
- * HIVE_ALLOWED_USERS=nukulb,jeff,alice
- * If not set, any GitHub user can log in (rely on org check or VPN).
- */
-function getAllowedUsers() {
-  const raw = process.env.HIVE_ALLOWED_USERS || '';
-  if (!raw.trim()) return null; // null = no restriction
-  return raw.split(',').map(u => u.trim().toLowerCase()).filter(Boolean);
-}
-
-/**
  * Make an HTTPS request and return parsed JSON.
  */
 function httpRequest(url, options = {}) {
@@ -128,7 +117,7 @@ function parseCookie(cookieHeader) {
  *   GET /auth/me              — return current user info (from JWT)
  *   GET /auth/logout          — clear cookie
  */
-function wireAuthRoutes(app) {
+function wireAuthRoutes(app, taskQueue) {
   if (!isOAuthEnabled()) return;
 
   const clientId = process.env.GITHUB_CLIENT_ID;
@@ -153,11 +142,23 @@ function wireAuthRoutes(app) {
     try {
       const accessToken = await exchangeCodeForToken(code);
       const user = await fetchGitHubUser(accessToken);
+      if (!user || !user.login) {
+        const reason = user?.message || 'unknown error';
+        console.error(`[auth] GitHub /user failed: ${reason}`);
+        return res.status(502).send(`GitHub API error: ${reason}. Please try again later.`);
+      }
 
-      // Check allowlist
-      const allowed = getAllowedUsers();
-      if (allowed && !allowed.includes(user.login.toLowerCase())) {
-        return res.status(403).send(`Access denied for ${user.login}. Contact your Hive admin.`);
+      // Gate access: admin user always allowed, otherwise must be pre-added
+      const adminUser = process.env.HIVE_ADMIN_USER;
+      const isAdmin = adminUser && adminUser.toLowerCase() === user.login.toLowerCase();
+      const isPreAdded = taskQueue && taskQueue.getUser(user.login.toLowerCase());
+      if (!isAdmin && !isPreAdded) {
+        return res.status(403).send('Access denied — ask your Hive admin to add you.');
+      }
+
+      // Register/update user profile in the permission system
+      if (taskQueue) {
+        taskQueue.ensureUser(user.login, user.name || user.login, user.avatar_url);
       }
 
       // Issue JWT and set cookie
