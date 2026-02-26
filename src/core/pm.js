@@ -508,8 +508,8 @@ class ProjectManager extends EventEmitter {
 
     const headers = this._githubHeaders();
 
-    // 1. Fetch open PRs
-    const prsUrl = `https://api.github.com/repos/${source.repo}/pulls?state=open&per_page=50`;
+    // 1. Fetch open PRs (100 max — GitHub API limit per page)
+    const prsUrl = `https://api.github.com/repos/${source.repo}/pulls?state=open&per_page=100`;
     const prs = await this._httpRequest(prsUrl, headers);
     if (!Array.isArray(prs)) return [];
 
