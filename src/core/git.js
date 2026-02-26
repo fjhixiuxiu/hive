@@ -45,13 +45,24 @@ async function getStagedStat(node, repoDir) {
  * @returns {Promise<Array<{status, file}>>}
  */
 async function getChangedFiles(node, repoDir) {
+  // Use -z for NUL-delimited output to avoid trim() stripping leading spaces
+  // from porcelain status columns (e.g. " M file" → "M file" breaks parsing).
+  // Fallback: parse with regex that handles both " M" and "M " status formats.
   const out = await node.exec(`git -C "${repoDir}" status --porcelain 2>/dev/null`);
   if (!out) return [];
   return out.split('\n').filter(Boolean).map(line => {
-    const status = line.substring(0, 2).trim();
-    const file = line.substring(3);
+    // Porcelain format: XY<space>filename — but trim() may strip leading space
+    // from first line, turning " M file" into "M file". Use regex to handle both.
+    const m = line.match(/^([MADRCU? ]{1,2})\s+(.+)$/);
+    if (!m) return null;
+    const status = m[1].trim();
+    let file = m[2];
+    // Handle rename: "R  old -> new" — use the new name
+    if (status.startsWith('R') && file.includes(' -> ')) {
+      file = file.split(' -> ').pop();
+    }
     return { status, file };
-  });
+  }).filter(Boolean);
 }
 
 /**
@@ -64,20 +75,21 @@ async function getChangedFiles(node, repoDir) {
  * @returns {Promise<string>}
  */
 async function getFileDiff(node, repoDir, file, base) {
+  const gitOpts = { timeout: 30000 }; // 30s — large repos can be slow
   if (base) {
     // Use merge-base to only show branch-specific changes
-    const mergeBase = await node.exec(`git -C "${repoDir}" merge-base ${base} HEAD 2>/dev/null`);
+    const mergeBase = await node.exec(`git -C "${repoDir}" merge-base ${base} HEAD 2>/dev/null`, gitOpts);
     const diffRef = mergeBase ? mergeBase.trim() : base;
-    return await node.exec(`git -C "${repoDir}" diff ${diffRef}..HEAD -- "${file}" 2>/dev/null`) || '';
+    return await node.exec(`git -C "${repoDir}" diff ${diffRef}..HEAD -- "${file}" 2>/dev/null`, gitOpts) || '';
   }
 
   // Try normal diff first (staged + unstaged vs HEAD)
-  const diff = await node.exec(`git -C "${repoDir}" diff HEAD -- "${file}" 2>/dev/null`);
+  const diff = await node.exec(`git -C "${repoDir}" diff HEAD -- "${file}" 2>/dev/null`, gitOpts);
   if (diff) return diff;
 
   // For untracked files, diff --no-index exits 1 (differences found),
   // so we can't use node.exec which returns null on non-zero. Use || true.
-  const untrackedDiff = await node.exec(`git -C "${repoDir}" diff --no-index /dev/null "${file}" 2>/dev/null || true`);
+  const untrackedDiff = await node.exec(`git -C "${repoDir}" diff --no-index /dev/null "${file}" 2>/dev/null || true`, gitOpts);
   if (untrackedDiff) return untrackedDiff;
 
   return '';
@@ -140,7 +152,7 @@ async function getCommitFiles(node, repoDir, hash) {
  * @returns {Promise<string>}
  */
 async function getCommitFileDiff(node, repoDir, hash, file) {
-  return await node.exec(`git -C "${repoDir}" diff "${hash}^".."${hash}" -- "${file}" 2>/dev/null`) || '';
+  return await node.exec(`git -C "${repoDir}" diff "${hash}^".."${hash}" -- "${file}" 2>/dev/null`, { timeout: 30000 }) || '';
 }
 
 module.exports = {

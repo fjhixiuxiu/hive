@@ -28,6 +28,14 @@ function createSlackBot(taskQueue, config, router) {
     token: botToken,
     appToken,
     socketMode: true,
+    clientOptions: {
+      slackApiUrl: 'https://slack.com/api/',
+    },
+    socketModeOptions: {
+      pingPongLoggingEnabled: false,
+      serverPingTimeoutMS: 15000,  // 15s (default 5s — too tight when event loop is busy)
+      clientPingTimeoutMS: 15000,
+    },
   });
 
   // Strip the bot mention from the message text
@@ -100,8 +108,8 @@ function createSlackBot(taskQueue, config, router) {
     );
   }
 
-  // ── @hive mention handler ──────────────────────────
-  app.event('app_mention', async ({ event, say }) => {
+  // ── Shared handler for both @mentions and DMs ──────
+  async function handleMessage(event, say) {
     const text = stripMention(event.text);
     if (!text) {
       await say({ text: 'What do you need? Try: `@hive <task>` or `@hive status`', thread_ts: event.ts });
@@ -130,7 +138,7 @@ function createSlackBot(taskQueue, config, router) {
     // ── Help command ──
     if (lower === 'help') {
       await say({
-        text: `:bee: *Hive Commands*\n• \`@hive <task>\` — create a task (with thread/channel context)\n• \`@hive <follow-up>\` — send follow-up to active task in same thread\n• \`@hive status\` — show queue summary\n• \`@hive help\` — this message`,
+        text: `:bee: *Hive Commands*\n• \`@hive <task>\` — create a task (with thread/channel context)\n• \`@hive <follow-up>\` — send follow-up to active task in same thread\n• \`@hive status\` — show queue summary\n• \`@hive help\` — this message\n\nWorks in channels (@mention), DMs, and threads.`,
         thread_ts: event.thread_ts || event.ts,
       });
       return;
@@ -169,10 +177,9 @@ function createSlackBot(taskQueue, config, router) {
     // ── New task: gather context ──
     let context = '';
     if (threadTs) {
-      // In a thread — grab full thread context
       context = await getThreadContext(event.channel, threadTs, event.ts);
-    } else {
-      // Channel mention — grab last 10 messages
+    } else if (event.channel_type !== 'im') {
+      // Channel mention — grab last 10 messages (skip for DMs)
       context = await getChannelContext(event.channel, event.ts, 10);
     }
 
@@ -180,7 +187,6 @@ function createSlackBot(taskQueue, config, router) {
     const slackUser = event.user || 'unknown';
     const authorName = await userName(slackUser);
 
-    // Build task text with clear sections
     let fullText = '';
     if (context) {
       fullText += `Context (Slack ${threadTs ? 'thread' : 'channel'}):\n${context}\n\n---\n\n`;
@@ -193,7 +199,6 @@ function createSlackBot(taskQueue, config, router) {
       createdBy: authorName,
     });
 
-    // Store Slack reference on the task for follow-ups and reply-back
     task.slackChannel = event.channel;
     task.slackThreadTs = threadTs || event.ts;
     taskQueue._saveState();
@@ -204,6 +209,18 @@ function createSlackBot(taskQueue, config, router) {
       text: `:bee: Task created${posText}:\n> ${text}`,
       thread_ts: replyTs,
     });
+  }
+
+  // ── Channel @mentions ──
+  app.event('app_mention', async ({ event, say }) => handleMessage(event, say));
+
+  // ── DMs ──
+  app.event('message', async ({ event, say }) => {
+    // Only handle direct messages, skip channel messages (handled by app_mention)
+    if (event.channel_type !== 'im') return;
+    // Skip bot's own messages and message edits/deletes
+    if (event.bot_id || event.subtype) return;
+    await handleMessage(event, say);
   });
 
   // ── Reply back to Slack when task completes ──────────
