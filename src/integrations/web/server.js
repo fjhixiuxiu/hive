@@ -9,6 +9,7 @@ const relay = require('../../core/relay');
 const git = require('../../core/git');
 const RemoteNode = require('../../core/remote-node');
 const auth = require('../../core/auth');
+const prStatus = require('../../core/pr-status');
 
 /**
  * Detect the Tailscale interface IP address.
@@ -1086,6 +1087,26 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
   const fleetInterval = setInterval(() => {
     broadcastFleetStatus().catch(err => console.error('Fleet broadcast error:', err.message));
   }, 15000);
+
+  // Background PR/CI status refresh — runs every 5 min, fetches one branch at a time
+  async function refreshPRStatus() {
+    try {
+      const sessions = await fleet.getFleetStatus(config, router);
+      const branches = [...new Set(sessions.map(s => s.branch).filter(b => b && b !== 'master' && b !== 'main'))];
+      for (const branch of branches) {
+        await prStatus.fetch(branch, config);
+      }
+      // Broadcast updated fleet so badges refresh
+      broadcastFleetStatus().catch(() => {});
+    } catch (err) {
+      console.error('PR status refresh error:', err.message);
+    }
+  }
+  // Initial fetch after 10s (let fleet cache warm up first), then every 5 min
+  setTimeout(() => {
+    refreshPRStatus();
+    setInterval(refreshPRStatus, 300000);
+  }, 10000);
 
   // -- Watcher event bridge -----------------------------------------------
 
