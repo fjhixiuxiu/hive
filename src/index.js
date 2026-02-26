@@ -76,6 +76,10 @@ try {
     // No PM state yet
 }
 
+// Start Slack bot (optional — needs SLACK_APP_TOKEN + SLACK_BOT_TOKEN)
+const { createSlackBot } = require('./integrations/slack/bot');
+const slackBot = createSlackBot(taskQueue);
+
 // Start Web dashboard
 const {createWebServer} = require('./integrations/web/server');
 const webServer = createWebServer(
