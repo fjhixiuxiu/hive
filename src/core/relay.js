@@ -5,8 +5,8 @@ const tmux = require('./tmux');
  * stripping TUI chrome (status bars, prompts, etc).
  */
 async function captureResponse(node, paneTarget, config) {
-  const content = await node.capturePane(paneTarget);
-  return tmux.stripTUIChrome(content, config);
+    const content = await node.capturePane(paneTarget);
+    return tmux.stripTUIChrome(content, config);
 }
 
 /**
@@ -22,110 +22,136 @@ async function captureResponse(node, paneTarget, config) {
  * @returns {Promise<{ success: boolean, response?: string, error?: string, duration?: number }>}
  */
 async function ask(config, node, sessionName, message, callbacks = {}) {
-  const { onProgress, onStream, vimMode, force } = typeof callbacks === 'function'
-    ? { onProgress: callbacks } // backward compat: single function = onProgress
-    : callbacks;
+    const {onProgress, onStream, vimMode, force} =
+        typeof callbacks === 'function'
+            ? {onProgress: callbacks} // backward compat: single function = onProgress
+            : callbacks;
 
-  const paneTarget = `${sessionName}:.${config.sessions.claudePane}`;
-  const { pollInterval, cooldown, timeout } = config.relay;
-  const streamInterval = config.relay.streamInterval || 3000;
+    const paneTarget = `${sessionName}:.${config.sessions.claudePane}`;
+    const {pollInterval, cooldown, timeout} = config.relay;
+    const streamInterval = config.relay.streamInterval || 3000;
 
-  // Check if session is idle first (skip if force=true for manual user input)
-  const beforeContent = await node.capturePane(paneTarget, { lines: 3 });
-  const currentState = tmux.detectState(beforeContent, config);
-  if (currentState === 'working' && !force) {
-    return { success: false, error: 'Session is busy. Use /peek to see what it\'s doing.' };
-  }
-  if (currentState === 'off') {
-    return { success: false, error: 'Claude is not running in this session.' };
-  }
-
-  // Ensure Claude's TUI is in INSERT mode (only needed for vim-mode terminals)
-  if (vimMode) {
-    await node.exec(`tmux send-keys -t "${paneTarget}" Escape`);
-    await new Promise(r => setTimeout(r, 150));
-    await node.exec(`tmux send-keys -t "${paneTarget}" i`);
-    await new Promise(r => setTimeout(r, 100));
-  }
-
-  // Send the message
-  try {
-    await node.sendKeys(paneTarget, message, true);
-  } catch (err) {
-    return { success: false, error: `Failed to send message: ${err.message}` };
-  }
-  const startTime = Date.now();
-
-  if (onProgress) onProgress('Message sent, waiting for response...');
-
-  // Poll for idle + stream updates
-  return new Promise((resolve) => {
-    let idleDetectedAt = null;
-    let lastStreamAt = 0;
-    let lastStreamContent = '';
-    let polling = false;
-
-    const timer = setInterval(async () => {
-      if (polling) return;
-      polling = true;
-
-      try {
-        const elapsed = Date.now() - startTime;
-
-        // Timeout
-        if (elapsed > timeout) {
-          clearInterval(timer);
-          if (onStream) {
-            const content = await captureResponse(node, paneTarget, config);
-            if (content) onStream(content, true);
-          }
-          resolve({
+    // Check if session is idle first (skip if force=true for manual user input)
+    const beforeContent = await node.capturePane(paneTarget, {lines: 3});
+    const currentState = tmux.detectState(beforeContent, config);
+    if (currentState === 'working' && !force) {
+        return {
             success: false,
-            error: `Timed out after ${Math.round(timeout / 1000)}s. Claude may still be working. Use /peek to check.`,
-            duration: elapsed,
-          });
-          return;
-        }
+            error: "Session is busy. Use /peek to see what it's doing.",
+        };
+    }
+    if (currentState === 'off') {
+        return {
+            success: false,
+            error: 'Claude is not running in this session.',
+        };
+    }
 
-        // Check state
-        const tail = await node.capturePane(paneTarget, { lines: 3 });
-        const state = tmux.detectState(tail, config);
+    // Ensure Claude's TUI is in INSERT mode (only needed for vim-mode terminals)
+    if (vimMode) {
+        await node.exec(`tmux send-keys -t "${paneTarget}" Escape`);
+        await new Promise((r) => setTimeout(r, 150));
+        await node.exec(`tmux send-keys -t "${paneTarget}" i`);
+        await new Promise((r) => setTimeout(r, 100));
+    }
 
-        // Stream update if enough time has passed
-        if (onStream && state === 'working' && (Date.now() - lastStreamAt >= streamInterval)) {
-          const content = await captureResponse(node, paneTarget, config);
-          if (content && content !== lastStreamContent) {
-            lastStreamContent = content;
-            lastStreamAt = Date.now();
-            onStream(content, false);
-          }
-        }
+    // Send the message
+    try {
+        await node.sendKeys(paneTarget, message, true);
+    } catch (err) {
+        return {
+            success: false,
+            error: `Failed to send message: ${err.message}`,
+        };
+    }
+    const startTime = Date.now();
 
-        if (state === 'idle') {
-          if (!idleDetectedAt) {
-            idleDetectedAt = Date.now();
-            return;
-          }
+    if (onProgress) onProgress('Message sent, waiting for response...');
 
-          if (Date.now() - idleDetectedAt >= cooldown) {
-            clearInterval(timer);
+    // Poll for idle + stream updates
+    return new Promise((resolve) => {
+        let idleDetectedAt = null;
+        let lastStreamAt = 0;
+        let lastStreamContent = '';
+        let polling = false;
 
-            const response = await captureResponse(node, paneTarget, config);
+        const timer = setInterval(async () => {
+            if (polling) return;
+            polling = true;
 
-            resolve({
-              success: true,
-              response: response || '(empty response)',
-              duration: Date.now() - startTime,
-            });
-          }
-        } else {
-          idleDetectedAt = null;
-        }
-      } finally {
-        polling = false;
-      }
-    }, pollInterval);
-  });
+            try {
+                const elapsed = Date.now() - startTime;
+
+                // Timeout
+                if (elapsed > timeout) {
+                    clearInterval(timer);
+                    if (onStream) {
+                        const content = await captureResponse(
+                            node,
+                            paneTarget,
+                            config,
+                        );
+                        if (content) onStream(content, true);
+                    }
+                    resolve({
+                        success: false,
+                        error: `Timed out after ${Math.round(timeout / 1000)}s. Claude may still be working. Use /peek to check.`,
+                        duration: elapsed,
+                    });
+                    return;
+                }
+
+                // Check state
+                const tail = await node.capturePane(paneTarget, {lines: 3});
+                const state = tmux.detectState(tail, config);
+
+                // Stream update if enough time has passed
+                if (
+                    onStream &&
+                    state === 'working' &&
+                    Date.now() - lastStreamAt >= streamInterval
+                ) {
+                    const content = await captureResponse(
+                        node,
+                        paneTarget,
+                        config,
+                    );
+                    if (content && content !== lastStreamContent) {
+                        lastStreamContent = content;
+                        lastStreamAt = Date.now();
+                        onStream(content, false);
+                    }
+                }
+
+                if (state === 'idle') {
+                    if (!idleDetectedAt) {
+                        idleDetectedAt = Date.now();
+                        return;
+                    }
+
+                    if (Date.now() - idleDetectedAt >= cooldown) {
+                        clearInterval(timer);
+
+                        const response = await captureResponse(
+                            node,
+                            paneTarget,
+                            config,
+                        );
+
+                        resolve({
+                            success: true,
+                            response: response || '(empty response)',
+                            duration: Date.now() - startTime,
+                        });
+                    }
+                } else {
+                    idleDetectedAt = null;
+                }
+            } finally {
+                polling = false;
+            }
+        }, pollInterval);
+    });
 }
 
 /**
@@ -135,31 +161,37 @@ async function ask(config, node, sessionName, message, callbacks = {}) {
  * @param {string} sessionName
  * @param {string} message
  */
-async function tell(config, node, sessionName, message, { vimMode } = {}) {
-  const paneTarget = `${sessionName}:.${config.sessions.claudePane}`;
-  const beforeContent = await node.capturePane(paneTarget, { lines: 3 });
-  const state = tmux.detectState(beforeContent, config);
+async function tell(config, node, sessionName, message, {vimMode} = {}) {
+    const paneTarget = `${sessionName}:.${config.sessions.claudePane}`;
+    const beforeContent = await node.capturePane(paneTarget, {lines: 3});
+    const state = tmux.detectState(beforeContent, config);
 
-  if (state === 'off') {
-    return { success: false, error: 'Claude is not running in this session.' };
-  }
+    if (state === 'off') {
+        return {
+            success: false,
+            error: 'Claude is not running in this session.',
+        };
+    }
 
-  // Ensure Claude's TUI is in INSERT mode (only needed for vim-mode terminals)
-  if (vimMode) {
-    await node.exec(`tmux send-keys -t "${paneTarget}" Escape`);
-    await new Promise(r => setTimeout(r, 200));
-    await node.exec(`tmux send-keys -t "${paneTarget}" i`);
-    await new Promise(r => setTimeout(r, 300));
-  }
+    // Ensure Claude's TUI is in INSERT mode (only needed for vim-mode terminals)
+    if (vimMode) {
+        await node.exec(`tmux send-keys -t "${paneTarget}" Escape`);
+        await new Promise((r) => setTimeout(r, 200));
+        await node.exec(`tmux send-keys -t "${paneTarget}" i`);
+        await new Promise((r) => setTimeout(r, 300));
+    }
 
-  try {
-    await node.sendKeys(paneTarget, message, false);
-  } catch (err) {
-    return { success: false, error: `Failed to send message: ${err.message}` };
-  }
-  await new Promise(r => setTimeout(r, 100));
-  await node.exec(`tmux send-keys -t "${paneTarget}" Enter`);
-  return { success: true };
+    try {
+        await node.sendKeys(paneTarget, message, false);
+    } catch (err) {
+        return {
+            success: false,
+            error: `Failed to send message: ${err.message}`,
+        };
+    }
+    await new Promise((r) => setTimeout(r, 100));
+    await node.exec(`tmux send-keys -t "${paneTarget}" Enter`);
+    return {success: true};
 }
 
-module.exports = { ask, tell };
+module.exports = {ask, tell};

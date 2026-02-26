@@ -77,7 +77,7 @@ try {
 }
 
 // Start Slack bot (optional — needs SLACK_APP_TOKEN + SLACK_BOT_TOKEN)
-const { createSlackBot } = require('./integrations/slack/bot');
+const {createSlackBot} = require('./integrations/slack/bot');
 const slackBot = createSlackBot(taskQueue, config, router);
 
 // Start Web dashboard
