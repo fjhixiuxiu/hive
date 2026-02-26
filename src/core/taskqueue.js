@@ -7,6 +7,7 @@ const { promisify } = require('util');
 const execAsync = promisify(exec);
 const relay = require('./relay');
 const fleet = require('./fleet');
+const log = require('./log');
 
 const STATE_FILE = path.join(__dirname, '..', '..', '.hive-state.json');
 
@@ -74,14 +75,14 @@ class TaskQueue extends EventEmitter {
           if (s && s.state === 'idle') {
             staleCount++;
             const task = this.tasks.get(taskId);
-            console.log(`[reconcile] S:${num} is idle with dispatched task: "${(task?.text || '').slice(0, 60)}"`);
+            log.info(`[reconcile] S:${num} is idle with dispatched task: "${(task?.text || '').slice(0, 60)}"`);
           }
         }
         if (staleCount > 0) {
-          console.log(`[reconcile] ${staleCount} dispatched task(s) on idle sessions — watcher will handle transitions`);
+          log.info(`[reconcile] ${staleCount} dispatched task(s) on idle sessions — watcher will handle transitions`);
         }
       } catch (err) {
-        console.error('Startup reconcile error:', err.message);
+        log.error('Startup reconcile error:', err.message);
       }
     }, 12000);
 
@@ -97,7 +98,7 @@ class TaskQueue extends EventEmitter {
     // Delayed dispatch after startup -- give sessions time to boot (60s)
     // then check once. Ongoing dispatch is event-driven (session:idle, designation change, etc.)
     setTimeout(() => {
-      this._tryAutoDispatch().catch(err => console.error('Auto-dispatch error:', err.message));
+      this._tryAutoDispatch().catch(err => log.error('Auto-dispatch error:', err.message));
     }, 60000);
   }
 
@@ -128,11 +129,11 @@ class TaskQueue extends EventEmitter {
 
     if (mode === 'manual' && targetSession) {
       this._dispatchTask(task, targetSession).catch(err =>
-        console.error('Dispatch error:', err.message));
+        log.error('Dispatch error:', err.message));
     } else if (mode === 'auto') {
       // Try to dispatch immediately to an idle auto-session
       this._tryAutoDispatch().catch(err =>
-        console.error('Auto-dispatch error:', err.message));
+        log.error('Auto-dispatch error:', err.message));
     }
 
     return task;
@@ -232,7 +233,7 @@ class TaskQueue extends EventEmitter {
     this._saveState();
     // Dispatch next queued task now that a session is free
     this._tryAutoDispatch().catch(err =>
-      console.error('Auto-dispatch error:', err.message));
+      log.error('Auto-dispatch error:', err.message));
     return task;
   }
 
@@ -342,7 +343,7 @@ class TaskQueue extends EventEmitter {
     );
     if (pendingManual) {
       this._dispatchTask(pendingManual, num).catch(err =>
-        console.error('Manual retry dispatch error:', err.message));
+        log.error('Manual retry dispatch error:', err.message));
     }
   }
 
@@ -410,7 +411,7 @@ class TaskQueue extends EventEmitter {
     this.emit('auto:changed', this.getAutoSessions());
     // Re-evaluate dispatch with new auto-session set
     this._tryAutoDispatch().catch(err =>
-      console.error('Auto-dispatch error:', err.message));
+      log.error('Auto-dispatch error:', err.message));
     return this.autoSessions.has(num);
   }
 
@@ -475,7 +476,7 @@ class TaskQueue extends EventEmitter {
     this.users.set(login, user);
     this.emit('users:changed', this.getUsersList());
     this._saveState();
-    console.log(`[auth] User "${login}" registered (${isAdmin ? 'admin' : 'viewer'})`);
+    log.info(`[auth] User "${login}" registered (${isAdmin ? 'admin' : 'viewer'})`);
     return user;
   }
 
@@ -518,7 +519,7 @@ class TaskQueue extends EventEmitter {
     this.users.set(login, user);
     this.emit('users:changed', this.getUsersList());
     this._saveState();
-    console.log(`[auth] User "${login}" pre-added by admin`);
+    log.info(`[auth] User "${login}" pre-added by admin`);
     return user;
   }
 
@@ -529,7 +530,7 @@ class TaskQueue extends EventEmitter {
     this.users.delete(login);
     this.emit('users:changed', this.getUsersList());
     this._saveState();
-    console.log(`[auth] User "${login}" removed by admin`);
+    log.info(`[auth] User "${login}" removed by admin`);
     return true;
   }
 
@@ -655,7 +656,7 @@ class TaskQueue extends EventEmitter {
     this.emit('designations:changed', this.getDesignations());
     // Re-evaluate dispatch with new designation mapping
     this._tryAutoDispatch().catch(err =>
-      console.error('Auto-dispatch error:', err.message));
+      log.error('Auto-dispatch error:', err.message));
   }
 
   getDesignations() {
@@ -974,7 +975,7 @@ class TaskQueue extends EventEmitter {
       switch (rule.action) {
         case 'auto-dispatch':
           this._tryAutoDispatch().catch(err =>
-            console.error('Auto-dispatch error:', err.message));
+            log.error('Auto-dispatch error:', err.message));
           break;
 
         case 'dispatch-fix':
@@ -1056,9 +1057,9 @@ class TaskQueue extends EventEmitter {
       if (Array.isArray(data.feed)) {
         this.feed = data.feed;
       }
-      console.log(`Loaded state: ${this.autoSessions.size} auto-sessions, ${this.designations.size} designations, ${this.designationDefs.size} defs, ${this.agentRoots.length} agent roots, ${this.spawnedAgents.size} spawned agents, ${this.users.size} users`);
-      if (this.tasks.size) console.log(`Restored ${this.tasks.size} tasks`);
-      if (this.feed.length) console.log(`Restored ${this.feed.length} feed entries`);
+      log.info(`Loaded state: ${this.autoSessions.size} auto-sessions, ${this.designations.size} designations, ${this.designationDefs.size} defs, ${this.agentRoots.length} agent roots, ${this.spawnedAgents.size} spawned agents, ${this.users.size} users`);
+      if (this.tasks.size) log.info(`Restored ${this.tasks.size} tasks`);
+      if (this.feed.length) log.info(`Restored ${this.feed.length} feed entries`);
     } catch {
       // No state file yet -- that's fine
     }
@@ -1107,7 +1108,7 @@ class TaskQueue extends EventEmitter {
     try {
       fs.writeFileSync(STATE_FILE, JSON.stringify(data, null, 2));
     } catch (err) {
-      console.error('Failed to save state:', err.message);
+      log.error('Failed to save state:', err.message);
     }
   }
 

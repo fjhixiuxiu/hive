@@ -10,6 +10,7 @@ const git = require('../../core/git');
 const RemoteNode = require('../../core/remote-node');
 const auth = require('../../core/auth');
 const prStatus = require('../../core/pr-status');
+const log = require('../../core/log');
 
 /**
  * Detect the Tailscale interface IP address.
@@ -121,7 +122,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
   const workerSecret = process.env.HIVE_WORKER_SECRET;
 
   if (!token && !auth.isOAuthEnabled()) {
-    console.warn('Neither WEB_TOKEN nor GitHub OAuth configured -- web dashboard disabled');
+    log.warn('Neither WEB_TOKEN nor GitHub OAuth configured -- web dashboard disabled');
     return null;
   }
 
@@ -181,7 +182,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
           }
         } catch {}
       }
-      if (cleaned > 0) console.log(`[upload] Cleaned ${cleaned} expired file(s)`);
+      if (cleaned > 0) log.info(`[upload] Cleaned ${cleaned} expired file(s)`);
     } catch {}
   }, 10 * 60 * 1000);
 
@@ -317,7 +318,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
           router.addNode(node);
           workers.set(ws, node);
           ws.send(JSON.stringify({ type: 'worker:registered', nodeId: msg.nodeId }));
-          console.log(`Worker "${msg.nodeId}" connected`);
+          log.info(`Worker "${msg.nodeId}" connected`);
           // Notify dashboard clients about the new node
           broadcast({ type: 'node:connected', nodeId: msg.nodeId });
         } else {
@@ -340,7 +341,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       // Dashboard client message routing
       const user = wsUser.get(ws) || null;
       handleMessage(ws, msg, user).catch(err => {
-        console.error('Message handler error:', err.message);
+        log.error('Message handler error:', err.message);
         if (ws.readyState === 1) {
           ws.send(JSON.stringify({ type: 'error', message: err.message }));
         }
@@ -358,7 +359,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
         node.disconnect();
         router.removeNode(node.id);
         workers.delete(ws);
-        console.log(`Worker "${node.id}" disconnected`);
+        log.info(`Worker "${node.id}" disconnected`);
         broadcast({ type: 'node:disconnected', nodeId: node.id });
       }
     });
@@ -514,7 +515,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
             error: result.error,
           }));
         }).catch((err) => {
-          console.error('tell error:', err);
+          log.error('tell error:', err);
           if (ws.readyState === 1) {
             ws.send(JSON.stringify({ type: 'tell:done', session: msg.session, success: false, error: err.message }));
           }
@@ -1106,7 +1107,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
           totalChanges: s.git ? s.git.staged + s.git.modified + s.git.untracked : 0,
         };
       }
-      console.log(`[perf] getFleetWithPreviews: ${Date.now() - t0}ms`);
+      log.info(`[perf] getFleetWithPreviews: ${Date.now() - t0}ms`);
       _previewCache.result = sessions;
       _previewCache.ts = Date.now();
       _previewCache.pending = null;
@@ -1119,14 +1120,14 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     // Send basic status immediately so the UI renders fast
     const t0 = Date.now();
     const sessions = await fleet.getFleetStatus(config, router);
-    console.log(`[perf] getFleetStatus: ${Date.now() - t0}ms`);
+    log.info(`[perf] getFleetStatus: ${Date.now() - t0}ms`);
     if (ws.readyState === 1) {
       ws.send(JSON.stringify({ type: 'fleet:status', sessions }));
     }
     // Then fill in previews/git summaries and send again
     const t1 = Date.now();
     const full = await getFleetWithPreviews();
-    console.log(`[perf] getFleetWithPreviews: ${Date.now() - t1}ms`);
+    log.info(`[perf] getFleetWithPreviews: ${Date.now() - t1}ms`);
     if (ws.readyState === 1) {
       ws.send(JSON.stringify({ type: 'fleet:status', sessions: full }));
     }
@@ -1142,7 +1143,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
 
   // Broadcast fleet status every 15s
   const fleetInterval = setInterval(() => {
-    broadcastFleetStatus().catch(err => console.error('Fleet broadcast error:', err.message));
+    broadcastFleetStatus().catch(err => log.error('Fleet broadcast error:', err.message));
   }, 15000);
 
   // Background PR/CI status refresh — runs every 5 min, fetches one branch at a time
@@ -1156,7 +1157,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       // Broadcast updated fleet so badges refresh
       broadcastFleetStatus().catch(() => {});
     } catch (err) {
-      console.error('PR status refresh error:', err.message);
+      log.error('PR status refresh error:', err.message);
     }
   }
   // Initial fetch after 10s (let fleet cache warm up first), then every 5 min
@@ -1240,26 +1241,26 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       });
     });
     httpServer.listen(port, host, () => {
-      console.log(`Web dashboard: http://${host}:${port}`);
+      log.info(`Web dashboard: http://${host}:${port}`);
     });
     servers.push(httpServer);
   }
 
   if (workerSecret) {
-    console.log(`Worker registration enabled on port ${port}`);
+    log.info(`Worker registration enabled on port ${port}`);
   }
 
   // Initial agent file scan on startup
   if (taskQueue && taskQueue.agentRoots.length > 0) {
     taskQueue.scanAgentFiles();
-    console.log(`Scanned ${taskQueue.agentFilesList.length} agent files from ${taskQueue.agentRoots.length} root(s)`);
+    log.info(`Scanned ${taskQueue.agentFilesList.length} agent files from ${taskQueue.agentRoots.length} root(s)`);
   }
 
   const tsIP = getTailscaleIP();
   if (tsIP) {
-    console.log(`Tailscale access enabled (${tsIP})`);
+    log.info(`Tailscale access enabled (${tsIP})`);
   } else if (!process.env.WEB_BIND) {
-    console.log('No Tailscale interface found — dashboard is localhost-only');
+    log.info('No Tailscale interface found — dashboard is localhost-only');
   }
 
   // Cleanup

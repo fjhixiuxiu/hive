@@ -14,6 +14,7 @@
 const https = require('https');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
+const log = require('./log');
 
 // Generate a random secret on startup if not provided
 const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(32).toString('hex');
@@ -144,7 +145,7 @@ function wireAuthRoutes(app, taskQueue) {
       const user = await fetchGitHubUser(accessToken);
       if (!user || !user.login) {
         const reason = user?.message || 'unknown error';
-        console.error(`[auth] GitHub /user failed: ${reason}`);
+        log.error(`[auth] GitHub /user failed: ${reason}`);
         return res.status(502).send(`GitHub API error: ${reason}. Please try again later.`);
       }
 
@@ -171,10 +172,10 @@ function wireAuthRoutes(app, taskQueue) {
         path: '/',
       });
 
-      console.log(`[auth] ${user.login} logged in via GitHub OAuth`);
+      log.info(`[auth] ${user.login} logged in via GitHub OAuth`);
       res.redirect('/');
     } catch (err) {
-      console.error('[auth] OAuth error:', err.message);
+      log.error('[auth] OAuth error:', err.message);
       res.status(500).send('Authentication failed. Please try again.');
     }
   });
