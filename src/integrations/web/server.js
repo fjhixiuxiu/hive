@@ -1014,7 +1014,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
 
   // Cache for full fleet with previews (same pattern as getFleetStatus)
   let _previewCache = { result: null, ts: 0, pending: null };
-  const PREVIEW_CACHE_TTL = 8000; // 8s (longer than fleet since previews are heavier)
+  const PREVIEW_CACHE_TTL = 10000; // 10s
 
   async function getFleetWithPreviews() {
     const now = Date.now();
@@ -1082,10 +1082,10 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     }
   }
 
-  // Broadcast fleet status every 10s
+  // Broadcast fleet status every 15s
   const fleetInterval = setInterval(() => {
     broadcastFleetStatus().catch(err => console.error('Fleet broadcast error:', err.message));
-  }, 10000);
+  }, 15000);
 
   // -- Watcher event bridge -----------------------------------------------
 

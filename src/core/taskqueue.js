@@ -334,17 +334,38 @@ class TaskQueue extends EventEmitter {
       this.completeTask(taskId, null, preview || null, paneCols);
     }
     this.dispatchLock.delete(num);
+
+    // Retry any queued manual tasks targeting this session
+    const pendingManual = Array.from(this.tasks.values()).find(
+      t => t.status === 'queued' && t.mode === 'manual' && t.targetSession === num
+    );
+    if (pendingManual) {
+      this._dispatchTask(pendingManual, num).catch(err =>
+        console.error('Manual retry dispatch error:', err.message));
+    }
   }
 
   async _tryAutoDispatch() {
     if (this._autoDispatching) return;
     this._autoDispatching = true;
     try {
+      const sessions = await fleet.getFleetStatus(this.config, this.router);
+
+      // First: retry queued manual tasks with a targetSession
+      const manualTargeted = Array.from(this.tasks.values())
+        .filter(t => t.status === 'queued' && t.mode === 'manual' && t.targetSession);
+      for (const task of manualTargeted) {
+        const session = sessions.find(s => s.num === task.targetSession);
+        if (session && session.state === 'idle' && !this.dispatchLock.has(session.num) && !this.activeTaskBySession.has(session.num)) {
+          await this._dispatchTask(task, task.targetSession);
+        }
+      }
+
+      // Then: auto-mode tasks
       const queuedTasks = Array.from(this.tasks.values())
         .filter(t => t.status === 'queued' && t.mode === 'auto');
       if (!queuedTasks.length) return;
 
-      const sessions = await fleet.getFleetStatus(this.config, this.router);
       const idleAuto = sessions.filter(s =>
         s.state === 'idle'
         && this.autoSessions.has(s.num)
