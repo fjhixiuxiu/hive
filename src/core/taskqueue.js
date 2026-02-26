@@ -716,10 +716,19 @@ class TaskQueue extends EventEmitter {
 
     // Clone or create directory
     if (gitUrl) {
-      try {
-        await execAsync(`git clone ${gitUrl} "${repoDir}"`, { timeout: 300000 });
-      } catch (err) {
-        throw new Error(`Git clone failed: ${err.message}`);
+      if (fs.existsSync(path.join(repoDir, '.git'))) {
+        // Directory already cloned — reset to latest default branch
+        try {
+          await execAsync(`git -C "${repoDir}" fetch origin && git -C "${repoDir}" checkout main 2>/dev/null || git -C "${repoDir}" checkout master 2>/dev/null && git -C "${repoDir}" reset --hard origin/HEAD`, { timeout: 120000 });
+        } catch (err) {
+          throw new Error(`Git reset of existing clone failed: ${err.message}`);
+        }
+      } else {
+        try {
+          await execAsync(`git clone ${gitUrl} "${repoDir}"`, { timeout: 300000 });
+        } catch (err) {
+          throw new Error(`Git clone failed: ${err.message}`);
+        }
       }
     } else {
       try {
