@@ -14,12 +14,6 @@ npm run dev      # development (auto-restart on changes)
 
 Configuration lives in `hive.config.js` — adjust session patterns, repo paths, idle detection, and dashboard links for your setup.
 
-## Running Tests
-
-```bash
-npm test         # runs node:test suite in test/
-```
-
 ## Sandboxed User (hivebot)
 
 - hive runs as `hivebot`, a sandboxed macOS user with no sudo, no prod SSH keys, no AWS creds
