@@ -431,6 +431,18 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   color: var(--dim); margin: 12px 0 6px; padding-left: 2px;
 }
 .task-section-label:first-child { margin-top: 0; }
+.idea-card {
+  background: var(--bg2); border-radius: 6px; padding: 10px 12px;
+  margin-bottom: 6px; border-left: 3px solid var(--yellow);
+  cursor: pointer; transition: background 0.1s;
+}
+.idea-card:hover { background: var(--bg3); }
+.idea-card.closed { border-left-color: var(--green); opacity: 0.65; }
+.idea-title { font-size: 14px; font-weight: 500; margin-bottom: 4px; }
+.idea-meta { font-size: 12px; color: var(--dim); display: flex; gap: 8px; align-items: center; }
+.idea-state { font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 4px; text-transform: uppercase; }
+.idea-state.open { background: rgba(241,250,140,0.15); color: var(--yellow); }
+.idea-state.closed { background: rgba(80,250,123,0.15); color: var(--green); }
 .task-card {
   background: var(--bg2); border-radius: 6px; padding: 10px 12px;
   margin-bottom: 6px; border-left: 3px solid var(--dim);
@@ -1221,6 +1233,9 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     <button class="nav-btn" data-tab="pm-panel">
       <span class="nav-icon">&#9881;</span>PMs
     </button>
+    <button class="nav-btn" data-tab="ideas-panel">
+      <span class="nav-icon">&#128161;</span>Ideas
+    </button>
     <button class="nav-btn" data-tab="more-panel">
       <span class="nav-icon">&#8943;</span>More
     </button>
@@ -1437,6 +1452,15 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       <div id="pm-bar">
         <button id="pm-create-btn">+ New PM</button>
       </div>
+    </div>
+
+    <!-- Ideas panel -->
+    <div id="ideas-panel" class="panel">
+      <div style="display:flex;align-items:center;padding:10px 12px 6px;gap:8px">
+        <span style="font-size:16px;font-weight:700;flex:1">Product Ideas</span>
+        <button class="tasks-create-btn" id="ideas-create-btn">+ New Idea</button>
+      </div>
+      <div id="ideas-list" style="flex:1;overflow-y:auto;padding:8px 12px;-webkit-overflow-scrolling:touch"></div>
     </div>
 
     <!-- Session detail panel (replaces content, not an overlay) -->
@@ -1751,6 +1775,25 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   </div>
 </div>
 
+<!-- New Idea dialog -->
+<div class="dialog-overlay" id="idea-dialog">
+  <div class="dialog" style="max-width:480px">
+    <div class="dialog-title">New Product Idea</div>
+    <div class="task-dialog-field">
+      <label class="task-dialog-label">Title <span style="color:var(--red)">*</span></label>
+      <input class="task-dialog-input" id="idea-dialog-title" type="text" placeholder="Short summary of the idea" autocomplete="off" style="width:100%">
+    </div>
+    <div class="task-dialog-field">
+      <label class="task-dialog-label">Description</label>
+      <textarea class="task-dialog-input" id="idea-dialog-body" rows="5" placeholder="Optional details..." style="width:100%;resize:vertical;font-family:inherit"></textarea>
+    </div>
+    <div class="dialog-actions">
+      <button class="dialog-btn primary" id="idea-dialog-save">Create</button>
+      <button class="dialog-btn" id="idea-dialog-cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <!-- Toasts -->
 <div id="toasts"></div>
 
@@ -1933,7 +1976,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   // ── URL routing ─────────────────────────────────
   const TAB_TO_HASH = {
     'fleet-panel': '/fleet', 'tasks-panel': '/tasks', 'feed-panel': '/feed',
-    'pm-panel': '/pm', 'more-panel': '/more', 'session-panel': '/session',
+    'pm-panel': '/pm', 'ideas-panel': '/ideas', 'more-panel': '/more', 'session-panel': '/session',
   };
   const HASH_TO_TAB = {};
   for (const [tab, hash] of Object.entries(TAB_TO_HASH)) HASH_TO_TAB[hash] = tab;
@@ -2031,6 +2074,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       }
     }
     if (tab === 'fleet-panel') renderGrid();
+    if (tab === 'ideas-panel' && ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'idea:list' }));
     if (tab === 'more-panel') { renderDesignationGrid(); renderAgentRoots(); renderDesigDefs(); renderAdminUsers(); renderChecklistTemplates(); }
     const spawnBtn = document.getElementById('spawn-btn');
     if (spawnBtn) spawnBtn.classList.toggle('visible', tab === 'fleet-panel');
@@ -2351,6 +2395,16 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       case 'git:commit':
         if (currentSession === String(msg.session)) expandCommitRow(msg.hash, msg.files, 'git-sidebar', currentSession);
         if (tasksSessionNum === String(msg.session) && activeTab === 'tasks-panel') expandCommitRow(msg.hash, msg.files, 'ts-git-sidebar', tasksSessionNum);
+        break;
+      case 'idea:list':
+        renderIdeas(msg.ideas || []);
+        break;
+      case 'idea:created':
+        showToast('Idea Created', `#${msg.issue.number} ${msg.issue.title}`, 'success');
+        if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'idea:list' }));
+        break;
+      case 'idea:error':
+        showToast('Idea Error', msg.error, 'error');
         break;
     }
   }
@@ -5423,6 +5477,52 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     const match = document.querySelector(`#${sidebarId} .git-file-row[data-file="${CSS.escape(file)}"]`);
     if (match) match.classList.add('selected');
   }
+
+  // ── Ideas panel ──────────────────────────────────
+  function renderIdeas(ideas) {
+    const list = document.getElementById('ideas-list');
+    if (!ideas.length) { list.innerHTML = '<div style="color:var(--dim);text-align:center;padding:40px 0;font-size:14px">No ideas yet. Click + New Idea to submit one.</div>'; return; }
+    ideas.sort((a, b) => b.number - a.number);
+    list.innerHTML = ideas.map(i => {
+      const isOpen = (i.state || '').toUpperCase() === 'OPEN';
+      const stateCls = isOpen ? 'open' : 'closed';
+      return `<div class="idea-card ${isOpen ? '' : 'closed'}" data-url="${esc(i.url)}">
+        <div class="idea-title">#${i.number} ${esc(i.title)}</div>
+        <div class="idea-meta"><span class="idea-state ${stateCls}">${isOpen ? 'open' : 'closed'}</span></div>
+      </div>`;
+    }).join('');
+    list.querySelectorAll('.idea-card').forEach(card => {
+      card.addEventListener('click', () => window.open(card.dataset.url, '_blank'));
+    });
+  }
+
+  (function initIdeasDialog() {
+    const overlay = document.getElementById('idea-dialog');
+    const titleInput = document.getElementById('idea-dialog-title');
+    const bodyInput = document.getElementById('idea-dialog-body');
+    const saveBtn = document.getElementById('idea-dialog-save');
+    const cancelBtn = document.getElementById('idea-dialog-cancel');
+    const createBtn = document.getElementById('ideas-create-btn');
+
+    function openDialog() { titleInput.value = ''; bodyInput.value = ''; overlay.classList.add('visible'); titleInput.focus(); }
+    function closeDialog() { overlay.classList.remove('visible'); }
+
+    createBtn.addEventListener('click', openDialog);
+    cancelBtn.addEventListener('click', closeDialog);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) closeDialog(); });
+
+    saveBtn.addEventListener('click', () => {
+      const title = titleInput.value.trim();
+      if (!title) { titleInput.focus(); return; }
+      if (ws && ws.readyState === 1) {
+        ws.send(JSON.stringify({ type: 'idea:create', title, body: bodyInput.value.trim() }));
+      }
+      closeDialog();
+    });
+
+    // Enter in title field submits
+    titleInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); saveBtn.click(); } });
+  })();
 
   // ── Notifications ─────────────────────────────────
   function handleNotify(msg) {

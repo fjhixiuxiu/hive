@@ -2,6 +2,7 @@ const http = require('http');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const { execFile } = require('child_process');
 const express = require('express');
 const { WebSocketServer } = require('ws');
 const fleet = require('../../core/fleet');
@@ -11,6 +12,9 @@ const RemoteNode = require('../../core/remote-node');
 const auth = require('../../core/auth');
 const prStatus = require('../../core/pr-status');
 const log = require('../../core/log');
+
+// Env for gh CLI — ensure /opt/homebrew/bin is in PATH for hivebot
+const ghExecEnv = { ...process.env, PATH: `/opt/homebrew/bin:${process.env.PATH || ''}` };
 
 /**
  * Detect the Tailscale interface IP address.
@@ -1053,6 +1057,44 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
           break;
         }
         taskQueue.removeUser(login);
+        break;
+      }
+
+      // -- Ideas (GitHub issues) -----------------------------------------------
+      case 'idea:create': {
+        const title = (msg.title || '').trim();
+        if (!title) {
+          ws.send(JSON.stringify({ type: 'idea:error', error: 'Title is required' }));
+          break;
+        }
+        const args = ['issue', 'create', '--repo', 'nukulb/hive', '--title', title, '--label', 'idea'];
+        if (msg.body) { args.push('--body', msg.body); }
+        execFile('gh', args, { timeout: 15000, env: ghExecEnv }, (err, stdout) => {
+          if (err) {
+            ws.send(JSON.stringify({ type: 'idea:error', error: err.message }));
+            return;
+          }
+          const url = (stdout || '').trim();
+          const numMatch = url.match(/\/issues\/(\d+)$/);
+          const issue = { url, number: numMatch ? parseInt(numMatch[1]) : 0, title };
+          ws.send(JSON.stringify({ type: 'idea:created', issue }));
+        });
+        break;
+      }
+
+      case 'idea:list': {
+        execFile('gh', ['issue', 'list', '--repo', 'nukulb/hive', '--label', 'idea', '--state', 'all', '--json', 'number,title,state,url', '--limit', '50'], { timeout: 15000, env: ghExecEnv }, (err, stdout) => {
+          if (err) {
+            ws.send(JSON.stringify({ type: 'idea:error', error: err.message }));
+            return;
+          }
+          try {
+            const ideas = JSON.parse(stdout);
+            ws.send(JSON.stringify({ type: 'idea:list', ideas }));
+          } catch (e) {
+            ws.send(JSON.stringify({ type: 'idea:list', ideas: [] }));
+          }
+        });
         break;
       }
     }
