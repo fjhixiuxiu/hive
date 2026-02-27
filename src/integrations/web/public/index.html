@@ -891,13 +891,17 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 }
 #back-btn { background: none; border: none; color: var(--fg); font-size: 20px; cursor: pointer; padding: 4px 8px; border-radius: 4px; }
 #back-btn:active { background: var(--bg3); }
-#session-title { font-size: 16px; font-weight: 600; flex: 1; }
+#session-info { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
+#session-title { font-size: 16px; font-weight: 600; }
+#session-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 #session-branch { font-size: 12px; color: var(--dim); }
 #track-btn { background: var(--bg3); border: none; color: var(--purple); font-size: 11px; font-weight: 700; padding: 5px 10px; border-radius: 4px; cursor: pointer; }
 #track-btn:active { background: var(--purple); color: var(--bg); }
-#session-activity { font-size: 11px; color: var(--dim); opacity: 0.6; }
+#session-activity { font-size: 11px; color: var(--dim); opacity: 0.85; }
 #restart-btn { background: var(--bg3); border: none; color: var(--orange); font-size: 11px; font-weight: 700; padding: 5px 10px; border-radius: 4px; cursor: pointer; }
 #restart-btn:active { background: var(--orange); color: var(--bg); }
+#kill-btn { background: var(--bg3); border: none; color: #f44; font-size: 11px; font-weight: 700; padding: 5px 10px; border-radius: 4px; cursor: pointer; }
+#kill-btn:active { background: #f44; color: var(--bg); }
 #terminal-wrap { flex: 1; overflow: hidden; padding: 4px; position: relative; touch-action: none; min-height: 0; }
 #terminal-wrap .xterm { height: 100%; }
 .xterm .xterm-viewport { touch-action: pan-y !important; -webkit-overflow-scrolling: touch !important; overscroll-behavior: contain; }
@@ -1064,7 +1068,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   max-width: 360px; border: 1px solid var(--bg3);
 }
 .dialog-title { font-size: 16px; font-weight: 700; margin-bottom: 16px; }
-.slot-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 16px; }
+.slot-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 16px; max-height: 240px; overflow-y: auto; }
 .slot-btn {
   background: var(--bg3); border: none; color: var(--fg); font-size: 16px;
   font-weight: 700; height: 44px; border-radius: 8px; cursor: pointer;
@@ -1467,11 +1471,16 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     <div id="session-panel" class="panel">
       <div id="session-header">
         <button id="back-btn">&larr;</button>
-        <span id="session-title"></span>
-        <span id="session-branch"></span>
-        <button id="track-btn" title="Attach a tracking task to this session">Track</button>
-        <span id="session-activity"></span>
-        <button id="restart-btn" title="Restart Claude">Restart</button>
+        <div id="session-info">
+          <span id="session-title"></span>
+          <span id="session-branch"></span>
+          <span id="session-activity"></span>
+        </div>
+        <div id="session-actions">
+          <button id="track-btn" title="Attach a tracking task to this session">Track</button>
+          <button id="restart-btn" title="Restart Claude">Restart</button>
+          <button id="kill-btn" title="Kill this tmux session">Close</button>
+        </div>
       </div>
       <div class="session-tabs">
         <button class="session-tab active" data-stab="terminal">Terminal</button>
@@ -1869,7 +1878,8 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   let designationDefs = []; // [{ name, agentFiles, description }]
   let agentRoots = [];      // array of scan paths
   let agentFilesList = [];  // cached scan results
-  let spawnSlotMin = 17;
+  let spawnSlotMin = 1;
+  let spawnBaseDir = '~/ai-dev';
   let spawnSlotMax = 32;
   let pmList = [];        // PM objects from server
   let editingPmId = null; // PM being edited (null = creating new)
@@ -2141,6 +2151,10 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     const restartBtn = document.getElementById('restart-btn');
     if (restartBtn) restartBtn.classList.toggle('perm-hidden', !hasPerm('restart'));
 
+    // Kill button (same permission as restart)
+    const killBtn = document.getElementById('kill-btn');
+    if (killBtn) killBtn.classList.toggle('perm-hidden', !hasPerm('restart'));
+
     // Track button (attach task)
     const trackBtn = document.getElementById('track-btn');
     if (trackBtn) trackBtn.classList.toggle('perm-hidden', !hasPerm('create-tasks'));
@@ -2188,7 +2202,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
           authError.style.display = 'block'; authInput.value = ''; authInput.focus();
         }
         break;
-      case 'config': linkTemplates = msg.links || {}; break;
+      case 'config': linkTemplates = msg.links || {}; if (msg.spawnBaseDir) spawnBaseDir = msg.spawnBaseDir; break;
       case 'commands:list': tsCommands = msg.commands || []; renderCommands(tsCommands); break;
       case 'fleet:search:result':
         renderFleetSearchResults(msg.query, msg.results);
@@ -2259,6 +2273,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         break;
       case 'notify': handleNotify(msg); break;
       case 'restart:done': showToast('Restarted', `Session ${msg.session} — claude --resume`, 'success'); break;
+      case 'kill:done': closeSession(); showToast('Closed', `Session ${msg.session} killed`, 'success'); break;
       case 'keys:done': break;
       case 'error':
         // Suppress noisy permission toasts — only show for explicit user actions
@@ -2340,6 +2355,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       case 'spawn:config':
         if (msg.min !== undefined) spawnSlotMin = msg.min;
         if (msg.max !== undefined) spawnSlotMax = msg.max;
+        if (msg.spawnBaseDir) spawnBaseDir = msg.spawnBaseDir;
         break;
       case 'spawn:done':
         if (spawnToast) { spawnToast.remove(); spawnToast = null; }
@@ -2800,6 +2816,13 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     if (!confirm(`Restart Claude in session ${currentSession}?`)) return;
     ws.send(JSON.stringify({ type: 'restart', session: currentSession }));
     showToast('Restarting', `Session ${currentSession}`, 'success');
+  });
+
+  $('#kill-btn').addEventListener('click', () => {
+    if (!currentSession || !ws || ws.readyState !== 1) return;
+    if (!confirm(`Kill session ${currentSession}? This will destroy the tmux session.`)) return;
+    ws.send(JSON.stringify({ type: 'kill', session: currentSession }));
+    showToast('Closing', `Session ${currentSession}`, 'success');
   });
 
   // ── Command buttons ────────────────────────────
@@ -5002,7 +5025,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'spawn:slots' }));
     document.getElementById('spawn-name').value = '';
     document.getElementById('spawn-git-url').value = '';
-    document.getElementById('spawn-base-dir').value = '~/ai-dev';
+    document.getElementById('spawn-base-dir').value = spawnBaseDir;
     document.getElementById('spawn-slot-min').value = spawnSlotMin;
     document.getElementById('spawn-slot-max').value = spawnSlotMax;
     selectedSpawnSlot = null;
@@ -5052,7 +5075,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     grid.innerHTML = '';
     const avSet = new Set(available);
     selectedSpawnSlot = null;
-    const lo = slotMin || spawnSlotMin || 17;
+    const lo = slotMin || spawnSlotMin || 1;
     const hi = slotMax || spawnSlotMax || 32;
     for (let i = lo; i <= hi; i++) {
       const btn = document.createElement('button');
