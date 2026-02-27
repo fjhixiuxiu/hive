@@ -16,6 +16,60 @@ const log = require('../../core/log');
 // Env for gh CLI — ensure /opt/homebrew/bin is in PATH for hivebot
 const ghExecEnv = { ...process.env, PATH: `/opt/homebrew/bin:${process.env.PATH || ''}` };
 
+// ── Contextual action definitions by source type ─────
+const ACTION_DEFS = {
+  'github-pr': [
+    { id: 'approve', label: 'Approve', color: 'var(--green)', confirm: false },
+    { id: 'request-changes', label: 'Request Changes', color: 'var(--red)', confirm: true },
+    { id: 'merge', label: 'Merge', color: 'var(--purple)', confirm: true },
+    { id: 'close-pr', label: 'Close PR', color: 'var(--red)', confirm: true },
+    { id: 'approve-close', label: 'Approve & Close Task', color: 'var(--cyan)', confirm: true },
+  ],
+};
+
+function decorateTaskActions(task) {
+  if (!task.actionContext || !task.actionContext.type) return task;
+  const defs = ACTION_DEFS[task.actionContext.type];
+  if (!defs) return task;
+  return { ...task, actions: defs };
+}
+
+async function executeGithubPrAction(ctx, actionId, pmManager) {
+  const { repo, prNumber } = ctx;
+  const headers = pmManager._githubHeaders();
+
+  switch (actionId) {
+    case 'approve': {
+      await pmManager._httpMethod('POST', `https://api.github.com/repos/${repo}/pulls/${prNumber}/reviews`, headers, { event: 'APPROVE' });
+      return { message: `Approved PR #${prNumber}`, closeTask: false };
+    }
+    case 'request-changes': {
+      await pmManager._httpMethod('POST', `https://api.github.com/repos/${repo}/pulls/${prNumber}/reviews`, headers, { event: 'REQUEST_CHANGES', body: 'Changes requested via Hive' });
+      return { message: `Requested changes on PR #${prNumber}`, closeTask: false };
+    }
+    case 'merge': {
+      await pmManager._httpMethod('PUT', `https://api.github.com/repos/${repo}/pulls/${prNumber}/merge`, headers, { merge_method: 'squash' });
+      return { message: `Merged PR #${prNumber}`, closeTask: false };
+    }
+    case 'close-pr': {
+      await pmManager._httpMethod('PATCH', `https://api.github.com/repos/${repo}/pulls/${prNumber}`, headers, { state: 'closed' });
+      return { message: `Closed PR #${prNumber}`, closeTask: false };
+    }
+    case 'approve-close': {
+      await pmManager._httpMethod('POST', `https://api.github.com/repos/${repo}/pulls/${prNumber}/reviews`, headers, { event: 'APPROVE' });
+      return { message: `Approved PR #${prNumber}`, closeTask: true };
+    }
+    default:
+      throw new Error(`Unknown action: ${actionId}`);
+  }
+}
+
+async function executeTaskAction(task, actionId, pmManager) {
+  const ctx = task.actionContext;
+  if (ctx.type === 'github-pr') return executeGithubPrAction(ctx, actionId, pmManager);
+  throw new Error(`Unknown action context type: ${ctx.type}`);
+}
+
 /**
  * Detect the Tailscale interface IP address.
  * Tailscale uses the CGNAT range: 100.64.0.0/10
@@ -232,7 +286,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     }
     sendFleetStatus(ws);
     if (taskQueue) {
-      ws.send(JSON.stringify({ type: 'tasks:list', tasks: taskQueue.getTasksList() }));
+      ws.send(JSON.stringify({ type: 'tasks:list', tasks: taskQueue.getTasksList().map(decorateTaskActions) }));
       ws.send(JSON.stringify({ type: 'auto:status', sessions: taskQueue.getAutoSessions() }));
       ws.send(JSON.stringify({ type: 'approvals:list', approvals: taskQueue.getPendingApprovals() }));
       const feedData = taskQueue.getFeed(null, 50);
@@ -732,6 +786,41 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
           }
         } else {
           ws.send(JSON.stringify({ type: 'error', message: 'Cannot resume task — session may be busy or task not resumable' }));
+        }
+        break;
+      }
+
+      case 'task:action': {
+        if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'cancel')) break;
+        const actionTask = taskQueue.tasks.get(msg.taskId);
+        if (!actionTask || !actionTask.actionContext) {
+          ws.send(JSON.stringify({ type: 'task:action:result', taskId: msg.taskId, actionId: msg.actionId, ok: false, error: 'Task not found or has no actions' }));
+          break;
+        }
+        try {
+          const pmManager = taskQueue._pmManager;
+          const result = await executeTaskAction(actionTask, msg.actionId, pmManager);
+          broadcast({ type: 'task:action:result', taskId: msg.taskId, actionId: msg.actionId, ok: true, message: result.message });
+          if (result.closeTask) {
+            let actionSnap = null, actionSnapCols = 0;
+            if (actionTask.assignedTo) {
+              try {
+                const found = await fleet.findSession(config, router, actionTask.assignedTo);
+                if (found) {
+                  const node = router.getNode(found.nodeId);
+                  const paneTarget = `${found.name}:.${config.sessions.claudePane}`;
+                  actionSnap = await node.exec(`tmux capture-pane -e -p -S -500 -t "${paneTarget}" 2>/dev/null`) || null;
+                  const colsStr = await node.exec(`tmux display-message -p -t "${paneTarget}" "#{pane_width}" 2>/dev/null`);
+                  actionSnapCols = parseInt(colsStr) || 0;
+                }
+              } catch {}
+            }
+            const completed = taskQueue.completeTask(msg.taskId, result.message, actionSnap, actionSnapCols);
+            if (completed) broadcast({ type: 'task:completed', task: decorateTaskActions(completed) });
+          }
+        } catch (err) {
+          ws.send(JSON.stringify({ type: 'task:action:result', taskId: msg.taskId, actionId: msg.actionId, ok: false, error: err.message }));
         }
         break;
       }
@@ -1267,12 +1356,12 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
   // -- TaskQueue event bridge ---------------------------------------------
 
   if (taskQueue) {
-    taskQueue.on('task:created', (task) => broadcast({ type: 'task:created', task }));
-    taskQueue.on('task:dispatched', (task) => broadcast({ type: 'task:dispatched', task }));
-    taskQueue.on('task:completed', (task) => broadcast({ type: 'task:completed', task }));
-    taskQueue.on('task:failed', (task) => broadcast({ type: 'task:failed', task }));
-    taskQueue.on('task:cancelled', (task) => broadcast({ type: 'task:cancelled', task }));
-    taskQueue.on('task:updated', (task) => broadcast({ type: 'task:updated', task }));
+    taskQueue.on('task:created', (task) => broadcast({ type: 'task:created', task: decorateTaskActions(task) }));
+    taskQueue.on('task:dispatched', (task) => broadcast({ type: 'task:dispatched', task: decorateTaskActions(task) }));
+    taskQueue.on('task:completed', (task) => broadcast({ type: 'task:completed', task: decorateTaskActions(task) }));
+    taskQueue.on('task:failed', (task) => broadcast({ type: 'task:failed', task: decorateTaskActions(task) }));
+    taskQueue.on('task:cancelled', (task) => broadcast({ type: 'task:cancelled', task: decorateTaskActions(task) }));
+    taskQueue.on('task:updated', (task) => broadcast({ type: 'task:updated', task: decorateTaskActions(task) }));
     taskQueue.on('auto:changed', (sessions) => broadcast({ type: 'auto:status', sessions }));
     taskQueue.on('feed:new', (entry) => broadcast({ type: 'feed:new', entry }));
     taskQueue.on('approval:new', (approval) => broadcast({ type: 'approval:new', approval }));

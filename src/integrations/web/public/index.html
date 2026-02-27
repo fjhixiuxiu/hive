@@ -1200,6 +1200,18 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .checklist-tpl-count { color: var(--dim); font-size: 11px; }
 .checklist-tpl-actions button { background: none; border: none; color: var(--dim); cursor: pointer; font-size: 12px; padding: 2px 6px; }
 .checklist-tpl-actions button:hover { color: var(--fg); }
+
+/* ── Actions popup (contextual task actions) ────────── */
+.actions-tab { margin-left: 4px !important; }
+.actions-popup { position: absolute; top: 100%; right: 8px; background: var(--bg2); border: 1px solid var(--bg3); border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); z-index: 1000; margin-top: 4px; display: flex; flex-direction: column; width: 240px; }
+.actions-popup-header { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid var(--bg3); font-size: 12px; font-weight: 700; color: var(--dim); text-transform: uppercase; letter-spacing: 0.5px; }
+.actions-popup-close { background: none; border: none; color: var(--dim); cursor: pointer; font-size: 16px; padding: 0 4px; }
+.actions-popup-items { padding: 4px 0; }
+.actions-popup-item { display: flex; align-items: center; gap: 8px; padding: 8px 12px; font-size: 13px; font-weight: 600; cursor: pointer; background: none; border: none; width: 100%; text-align: left; transition: background 0.1s; }
+.actions-popup-item:hover { background: var(--bg3); }
+.actions-popup-item.loading { opacity: 0.4; pointer-events: none; }
+.actions-popup-item .action-label { flex: 1; }
+.actions-popup-item .action-confirm-icon { font-size: 10px; color: var(--dim); }
 </style>
 </head>
 <body>
@@ -1298,6 +1310,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
             <button class="session-tab" data-tstab="git">Git</button>
             <button class="session-tab" data-tstab="comments">Comments</button>
             <button class="session-tab checklist-tab" id="ts-checklist-tab" style="display:none">&#9745; Checklist</button>
+            <button class="session-tab actions-tab" id="ts-actions-tab" style="display:none">&#9889; Actions</button>
           </div>
           <div class="tasks-session-empty" id="tasks-session-empty">Select an in-progress task to view its session</div>
           <div class="session-tab-content active" id="ts-terminal-content" style="display:none">
@@ -1794,6 +1807,18 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   </div>
 </div>
 
+<!-- Action confirm dialog -->
+<div class="dialog-overlay" id="action-confirm-dialog">
+  <div class="dialog" style="max-width:380px">
+    <div class="dialog-title" id="action-confirm-title">Confirm Action</div>
+    <div id="action-confirm-body" style="font-size:13px;color:var(--dim);margin-bottom:16px;line-height:1.5"></div>
+    <div class="dialog-actions">
+      <button class="dialog-btn primary" id="action-confirm-submit">Confirm</button>
+      <button class="dialog-btn" id="action-confirm-cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <!-- Toasts -->
 <div id="toasts"></div>
 
@@ -2275,12 +2300,12 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       case 'task:created': case 'task:dispatched': case 'task:completed': case 'task:failed': {
         const idx = tasks.findIndex(t => t.id === msg.task.id);
         if (idx >= 0) tasks[idx] = msg.task; else tasks.unshift(msg.task);
-        renderTasks(); updateTasksBadge(); updateChecklistButtons(); break;
+        renderTasks(); updateTasksBadge(); updateChecklistButtons(); updateActionsButton(); break;
       }
       case 'task:updated': {
         const idx = tasks.findIndex(t => t.id === msg.task.id);
         if (idx >= 0) tasks[idx] = msg.task; else tasks.unshift(msg.task);
-        renderTasks(); updateTasksBadge(); updateChecklistButtons(); refreshChecklistPopup(); break;
+        renderTasks(); updateTasksBadge(); updateChecklistButtons(); updateActionsButton(); refreshChecklistPopup(); break;
       }
       case 'task:cancelled': {
         const idx = tasks.findIndex(t => t.id === msg.task.id);
@@ -2290,6 +2315,15 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       }
       case 'task:snapshot': {
         showTaskSnapshotContent(msg.taskId, msg.content, msg.cols);
+        break;
+      }
+      case 'task:action:result': {
+        document.querySelectorAll(`.actions-popup-item[data-task-id="${msg.taskId}"]`).forEach(b => b.classList.remove('loading'));
+        if (msg.ok) {
+          showToast('Action Complete', msg.message || 'Done', 'success');
+        } else {
+          showToast('Action Failed', msg.error || 'Unknown error', 'error');
+        }
         break;
       }
       case 'auto:status': autoSessions = new Set(msg.sessions || []); renderAutoGrid(); if (activeTab === 'fleet-panel') renderGrid(); break;
@@ -2584,6 +2618,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     if (sessionTask) renderCommentPanel(sessionTask.id, 'session');
     updateCommentBadge('session', sessionTask);
     updateChecklistButtons();
+    updateActionsButton();
 
     if (!term) {
       term = new Terminal({
@@ -3155,8 +3190,9 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     document.getElementById('tasks-session-empty').style.display = 'none';
     document.getElementById('tasks-session-header').style.display = '';
 
-    // Checklist bar is always visible when a task is selected
+    // Checklist/actions bar is always visible when a task is selected
     updateChecklistButtons();
+    updateActionsButton();
 
     // Always show tabs (checklist tab needs it); hide interactive-only controls
     tabs.style.display = '';
@@ -3212,6 +3248,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     showTsSessionControls(true);
     updateTasksStatusLine();
     updateChecklistButtons();
+    updateActionsButton();
 
     // Subscribe
     if (ws && ws.readyState === 1) {
@@ -3242,6 +3279,8 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     document.getElementById('tasks-session-tabs').style.display = 'none';
     document.getElementById('ts-open-session').style.display = 'none';
     document.getElementById('ts-checklist-tab').style.display = 'none';
+    document.getElementById('ts-actions-tab').style.display = 'none';
+    closeActionsPopup();
   }
 
   function showTaskSnapshot(taskId) {
@@ -3443,9 +3482,16 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       openTaskSession(task.assignedTo);
     } else if (task.status === 'completed' || task.status === 'failed') {
       showTaskSnapshot(task.id);
+    } else if (task.status === 'queued' && task.actions && task.actions.length) {
+      // Show session panel tabs for queued tasks with actions
+      document.getElementById('tasks-session-tabs').style.display = '';
+      document.getElementById('tasks-session-empty').style.display = 'none';
+      document.getElementById('tasks-session-title').textContent = `PR #${(task.actionContext && task.actionContext.prNumber) || ''}`;
     }
     renderCommentPanel(task.id);
     updateChecklistButtons();
+    updateActionsButton();
+    autoOpenActionsPopup();
     // Scroll selected card into view
     requestAnimationFrame(() => {
       const card = tasksScroll.querySelector(`.task-card[data-id="${taskId}"]`);
@@ -3573,6 +3619,8 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
           openTaskSession(task.assignedTo);
           renderCommentPanel(task.id);
           updateChecklistButtons();
+          updateActionsButton();
+          autoOpenActionsPopup();
           // Update selection highlight
           tasksScroll.querySelectorAll('.task-card').forEach(c => c.classList.remove('selected'));
           card.classList.add('selected');
@@ -3581,6 +3629,8 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
           showTaskSnapshot(task.id);
           renderCommentPanel(task.id);
           updateChecklistButtons();
+          updateActionsButton();
+          autoOpenActionsPopup();
           // Update selection highlight
           tasksScroll.querySelectorAll('.task-card').forEach(c => c.classList.remove('selected'));
           card.classList.add('selected');
@@ -3588,6 +3638,14 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
           tasksSelectedTaskId = task.id;
           renderCommentPanel(task.id);
           updateChecklistButtons();
+          updateActionsButton();
+          // Show session panel tabs if task has actions
+          if (task.actions && task.actions.length) {
+            document.getElementById('tasks-session-tabs').style.display = '';
+            document.getElementById('tasks-session-empty').style.display = 'none';
+            document.getElementById('tasks-session-title').textContent = `PR #${(task.actionContext && task.actionContext.prNumber) || ''}`;
+          }
+          autoOpenActionsPopup();
           tasksScroll.querySelectorAll('.task-card').forEach(c => c.classList.remove('selected'));
           card.classList.add('selected');
         }
@@ -4080,6 +4138,144 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     if (!existingPopup) return;
     const anchorTab = existingPopup.parentElement.querySelector('.checklist-tab');
     if (anchorTab) renderChecklistPopup(checklistPopupTaskId, anchorTab);
+  }
+
+  // ── Actions popup (contextual task actions) ─────────
+  let actionsPopupTaskId = null;
+  let actionConfirmTaskId = null;
+  let actionConfirmActionId = null;
+
+  function getActiveTaskForActions(ctx) {
+    if (ctx === 'tasks') {
+      return tasksSelectedTaskId ? tasks.find(t => t.id === tasksSelectedTaskId) : null;
+    }
+    return null;
+  }
+
+  function updateActionsButton() {
+    const tab = document.getElementById('ts-actions-tab');
+    if (!tab) return;
+    const task = getActiveTaskForActions('tasks');
+    if (!task || !task.actions || !task.actions.length) { tab.style.display = 'none'; return; }
+    tab.style.display = '';
+    tab.textContent = `\u26A1 Actions (${task.actions.length})`;
+    tab.className = 'session-tab actions-tab';
+  }
+
+  function closeActionsPopup() {
+    actionsPopupTaskId = null;
+    document.querySelectorAll('.actions-popup').forEach(p => p.remove());
+  }
+
+  function renderActionsPopup(taskId, anchorBtn) {
+    closeActionsPopup();
+    const task = tasks.find(t => t.id === taskId);
+    if (!task || !task.actions || !task.actions.length) return;
+    actionsPopupTaskId = taskId;
+
+    const popup = document.createElement('div');
+    popup.className = 'actions-popup';
+
+    let html = `<div class="actions-popup-header"><span>Actions</span><button class="actions-popup-close">&times;</button></div>`;
+    html += '<div class="actions-popup-items">';
+    for (const a of task.actions) {
+      const confirmIcon = a.confirm ? '<span class="action-confirm-icon" title="Requires confirmation">\u26A0</span>' : '';
+      html += `<button class="actions-popup-item" data-task-id="${task.id}" data-action-id="${a.id}" data-confirm="${!!a.confirm}" style="color:${a.color}"><span class="action-label">${esc(a.label)}</span>${confirmIcon}</button>`;
+    }
+    html += '</div>';
+    popup.innerHTML = html;
+
+    const tabBar = anchorBtn.closest('.tasks-session-tabs, .session-tabs');
+    if (tabBar) {
+      tabBar.style.position = 'relative';
+      tabBar.appendChild(popup);
+    } else {
+      anchorBtn.parentElement.style.position = 'relative';
+      anchorBtn.parentElement.appendChild(popup);
+    }
+
+    popup.querySelector('.actions-popup-close').addEventListener('click', closeActionsPopup);
+
+    popup.querySelectorAll('.actions-popup-item').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const tId = btn.dataset.taskId;
+        const aId = btn.dataset.actionId;
+        const needsConfirm = btn.dataset.confirm === 'true';
+        if (needsConfirm) {
+          openActionConfirmDialog(tId, aId, btn.querySelector('.action-label').textContent);
+        } else {
+          sendTaskAction(tId, aId, btn);
+        }
+      });
+    });
+  }
+
+  function sendTaskAction(taskId, actionId, btn) {
+    if (!ws || ws.readyState !== 1) return;
+    if (btn) btn.classList.add('loading');
+    ws.send(JSON.stringify({ type: 'task:action', taskId, actionId }));
+  }
+
+  function openActionConfirmDialog(taskId, actionId, label) {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+    actionConfirmTaskId = taskId;
+    actionConfirmActionId = actionId;
+
+    const action = (task.actions || []).find(a => a.id === actionId);
+    const title = action ? action.label : label;
+    const ctx = task.actionContext || {};
+    let detail = '';
+    if (ctx.type === 'github-pr') detail = `PR #${ctx.prNumber} in ${ctx.repo}`;
+
+    document.getElementById('action-confirm-title').textContent = `Confirm: ${title}`;
+    document.getElementById('action-confirm-body').textContent = detail ? `This will ${title.toLowerCase()} for ${detail}` : `This will ${title.toLowerCase()} this task`;
+    document.getElementById('action-confirm-submit').style.background = action ? action.color : 'var(--red)';
+    document.getElementById('action-confirm-dialog').classList.add('visible');
+  }
+
+  document.getElementById('action-confirm-submit').addEventListener('click', () => {
+    if (actionConfirmTaskId && actionConfirmActionId) {
+      const btn = document.querySelector(`.actions-popup-item[data-task-id="${actionConfirmTaskId}"][data-action-id="${actionConfirmActionId}"]`);
+      sendTaskAction(actionConfirmTaskId, actionConfirmActionId, btn);
+    }
+    document.getElementById('action-confirm-dialog').classList.remove('visible');
+    actionConfirmTaskId = null;
+    actionConfirmActionId = null;
+  });
+
+  document.getElementById('action-confirm-cancel').addEventListener('click', () => {
+    document.getElementById('action-confirm-dialog').classList.remove('visible');
+    actionConfirmTaskId = null;
+    actionConfirmActionId = null;
+  });
+
+  // Wire actions tab button
+  document.getElementById('ts-actions-tab').addEventListener('click', (e) => {
+    e.stopPropagation();
+    const task = getActiveTaskForActions('tasks');
+    if (!task) return;
+    if (actionsPopupTaskId === task.id) { closeActionsPopup(); return; }
+    renderActionsPopup(task.id, e.currentTarget);
+  });
+
+  // Close actions popup on click outside
+  document.addEventListener('click', (e) => {
+    if (!actionsPopupTaskId) return;
+    if (e.target.closest('.actions-popup') || e.target.closest('.actions-tab')) return;
+    if (e.target.closest('#action-confirm-dialog')) return;
+    closeActionsPopup();
+  });
+
+  // Auto-open actions popup when task with actions is selected
+  function autoOpenActionsPopup() {
+    const task = getActiveTaskForActions('tasks');
+    if (!task || !task.actions || !task.actions.length) { closeActionsPopup(); return; }
+    const tab = document.getElementById('ts-actions-tab');
+    if (tab && tab.style.display !== 'none') {
+      renderActionsPopup(task.id, tab);
+    }
   }
 
   // ── Checklist template management (More panel) ─────
