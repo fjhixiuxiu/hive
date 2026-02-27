@@ -184,23 +184,35 @@ function createSlackBot(taskQueue, config, router, pmManager) {
     const threadTs = event.thread_ts || null;
     const replyTs = event.thread_ts || event.ts;
 
-    // ── Follow-up: active task in this thread? Send directly to session ──
+    // ── Follow-up: active task in this thread? Relay or append ──
     if (threadTs) {
       const activeTask = findActiveTaskForThread(threadTs);
-      if (activeTask && activeTask.status === 'dispatched' && activeTask.assignedTo) {
-        try {
-          const found = await fleet.findSession(config, router, activeTask.assignedTo);
-          if (found) {
-            const node = router.getNode(found.nodeId);
-            await relay.tell(config, node, found.name, text, { vimMode: taskQueue.vimMode });
-            await say({
-              text: `:bee: Sent to session ${activeTask.assignedTo}:\n> ${text}`,
-              thread_ts: replyTs,
-            });
-            return;
+      if (activeTask) {
+        if (activeTask.status === 'dispatched' && activeTask.assignedTo) {
+          // Running on a session — relay directly
+          try {
+            const found = await fleet.findSession(config, router, activeTask.assignedTo);
+            if (found) {
+              const node = router.getNode(found.nodeId);
+              await relay.tell(config, node, found.name, text, { vimMode: taskQueue.vimMode });
+              await say({
+                text: `:bee: Sent to session ${activeTask.assignedTo}:\n> ${text}`,
+                thread_ts: replyTs,
+              });
+              return;
+            }
+          } catch (err) {
+            console.error('Slack follow-up relay error:', err.message);
           }
-        } catch (err) {
-          console.error('Slack follow-up relay error:', err.message);
+        } else if (activeTask.status === 'queued') {
+          // Still queued — append follow-up to the task text
+          activeTask.text += `\n\nFollow-up:\n${text}`;
+          taskQueue._saveState();
+          await say({
+            text: `:bee: Appended to queued task:\n> ${text}`,
+            thread_ts: replyTs,
+          });
+          return;
         }
       }
     }
