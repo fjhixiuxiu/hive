@@ -8,7 +8,6 @@ const { promisify } = require('util');
 const execAsync = promisify(exec);
 const relay = require('./relay');
 const fleet = require('./fleet');
-const log = require('./log');
 
 const STATE_FILE = path.join(__dirname, '..', '..', '.hive-state.json');
 
