@@ -1,3 +1,4 @@
+const log = require('./log');
 const EventEmitter = require('events');
 const fs = require('fs');
 const path = require('path');
@@ -822,18 +823,18 @@ class TaskQueue extends EventEmitter {
 
   async spawnSession({ num, baseDir, name, gitUrl } = {}) {
     if (!name) throw new Error('Agent name is required');
-    console.log(`[spawn] starting: name=${name}, num=${num ?? 'auto'}, baseDir=${baseDir || 'default'}, gitUrl=${gitUrl || 'none'}`);
+    log.info(`[spawn] starting: name=${name}, num=${num ?? 'auto'}, baseDir=${baseDir || 'default'}, gitUrl=${gitUrl || 'none'}`);
 
     // Resolve base directory
     baseDir = (baseDir || process.env.HIVE_REPO_DIR || '~/ai-dev').replace(/^~/, os.homedir());
-    console.log(`[spawn] resolved baseDir=${baseDir}`);
+    log.info(`[spawn] resolved baseDir=${baseDir}`);
 
     // Pick slot
     if (num === undefined || num === null) {
       const slots = await this.getAvailableSlots();
       if (!slots.length) throw new Error(`No available slots (${this.spawnSlotMin}-${this.spawnSlotMax} all occupied)`);
       num = slots[0];
-      console.log(`[spawn] auto-picked slot ${num}`);
+      log.info(`[spawn] auto-picked slot ${num}`);
     }
     if (num < this.spawnSlotMin || num > this.spawnSlotMax) throw new Error(`Spawn slots must be ${this.spawnSlotMin}-${this.spawnSlotMax}`);
 
@@ -844,7 +845,7 @@ class TaskQueue extends EventEmitter {
 
     // Build repo path: baseDir/name+num (e.g. ~/ai-dev/ios17)
     const repoDir = path.join(baseDir, `${name}${num}`);
-    console.log(`[spawn] repoDir=${repoDir}`);
+    log.info(`[spawn] repoDir=${repoDir}`);
 
     // Clone or create directory
     if (gitUrl) {
@@ -867,12 +868,12 @@ class TaskQueue extends EventEmitter {
       path.join(os.homedir(), 'dev', 'agents', 'tmux', 'agent.yml')
     ).replace(/^~/, os.homedir());
     const tmuxCmd = `/bin/zsh -lc 'tmuxinator start -p ${agentYml} N=${num} ROOT="${repoDir}" --no-attach'`;
-    console.log(`[spawn] running: ${tmuxCmd}`);
+    log.info(`[spawn] running: ${tmuxCmd}`);
     try {
       await execAsync(tmuxCmd, { timeout: 15000 });
-      console.log(`[spawn] tmuxinator started session ${num}`);
+      log.info(`[spawn] tmuxinator started session ${num}`);
     } catch (err) {
-      console.error(`[spawn] tmuxinator failed: ${err.message}`);
+      log.error(`[spawn] tmuxinator failed: ${err.message}`);
       throw new Error(`Failed to start session ${num}: ${err.message}`);
     }
 
