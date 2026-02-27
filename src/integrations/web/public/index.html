@@ -3206,15 +3206,17 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   }
 
   function openTaskSession(sessionNum) {
-    if (tasksSessionNum === String(sessionNum)) return;
-    // Unsubscribe from previous
+    const sameSession = tasksSessionNum === String(sessionNum);
+    // Unsubscribe from previous (even if same — forces re-subscribe for fresh data)
     if (tasksSessionNum && ws && ws.readyState === 1) {
       ws.send(JSON.stringify({ type: 'terminal:unsubscribe' }));
     }
     tasksSessionNum = String(sessionNum);
-    tsPaneCols = 0; // reset until we get pane width from server
-    tsUserScrolledUp = false; tsPendingContent = null; tsLastContent = '';
-    ensureTasksSessionTerm();
+    if (!sameSession) {
+      tsPaneCols = 0; // reset until we get pane width from server
+      tsUserScrolledUp = false; tsPendingContent = null; tsLastContent = '';
+      ensureTasksSessionTerm();
+    }
 
     // Update header
     const session = fleetData.find(s => s.num === sessionNum);
@@ -3236,7 +3238,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     updateTasksStatusLine();
     updateChecklistButtons();
 
-    // Subscribe
+    // Subscribe (always — ensures fresh subscription even after tab switches)
     if (ws && ws.readyState === 1) {
       ws.send(JSON.stringify({ type: 'terminal:subscribe', session: tasksSessionNum }));
     }
