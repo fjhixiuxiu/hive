@@ -699,6 +699,25 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
         break;
       }
 
+      case 'task:resume': {
+        if (!taskQueue) break;
+        const task = taskQueue.resumeTask(msg.taskId);
+        if (task) {
+          broadcast({ type: 'task:dispatched', task });
+          // If a newer task ran in this session, send /resume to reload the conversation
+          if (msg.sendResume && task.assignedTo) {
+            const found = await fleet.findSession(config, router, task.assignedTo);
+            if (found) {
+              const node = router.getNode(found.nodeId);
+              relay.tell(config, node, found.name, '/resume', { vimMode: taskQueue.vimMode }).catch(() => {});
+            }
+          }
+        } else {
+          ws.send(JSON.stringify({ type: 'error', message: 'Cannot resume task — session may be busy or task not resumable' }));
+        }
+        break;
+      }
+
       case 'auto:toggle': {
         if (!taskQueue) break;
         if (!checkPermission(ws, user, 'dispatch')) break;

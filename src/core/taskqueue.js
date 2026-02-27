@@ -209,6 +209,36 @@ class TaskQueue extends EventEmitter {
     return task;
   }
 
+  /**
+   * Resume a completed/failed task — put it back to dispatched (in-progress)
+   * on the same session it originally ran on, as a manual task so it won't
+   * auto-complete when the session goes idle.
+   */
+  resumeTask(taskId) {
+    const task = this.tasks.get(taskId);
+    if (!task) return null;
+    if (task.status !== 'completed' && task.status !== 'failed') return null;
+    if (!task.assignedTo) return null;
+
+    // Check if session already has an active task
+    const existingTaskId = this.activeTaskBySession.get(task.assignedTo);
+    if (existingTaskId && existingTaskId !== taskId) return null;
+
+    task.status = 'dispatched';
+    task.mode = 'manual';
+    task.completedAt = null;
+    task.lastActivityAt = Date.now();
+
+    this.activeTaskBySession.set(task.assignedTo, task.id);
+    // Don't set dispatchLock — manual tasks don't hold the lock
+
+    this.emit('task:dispatched', task);
+    this.pushFeed('task', task.assignedTo,
+      `Task resumed on session ${task.assignedTo}: "${task.text}"`);
+    this._saveState();
+    return task;
+  }
+
   completeTask(taskId, result, snapshot, snapshotCols) {
     const task = this.tasks.get(taskId);
     if (!task || task.status !== 'dispatched') return null;
@@ -333,7 +363,10 @@ class TaskQueue extends EventEmitter {
     // Complete active task for this session
     const taskId = this.activeTaskBySession.get(num);
     if (taskId) {
-      this.completeTask(taskId, null, preview || null, paneCols);
+      const task = this.tasks.get(taskId);
+      if (!task || task.mode !== 'manual') {
+        this.completeTask(taskId, null, preview || null, paneCols);
+      }
     }
     this.dispatchLock.delete(num);
 

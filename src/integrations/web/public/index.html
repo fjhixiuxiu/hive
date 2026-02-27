@@ -1133,6 +1133,11 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .comment-count { font-size: 11px; color: var(--dim); margin-left: 4px; }
 .task-link-btn { background: none; border: none; color: var(--dim); font-size: 11px; cursor: pointer; padding: 0 4px; opacity: 0.5; }
 .task-link-btn:hover { opacity: 1; color: var(--purple); }
+.task-resume-btn {
+  background: none; border: none; color: var(--cyan); font-size: 11px;
+  font-weight: 600; cursor: pointer; padding: 2px 6px;
+}
+.task-resume-btn:hover { color: var(--fg); }
 
 /* ── Admin panel (user permissions) ── */
 .admin-user-row { display: flex; align-items: center; gap: 10px; padding: 10px; background: var(--bg); border-radius: 6px; margin-bottom: 6px; flex-wrap: wrap; }
@@ -3422,6 +3427,49 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       });
     });
 
+    // Wire resume buttons (completed tab)
+    tasksScroll.querySelectorAll('.task-resume-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const taskId = btn.dataset.id;
+        const sessionNum = parseInt(btn.dataset.session, 10);
+        const task = tasks.find(t => t.id === taskId);
+        if (!task) return;
+
+        // Validate session state
+        const session = fleetData.find(s => s.num === sessionNum);
+        if (!session || session.state === 'off') {
+          showToast('Cannot resume', 'Session is not running', 'error');
+          return;
+        }
+
+        // Check if session already has an active task
+        const busyTask = tasks.find(t => t.status === 'dispatched' && t.assignedTo === sessionNum);
+        if (busyTask) {
+          showToast('Cannot resume', `Session ${sessionNum} is busy with another task`, 'error');
+          return;
+        }
+
+        // Determine if we need to send /resume (a different task ran after this one)
+        const laterTask = tasks.find(t =>
+          t.assignedTo === sessionNum &&
+          t.id !== taskId &&
+          (t.status === 'completed' || t.status === 'failed') &&
+          t.completedAt && task.completedAt &&
+          t.completedAt > task.completedAt
+        );
+
+        ws.send(JSON.stringify({ type: 'task:resume', taskId, sendResume: !!laterTask }));
+        showToast('Resuming', `Task resumed on session ${sessionNum}`, 'success');
+
+        // Switch to In Progress tab
+        activeTaskTab = 'inprogress';
+        document.querySelectorAll('.tasks-tab').forEach(tab =>
+          tab.classList.toggle('active', tab.dataset.tab === 'inprogress'));
+        renderTasks();
+      });
+    });
+
     // Wire card clicks
     tasksScroll.querySelectorAll('.task-card').forEach(card => {
       card.addEventListener('click', () => {
@@ -3603,9 +3651,11 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     if (t.assignedTo) meta += ` · session ${t.assignedTo}`;
     if (t.status === 'failed') meta += ' · failed';
     const snippet = t.result ? `<div class="task-text" style="font-size:12px;color:var(--dim);margin-top:2px">${esc(t.result.substring(0, 80))}</div>` : '';
+    const sessionBadge = t.assignedTo ? `<span class="task-session-badge">S:${t.assignedTo}</span>` : '';
+    const resumeBtn = t.assignedTo ? `<button class="task-resume-btn" data-id="${t.id}" data-session="${t.assignedTo}">Resume</button>` : '';
     const linkBtn = `<button class="task-link-btn" data-id="${t.id}" title="Copy link">&#128279;</button>`;
     const checked = selectedTaskIds.has(t.id) ? ' checked' : '';
-    return `<div class="task-card-row"><input type="checkbox" class="task-checkbox" data-id="${t.id}"${checked}><div class="task-card ${t.status}${selected}" data-id="${t.id}"><div class="task-text">${esc(t.text)}</div>${snippet}<div class="task-meta"><span>${meta} · ${ago}</span>${sourceBadge}${prBadge}${originBadge}${desigBadge}${clBadge}${commentBadge}${linkBtn}</div></div></div>`;
+    return `<div class="task-card-row"><input type="checkbox" class="task-checkbox" data-id="${t.id}"${checked}><div class="task-card ${t.status}${selected}" data-id="${t.id}"><div class="task-text">${esc(t.text)}</div>${snippet}<div class="task-meta"><span>${meta} · ${ago}</span>${sourceBadge}${prBadge}${originBadge}${desigBadge}${clBadge}${commentBadge}${linkBtn}${sessionBadge}${resumeBtn}</div></div></div>`;
   }
 
   // ── Comment panel (rendered into tab content divs) ─────
