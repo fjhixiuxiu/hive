@@ -441,8 +441,9 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .task-card.dispatched { border-left-color: var(--yellow); }
 .task-card.completed { border-left-color: var(--green); opacity: 0.7; }
 .task-card.failed { border-left-color: var(--red); opacity: 0.7; }
-.task-card.selected { border-left-color: var(--purple); background: rgba(189,147,249,0.08); }
-.task-text { font-size: 14px; font-weight: 500; margin-bottom: 4px; }
+.task-card.selected { border-left-color: var(--purple); background: rgba(189,147,249,0.12); box-shadow: inset 0 0 0 1px rgba(189,147,249,0.25); opacity: 1; }
+.task-card.selected .task-text { color: var(--fg); }
+.task-text { font-size: 14px; font-weight: 500; margin-bottom: 4px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .task-meta { font-size: 12px; color: var(--dim); display: flex; gap: 8px; align-items: center; }
 .task-cancel {
   margin-left: auto; background: none; border: none; color: var(--red);
@@ -501,6 +502,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 }
 .picker-btn.selected { background: var(--purple); color: var(--bg); }
 .picker-btn:active { background: var(--purple); color: var(--bg); }
+.picker-btn.disabled { opacity: 0.35; cursor: not-allowed; }
 
 /* ── Tasks session pane ─────────────── */
 .tasks-session-header {
@@ -2543,6 +2545,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       if (ws && ws.readyState === 1) {
         ws.send(JSON.stringify({ type: 'terminal:subscribe', session: currentSession, cols: term.cols, rows: term.rows }));
       }
+      setTimeout(() => { const el = document.getElementById('terminal-wrap'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'end' }); }, 100);
     });
   }
 
@@ -2893,13 +2896,21 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 
   function renderDialogSessionPicker() {
     taskDialogPicker.innerHTML = '';
-    const idle = fleetData.filter(s => s.state === 'idle');
-    for (const s of idle) {
-      const btn = document.createElement('button'); btn.className = `picker-btn${manualTarget === s.num ? ' selected' : ''}`; btn.textContent = s.num;
-      btn.addEventListener('click', () => { manualTarget = s.num; taskDialogPicker.querySelectorAll('.picker-btn').forEach(b => b.classList.remove('selected')); btn.classList.add('selected'); });
+    const sessions = fleetData;
+    for (const s of sessions) {
+      const activeTask = tasks.find(t => t.assignedTo === s.num && (t.status === 'dispatched' || t.status === 'queued'));
+      const busy = s.state !== 'idle' || !!activeTask;
+      const btn = document.createElement('button');
+      btn.className = `picker-btn${manualTarget === s.num ? ' selected' : ''}${busy ? ' disabled' : ''}`;
+      btn.textContent = s.num;
+      if (busy) {
+        btn.title = activeTask ? `Busy: ${activeTask.text}` : `State: ${s.state}`;
+      } else {
+        btn.addEventListener('click', () => { manualTarget = s.num; taskDialogPicker.querySelectorAll('.picker-btn').forEach(b => b.classList.remove('selected')); btn.classList.add('selected'); });
+      }
       taskDialogPicker.appendChild(btn);
     }
-    if (!idle.length) taskDialogPicker.innerHTML = '<span style="color:var(--dim);font-size:12px;padding:8px">No idle sessions</span>';
+    if (!sessions.length) taskDialogPicker.innerHTML = '<span style="color:var(--dim);font-size:12px;padding:8px">No sessions available</span>';
   }
 
   function openTaskDialog(taskId) {
@@ -3135,6 +3146,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       ws.send(JSON.stringify({ type: 'terminal:subscribe', session: tasksSessionNum }));
     }
     requestAnimationFrame(() => fitTasksTerminal());
+    setTimeout(() => { const el = document.getElementById('tasks-session-terminal'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'end' }); }, 100);
   }
 
   function closeTaskSession() {
@@ -3541,7 +3553,9 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     const prBadge = t.sourcePR ? `<span class="task-session-badge" style="background:rgba(139,233,253,0.15);color:var(--cyan)">PR #${t.sourcePR}</span>` : '';
     const originBadge = t.sourceSession ? `<span class="task-session-badge">S:${t.sourceSession}</span>` : '';
     const sourceLabel = t.source ? t.source.replace(/^pm:/, '') : '';
-    const sourceBadge = sourceLabel ? `<span class="task-designation" style="background:rgba(255,184,108,0.15);color:var(--orange)">${esc(sourceLabel)}</span>` : '';
+    const sourceColor = sourceLabel === 'attached' ? 'var(--dim)' : 'var(--orange)';
+    const sourceBg = sourceLabel === 'attached' ? 'rgba(255,255,255,0.05)' : 'rgba(255,184,108,0.15)';
+    const sourceBadge = sourceLabel ? `<span class="task-designation" style="background:${sourceBg};color:${sourceColor}">${esc(sourceLabel)}</span>` : '';
     // Comment count badge
     const commentCount = (t.comments && t.comments.length) || 0;
     const commentBadge = commentCount > 0 ? `<span class="comment-count" title="${commentCount} comment(s)">&#128172; ${commentCount}</span>` : '';
@@ -5338,8 +5352,11 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   }
 
   function showToast(title, body, cls) {
+    if (cls === 'error') console.error(title, body);
     const el = document.createElement('div'); el.className = `toast ${cls || ''}`;
     el.innerHTML = `<div class="toast-title">${esc(title)}</div><div class="toast-body">${esc(body || '')}</div>`;
+    el.style.cursor = 'pointer';
+    el.addEventListener('click', () => { el.classList.add('out'); setTimeout(() => el.remove(), 200); });
     toasts.appendChild(el);
     setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 200); }, 5000);
   }
