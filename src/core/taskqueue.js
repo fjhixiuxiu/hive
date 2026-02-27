@@ -122,6 +122,7 @@ class TaskQueue extends EventEmitter {
       sourcePR: (meta && meta.pr) || null,      // PR number that triggered this
       sourceSession: (meta && meta.session) || null, // session that triggered this
       createdBy: (meta && meta.createdBy) || null,   // GitHub login of creator
+      actionContext: (meta && meta.actionContext) || null, // contextual actions metadata
     };
     this.tasks.set(task.id, task);
     this.emit('task:created', task);
@@ -161,6 +162,7 @@ class TaskQueue extends EventEmitter {
       source: (meta && meta.source) || 'attached',
       sourcePR: (meta && meta.pr) || null,
       sourceSession: sessionNum,
+      actionContext: (meta && meta.actionContext) || null,
     };
     this.tasks.set(task.id, task);
     this.activeTaskBySession.set(sessionNum, task.id);
@@ -176,7 +178,7 @@ class TaskQueue extends EventEmitter {
     const task = this.tasks.get(taskId);
     if (!task || task.status !== 'queued') return null;
 
-    const allowed = ['text', 'mode', 'targetSession', 'designation'];
+    const allowed = ['text', 'mode', 'targetSession', 'designation', 'actionContext'];
     for (const key of allowed) {
       if (key in updates) task[key] = updates[key];
     }

@@ -331,7 +331,18 @@ class ProjectManager extends EventEmitter {
           text = `[${issue.key}] ${issue.summary}`;
         }
         const fullText = pm.instructions ? `${text}\n\nInstructions: ${pm.instructions}` : text;
-        const task = this.taskQueue.createTask(fullText, mode, pm.targetSession || null, pm.designation, { source: `pm:${pm.name}` });
+        const meta = { source: `pm:${pm.name}` };
+
+        // Attach actionContext for PR-sourced tasks
+        if (pm.source.type === 'github-prs' || pm.source.type === 'github-re-reviews') {
+          const prMeta = this._parsePRFromKey(issue.key);
+          if (prMeta) {
+            meta.actionContext = { type: 'github-pr', repo: prMeta.repo, prNumber: prMeta.prNumber };
+            meta.pr = prMeta.prNumber;
+          }
+        }
+
+        const task = this.taskQueue.createTask(fullText, mode, pm.targetSession || null, pm.designation, meta);
         this._seedChecklist(pm, task);
 
         // Post GitHub PR comment if this is a PR-sourced task
@@ -609,14 +620,16 @@ class ProjectManager extends EventEmitter {
     return false;
   }
 
-  _httpPost(urlStr, headers, body) {
+  _httpMethod(method, urlStr, headers, body) {
     return new Promise((resolve, reject) => {
       const url = new URL(urlStr);
       const mod = url.protocol === 'https:' ? https : http;
-      const data = JSON.stringify(body);
+      const data = body ? JSON.stringify(body) : '';
+      const reqHeaders = { ...headers, 'Content-Type': 'application/json' };
+      if (data) reqHeaders['Content-Length'] = Buffer.byteLength(data);
       const req = mod.request(urlStr, {
-        method: 'POST',
-        headers: { ...headers, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) },
+        method,
+        headers: reqHeaders,
         timeout: 15000,
       }, (res) => {
         let resBody = '';
@@ -631,9 +644,13 @@ class ProjectManager extends EventEmitter {
       });
       req.on('error', (err) => reject(new Error(`Request failed: ${err.message}`)));
       req.on('timeout', () => { req.destroy(); reject(new Error('Request timed out')); });
-      req.write(data);
+      if (data) req.write(data);
       req.end();
     });
+  }
+
+  _httpPost(urlStr, headers, body) {
+    return this._httpMethod('POST', urlStr, headers, body);
   }
 
   async _commentOnPR(repo, prNumber, body) {
