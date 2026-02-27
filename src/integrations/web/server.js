@@ -694,7 +694,21 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       case 'task:complete': {
         if (!taskQueue) break;
         if (!checkPermission(ws, user, 'cancel')) break;
-        const task = taskQueue.completeTask(msg.taskId, msg.result || 'Manually completed');
+        const pendingTask = taskQueue.tasks.get(msg.taskId);
+        let snap = null, snapCols = 0;
+        if (pendingTask && pendingTask.assignedTo) {
+          try {
+            const found = await fleet.findSession(config, router, pendingTask.assignedTo);
+            if (found) {
+              const node = router.getNode(found.nodeId);
+              const paneTarget = `${found.name}:.${config.sessions.claudePane}`;
+              snap = await node.exec(`tmux capture-pane -e -p -S -500 -t "${paneTarget}" 2>/dev/null`) || null;
+              const colsStr = await node.exec(`tmux display-message -p -t "${paneTarget}" "#{pane_width}" 2>/dev/null`);
+              snapCols = parseInt(colsStr) || 0;
+            }
+          } catch {}
+        }
+        const task = taskQueue.completeTask(msg.taskId, msg.result || 'Manually completed', snap, snapCols);
         if (task) broadcast({ type: 'task:completed', task });
         break;
       }

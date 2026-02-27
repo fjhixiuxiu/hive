@@ -524,6 +524,13 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   flex: 1; min-height: 0; overflow: hidden; position: relative;
   background: var(--bg);
 }
+.snapshot-banner {
+  display: none; padding: 4px 12px; font-size: 11px; color: var(--dim);
+  background: rgba(255,255,255,0.03); border-bottom: 1px solid var(--bg3);
+  flex-shrink: 0;
+}
+.snapshot-banner.visible { display: block; }
+.tasks-session-terminal.snapshot-dimmed { opacity: 0.6; }
 .tasks-session-terminal .xterm { height: 100%; }
 .tasks-session-terminal .xterm-viewport { overflow-y: auto !important; }
 .tasks-session-empty {
@@ -1270,6 +1277,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
             <span class="tasks-session-branch" id="tasks-session-branch"></span>
             <button class="ts-open-btn" id="ts-open-session" style="display:none">Open Full Session</button>
           </div>
+          <div class="snapshot-banner" id="snapshot-banner"></div>
           <div class="tasks-session-tabs" id="tasks-session-tabs" style="display:none">
             <button class="session-tab active" data-tstab="terminal">Terminal</button>
             <button class="session-tab" data-tstab="git">Git</button>
@@ -3142,6 +3150,11 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       if (s) openSession(s);
     };
 
+    // Clear snapshot styling
+    document.getElementById('snapshot-banner').classList.remove('visible');
+    document.getElementById('snapshot-banner').textContent = '';
+    document.querySelector('.tasks-session-terminal').classList.remove('snapshot-dimmed');
+
     showTsSessionControls(true);
     updateTasksStatusLine();
     updateChecklistButtons();
@@ -3182,9 +3195,22 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     ws.send(JSON.stringify({ type: 'task:snapshot', taskId }));
     ensureTasksSessionTerm();
     const task = tasks.find(t => t.id === taskId);
-    document.getElementById('tasks-session-title').textContent = task ? `Completed — Session ${task.assignedTo || '?'}` : 'Completed';
+    const completedAgo = task && task.completedAt ? ` \u00b7 ${timeAgo(task.completedAt)}` : '';
+    document.getElementById('tasks-session-title').textContent = task
+      ? `Snapshot \u2014 Session ${task.assignedTo || '?'}${completedAgo}`
+      : 'Completed';
     document.getElementById('tasks-session-branch').textContent = '';
     document.getElementById('tasks-session-header').style.display = '';
+    // Show snapshot banner
+    const banner = document.getElementById('snapshot-banner');
+    if (task && task.snapshot) {
+      banner.textContent = 'This is a saved snapshot \u2014 the session may have moved on';
+      banner.classList.add('visible');
+    } else {
+      banner.classList.remove('visible');
+      banner.textContent = '';
+    }
+    document.querySelector('.tasks-session-terminal').classList.add('snapshot-dimmed');
     showTsSessionControls(false); // read-only
     // Unsubscribe from live session
     if (tasksSessionNum && ws && ws.readyState === 1) {
@@ -3196,6 +3222,11 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 
   function showTaskSnapshotContent(taskId, content, cols) {
     ensureTasksSessionTerm();
+    if (!content) {
+      tasksSessionTerm.reset();
+      tasksSessionTerm.write('\r\n  No snapshot saved for this task\r\n');
+      return;
+    }
     if (cols && cols > 0) { tsPaneCols = cols; if (cols !== tasksSessionTerm.cols) tasksSessionTerm.resize(cols, tasksSessionTerm.rows); }
     tasksSessionTerm.reset();
     tasksSessionTerm.write(content);
