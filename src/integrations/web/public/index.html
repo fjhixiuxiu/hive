@@ -425,6 +425,11 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   margin-left: auto; white-space: nowrap;
 }
 .tasks-create-btn:active { opacity: 0.8; }
+.tasks-filter-bar { display: flex; gap: 4px; padding: 4px 10px 0; flex-wrap: wrap; flex-shrink: 0; }
+.tasks-filter-chip { background: var(--bg3); border: none; color: var(--dim); font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 12px; cursor: pointer; transition: all 0.15s; white-space: nowrap; }
+.tasks-filter-chip:hover { color: var(--fg); }
+.tasks-filter-chip.active { background: var(--purple); color: var(--bg); }
+.tasks-filter-chip .chip-count { opacity: 0.7; margin-left: 2px; }
 .tasks-scroll { flex: 1; overflow-y: auto; padding: 8px 10px; -webkit-overflow-scrolling: touch; }
 .task-section-label {
   font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;
@@ -1289,6 +1294,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
             <input id="tasks-search-input" type="text" placeholder="Search tasks..." autocomplete="off" style="flex:1;background:var(--bg2);border:1px solid var(--dim);border-radius:6px;color:var(--fg);padding:8px 32px 8px 12px;font:inherit;font-size:14px;outline:none">
             <button id="tasks-search-clear" class="fleet-search-clear" style="display:none">&times;</button>
           </div>
+          <div class="tasks-filter-bar" id="tasks-filter-bar"></div>
           <div class="tasks-tabs">
             <button class="tasks-tab active" data-tab="inprogress">In Progress</button>
             <button class="tasks-tab" data-tab="queued">Queued</button>
@@ -1885,6 +1891,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   let manualTarget = null;
   let activeTaskTab = 'inprogress';
   let taskSearchQuery = '';
+  let taskSourceFilter = new Set(); // empty = show all; non-empty = show only matching sources
   let selectedTaskIds = new Set();
   let tasksSessionNum = null;
   let tasksSessionTerm = null;
@@ -3524,17 +3531,59 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     });
   }
 
+  // ── Filter chips ──────────────────────────────────
+  function renderFilterChips() {
+    const bar = document.getElementById('tasks-filter-bar');
+    // Collect distinct sources from all tasks (not just visible tab)
+    const sourceCounts = new Map();
+    for (const t of tasks) {
+      if (t.source) {
+        sourceCounts.set(t.source, (sourceCounts.get(t.source) || 0) + 1);
+      }
+    }
+    // Hide filter bar if 0 or 1 source
+    if (sourceCounts.size <= 1) { bar.style.display = 'none'; return; }
+    bar.style.display = '';
+
+    // Remove stale filter selections
+    for (const src of taskSourceFilter) {
+      if (!sourceCounts.has(src)) taskSourceFilter.delete(src);
+    }
+
+    const total = tasks.length;
+    let html = `<button class="tasks-filter-chip${taskSourceFilter.size === 0 ? ' active' : ''}" data-source="">All<span class="chip-count">${total}</span></button>`;
+    for (const [src, count] of [...sourceCounts.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+      const label = src.replace(/^pm:/, '');
+      const active = taskSourceFilter.has(src) ? ' active' : '';
+      html += `<button class="tasks-filter-chip${active}" data-source="${esc(src)}">${esc(label)}<span class="chip-count">${count}</span></button>`;
+    }
+    bar.innerHTML = html;
+
+    bar.querySelectorAll('.tasks-filter-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        const src = chip.dataset.source;
+        if (!src) { taskSourceFilter.clear(); }
+        else if (taskSourceFilter.has(src)) { taskSourceFilter.delete(src); }
+        else { taskSourceFilter.add(src); }
+        renderTasks();
+      });
+    });
+  }
+
   // ── Render tasks ───────────────────────────────────
   function renderTasks() {
     // Clean up selectedTaskIds for tasks that no longer exist
     const taskIds = new Set(tasks.map(t => t.id));
     for (const id of selectedTaskIds) { if (!taskIds.has(id)) selectedTaskIds.delete(id); }
 
+    renderFilterChips();
+
     const q = taskSearchQuery.toLowerCase();
     const matchesSearch = (t) => !q || t.text.toLowerCase().includes(q) || (t.source || '').toLowerCase().includes(q) || (t.designation || '').toLowerCase().includes(q) || String(t.assignedTo || '').includes(q);
-    const dispatched = tasks.filter(t => t.status === 'dispatched' && matchesSearch(t));
-    const queued = tasks.filter(t => t.status === 'queued' && matchesSearch(t));
-    const completed = tasks.filter(t => (t.status === 'completed' || t.status === 'failed') && matchesSearch(t));
+    const matchesFilter = (t) => taskSourceFilter.size === 0 || taskSourceFilter.has(t.source);
+    const dispatched = tasks.filter(t => t.status === 'dispatched' && matchesSearch(t) && matchesFilter(t));
+    const queued = tasks.filter(t => t.status === 'queued' && matchesSearch(t) && matchesFilter(t));
+    const completed = tasks.filter(t => (t.status === 'completed' || t.status === 'failed') && matchesSearch(t) && matchesFilter(t));
     let html = '';
     let visibleTasks = [];
 
