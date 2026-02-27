@@ -21,7 +21,9 @@ const ACTION_DEFS = {
   'github-pr': [
     { id: 'approve', label: 'Approve', color: 'var(--green)', confirm: false },
     { id: 'request-changes', label: 'Request Changes', color: 'var(--red)', confirm: true },
-    { id: 'merge', label: 'Merge', color: 'var(--purple)', confirm: true },
+    { id: 'merge', label: 'Merge (Squash)', color: 'var(--purple)', confirm: true },
+    { id: 'merge-commit', label: 'Merge (Merge Commit)', color: 'var(--purple)', confirm: true },
+    { id: 'admin-merge', label: 'Admin Merge (Override)', color: 'var(--orange)', confirm: true },
     { id: 'close-pr', label: 'Close PR', color: 'var(--red)', confirm: true },
     { id: 'approve-close', label: 'Approve & Close Task', color: 'var(--cyan)', confirm: true },
   ],
@@ -49,7 +51,16 @@ async function executeGithubPrAction(ctx, actionId, pmManager) {
     }
     case 'merge': {
       await pmManager._httpMethod('PUT', `https://api.github.com/repos/${repo}/pulls/${prNumber}/merge`, headers, { merge_method: 'squash' });
-      return { message: `Merged PR #${prNumber}`, closeTask: false };
+      return { message: `Merged PR #${prNumber} (squash)`, closeTask: false };
+    }
+    case 'merge-commit': {
+      await pmManager._httpMethod('PUT', `https://api.github.com/repos/${repo}/pulls/${prNumber}/merge`, headers, { merge_method: 'merge' });
+      return { message: `Merged PR #${prNumber} (merge commit)`, closeTask: false };
+    }
+    case 'admin-merge': {
+      // Admin merge bypasses branch protection checks
+      await pmManager._httpMethod('PUT', `https://api.github.com/repos/${repo}/pulls/${prNumber}/merge`, headers, { merge_method: 'squash', bypass_branch_protection: true });
+      return { message: `Admin merged PR #${prNumber} (override)`, closeTask: false };
     }
     case 'close-pr': {
       await pmManager._httpMethod('PATCH', `https://api.github.com/repos/${repo}/pulls/${prNumber}`, headers, { state: 'closed' });
@@ -802,7 +813,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
           const pmManager = taskQueue._pmManager;
           const result = await executeTaskAction(actionTask, msg.actionId, pmManager);
           broadcast({ type: 'task:action:result', taskId: msg.taskId, actionId: msg.actionId, ok: true, message: result.message });
-          if (result.closeTask) {
+          if (result.closeTask || msg.closeTask) {
             let actionSnap = null, actionSnapCols = 0;
             if (actionTask.assignedTo) {
               try {
