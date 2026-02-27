@@ -664,7 +664,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   .tasks-list-pane { flex: 3; order: 1; border-right: 1px solid var(--bg3); }
   .tasks-session-pane {
     display: flex; flex: 7; order: 2; flex-direction: column; min-height: 0;
-    background: var(--bg); overflow: hidden;
+    background: var(--bg); overflow: hidden; position: relative;
   }
 }
 
@@ -891,7 +891,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 
 /* ── Session detail (now inside content area) ─── */
 #session-panel {
-  display: none; flex-direction: column; height: 100%; overflow: hidden;
+  display: none; flex-direction: column; height: 100%; overflow: hidden; position: relative;
 }
 #session-panel.active { display: flex; }
 #session-header {
@@ -1164,6 +1164,23 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .comment-send { background: var(--purple); border: none; color: var(--bg); font-size: 11px; font-weight: 700; padding: 6px 10px; border-radius: 6px; cursor: pointer; }
 .comment-send:active { opacity: 0.8; }
 .comment-count { font-size: 11px; color: var(--dim); margin-left: 4px; }
+
+/* ── Comments drawer (overlay) ────────── */
+.comments-drawer {
+  position: absolute; right: 0; top: 0; bottom: 0; width: 280px; z-index: 999;
+  background: rgba(26,26,46,0.97); border-left: 1px solid var(--bg3);
+  transform: translateX(100%); transition: transform 0.2s ease;
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.comments-drawer.open { transform: translateX(0); }
+.comments-toggle-btn {
+  background: none; border: none; color: var(--dim); font-size: 13px;
+  font-weight: 700; padding: 8px 20px; cursor: pointer;
+  border-bottom: 2px solid transparent; transition: color 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+.comments-toggle-btn:hover { color: var(--fg); }
+.comments-toggle-btn.has-comments { color: var(--cyan); }
 .task-link-btn { background: none; border: none; color: var(--dim); font-size: 11px; cursor: pointer; padding: 0 4px; opacity: 0.5; }
 .task-link-btn:hover { opacity: 1; color: var(--purple); }
 .task-resume-btn {
@@ -1326,7 +1343,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
           <div class="tasks-session-tabs" id="tasks-session-tabs" style="display:none">
             <button class="session-tab active" data-tstab="terminal">Terminal</button>
             <button class="session-tab" data-tstab="git">Git</button>
-            <button class="session-tab" data-tstab="comments">Comments</button>
+            <button class="comments-toggle-btn" id="ts-comments-toggle" style="display:none">Comments</button>
             <button class="session-tab checklist-tab" id="ts-checklist-tab" style="display:none">&#9745; Checklist</button>
             <button class="session-tab actions-tab" id="ts-actions-tab" style="display:none">&#9889; Actions</button>
           </div>
@@ -1345,7 +1362,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
               </div>
             </div>
           </div>
-          <div class="session-tab-content" id="ts-comments-content" style="display:none"></div>
+          <div class="comments-drawer" id="ts-comments-drawer"></div>
           <div class="tasks-session-keys" id="tasks-session-keys" style="display:none">
             <button class="key-btn vim-toggle">VIM</button>
             <button class="key-btn ts-key-btn" data-key="Enter">Enter</button>
@@ -1512,7 +1529,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       <div class="session-tabs">
         <button class="session-tab active" data-stab="terminal">Terminal</button>
         <button class="session-tab" data-stab="git">Git</button>
-        <button class="session-tab" data-stab="comments">Comments</button>
+        <button class="comments-toggle-btn" id="session-comments-toggle" style="display:none">Comments</button>
         <button class="session-tab checklist-tab" id="session-checklist-tab" style="display:none">&#9745; Checklist</button>
       </div>
       <div class="session-tab-content active" id="session-terminal-content">
@@ -1529,7 +1546,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
           </div>
         </div>
       </div>
-      <div class="session-tab-content" id="session-comments-content"></div>
+      <div class="comments-drawer" id="session-comments-drawer"></div>
       <div id="keys-bar">
         <button class="key-btn vim-toggle">VIM</button>
         <button class="key-btn" data-key="Enter">Enter</button>
@@ -2647,7 +2664,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     $$('.session-tab').forEach(t => t.classList.toggle('active', t.dataset.stab === 'terminal'));
     document.getElementById('session-terminal-content').classList.add('active');
     document.getElementById('session-git-content').classList.remove('active');
-    document.getElementById('session-comments-content').classList.remove('active');
+    closeAllCommentsDrawers();
     // Render comments for the tracked task and update badge
     const sessionTask = tasks.find(t => t.assignedTo === s.num);
     if (sessionTask) renderCommentPanel(sessionTask.id, 'session');
@@ -2803,22 +2820,55 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   // ── Session tab switching ──────────────────────
   $$('.session-tab').forEach(tab => {
     tab.addEventListener('click', () => {
+      if (!tab.dataset.stab) return; // skip non-tab buttons (e.g. comments toggle)
       activeSessionTab = tab.dataset.stab;
       $$('.session-tab').forEach(t => t.classList.toggle('active', t.dataset.stab === activeSessionTab));
       document.getElementById('session-terminal-content').classList.toggle('active', activeSessionTab === 'terminal');
       document.getElementById('session-git-content').classList.toggle('active', activeSessionTab === 'git');
-      document.getElementById('session-comments-content').classList.toggle('active', activeSessionTab === 'comments');
       if (activeSessionTab === 'terminal' && term && fitAddon) {
         requestAnimationFrame(() => fitTerminal());
       }
       if (activeSessionTab === 'git' && currentSession && ws && ws.readyState === 1) {
         ws.send(JSON.stringify({ type: 'git:info', session: currentSession }));
       }
-      if (activeSessionTab === 'comments' && currentSession) {
+    });
+  });
+
+  // ── Comments drawer toggle ─────────────────────
+  function closeAllCommentsDrawers() {
+    document.querySelectorAll('.comments-drawer').forEach(d => d.classList.remove('open'));
+  }
+
+  function toggleCommentsDrawer(drawerId, toggleBtnId) {
+    const drawer = document.getElementById(drawerId);
+    if (!drawer) return;
+    const isOpen = drawer.classList.contains('open');
+    closeAllCommentsDrawers();
+    if (!isOpen) {
+      // Populate before opening
+      if (drawerId === 'session-comments-drawer' && currentSession) {
         const task = tasks.find(t => t.assignedTo === Number(currentSession));
         if (task) renderCommentPanel(task.id, 'session');
+      } else if (drawerId === 'ts-comments-drawer' && commentPanelTaskId) {
+        renderCommentPanel(commentPanelTaskId, 'tasks');
       }
-    });
+      drawer.classList.add('open');
+    }
+  }
+
+  document.getElementById('session-comments-toggle').addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleCommentsDrawer('session-comments-drawer', 'session-comments-toggle');
+  });
+  document.getElementById('ts-comments-toggle').addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleCommentsDrawer('ts-comments-drawer', 'ts-comments-toggle');
+  });
+
+  // Close drawer on outside click
+  document.addEventListener('click', (e) => {
+    if (e.target.closest('.comments-drawer') || e.target.closest('.comments-toggle-btn')) return;
+    closeAllCommentsDrawers();
   });
 
   // ── Auto-grow textareas ────────────────────────
@@ -3256,8 +3306,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     termContent.classList.add('active');
     document.getElementById('ts-git-content').style.display = 'none';
     document.getElementById('ts-git-content').classList.remove('active');
-    document.getElementById('ts-comments-content').style.display = 'none';
-    document.getElementById('ts-comments-content').classList.remove('active');
+    closeAllCommentsDrawers();
   }
 
   function openTaskSession(sessionNum) {
@@ -3377,13 +3426,10 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       document.querySelectorAll('[data-tstab]').forEach(t => t.classList.toggle('active', t.dataset.tstab === tsActiveTab));
       const termContent = document.getElementById('ts-terminal-content');
       const gitContent = document.getElementById('ts-git-content');
-      const commentsContent = document.getElementById('ts-comments-content');
       termContent.classList.toggle('active', tsActiveTab === 'terminal');
       termContent.style.display = tsActiveTab === 'terminal' ? '' : 'none';
       gitContent.classList.toggle('active', tsActiveTab === 'git');
       gitContent.style.display = tsActiveTab === 'git' ? '' : 'none';
-      commentsContent.classList.toggle('active', tsActiveTab === 'comments');
-      commentsContent.style.display = tsActiveTab === 'comments' ? '' : 'none';
       // Show/hide keys + cmd + input bars (only for terminal tab)
       document.getElementById('tasks-session-keys').style.display = tsActiveTab === 'terminal' ? '' : 'none';
       document.getElementById('ts-cmd-bar').style.display = tsActiveTab === 'terminal' ? '' : 'none';
@@ -3908,7 +3954,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   // ── Comment panel (rendered into tab content divs) ─────
   let commentPanelTaskId = null;
 
-  // target: 'tasks' (default) renders into #ts-comments-content, 'session' into #session-comments-content
+  // target: 'tasks' (default) renders into #ts-comments-drawer, 'session' into #session-comments-drawer
   function renderCommentPanel(taskId, target) {
     if (!taskId) taskId = commentPanelTaskId;
     if (!taskId) return;
@@ -3918,8 +3964,8 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 
     // Render into both containers so switching between views stays in sync
     const containers = [];
-    const tsEl = document.getElementById('ts-comments-content');
-    const sessEl = document.getElementById('session-comments-content');
+    const tsEl = document.getElementById('ts-comments-drawer');
+    const sessEl = document.getElementById('session-comments-drawer');
     if (tsEl) containers.push(tsEl);
     if (sessEl) containers.push(sessEl);
     if (!containers.length) return;
@@ -3975,11 +4021,11 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     const count = (task && task.comments && task.comments.length) || 0;
     const label = count > 0 ? `Comments (${count})` : 'Comments';
     if (target === 'tasks') {
-      const btn = document.querySelector('[data-tstab="comments"]');
-      if (btn) btn.textContent = label;
+      const btn = document.getElementById('ts-comments-toggle');
+      if (btn) { btn.style.display = task ? '' : 'none'; btn.textContent = label; btn.classList.toggle('has-comments', count > 0); }
     } else {
-      const btn = document.querySelector('[data-stab="comments"]');
-      if (btn) btn.textContent = label;
+      const btn = document.getElementById('session-comments-toggle');
+      if (btn) { btn.style.display = task ? '' : 'none'; btn.textContent = label; btn.classList.toggle('has-comments', count > 0); }
     }
   }
 
