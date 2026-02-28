@@ -453,6 +453,32 @@ describe('TaskQueue', () => {
     });
   });
 
+  describe('spawnSession', () => {
+    it('throws if name is missing', async () => {
+      await expect(tq.spawnSession({})).rejects.toThrow('Agent name is required');
+    });
+
+    it('throws when slot is occupied', async () => {
+      fleetModule.getFleetStatus.mockResolvedValue([{ num: 5, state: 'idle' }]);
+      await expect(tq.spawnSession({ num: 5, name: 'test' })).rejects.toThrow('Slot 5 is already occupied');
+    });
+
+    it('throws when slot is out of range', async () => {
+      fleetModule.getFleetStatus.mockResolvedValue([]);
+      await expect(tq.spawnSession({ num: 999, name: 'test' })).rejects.toThrow('Spawn slots must be');
+    });
+
+    it('throws when no slots available for auto-pick', async () => {
+      // Fill all slots
+      const allSessions = [];
+      for (let i = tq.spawnSlotMin; i <= tq.spawnSlotMax; i++) {
+        allSessions.push({ num: i, state: 'working' });
+      }
+      fleetModule.getFleetStatus.mockResolvedValue(allSessions);
+      await expect(tq.spawnSession({ name: 'test' })).rejects.toThrow('No available slots');
+    });
+  });
+
   describe('cleanupSession', () => {
     it('fails active task and clears all tracking', () => {
       const task = tq.createTask('Test', 'auto', null, null);
