@@ -852,7 +852,7 @@ class TaskQueue extends EventEmitter {
     if (gitUrl) {
       if (fs.existsSync(path.join(repoDir, '.git'))) {
         // Directory already cloned — fetch and reset to latest default branch
-        console.log(`[spawn] Reusing existing clone at ${repoDir}`);
+        log.info(`[spawn] Reusing existing clone at ${repoDir}`);
         try {
           await execAsync(`git -C "${repoDir}" fetch origin`, { timeout: 60000 });
           // Determine default branch — try main, fall back to master
