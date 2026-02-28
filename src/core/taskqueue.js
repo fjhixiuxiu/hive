@@ -724,12 +724,13 @@ class TaskQueue extends EventEmitter {
     return Array.from(this.designationDefs.values());
   }
 
-  setDesignationDef(name, { agentFiles, description }) {
+  setDesignationDef(name, { agentFiles, description, color }) {
     if (!name) return null;
     const def = {
       name,
       agentFiles: Array.isArray(agentFiles) ? agentFiles : [],
       description: description || '',
+      color: color || 'orange',
     };
     this.designationDefs.set(name, def);
     this._saveState();

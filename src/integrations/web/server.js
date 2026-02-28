@@ -932,7 +932,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       case 'designationDef:set': {
         if (!taskQueue) break;
         if (!checkPermission(ws, user, 'admin')) break;
-        taskQueue.setDesignationDef(msg.name, { agentFiles: msg.agentFiles, description: msg.description });
+        taskQueue.setDesignationDef(msg.name, { agentFiles: msg.agentFiles, description: msg.description, color: msg.color });
         break;
       }
 

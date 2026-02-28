@@ -262,6 +262,45 @@ describe('TaskQueue', () => {
     });
   });
 
+  describe('designation definitions', () => {
+    it('setDesignationDef stores color', () => {
+      const def = tq.setDesignationDef('reviews', { agentFiles: [], description: 'PR reviews', color: 'purple' });
+      expect(def.color).toBe('purple');
+      expect(def.name).toBe('reviews');
+      expect(def.description).toBe('PR reviews');
+    });
+
+    it('defaults color to orange when not provided', () => {
+      const def = tq.setDesignationDef('coder', { agentFiles: [], description: '' });
+      expect(def.color).toBe('orange');
+    });
+
+    it('getDesignationDefs returns all defs with color', () => {
+      tq.setDesignationDef('reviews', { agentFiles: [], description: '', color: 'cyan' });
+      tq.setDesignationDef('tests', { agentFiles: [], description: '', color: 'green' });
+      const defs = tq.getDesignationDefs();
+      expect(defs).toHaveLength(2);
+      expect(defs[0].color).toBe('cyan');
+      expect(defs[1].color).toBe('green');
+    });
+
+    it('emits designationDefs:changed', () => {
+      const spy = vi.fn();
+      tq.on('designationDefs:changed', spy);
+      tq.setDesignationDef('reviews', { agentFiles: [], description: '', color: 'pink' });
+      expect(spy).toHaveBeenCalled();
+      expect(spy.mock.calls[0][0][0].color).toBe('pink');
+    });
+
+    it('removeDesignationDef removes def and clears assignments', () => {
+      tq.setDesignationDef('reviews', { agentFiles: [], description: '', color: 'red' });
+      tq.setDesignation(6, 'reviews');
+      tq.removeDesignationDef('reviews');
+      expect(tq.getDesignationDefs()).toHaveLength(0);
+      expect(tq.designations.has(6)).toBe(false);
+    });
+  });
+
   describe('rules', () => {
     it('idle-next-task triggers auto-dispatch', () => {
       tq.rules.find(r => r.id === 'idle-next-task').enabled = true;

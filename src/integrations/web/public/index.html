@@ -1015,13 +1015,12 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   position: absolute; bottom: 6px; right: 58px;
   font-size: 9px; font-weight: 700; padding: 2px 5px; border-radius: 3px;
   letter-spacing: 0.5px; text-transform: uppercase; pointer-events: none;
-  background: rgba(255,184,108,0.2); color: var(--orange);
 }
 
 /* ── Task designation badge ────────── */
 .task-designation {
   font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 3px;
-  background: rgba(255,184,108,0.2); color: var(--orange); text-transform: uppercase;
+  text-transform: uppercase;
 }
 
 /* ── Designation manager in More tab ── */
@@ -1038,7 +1037,17 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   display: flex; align-items: center; gap: 8px; background: var(--bg); padding: 8px 12px;
   border-radius: 6px; margin-bottom: 6px;
 }
-.desig-def-row .desig-def-name { font-weight: 700; color: var(--orange); min-width: 80px; }
+.desig-def-row .desig-def-name { font-weight: 700; min-width: 80px; }
+/* ── Fleet group headers ── */
+.fleet-group-header { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; padding: 12px 4px 4px; grid-column: 1 / -1; }
+/* ── Color swatch picker ── */
+.desig-color-swatches { display: flex; gap: 8px; padding: 4px 0; }
+.desig-color-swatch {
+  width: 24px; height: 24px; border-radius: 50%; cursor: pointer; border: 2px solid transparent;
+  transition: border-color 0.15s, transform 0.15s;
+}
+.desig-color-swatch:hover { transform: scale(1.15); }
+.desig-color-swatch.selected { border-color: var(--fg); transform: scale(1.15); }
 .desig-def-row .desig-def-files { font-size: 11px; color: var(--dim); flex: 1; }
 .desig-def-row .desig-def-actions { display: flex; gap: 4px; }
 .desig-def-row .desig-def-actions button {
@@ -1855,6 +1864,10 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       <input class="task-dialog-input" id="desig-def-description" type="text" placeholder="Optional description" autocomplete="off" style="width:100%">
     </div>
     <div class="task-dialog-field">
+      <label class="task-dialog-label">Color</label>
+      <div class="desig-color-swatches" id="desig-def-color-swatches"></div>
+    </div>
+    <div class="task-dialog-field">
       <label class="task-dialog-label">Agent Files</label>
       <div class="desig-file-chips" id="desig-def-chips"></div>
       <select class="task-dialog-select" id="desig-def-file-picker" style="width:100%">
@@ -1998,7 +2011,23 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   let paneCols = 0;    // last known tmux pane cols for main session terminal
   let tsPaneCols = 0;  // last known tmux pane cols for tasks session terminal
   let designations = {};  // { num: string }
-  let designationDefs = []; // [{ name, agentFiles, description }]
+  let designationDefs = []; // [{ name, agentFiles, description, color }]
+
+  // Color map: name → { css var, rgba bg }
+  const DESIG_COLORS = {
+    purple: { fg: 'var(--purple)', bg: 'rgba(189,147,249,0.15)', hex: '#bd93f9' },
+    cyan:   { fg: 'var(--cyan)',   bg: 'rgba(139,233,253,0.15)', hex: '#8be9fd' },
+    green:  { fg: 'var(--green)',  bg: 'rgba(80,250,123,0.15)',  hex: '#50fa7b' },
+    orange: { fg: 'var(--orange)', bg: 'rgba(255,184,108,0.2)',  hex: '#ffb86c' },
+    pink:   { fg: 'var(--pink)',   bg: 'rgba(255,121,198,0.15)', hex: '#ff79c6' },
+    red:    { fg: 'var(--red)',    bg: 'rgba(255,85,85,0.15)',   hex: '#ff5555' },
+    yellow: { fg: 'var(--yellow)', bg: 'rgba(241,250,140,0.15)', hex: '#f1fa8c' },
+  };
+  function getDesigColor(desigName) {
+    const def = designationDefs.find(d => d.name === desigName);
+    const key = (def && def.color && DESIG_COLORS[def.color]) ? def.color : 'orange';
+    return DESIG_COLORS[key];
+  }
   let agentRoots = [];      // array of scan paths
   let agentFilesList = [];  // cached scan results
   let spawnSlotMin = 1;
@@ -2587,71 +2616,119 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   // ── Fleet grid rendering ──────────────────────────
   function renderGrid() {
     grid.innerHTML = '';
+
+    // Group sessions by designation
+    const groups = {};   // desig name → [sessions]
+    const unassigned = [];
+    const hasAnyDesig = Object.keys(designations).length > 0;
     for (const s of fleetData) {
-      let borderCls = 'border-dim';
-      if (s.pr && s.pr.ciResult === 'FAILURE') borderCls = 'border-red';
-      else if (s.pr && s.pr.ciResult === 'SUCCESS') borderCls = 'border-green';
-      else if (s.pr && s.pr.ciResult === 'RUNNING') borderCls = 'border-yellow';
-      else if (s.state === 'working') borderCls = 'border-yellow';
-      else if (s.state === 'idle') borderCls = 'border-green';
-
-      const card = document.createElement('div');
-      card.className = `card ${s.state === 'off' ? 'off' : ''} ${borderCls}`;
-      card.dataset.session = s.num;
-      const branch = shortBranch(s.branch);
-      const stateCls = s.state === 'idle' ? 'state-idle' : s.state === 'working' ? 'state-working' : 'state-off';
-
-      let prHtml = '', badgesHtml = '';
-      if (s.pr) {
-        const prUrl = linkTemplates.pr ? linkTemplates.pr.replace('${prNum}', s.pr.prNum) : null;
-        prHtml = prUrl ? `<a class="card-pr" href="${prUrl}" target="_blank" onclick="event.stopPropagation()">#${s.pr.prNum}</a>` : `<span class="card-pr">#${s.pr.prNum}</span>`;
-        const ciUrl = (linkTemplates.ci && s.pr.ciBuild) ? linkTemplates.ci.replace('${prNum}', s.pr.prNum).replace('${ciBuild}', s.pr.ciBuild) : null;
-        const ciTag = ciUrl ? 'a' : 'span';
-        const ciAttrs = ciUrl ? `href="${ciUrl}" target="_blank" onclick="event.stopPropagation()"` : '';
-        if (s.pr.ciResult === 'SUCCESS') badgesHtml += `<${ciTag} class="card-ci pass" ${ciAttrs}>CI</${ciTag}>`;
-        else if (s.pr.ciResult === 'FAILURE') badgesHtml += `<${ciTag} class="card-ci fail" ${ciAttrs}>FAIL</${ciTag}>`;
-        else if (s.pr.ciResult === 'RUNNING') badgesHtml += `<${ciTag} class="card-ci run" ${ciAttrs}>CI</${ciTag}>`;
-        if (s.pr.review === 'APPROVED') badgesHtml += '<span class="card-review">OK</span>';
-        else if (s.pr.review === 'CHANGES_REQUESTED') badgesHtml += '<span class="card-review">CHG</span>';
-      }
-
-      const isAuto = autoSessions.has(s.num);
-      const modeHtml = `<span class="card-mode ${isAuto ? 'auto' : 'manual'}">${isAuto ? 'Auto' : 'Manual'}</span>`;
       const desig = designations[s.num];
-      const desigHtml = desig ? `<span class="card-designation">${esc(desig)}</span>` : '';
-
-      // Git summary row
-      let gitRowHtml = '';
-      if (s.gitSummary && s.gitSummary.lastCommit) {
-        const gs = s.gitSummary;
-        const diffParts = [];
-        if (s.git && s.git.staged) diffParts.push(`<span class="card-diff-add">+${s.git.staged}</span>`);
-        if (s.git && s.git.modified) diffParts.push(`<span class="card-diff-del">~${s.git.modified}</span>`);
-        const changesHtml = gs.totalChanges > 0 ? `<span class="card-changes-badge">${gs.totalChanges} files</span>` : '';
-        gitRowHtml = `<div class="card-git-row"><span class="card-commit">${esc(gs.lastCommit)}</span>${diffParts.length ? `<span class="card-diff-stat">${diffParts.join('')}</span>` : ''}${changesHtml}</div>`;
+      if (desig) {
+        (groups[desig] = groups[desig] || []).push(s);
+      } else {
+        unassigned.push(s);
       }
-
-      const activityHtml = s.lastActivity ? `<span class="card-activity">${timeAgo(s.lastActivity)}</span>` : '';
-      card.innerHTML = `${modeHtml}${desigHtml}
-        <div class="card-top"><span class="card-num">${s.num}</span><span class="card-state ${stateCls}">${s.state}</span>${activityHtml}${prHtml}${badgesHtml ? `<span class="card-badges">${badgesHtml}</span>` : ''}</div>
-        <div class="card-branch">${esc(branch)}</div>
-        ${gitRowHtml}
-        <div class="card-preview">${esc(s.preview || '')}</div>
-        <button class="card-preview-toggle" data-session="${s.num}">expand</button>`;
-      card.querySelector('.card-num').addEventListener('click', (e) => { e.stopPropagation(); selectQuickSession(s.num); });
-      card.querySelector('.card-preview-toggle').addEventListener('click', (e) => {
-        e.stopPropagation();
-        const preview = card.querySelector('.card-preview');
-        const isExpanded = preview.classList.toggle('expanded');
-        e.target.textContent = isExpanded ? 'collapse' : 'expand';
-        if (isExpanded && ws && ws.readyState === 1) {
-          ws.send(JSON.stringify({ type: 'peek', session: String(s.num) }));
-        }
-      });
-      card.addEventListener('click', () => openSession(s));
-      grid.appendChild(card);
     }
+
+    // Render designated groups first, then unassigned
+    const groupOrder = Object.keys(groups);
+    if (hasAnyDesig && unassigned.length) groupOrder.push(null); // null = unassigned
+
+    for (const gName of groupOrder) {
+      const sessions = gName ? groups[gName] : unassigned;
+      // Group header
+      const header = document.createElement('div');
+      header.className = 'fleet-group-header';
+      if (gName) {
+        const gc = getDesigColor(gName);
+        header.style.color = gc.fg;
+        header.textContent = gName;
+      } else {
+        header.style.color = 'var(--dim)';
+        header.textContent = 'Unassigned';
+      }
+      grid.appendChild(header);
+
+      for (const s of sessions) {
+        renderFleetCard(s);
+      }
+    }
+
+    // If no designations at all, render flat (no headers)
+    if (!hasAnyDesig) {
+      // Remove any headers we added
+      grid.innerHTML = '';
+      for (const s of fleetData) renderFleetCard(s);
+    }
+
     if (quickSession) highlightQuickCard();
+  }
+
+  function renderFleetCard(s) {
+    let borderCls = 'border-dim';
+    if (s.pr && s.pr.ciResult === 'FAILURE') borderCls = 'border-red';
+    else if (s.pr && s.pr.ciResult === 'SUCCESS') borderCls = 'border-green';
+    else if (s.pr && s.pr.ciResult === 'RUNNING') borderCls = 'border-yellow';
+    else if (s.state === 'working') borderCls = 'border-yellow';
+    else if (s.state === 'idle') borderCls = 'border-green';
+
+    const card = document.createElement('div');
+    card.className = `card ${s.state === 'off' ? 'off' : ''} ${borderCls}`;
+    card.dataset.session = s.num;
+    const branch = shortBranch(s.branch);
+    const stateCls = s.state === 'idle' ? 'state-idle' : s.state === 'working' ? 'state-working' : 'state-off';
+
+    let prHtml = '', badgesHtml = '';
+    if (s.pr) {
+      const prUrl = linkTemplates.pr ? linkTemplates.pr.replace('${prNum}', s.pr.prNum) : null;
+      prHtml = prUrl ? `<a class="card-pr" href="${prUrl}" target="_blank" onclick="event.stopPropagation()">#${s.pr.prNum}</a>` : `<span class="card-pr">#${s.pr.prNum}</span>`;
+      const ciUrl = (linkTemplates.ci && s.pr.ciBuild) ? linkTemplates.ci.replace('${prNum}', s.pr.prNum).replace('${ciBuild}', s.pr.ciBuild) : null;
+      const ciTag = ciUrl ? 'a' : 'span';
+      const ciAttrs = ciUrl ? `href="${ciUrl}" target="_blank" onclick="event.stopPropagation()"` : '';
+      if (s.pr.ciResult === 'SUCCESS') badgesHtml += `<${ciTag} class="card-ci pass" ${ciAttrs}>CI</${ciTag}>`;
+      else if (s.pr.ciResult === 'FAILURE') badgesHtml += `<${ciTag} class="card-ci fail" ${ciAttrs}>FAIL</${ciTag}>`;
+      else if (s.pr.ciResult === 'RUNNING') badgesHtml += `<${ciTag} class="card-ci run" ${ciAttrs}>CI</${ciTag}>`;
+      if (s.pr.review === 'APPROVED') badgesHtml += '<span class="card-review">OK</span>';
+      else if (s.pr.review === 'CHANGES_REQUESTED') badgesHtml += '<span class="card-review">CHG</span>';
+    }
+
+    const isAuto = autoSessions.has(s.num);
+    const modeHtml = `<span class="card-mode ${isAuto ? 'auto' : 'manual'}">${isAuto ? 'Auto' : 'Manual'}</span>`;
+    const desig = designations[s.num];
+    const dc = desig ? getDesigColor(desig) : null;
+    const desigHtml = desig ? `<span class="card-designation" style="background:${dc.bg};color:${dc.fg}">${esc(desig)}</span>` : '';
+    if (dc) card.style.borderTop = `2px solid ${dc.fg}`;
+
+    // Git summary row
+    let gitRowHtml = '';
+    if (s.gitSummary && s.gitSummary.lastCommit) {
+      const gs = s.gitSummary;
+      const diffParts = [];
+      if (s.git && s.git.staged) diffParts.push(`<span class="card-diff-add">+${s.git.staged}</span>`);
+      if (s.git && s.git.modified) diffParts.push(`<span class="card-diff-del">~${s.git.modified}</span>`);
+      const changesHtml = gs.totalChanges > 0 ? `<span class="card-changes-badge">${gs.totalChanges} files</span>` : '';
+      gitRowHtml = `<div class="card-git-row"><span class="card-commit">${esc(gs.lastCommit)}</span>${diffParts.length ? `<span class="card-diff-stat">${diffParts.join('')}</span>` : ''}${changesHtml}</div>`;
+    }
+
+    const activityHtml = s.lastActivity ? `<span class="card-activity">${timeAgo(s.lastActivity)}</span>` : '';
+    card.innerHTML = `${modeHtml}${desigHtml}
+      <div class="card-top"><span class="card-num">${s.num}</span><span class="card-state ${stateCls}">${s.state}</span>${activityHtml}${prHtml}${badgesHtml ? `<span class="card-badges">${badgesHtml}</span>` : ''}</div>
+      <div class="card-branch">${esc(branch)}</div>
+      ${gitRowHtml}
+      <div class="card-preview">${esc(s.preview || '')}</div>
+      <button class="card-preview-toggle" data-session="${s.num}">expand</button>`;
+    card.querySelector('.card-num').addEventListener('click', (e) => { e.stopPropagation(); selectQuickSession(s.num); });
+    card.querySelector('.card-preview-toggle').addEventListener('click', (e) => {
+      e.stopPropagation();
+      const preview = card.querySelector('.card-preview');
+      const isExpanded = preview.classList.toggle('expanded');
+      e.target.textContent = isExpanded ? 'collapse' : 'expand';
+      if (isExpanded && ws && ws.readyState === 1) {
+        ws.send(JSON.stringify({ type: 'peek', session: String(s.num) }));
+      }
+    });
+    card.addEventListener('click', () => openSession(s));
+    grid.appendChild(card);
   }
 
   // ── Fleet search ────────────────────────────────
@@ -4220,7 +4297,8 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   function taskCardHtml(t, tabType) {
     const ago = timeAgo(t.createdAt);
     let meta = `${t.mode}`;
-    const desigBadge = t.designation ? `<span class="task-designation">${esc(t.designation)}</span>` : '';
+    const tdc = t.designation ? getDesigColor(t.designation) : null;
+    const desigBadge = t.designation ? `<span class="task-designation" style="background:${tdc.bg};color:${tdc.fg}">${esc(t.designation)}</span>` : '';
     const selected = tasksSelectedTaskId === t.id ? ' selected' : '';
     // Origin badges: show source session + PR when available
     const prBadge = t.sourcePR ? `<span class="task-session-badge" style="background:rgba(139,233,253,0.15);color:var(--cyan)">PR #${t.sourcePR}</span>` : '';
@@ -5559,8 +5637,9 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     for (const def of designationDefs) {
       const row = document.createElement('div'); row.className = 'desig-def-row';
       const fileCount = def.agentFiles ? def.agentFiles.length : 0;
+      const ddc = DESIG_COLORS[def.color] || DESIG_COLORS.orange;
       row.innerHTML = `
-        <span class="desig-def-name">${esc(def.name)}</span>
+        <span class="desig-def-name" style="color:${ddc.fg}">${esc(def.name)}</span>
         <span class="desig-def-files">${fileCount} agent file${fileCount !== 1 ? 's' : ''}${def.description ? ' — ' + esc(def.description) : ''}</span>
         <span class="desig-def-actions">
           <button class="edit-def">Edit</button>
@@ -5577,6 +5656,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   // Designation definition dialog
   let editingDesigDef = null; // null = creating, object = editing
   let desigDefSelectedFiles = [];
+  let desigDefSelectedColor = 'orange';
 
   document.getElementById('desig-def-add-btn').addEventListener('click', () => openDesigDefDialog(null));
   document.getElementById('desig-def-cancel').addEventListener('click', closeDesigDefDialog);
@@ -5594,17 +5674,36 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       nameInput.disabled = true;
       descInput.value = def.description || '';
       desigDefSelectedFiles = [...(def.agentFiles || [])];
+      desigDefSelectedColor = def.color || 'orange';
     } else {
       titleEl.textContent = 'Add Designation';
       nameInput.value = '';
       nameInput.disabled = false;
       descInput.value = '';
       desigDefSelectedFiles = [];
+      desigDefSelectedColor = 'orange';
     }
+    renderDesigDefColorSwatches();
     renderDesigDefChips();
     renderDesigDefFilePicker();
     document.getElementById('desig-def-dialog').classList.add('visible');
     if (!def) nameInput.focus();
+  }
+
+  function renderDesigDefColorSwatches() {
+    const container = document.getElementById('desig-def-color-swatches');
+    container.innerHTML = '';
+    for (const [name, c] of Object.entries(DESIG_COLORS)) {
+      const swatch = document.createElement('div');
+      swatch.className = 'desig-color-swatch' + (name === desigDefSelectedColor ? ' selected' : '');
+      swatch.style.background = c.hex;
+      swatch.title = name;
+      swatch.addEventListener('click', () => {
+        desigDefSelectedColor = name;
+        renderDesigDefColorSwatches();
+      });
+      container.appendChild(swatch);
+    }
   }
 
   function closeDesigDefDialog() {
@@ -5661,7 +5760,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     if (!name) { showToast('Error', 'Name required', 'error'); return; }
     const description = document.getElementById('desig-def-description').value.trim();
     if (ws && ws.readyState === 1) {
-      ws.send(JSON.stringify({ type: 'designationDef:set', name, agentFiles: desigDefSelectedFiles, description }));
+      ws.send(JSON.stringify({ type: 'designationDef:set', name, agentFiles: desigDefSelectedFiles, description, color: desigDefSelectedColor }));
     }
     closeDesigDefDialog();
   });
@@ -5755,7 +5854,8 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     for (const pm of pmList) {
       const card = document.createElement('div');
       card.className = `pm-card${pm.enabled ? '' : ' disabled'}${pm.lastError ? ' has-error' : ''}`;
-      const desigBadge = pm.designation ? `<span class="task-designation">${esc(pm.designation)}</span>` : '';
+      const pmdc = pm.designation ? getDesigColor(pm.designation) : null;
+      const desigBadge = pm.designation ? `<span class="task-designation" style="background:${pmdc.bg};color:${pmdc.fg}">${esc(pm.designation)}</span>` : '';
       const targetBadge = pm.targetSession ? `<span class="task-designation" style="background:rgba(139,233,253,0.15);color:var(--cyan)">→${pm.targetSession}</span>` : '';
       const lastPoll = pm.lastPoll ? timeAgo(pm.lastPoll) : 'never';
       card.innerHTML = `
