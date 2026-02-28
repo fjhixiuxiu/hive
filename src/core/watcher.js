@@ -72,7 +72,7 @@ class Watcher extends EventEmitter {
       this.seenWorking.add(num);
     }
     if (sessionNums.length) {
-      console.log(`[watcher] seeded seenWorking from dispatched tasks: [${sessionNums.join(', ')}]`);
+      log.info(`[watcher] seeded seenWorking from dispatched tasks: [${sessionNums.join(', ')}]`);
     }
   }
 
@@ -116,7 +116,7 @@ class Watcher extends EventEmitter {
     // Seed git info for all sessions (runs once, in background)
     for (const s of sessions) {
       const node = this.router.nodeFor(s.name);
-      if (node) fleet.refreshGitInfo(this.config, node, s.name, s.nodeId).catch(() => {});
+      if (node && fleet.refreshGitInfo) fleet.refreshGitInfo(this.config, node, s.name, s.nodeId).catch(() => {});
     }
   }
 
@@ -129,7 +129,7 @@ class Watcher extends EventEmitter {
 
       // Log state transitions for debugging false idle notifications
       if (prevState && prevState !== currState) {
-        console.log(`[watcher] session ${s.num}: ${prevState} → ${currState}`);
+        log.info(`[watcher] session ${s.num}: ${prevState} → ${currState}`);
       }
 
       // Track sessions that have been observed working at least once.
@@ -159,7 +159,7 @@ class Watcher extends EventEmitter {
           const count = (this.pendingIdle.get(s.num) || 0) + 1;
           if (count >= 5) {
             // Fifth consecutive poll showing idle — confirmed idle
-            console.log(`[watcher] session ${s.num}: idle confirmed (5 polls)`);
+            log.info(`[watcher] session ${s.num}: idle confirmed (5 polls)`);
             this.pendingIdle.delete(s.num);
             this.notifiedIdle.add(s.num);
             // Capture terminal preview so the feed entry can show context
@@ -170,7 +170,7 @@ class Watcher extends EventEmitter {
               const node = this.router.nodeFor(s.name);
               if (node) {
                 // Refresh git info now that session finished work
-                fleet.refreshGitInfo(this.config, node, s.name, s.nodeId).catch(() => {});
+                if (fleet.refreshGitInfo) fleet.refreshGitInfo(this.config, node, s.name, s.nodeId).catch(() => {});
                 preview = await fleet.peekSession(this.config, node, s.name);
                 // Also capture ANSI version + pane width for task snapshot display
                 const paneTarget = `${s.name}:.${this.config.sessions.claudePane}`;
