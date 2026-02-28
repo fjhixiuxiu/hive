@@ -127,7 +127,7 @@ function isSeparator(line) {
  *
  * @param {string} paneContent - raw pane capture text
  * @param {object} config - hive config with idlePatterns/offPatterns
- * @returns {'idle'|'working'|'off'}
+ * @returns {'idle'|'working'|'off'|'stalled'}
  */
 // Interactive prompt patterns safe to check below the separator.
 // These only appear in permission/choice prompts, never in the status bar.
@@ -138,9 +138,41 @@ const INTERACTIVE_PATTERNS = [/Do you want to proceed/, /Esc to cancel/, /Enter 
 // Active lines use ellipsis (Doodling…, Doing...), completed lines don't (Sautéed for 14m).
 const ACTIVE_STATUS_RE = /[⏺✢✳✻☵⚡]\s+\S+(?:…|\.{3})/;
 
+// Stalled checklist detection: Claude stopped mid-task with failures.
+// When a checklist has completed items (✓) AND failed items (✗), Claude
+// gave up instead of continuing — the task is not done.
+const CHECKLIST_PASS_RE = /^\s*[✓✔]/;
+const CHECKLIST_FAIL_RE = /^\s*[✗✘]/;
+
+/**
+ * Check if the pane content contains a checklist with both passed and
+ * failed items, indicating Claude stalled mid-task.
+ */
+function hasStalledChecklist(lines) {
+  let hasPass = false;
+  let hasFail = false;
+  for (const line of lines) {
+    if (CHECKLIST_PASS_RE.test(line)) hasPass = true;
+    if (CHECKLIST_FAIL_RE.test(line)) hasFail = true;
+    if (hasPass && hasFail) return true;
+  }
+  return false;
+}
+
 function detectState(paneContent, config) {
   const lines = paneContent.split('\n');
+  const state = _classifyState(lines, config);
 
+  // If idle but a visible checklist has failures, Claude stalled mid-task.
+  // Return 'stalled' so the task isn't auto-completed prematurely.
+  if (state === 'idle' && hasStalledChecklist(lines)) {
+    return 'stalled';
+  }
+
+  return state;
+}
+
+function _classifyState(lines, config) {
   // Find the bottom-most separator — everything below it is the status bar.
   let separatorIdx = -1;
   for (let i = lines.length - 1; i >= 0; i--) {

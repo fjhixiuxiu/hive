@@ -406,4 +406,78 @@ describe('detectState — production config', () => {
     );
     expect(detectState(content, config)).toBe('idle');
   });
+
+  // -- Stalled (incomplete checklist with failures) ---------------------
+
+  it('detects stalled: checklist with failed item and idle prompt', () => {
+    // Claude was working through a task checklist but stopped after a failure.
+    // The prompt is visible but the task isn't done — should NOT be idle.
+    const content = pane(
+      '  \u2713 Add bulkRepublishVisits to schedulingEvv API',
+      '  \u2713 Add configureEvvVisits to permissions hook',
+      '  \u2713 Create BulkRepublishPanel component',
+      '  \u2713 Create BulkRepublishMenuItem component',
+      '  \u2713 Write tests for BulkRepublishPanel and MenuItem',
+      '  \u2717 Run lint and tests to verify',
+      '',
+      SEP,
+      '\u276f ',
+      SEP,
+      '  Model: Opus 4.6 | Ctx: 37.6%',
+      '  cwd: /Users/jeffheifetz/Coding/webpla...',
+    );
+    expect(detectState(content, config)).toBe('stalled');
+  });
+
+  it('detects stalled: checklist with failure and no separator', () => {
+    const content = pane(
+      '  \u2713 Step 1 completed',
+      '  \u2713 Step 2 completed',
+      '  \u2717 Step 3 failed',
+      '\u276f ',
+    );
+    expect(detectState(content, config)).toBe('stalled');
+  });
+
+  it('detects stalled: alternate checkmark characters', () => {
+    // ✔ (U+2714) and ✘ (U+2718) variants
+    const content = pane(
+      '  \u2714 First task done',
+      '  \u2714 Second task done',
+      '  \u2718 Third task failed',
+      '',
+      SEP,
+      '\u276f ',
+      SEP,
+      '  Model: Opus 4.6 | Ctx: 50.0%',
+    );
+    expect(detectState(content, config)).toBe('stalled');
+  });
+
+  it('detects idle (not stalled): checklist with all items passing', () => {
+    // All items passed — task completed successfully, normal idle
+    const content = pane(
+      '  \u2713 Step 1 completed',
+      '  \u2713 Step 2 completed',
+      '  \u2713 Step 3 completed',
+      '',
+      SEP,
+      '\u276f ',
+      SEP,
+      '  Model: Opus 4.6 | Ctx: 40.0%',
+    );
+    expect(detectState(content, config)).toBe('idle');
+  });
+
+  it('detects working (not stalled): checklist visible but Claude still active', () => {
+    // Claude is actively working — stalled only applies when idle
+    const content = pane(
+      '  \u2713 Step 1 completed',
+      '  \u2717 Step 2 failed',
+      '  Retrying step 2...',
+      SEP,
+      '  Model: Opus 4.6 | Ctx: 55.0%',
+    );
+    expect(detectState(content, config)).toBe('working');
+  });
 });
