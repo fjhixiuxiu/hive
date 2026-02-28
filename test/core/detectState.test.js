@@ -407,9 +407,9 @@ describe('detectState — production config', () => {
     expect(detectState(content, config)).toBe('idle');
   });
 
-  // -- Stalled (incomplete checklist with failures) ---------------------
+  // -- Failed checklist (incomplete task, stays working) ----------------
 
-  it('detects stalled: checklist with failed item and idle prompt', () => {
+  it('detects working: checklist with failed item and idle prompt', () => {
     // Claude was working through a task checklist but stopped after a failure.
     // The prompt is visible but the task isn't done — should NOT be idle.
     const content = pane(
@@ -426,20 +426,20 @@ describe('detectState — production config', () => {
       '  Model: Opus 4.6 | Ctx: 37.6%',
       '  cwd: /Users/jeffheifetz/Coding/webpla...',
     );
-    expect(detectState(content, config)).toBe('stalled');
+    expect(detectState(content, config)).toBe('working');
   });
 
-  it('detects stalled: checklist with failure and no separator', () => {
+  it('detects working: checklist with failure and no separator', () => {
     const content = pane(
       '  \u2713 Step 1 completed',
       '  \u2713 Step 2 completed',
       '  \u2717 Step 3 failed',
       '\u276f ',
     );
-    expect(detectState(content, config)).toBe('stalled');
+    expect(detectState(content, config)).toBe('working');
   });
 
-  it('detects stalled: alternate checkmark characters', () => {
+  it('detects working: alternate checkmark characters', () => {
     // ✔ (U+2714) and ✘ (U+2718) variants
     const content = pane(
       '  \u2714 First task done',
@@ -451,10 +451,10 @@ describe('detectState — production config', () => {
       SEP,
       '  Model: Opus 4.6 | Ctx: 50.0%',
     );
-    expect(detectState(content, config)).toBe('stalled');
+    expect(detectState(content, config)).toBe('working');
   });
 
-  it('detects idle (not stalled): checklist with all items passing', () => {
+  it('detects idle (not working): checklist with all items passing', () => {
     // All items passed — task completed successfully, normal idle
     const content = pane(
       '  \u2713 Step 1 completed',

@@ -40,9 +40,9 @@ describe('tmux — pure functions', () => {
       expect(tmux.detectState('> ', config)).toBe('idle');
     });
 
-    it('returns "stalled" when idle prompt has failed checklist items', () => {
+    it('returns "working" when idle prompt has failed checklist items', () => {
       const content = '  \u2713 Step 1\n  \u2713 Step 2\n  \u2717 Step 3\n> ';
-      expect(tmux.detectState(content, config)).toBe('stalled');
+      expect(tmux.detectState(content, config)).toBe('working');
     });
 
     it('returns "idle" when checklist has only passing items', () => {
