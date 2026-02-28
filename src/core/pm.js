@@ -412,15 +412,15 @@ class ProjectManager extends EventEmitter {
     }
 
     const jql = source.jql || '';
-    const fields = 'summary,issuetype,customfield_10016,priority,labels';
-    const encodedJql = encodeURIComponent(jql);
-    const urlStr = `${baseUrl}/rest/api/2/search?jql=${encodedJql}&fields=${fields}&maxResults=50`;
+    const fields = ['summary', 'issuetype', 'customfield_10016', 'priority', 'labels'];
+    const urlStr = `${baseUrl}/rest/api/3/search/jql`;
     const auth = Buffer.from(`${email}:${apiToken}`).toString('base64');
 
     const data = await this._httpRequest(urlStr, {
       'Authorization': `Basic ${auth}`,
       'Accept': 'application/json',
-    });
+      'Content-Type': 'application/json',
+    }, JSON.stringify({ jql, fields, maxResults: 50 }));
     return (data.issues || []).map(i => ({
       key: i.key,
       summary: i.fields.summary,
@@ -443,8 +443,14 @@ class ProjectManager extends EventEmitter {
     const urlStr = `https://api.github.com/repos/${source.repo}/issues?${params}`;
 
     const data = await this._httpRequest(urlStr, this._githubHeaders());
+    const authorFilter = source.author ? source.author.toLowerCase() : null;
+    const excludeSet = source.excludeLabels
+      ? new Set(source.excludeLabels.split(',').map(l => l.trim().toLowerCase()).filter(Boolean))
+      : null;
     return (Array.isArray(data) ? data : [])
       .filter(i => !i.pull_request) // exclude PRs from issues endpoint
+      .filter(i => !authorFilter || (i.user && i.user.login.toLowerCase() === authorFilter))
+      .filter(i => !excludeSet || !i.labels.some(l => excludeSet.has(l.name.toLowerCase())))
       .map(i => ({
         key: `${source.repo}#${i.number}`,
         summary: i.title,
@@ -471,8 +477,14 @@ class ProjectManager extends EventEmitter {
 
     // Double-check: filter out any PRs not targeting allowed bases
     const baseSet = new Set(allowedBases);
+    const authorFilter = source.author ? source.author.toLowerCase() : null;
+    const excludeSet = source.excludeLabels
+      ? new Set(source.excludeLabels.split(',').map(l => l.trim().toLowerCase()).filter(Boolean))
+      : null;
     return allPrs
       .filter(pr => baseSet.has(pr.base && pr.base.ref) && !pr.draft)
+      .filter(pr => !authorFilter || (pr.user && pr.user.login.toLowerCase() === authorFilter))
+      .filter(pr => !excludeSet || !pr.labels.some(l => excludeSet.has(l.name.toLowerCase())))
       .map(pr => ({
         key: `${source.repo}#${pr.number}`,
         summary: pr.title,
@@ -669,32 +681,37 @@ class ProjectManager extends EventEmitter {
     return null;
   }
 
-  _httpRequest(urlStr, headers) {
+  _httpRequest(urlStr, headers, body) {
     return new Promise((resolve, reject) => {
       const url = new URL(urlStr);
       const mod = url.protocol === 'https:' ? https : http;
 
-      const req = mod.get(urlStr, {
+      const options = {
+        method: body ? 'POST' : 'GET',
         headers: { ...headers },
         timeout: 15000,
-      }, (res) => {
-        let body = '';
-        res.on('data', (chunk) => body += chunk);
+      };
+
+      const req = mod.request(urlStr, options, (res) => {
+        let data = '';
+        res.on('data', (chunk) => data += chunk);
         res.on('end', () => {
           if (res.statusCode >= 200 && res.statusCode < 300) {
             try {
-              resolve(JSON.parse(body));
+              resolve(JSON.parse(data));
             } catch (e) {
               reject(new Error(`Invalid JSON response: ${e.message}`));
             }
           } else {
-            reject(new Error(`HTTP ${res.statusCode}: ${body.slice(0, 200)}`));
+            reject(new Error(`HTTP ${res.statusCode}: ${data.slice(0, 200)}`));
           }
         });
       });
 
       req.on('error', (err) => reject(new Error(`Request failed: ${err.message}`)));
       req.on('timeout', () => { req.destroy(); reject(new Error('Request timed out')); });
+      if (body) req.write(body);
+      req.end();
     });
   }
 

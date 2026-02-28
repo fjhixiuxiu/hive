@@ -1649,12 +1649,20 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       <input class="pm-form-input" id="pm-form-gh-labels" type="text" placeholder="bug,help wanted" autocomplete="off">
     </div>
     <div class="pm-form-field pm-fields-github" style="display:none">
+      <label class="pm-form-label">Exclude Labels <span style="color:var(--dim)">(comma-separated, optional)</span></label>
+      <input class="pm-form-input" id="pm-form-gh-exclude-labels" type="text" placeholder="wontfix,duplicate" autocomplete="off">
+    </div>
+    <div class="pm-form-field pm-fields-github" style="display:none">
       <label class="pm-form-label">State</label>
       <select class="pm-form-select" id="pm-form-gh-state">
         <option value="open">Open</option>
         <option value="closed">Closed</option>
         <option value="all">All</option>
       </select>
+    </div>
+    <div class="pm-form-field pm-fields-github" style="display:none">
+      <label class="pm-form-label">Author <span style="color:var(--dim)">(GitHub username, optional)</span></label>
+      <input class="pm-form-input" id="pm-form-gh-author" type="text" placeholder="jeffheifetz" autocomplete="off">
     </div>
     <div class="pm-form-field pm-fields-re-reviews" style="display:none">
       <label class="pm-form-label">Reviewer Username</label>
@@ -5512,7 +5520,9 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       case 'github-prs':
         source.repo = document.getElementById('pm-form-gh-repo').value.trim();
         source.labels = document.getElementById('pm-form-gh-labels').value.trim();
+        source.excludeLabels = document.getElementById('pm-form-gh-exclude-labels').value.trim();
         source.state = document.getElementById('pm-form-gh-state').value;
+        source.author = document.getElementById('pm-form-gh-author').value.trim();
         if (!source.repo) { showToast('Error', 'Repo required', 'error'); return; }
         break;
       case 'github-re-reviews':
@@ -5577,7 +5587,9 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     document.getElementById('pm-form-jql').value = src.jql || '';
     document.getElementById('pm-form-gh-repo').value = src.repo || '';
     document.getElementById('pm-form-gh-labels').value = src.labels || '';
+    document.getElementById('pm-form-gh-exclude-labels').value = src.excludeLabels || '';
     document.getElementById('pm-form-gh-state').value = src.state || 'open';
+    document.getElementById('pm-form-gh-author').value = src.author || '';
     document.getElementById('pm-form-gh-reviewer').value = src.reviewer || '';
     document.getElementById('pm-form-gh-triggers').value = src.triggerPhrases || '';
     document.getElementById('pm-form-command').value = src.command || '';
