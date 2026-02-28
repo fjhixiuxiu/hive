@@ -2,6 +2,7 @@ const http = require('http');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const { execFile } = require('child_process');
 const express = require('express');
 const { WebSocketServer } = require('ws');
 const fleet = require('../../core/fleet');
@@ -9,6 +10,76 @@ const relay = require('../../core/relay');
 const git = require('../../core/git');
 const RemoteNode = require('../../core/remote-node');
 const auth = require('../../core/auth');
+const prStatus = require('../../core/pr-status');
+const log = require('../../core/log');
+
+// Env for gh CLI — ensure /opt/homebrew/bin is in PATH for hivebot
+const ghExecEnv = { ...process.env, PATH: `/opt/homebrew/bin:${process.env.PATH || ''}` };
+
+// ── Contextual action definitions by source type ─────
+const ACTION_DEFS = {
+  'github-pr': [
+    { id: 'approve', label: 'Approve', color: 'var(--green)', confirm: false },
+    { id: 'request-changes', label: 'Request Changes', color: 'var(--red)', confirm: true },
+    { id: 'merge', label: 'Merge (Squash)', color: 'var(--purple)', confirm: true },
+    { id: 'merge-commit', label: 'Merge (Merge Commit)', color: 'var(--purple)', confirm: true },
+    { id: 'admin-merge', label: 'Admin Merge (Override)', color: 'var(--orange)', confirm: true },
+    { id: 'close-pr', label: 'Close PR', color: 'var(--red)', confirm: true },
+    { id: 'approve-close', label: 'Approve & Close Task', color: 'var(--cyan)', confirm: true },
+  ],
+};
+
+function decorateTaskActions(task) {
+  if (!task.actionContext || !task.actionContext.type) return task;
+  const defs = ACTION_DEFS[task.actionContext.type];
+  if (!defs) return task;
+  return { ...task, actions: defs };
+}
+
+async function executeGithubPrAction(ctx, actionId, pmManager) {
+  const { repo, prNumber } = ctx;
+  const headers = pmManager._githubHeaders();
+
+  switch (actionId) {
+    case 'approve': {
+      await pmManager._httpMethod('POST', `https://api.github.com/repos/${repo}/pulls/${prNumber}/reviews`, headers, { event: 'APPROVE' });
+      return { message: `Approved PR #${prNumber}`, closeTask: false };
+    }
+    case 'request-changes': {
+      await pmManager._httpMethod('POST', `https://api.github.com/repos/${repo}/pulls/${prNumber}/reviews`, headers, { event: 'REQUEST_CHANGES', body: 'Changes requested via Hive' });
+      return { message: `Requested changes on PR #${prNumber}`, closeTask: false };
+    }
+    case 'merge': {
+      await pmManager._httpMethod('PUT', `https://api.github.com/repos/${repo}/pulls/${prNumber}/merge`, headers, { merge_method: 'squash' });
+      return { message: `Merged PR #${prNumber} (squash)`, closeTask: false };
+    }
+    case 'merge-commit': {
+      await pmManager._httpMethod('PUT', `https://api.github.com/repos/${repo}/pulls/${prNumber}/merge`, headers, { merge_method: 'merge' });
+      return { message: `Merged PR #${prNumber} (merge commit)`, closeTask: false };
+    }
+    case 'admin-merge': {
+      // Admin merge bypasses branch protection checks
+      await pmManager._httpMethod('PUT', `https://api.github.com/repos/${repo}/pulls/${prNumber}/merge`, headers, { merge_method: 'squash', bypass_branch_protection: true });
+      return { message: `Admin merged PR #${prNumber} (override)`, closeTask: false };
+    }
+    case 'close-pr': {
+      await pmManager._httpMethod('PATCH', `https://api.github.com/repos/${repo}/pulls/${prNumber}`, headers, { state: 'closed' });
+      return { message: `Closed PR #${prNumber}`, closeTask: false };
+    }
+    case 'approve-close': {
+      await pmManager._httpMethod('POST', `https://api.github.com/repos/${repo}/pulls/${prNumber}/reviews`, headers, { event: 'APPROVE' });
+      return { message: `Approved PR #${prNumber}`, closeTask: true };
+    }
+    default:
+      throw new Error(`Unknown action: ${actionId}`);
+  }
+}
+
+async function executeTaskAction(task, actionId, pmManager) {
+  const ctx = task.actionContext;
+  if (ctx.type === 'github-pr') return executeGithubPrAction(ctx, actionId, pmManager);
+  throw new Error(`Unknown action context type: ${ctx.type}`);
+}
 
 /**
  * Detect the Tailscale interface IP address.
@@ -120,14 +191,14 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
   const workerSecret = process.env.HIVE_WORKER_SECRET;
 
   if (!token && !auth.isOAuthEnabled()) {
-    console.warn('Neither WEB_TOKEN nor GitHub OAuth configured -- web dashboard disabled');
+    log.warn('Neither WEB_TOKEN nor GitHub OAuth configured -- web dashboard disabled');
     return null;
   }
 
   const app = express();
 
   // Wire GitHub OAuth routes (before static files so /auth/* routes take priority)
-  auth.wireAuthRoutes(app);
+  auth.wireAuthRoutes(app, taskQueue);
 
   // Serve dashboard — if OAuth enabled, protect with cookie check
   if (auth.isOAuthEnabled()) {
@@ -180,7 +251,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
           }
         } catch {}
       }
-      if (cleaned > 0) console.log(`[upload] Cleaned ${cleaned} expired file(s)`);
+      if (cleaned > 0) log.info(`[upload] Cleaned ${cleaned} expired file(s)`);
     } catch {}
   }, 10 * 60 * 1000);
 
@@ -201,12 +272,32 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
   // Track user identity per WebSocket connection
   const wsUser = new WeakMap(); // ws → { login, name, avatar } | null
 
+  // Permission check helper. Returns true if allowed, sends error and returns false otherwise.
+  // In legacy token mode (no OAuth), all actions are allowed.
+  function checkPermission(ws, user, capability) {
+    if (!auth.isOAuthEnabled()) return true; // legacy token mode — no enforcement
+    if (!user || !user.login) {
+      ws.send(JSON.stringify({ type: 'error', message: 'Not authenticated' }));
+      return false;
+    }
+    if (!taskQueue) return true; // no task queue = no permission system
+    if (taskQueue.hasPermission(user.login, capability)) return true;
+    ws.send(JSON.stringify({ type: 'error', message: `Permission denied: requires "${capability}"` }));
+    return false;
+  }
+
   function sendInitialState(ws) {
-    ws.send(JSON.stringify({ type: 'config', links: config.links || {} }));
+    const user = wsUser.get(ws) || null;
+    ws.send(JSON.stringify({ type: 'config', links: config.links || {}, spawnBaseDir: process.env.HIVE_REPO_DIR || '~/ai-dev' }));
     ws.send(JSON.stringify({ type: 'commands:list', commands }));
+    // Send user permissions
+    if (auth.isOAuthEnabled() && user && user.login && taskQueue) {
+      const u = taskQueue.getUser(user.login);
+      ws.send(JSON.stringify({ type: 'user:permissions', permissions: u ? u.permissions : ['view', 'comment'] }));
+    }
     sendFleetStatus(ws);
     if (taskQueue) {
-      ws.send(JSON.stringify({ type: 'tasks:list', tasks: taskQueue.getTasksList() }));
+      ws.send(JSON.stringify({ type: 'tasks:list', tasks: taskQueue.getTasksList().map(decorateTaskActions) }));
       ws.send(JSON.stringify({ type: 'auto:status', sessions: taskQueue.getAutoSessions() }));
       ws.send(JSON.stringify({ type: 'approvals:list', approvals: taskQueue.getPendingApprovals() }));
       const feedData = taskQueue.getFeed(null, 50);
@@ -217,6 +308,11 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       ws.send(JSON.stringify({ type: 'designationDefs:list', defs: taskQueue.getDesignationDefs() }));
       ws.send(JSON.stringify({ type: 'agentRoots:list', roots: taskQueue.getAgentRoots() }));
       ws.send(JSON.stringify({ type: 'agentFiles:list', files: taskQueue.agentFilesList }));
+      ws.send(JSON.stringify({ type: 'checklistTemplates:list', templates: taskQueue.getChecklistTemplates() }));
+      // Send users list to admins
+      if (user && user.login && taskQueue.hasPermission(user.login, 'admin')) {
+        ws.send(JSON.stringify({ type: 'users:list', users: taskQueue.getUsersList() }));
+      }
     }
     if (pmManager) {
       ws.send(JSON.stringify({ type: 'pm:list', pms: pmManager.getAll() }));
@@ -238,9 +334,12 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       if (user) {
         authenticated = true;
         const userInfo = { login: user.sub, name: user.name, avatar: user.avatar };
+        // Register user in permission system
+        if (taskQueue) taskQueue.ensureUser(userInfo.login, userInfo.name, userInfo.avatar);
         wsUser.set(ws, userInfo);
         clients.add(ws);
-        ws.send(JSON.stringify({ type: 'auth', ok: true, user: userInfo }));
+        const perms = taskQueue ? (taskQueue.getUser(userInfo.login) || {}).permissions || ['view', 'comment'] : [];
+        ws.send(JSON.stringify({ type: 'auth', ok: true, user: userInfo, permissions: perms }));
         sendInitialState(ws);
       }
     }
@@ -268,9 +367,16 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
           // Dashboard client
           authenticated = true;
           if (authTimeout) clearTimeout(authTimeout);
+          // Register user in permission system
+          if (authResult.user && authResult.user.login && taskQueue) {
+            taskQueue.ensureUser(authResult.user.login, authResult.user.name, authResult.user.avatar);
+          }
           wsUser.set(ws, authResult.user);
           clients.add(ws);
-          ws.send(JSON.stringify({ type: 'auth', ok: true, user: authResult.user }));
+          const perms = (authResult.user && authResult.user.login && taskQueue)
+            ? (taskQueue.getUser(authResult.user.login) || {}).permissions || ['view', 'comment']
+            : [];
+          ws.send(JSON.stringify({ type: 'auth', ok: true, user: authResult.user, permissions: perms }));
           sendInitialState(ws);
         } else if (msg.type === 'worker:register' && workerSecret && msg.secret === workerSecret) {
           // Worker node registration
@@ -281,7 +387,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
           router.addNode(node);
           workers.set(ws, node);
           ws.send(JSON.stringify({ type: 'worker:registered', nodeId: msg.nodeId }));
-          console.log(`Worker "${msg.nodeId}" connected`);
+          log.info(`Worker "${msg.nodeId}" connected`);
           // Notify dashboard clients about the new node
           broadcast({ type: 'node:connected', nodeId: msg.nodeId });
         } else {
@@ -304,7 +410,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       // Dashboard client message routing
       const user = wsUser.get(ws) || null;
       handleMessage(ws, msg, user).catch(err => {
-        console.error('Message handler error:', err.message);
+        log.error('Message handler error:', err.message);
         if (ws.readyState === 1) {
           ws.send(JSON.stringify({ type: 'error', message: err.message }));
         }
@@ -322,7 +428,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
         node.disconnect();
         router.removeNode(node.id);
         workers.delete(ws);
-        console.log(`Worker "${node.id}" disconnected`);
+        log.info(`Worker "${node.id}" disconnected`);
         broadcast({ type: 'node:disconnected', nodeId: node.id });
       }
     });
@@ -431,6 +537,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
         break;
 
       case 'ask': {
+        if (!checkPermission(ws, user, 'send-messages')) break;
         const found = await fleet.findSession(config, router, msg.session);
         if (!found) {
           ws.send(JSON.stringify({ type: 'error', message: `No session matching "${msg.session}"` }));
@@ -460,6 +567,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       }
 
       case 'tell': {
+        if (!checkPermission(ws, user, 'send-messages')) break;
         const found = await fleet.findSession(config, router, msg.session);
         if (!found) {
           ws.send(JSON.stringify({ type: 'error', message: `No session matching "${msg.session}"` }));
@@ -476,7 +584,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
             error: result.error,
           }));
         }).catch((err) => {
-          console.error('tell error:', err);
+          log.error('tell error:', err);
           if (ws.readyState === 1) {
             ws.send(JSON.stringify({ type: 'tell:done', session: msg.session, success: false, error: err.message }));
           }
@@ -485,6 +593,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       }
 
       case 'keys': {
+        if (!checkPermission(ws, user, 'send-messages')) break;
         // Send raw tmux keys (Enter, Up, Down, Escape, Tab, etc.)
         const found = await fleet.findSession(config, router, msg.session);
         if (!found) {
@@ -504,6 +613,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       }
 
       case 'restart': {
+        if (!checkPermission(ws, user, 'restart')) break;
         const found = await fleet.findSession(config, router, msg.session);
         if (!found) {
           ws.send(JSON.stringify({ type: 'error', message: `No session matching "${msg.session}"` }));
@@ -597,6 +707,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       // -- Task queue messages ----------------------------------------------
       case 'task:create': {
         if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'create-tasks')) break;
         const task = taskQueue.createTask(msg.text, msg.mode, msg.targetSession, msg.designation, { createdBy: user?.login || null });
         ws.send(JSON.stringify({ type: 'task:created', task }));
         break;
@@ -604,6 +715,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
 
       case 'task:attach': {
         if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'create-tasks')) break;
         const task = taskQueue.attachTask(msg.text, msg.session, msg.meta);
         broadcast({ type: 'task:created', task });
         broadcast({ type: 'task:dispatched', task });
@@ -613,6 +725,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
 
       case 'task:update': {
         if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'create-tasks')) break;
         const updatedTask = taskQueue.updateTask(msg.taskId, msg.updates || {});
         if (updatedTask) broadcast({ type: 'task:updated', task: updatedTask });
         break;
@@ -629,6 +742,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
 
       case 'task:dispatch': {
         if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'dispatch')) break;
         taskQueue.dispatchTaskTo(msg.taskId, msg.session).then((task) => {
           if (task) broadcast({ type: 'task:dispatched', task });
           else if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'error', message: 'Could not dispatch task — not queued or session unavailable' }));
@@ -640,6 +754,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
 
       case 'task:cancel': {
         if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'cancel')) break;
         const cancelledTask = taskQueue.cancelTask(msg.taskId);
         if (cancelledTask) broadcast({ type: 'task:cancelled', task: cancelledTask });
         break;
@@ -647,25 +762,97 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
 
       case 'task:complete': {
         if (!taskQueue) break;
-        const task = taskQueue.completeTask(msg.taskId, msg.result || 'Manually completed');
+        if (!checkPermission(ws, user, 'cancel')) break;
+        const pendingTask = taskQueue.tasks.get(msg.taskId);
+        let snap = null, snapCols = 0;
+        if (pendingTask && pendingTask.assignedTo) {
+          try {
+            const found = await fleet.findSession(config, router, pendingTask.assignedTo);
+            if (found) {
+              const node = router.getNode(found.nodeId);
+              const paneTarget = `${found.name}:.${config.sessions.claudePane}`;
+              snap = await node.exec(`tmux capture-pane -e -p -S -500 -t "${paneTarget}" 2>/dev/null`) || null;
+              const colsStr = await node.exec(`tmux display-message -p -t "${paneTarget}" "#{pane_width}" 2>/dev/null`);
+              snapCols = parseInt(colsStr) || 0;
+            }
+          } catch {}
+        }
+        const task = taskQueue.completeTask(msg.taskId, msg.result || 'Manually completed', snap, snapCols);
         if (task) broadcast({ type: 'task:completed', task });
+        break;
+      }
+
+      case 'task:resume': {
+        if (!taskQueue) break;
+        const task = taskQueue.resumeTask(msg.taskId);
+        if (task) {
+          broadcast({ type: 'task:dispatched', task });
+          // If a newer task ran in this session, send /resume to reload the conversation
+          if (msg.sendResume && task.assignedTo) {
+            const found = await fleet.findSession(config, router, task.assignedTo);
+            if (found) {
+              const node = router.getNode(found.nodeId);
+              relay.tell(config, node, found.name, '/resume', { vimMode: taskQueue.vimMode }).catch(() => {});
+            }
+          }
+        } else {
+          ws.send(JSON.stringify({ type: 'error', message: 'Cannot resume task — session may be busy or task not resumable' }));
+        }
+        break;
+      }
+
+      case 'task:action': {
+        if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'cancel')) break;
+        const actionTask = taskQueue.tasks.get(msg.taskId);
+        if (!actionTask || !actionTask.actionContext) {
+          ws.send(JSON.stringify({ type: 'task:action:result', taskId: msg.taskId, actionId: msg.actionId, ok: false, error: 'Task not found or has no actions' }));
+          break;
+        }
+        try {
+          const pmManager = taskQueue._pmManager;
+          const result = await executeTaskAction(actionTask, msg.actionId, pmManager);
+          broadcast({ type: 'task:action:result', taskId: msg.taskId, actionId: msg.actionId, ok: true, message: result.message });
+          if (result.closeTask || msg.closeTask) {
+            let actionSnap = null, actionSnapCols = 0;
+            if (actionTask.assignedTo) {
+              try {
+                const found = await fleet.findSession(config, router, actionTask.assignedTo);
+                if (found) {
+                  const node = router.getNode(found.nodeId);
+                  const paneTarget = `${found.name}:.${config.sessions.claudePane}`;
+                  actionSnap = await node.exec(`tmux capture-pane -e -p -S -500 -t "${paneTarget}" 2>/dev/null`) || null;
+                  const colsStr = await node.exec(`tmux display-message -p -t "${paneTarget}" "#{pane_width}" 2>/dev/null`);
+                  actionSnapCols = parseInt(colsStr) || 0;
+                }
+              } catch {}
+            }
+            const completed = taskQueue.completeTask(msg.taskId, result.message, actionSnap, actionSnapCols);
+            if (completed) broadcast({ type: 'task:completed', task: decorateTaskActions(completed) });
+          }
+        } catch (err) {
+          ws.send(JSON.stringify({ type: 'task:action:result', taskId: msg.taskId, actionId: msg.actionId, ok: false, error: err.message }));
+        }
         break;
       }
 
       case 'auto:toggle': {
         if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'dispatch')) break;
         taskQueue.toggleAutoSession(msg.session);
         break;
       }
 
       case 'auto:set': {
         if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'dispatch')) break;
         taskQueue.setAutoSessions(msg.sessions || []);
         break;
       }
 
       case 'broadcast': {
         if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'send-messages')) break;
         taskQueue.broadcast(msg.message, msg.target, msg.sessions).then((result) => {
           if (ws.readyState === 1) {
             ws.send(JSON.stringify({ type: 'broadcast:done', sent: result.sent, failed: result.failed }));
@@ -676,6 +863,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
 
       case 'approval:respond': {
         if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'send-messages')) break;
         const approval = await taskQueue.resolveApproval(msg.approvalId, msg.approved);
         if (approval) ws.send(JSON.stringify({ type: 'approval:resolved', approval }));
         break;
@@ -690,6 +878,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
 
       case 'rule:toggle': {
         if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'admin')) break;
         taskQueue.toggleRule(msg.ruleId);
         break;
       }
@@ -697,18 +886,21 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       // -- Designation messages ---------------------------------------------
       case 'designation:set': {
         if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'admin')) break;
         taskQueue.setDesignation(msg.session, msg.designation);
         break;
       }
 
       case 'designationDef:set': {
         if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'admin')) break;
         taskQueue.setDesignationDef(msg.name, { agentFiles: msg.agentFiles, description: msg.description });
         break;
       }
 
       case 'designationDef:remove': {
         if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'admin')) break;
         taskQueue.removeDesignationDef(msg.name);
         break;
       }
@@ -721,6 +913,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
 
       case 'agentRoots:set': {
         if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'admin')) break;
         taskQueue.setAgentRoots(msg.roots);
         taskQueue.scanAgentFiles();
         ws.send(JSON.stringify({ type: 'agentFiles:list', files: taskQueue.agentFilesList }));
@@ -743,8 +936,33 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       // -- VIM mode messages -------------------------------------------------
       case 'vim:toggle': {
         if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'admin')) break;
         taskQueue.setVimMode(msg.enabled);
         broadcast({ type: 'vim:status', enabled: taskQueue.vimMode });
+        break;
+      }
+
+      case 'kill': {
+        if (!checkPermission(ws, user, 'restart')) break;
+        const found = await fleet.findSession(config, router, msg.session);
+        if (!found) {
+          ws.send(JSON.stringify({ type: 'error', message: `No session matching "${msg.session}"` }));
+          return;
+        }
+        const { name, nodeId } = found;
+        const num = fleet.sessionNum(name);
+        const node = router.getNode(nodeId);
+        await node.exec(`tmux kill-session -t "${name}:" 2>/dev/null`);
+        if (num) taskQueue.cleanupSession(num);
+        if (ws.readyState === 1) {
+          ws.send(JSON.stringify({ type: 'kill:done', session: msg.session }));
+        }
+        setTimeout(() => {
+          fleet.invalidateCache();
+          _previewCache.result = null;
+          _previewCache.ts = 0;
+          broadcastFleetStatus().catch(() => {});
+        }, 500);
         break;
       }
 
@@ -758,6 +976,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
 
       case 'spawn:config': {
         if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'admin')) break;
         if (msg.min !== undefined && msg.max !== undefined) {
           taskQueue.setSpawnSlotRange(msg.min, msg.max);
         }
@@ -767,6 +986,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
 
       case 'spawn': {
         if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'admin')) break;
         taskQueue.spawnSession({
           num: msg.num,
           baseDir: msg.baseDir,
@@ -778,8 +998,11 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
           }
           // Refresh fleet for all clients after a delay
           setTimeout(() => {
+            fleet.invalidateCache();
+            _previewCache.result = null;
+            _previewCache.ts = 0;
             broadcastFleetStatus().catch(() => {});
-          }, 3000);
+          }, 500);
         }).catch((err) => {
           if (ws.readyState === 1) {
             ws.send(JSON.stringify({ type: 'spawn:done', success: false, error: err.message }));
@@ -791,6 +1014,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       // -- PM messages -------------------------------------------------------
       case 'pm:create': {
         if (!pmManager) break;
+        if (!checkPermission(ws, user, 'admin')) break;
         const pm = pmManager.create(msg.config);
         ws.send(JSON.stringify({ type: 'pm:created', pm }));
         broadcast({ type: 'pm:list', pms: pmManager.getAll() });
@@ -799,6 +1023,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
 
       case 'pm:update': {
         if (!pmManager) break;
+        if (!checkPermission(ws, user, 'admin')) break;
         pmManager.update(msg.id, msg.updates);
         broadcast({ type: 'pm:list', pms: pmManager.getAll() });
         break;
@@ -806,6 +1031,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
 
       case 'pm:delete': {
         if (!pmManager) break;
+        if (!checkPermission(ws, user, 'admin')) break;
         pmManager.remove(msg.id);
         broadcast({ type: 'pm:list', pms: pmManager.getAll() });
         break;
@@ -813,14 +1039,189 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
 
       case 'pm:toggle': {
         if (!pmManager) break;
+        if (!checkPermission(ws, user, 'admin')) break;
         pmManager.toggle(msg.id);
         broadcast({ type: 'pm:list', pms: pmManager.getAll() });
+        break;
+      }
+
+      case 'pm:rescan': {
+        if (!pmManager) break;
+        if (!checkPermission(ws, user, 'admin')) break;
+        pmManager.rescan(msg.id);
+        ws.send(JSON.stringify({ type: 'pm:rescan:done', id: msg.id }));
         break;
       }
 
       case 'pm:list': {
         if (!pmManager) break;
         ws.send(JSON.stringify({ type: 'pm:list', pms: pmManager.getAll() }));
+        break;
+      }
+
+      // -- Task comment messages ----------------------------------------------
+      case 'task:comment:add': {
+        if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'comment')) break;
+        const comment = taskQueue.addComment(msg.taskId, user?.login, user?.name, msg.text);
+        if (!comment) {
+          ws.send(JSON.stringify({ type: 'error', message: 'Task not found' }));
+        }
+        // Broadcast handled by event bridge below
+        break;
+      }
+
+      case 'task:comment:delete': {
+        if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'comment')) break;
+        const deleted = taskQueue.deleteComment(msg.taskId, msg.commentId, user?.login);
+        if (!deleted) {
+          ws.send(JSON.stringify({ type: 'error', message: 'Cannot delete comment' }));
+        }
+        // Broadcast handled by event bridge below
+        break;
+      }
+
+      // -- Checklist template messages ------------------------------------------
+      case 'checklistTemplate:set': {
+        if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'admin')) break;
+        taskQueue.setChecklistTemplate(msg.name, msg.items);
+        break;
+      }
+
+      case 'checklistTemplate:delete': {
+        if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'admin')) break;
+        taskQueue.removeChecklistTemplate(msg.name);
+        break;
+      }
+
+      // -- Task checklist messages ---------------------------------------------
+      case 'task:checklist:toggle': {
+        if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'create-tasks')) break;
+        taskQueue.toggleChecklistItem(msg.taskId, msg.itemId);
+        break;
+      }
+
+      case 'task:checklist:add': {
+        if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'create-tasks')) break;
+        taskQueue.addChecklistItem(msg.taskId, msg.text);
+        break;
+      }
+
+      case 'task:checklist:remove': {
+        if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'create-tasks')) break;
+        taskQueue.removeChecklistItem(msg.taskId, msg.itemId);
+        break;
+      }
+
+      case 'task:checklist:seed': {
+        if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'create-tasks')) break;
+        const tpl = taskQueue.checklistTemplates.get(msg.templateName);
+        if (tpl) {
+          const checklist = tpl.items.map(text => ({ text, checked: false }));
+          taskQueue.setTaskChecklist(msg.taskId, checklist);
+        }
+        break;
+      }
+
+      // -- User permission messages -------------------------------------------
+      case 'users:list': {
+        if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'admin')) break;
+        ws.send(JSON.stringify({ type: 'users:list', users: taskQueue.getUsersList() }));
+        break;
+      }
+
+      case 'users:setPermissions': {
+        if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'admin')) break;
+        // Self-demotion prevention: can't remove own admin
+        if (msg.login === user?.login && !(msg.permissions || []).includes('admin')) {
+          ws.send(JSON.stringify({ type: 'error', message: 'Cannot remove your own admin permission' }));
+          break;
+        }
+        const updated = taskQueue.setUserPermissions(msg.login, msg.permissions || []);
+        if (updated) {
+          // Broadcast updated permissions to all clients
+          broadcast({ type: 'users:updated', user: updated });
+          // Send updated permissions to the affected user's connections
+          for (const client of clients) {
+            const clientUser = wsUser.get(client);
+            if (clientUser && clientUser.login === msg.login && client.readyState === 1) {
+              client.send(JSON.stringify({ type: 'user:permissions', permissions: updated.permissions }));
+            }
+          }
+        }
+        break;
+      }
+
+      case 'users:add': {
+        if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'admin')) break;
+        const login = (msg.login || '').trim();
+        if (!login) {
+          ws.send(JSON.stringify({ type: 'error', message: 'GitHub username is required' }));
+          break;
+        }
+        taskQueue.addUser(login, msg.permissions);
+        break;
+      }
+
+      case 'users:remove': {
+        if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'admin')) break;
+        const login = (msg.login || '').trim().toLowerCase();
+        if (!login) break;
+        // Can't remove yourself
+        if (login === user?.login?.toLowerCase()) {
+          ws.send(JSON.stringify({ type: 'error', message: 'Cannot remove yourself' }));
+          break;
+        }
+        taskQueue.removeUser(login);
+        break;
+      }
+
+      // -- Ideas (GitHub issues) -----------------------------------------------
+      case 'idea:create': {
+        const title = (msg.title || '').trim();
+        if (!title) {
+          ws.send(JSON.stringify({ type: 'idea:error', error: 'Title is required' }));
+          break;
+        }
+        const args = ['issue', 'create', '--repo', 'nukulb/hive', '--title', title, '--label', 'idea'];
+        if (msg.body) { args.push('--body', msg.body); }
+        execFile('gh', args, { timeout: 15000, env: ghExecEnv }, (err, stdout) => {
+          if (err) {
+            ws.send(JSON.stringify({ type: 'idea:error', error: err.message }));
+            return;
+          }
+          const url = (stdout || '').trim();
+          const numMatch = url.match(/\/issues\/(\d+)$/);
+          const issue = { url, number: numMatch ? parseInt(numMatch[1]) : 0, title };
+          ws.send(JSON.stringify({ type: 'idea:created', issue }));
+        });
+        break;
+      }
+
+      case 'idea:list': {
+        execFile('gh', ['issue', 'list', '--repo', 'nukulb/hive', '--label', 'idea', '--state', 'all', '--json', 'number,title,state,url', '--limit', '50'], { timeout: 15000, env: ghExecEnv }, (err, stdout) => {
+          if (err) {
+            ws.send(JSON.stringify({ type: 'idea:error', error: err.message }));
+            return;
+          }
+          try {
+            const ideas = JSON.parse(stdout);
+            ws.send(JSON.stringify({ type: 'idea:list', ideas }));
+          } catch (e) {
+            ws.send(JSON.stringify({ type: 'idea:list', ideas: [] }));
+          }
+        });
         break;
       }
     }
@@ -874,7 +1275,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
 
   // Cache for full fleet with previews (same pattern as getFleetStatus)
   let _previewCache = { result: null, ts: 0, pending: null };
-  const PREVIEW_CACHE_TTL = 8000; // 8s (longer than fleet since previews are heavier)
+  const PREVIEW_CACHE_TTL = 10000; // 10s
 
   async function getFleetWithPreviews() {
     const now = Date.now();
@@ -908,7 +1309,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
           totalChanges: s.git ? s.git.staged + s.git.modified + s.git.untracked : 0,
         };
       }
-      console.log(`[perf] getFleetWithPreviews: ${Date.now() - t0}ms`);
+      log.info(`[perf] getFleetWithPreviews: ${Date.now() - t0}ms`);
       _previewCache.result = sessions;
       _previewCache.ts = Date.now();
       _previewCache.pending = null;
@@ -921,14 +1322,14 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     // Send basic status immediately so the UI renders fast
     const t0 = Date.now();
     const sessions = await fleet.getFleetStatus(config, router);
-    console.log(`[perf] getFleetStatus: ${Date.now() - t0}ms`);
+    log.info(`[perf] getFleetStatus: ${Date.now() - t0}ms`);
     if (ws.readyState === 1) {
       ws.send(JSON.stringify({ type: 'fleet:status', sessions }));
     }
     // Then fill in previews/git summaries and send again
     const t1 = Date.now();
     const full = await getFleetWithPreviews();
-    console.log(`[perf] getFleetWithPreviews: ${Date.now() - t1}ms`);
+    log.info(`[perf] getFleetWithPreviews: ${Date.now() - t1}ms`);
     if (ws.readyState === 1) {
       ws.send(JSON.stringify({ type: 'fleet:status', sessions: full }));
     }
@@ -942,9 +1343,29 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     }
   }
 
-  // Broadcast fleet status every 10s
+  // Broadcast fleet status every 15s
   const fleetInterval = setInterval(() => {
-    broadcastFleetStatus().catch(err => console.error('Fleet broadcast error:', err.message));
+    broadcastFleetStatus().catch(err => log.error('Fleet broadcast error:', err.message));
+  }, 15000);
+
+  // Background PR/CI status refresh — runs every 5 min, fetches one branch at a time
+  async function refreshPRStatus() {
+    try {
+      const sessions = await fleet.getFleetStatus(config, router);
+      const branches = [...new Set(sessions.map(s => s.branch).filter(b => b && b !== 'master' && b !== 'main'))];
+      for (const branch of branches) {
+        await prStatus.fetch(branch, config);
+      }
+      // Broadcast updated fleet so badges refresh
+      broadcastFleetStatus().catch(() => {});
+    } catch (err) {
+      log.error('PR status refresh error:', err.message);
+    }
+  }
+  // Initial fetch after 10s (let fleet cache warm up first), then every 5 min
+  setTimeout(() => {
+    refreshPRStatus();
+    setInterval(refreshPRStatus, 300000);
   }, 10000);
 
   // -- Watcher event bridge -----------------------------------------------
@@ -973,12 +1394,12 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
   // -- TaskQueue event bridge ---------------------------------------------
 
   if (taskQueue) {
-    taskQueue.on('task:created', (task) => broadcast({ type: 'task:created', task }));
-    taskQueue.on('task:dispatched', (task) => broadcast({ type: 'task:dispatched', task }));
-    taskQueue.on('task:completed', (task) => broadcast({ type: 'task:completed', task }));
-    taskQueue.on('task:failed', (task) => broadcast({ type: 'task:failed', task }));
-    taskQueue.on('task:cancelled', (task) => broadcast({ type: 'task:cancelled', task }));
-    taskQueue.on('task:updated', (task) => broadcast({ type: 'task:updated', task }));
+    taskQueue.on('task:created', (task) => broadcast({ type: 'task:created', task: decorateTaskActions(task) }));
+    taskQueue.on('task:dispatched', (task) => broadcast({ type: 'task:dispatched', task: decorateTaskActions(task) }));
+    taskQueue.on('task:completed', (task) => broadcast({ type: 'task:completed', task: decorateTaskActions(task) }));
+    taskQueue.on('task:failed', (task) => broadcast({ type: 'task:failed', task: decorateTaskActions(task) }));
+    taskQueue.on('task:cancelled', (task) => broadcast({ type: 'task:cancelled', task: decorateTaskActions(task) }));
+    taskQueue.on('task:updated', (task) => broadcast({ type: 'task:updated', task: decorateTaskActions(task) }));
     taskQueue.on('auto:changed', (sessions) => broadcast({ type: 'auto:status', sessions }));
     taskQueue.on('feed:new', (entry) => broadcast({ type: 'feed:new', entry }));
     taskQueue.on('approval:new', (approval) => broadcast({ type: 'approval:new', approval }));
@@ -990,6 +1411,18 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     taskQueue.on('agentFiles:scanned', (files) => broadcast({ type: 'agentFiles:list', files }));
     taskQueue.on('vim:changed', (enabled) => broadcast({ type: 'vim:status', enabled }));
     taskQueue.on('spawnSlotRange:changed', (range) => broadcast({ type: 'spawn:config', min: range.min, max: range.max }));
+    taskQueue.on('task:comment:added', (data) => broadcast({ type: 'task:comment:added', taskId: data.taskId, comment: data.comment }));
+    taskQueue.on('task:comment:deleted', (data) => broadcast({ type: 'task:comment:deleted', taskId: data.taskId, commentId: data.commentId }));
+    taskQueue.on('checklistTemplates:changed', (templates) => broadcast({ type: 'checklistTemplates:list', templates }));
+    taskQueue.on('users:changed', (users) => {
+      // Only send full users list to admins
+      for (const client of clients) {
+        const clientUser = wsUser.get(client);
+        if (clientUser && clientUser.login && taskQueue.hasPermission(clientUser.login, 'admin') && client.readyState === 1) {
+          client.send(JSON.stringify({ type: 'users:list', users }));
+        }
+      }
+    });
   }
 
   if (pmManager) {
@@ -1010,26 +1443,26 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       });
     });
     httpServer.listen(port, host, () => {
-      console.log(`Web dashboard: http://${host}:${port}`);
+      log.info(`Web dashboard: http://${host}:${port}`);
     });
     servers.push(httpServer);
   }
 
   if (workerSecret) {
-    console.log(`Worker registration enabled on port ${port}`);
+    log.info(`Worker registration enabled on port ${port}`);
   }
 
   // Initial agent file scan on startup
   if (taskQueue && taskQueue.agentRoots.length > 0) {
     taskQueue.scanAgentFiles();
-    console.log(`Scanned ${taskQueue.agentFilesList.length} agent files from ${taskQueue.agentRoots.length} root(s)`);
+    log.info(`Scanned ${taskQueue.agentFilesList.length} agent files from ${taskQueue.agentRoots.length} root(s)`);
   }
 
   const tsIP = getTailscaleIP();
   if (tsIP) {
-    console.log(`Tailscale access enabled (${tsIP})`);
+    log.info(`Tailscale access enabled (${tsIP})`);
   } else if (!process.env.WEB_BIND) {
-    console.log('No Tailscale interface found — dashboard is localhost-only');
+    log.info('No Tailscale interface found — dashboard is localhost-only');
   }
 
   // Cleanup

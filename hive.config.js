@@ -9,7 +9,13 @@ module.exports = {
     pattern: /^\d+/,
 
     // Map session number → repo directory
-    repoDir: (n) => path.join(os.homedir(), `ai-dev/webplatform${n}`),
+    // Set HIVE_REPO_DIR in .env (e.g. ~/Desktop/Viv/webplatform) — session number is appended
+    repoDir: (n) => {
+      const base =
+        process.env.HIVE_REPO_DIR ||
+        path.join(os.homedir(), 'ai-dev/webplatform');
+      return `${base.replace(/^~/, os.homedir())}${n}`;
+    },
 
     // Which pane index runs Claude Code (depends on your tmux layout)
     claudePane: 1,
@@ -79,6 +85,15 @@ module.exports = {
   watcher: {
     // How often to check for state changes (ms)
     interval: 10000,
+  },
+
+  // ── GitHub + Jenkins (for PR/CI status) ───────────────
+  github: {
+    repo: 'mavencare/webplatform', // owner/repo
+  },
+  jenkins: {
+    baseUrl: 'https://jenkins.vivtechnologies.com',
+    jobPath: 'job/webplatform/job', // PR jobs at {baseUrl}/{jobPath}/PR-{prNum}/
   },
 
   // ── Web dashboard links ───────────────────────────────

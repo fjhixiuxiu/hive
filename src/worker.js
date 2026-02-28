@@ -4,14 +4,15 @@ const fs = require('fs');
 const path = require('path');
 const WebSocket = require('ws');
 const tmux = require('./core/tmux');
+const log = require('./core/log');
 
 const hubUrl = process.argv[2] || process.env.HIVE_HUB_URL;
 const secret = process.argv[3] || process.env.HIVE_SECRET;
 const nodeId = process.argv[4] || process.env.HIVE_NODE_ID || require('os').hostname();
 
 if (!hubUrl || !secret) {
-  console.error('Usage: hive-worker <hub-url> <secret> [node-id]');
-  console.error('  or set HIVE_HUB_URL, HIVE_SECRET, and optionally HIVE_NODE_ID env vars');
+  log.error('Usage: hive-worker <hub-url> <secret> [node-id]');
+  log.error('  or set HIVE_HUB_URL, HIVE_SECRET, and optionally HIVE_NODE_ID env vars');
   process.exit(1);
 }
 
@@ -20,11 +21,11 @@ let reconnectDelay = 1000;
 const MAX_RECONNECT_DELAY = 30000;
 
 function connect() {
-  console.log(`Connecting to ${hubUrl} as "${nodeId}"...`);
+  log.info(`Connecting to ${hubUrl} as "${nodeId}"...`);
   ws = new WebSocket(hubUrl);
 
   ws.on('open', () => {
-    console.log('Connected to hub, registering...');
+    log.info('Connected to hub, registering...');
     reconnectDelay = 1000;
     ws.send(JSON.stringify({ type: 'worker:register', secret, nodeId }));
   });
@@ -34,7 +35,7 @@ function connect() {
     try { msg = JSON.parse(raw); } catch { return; }
 
     if (msg.type === 'worker:registered') {
-      console.log(`Registered as node "${msg.nodeId}"`);
+      log.info(`Registered as node "${msg.nodeId}"`);
       return;
     }
 
@@ -49,13 +50,13 @@ function connect() {
   });
 
   ws.on('close', () => {
-    console.log(`Disconnected. Reconnecting in ${reconnectDelay / 1000}s...`);
+    log.info(`Disconnected. Reconnecting in ${reconnectDelay / 1000}s...`);
     setTimeout(connect, reconnectDelay);
     reconnectDelay = Math.min(reconnectDelay * 2, MAX_RECONNECT_DELAY);
   });
 
   ws.on('error', (err) => {
-    console.error('WebSocket error:', err.message);
+    log.error('WebSocket error:', err.message);
   });
 }
 

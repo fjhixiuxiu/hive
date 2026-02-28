@@ -59,19 +59,19 @@ async function capturePane(target, { lines } = {}) {
  * @param {boolean} enter - whether to press Enter after
  */
 async function sendKeys(target, keys, enter = true) {
-  // Collapse newlines so the message is sent as one line
-  const oneLine = keys.replace(/\r?\n+/g, ' ').trim();
-  if (!oneLine && !enter) return;
+  // Normalize line endings, preserve newlines (paste-buffer handles them natively)
+  const cleaned = keys.replace(/\r\n/g, '\n').trim();
+  if (!cleaned && !enter) return;
 
-  if (oneLine) {
+  if (cleaned) {
     // Write to temp file + tmux load-buffer/paste-buffer to avoid all shell
     // escaping issues with quotes, backticks, $, !, etc.
     const tmpFile = `/tmp/hive-sendkeys-${process.pid}-${Date.now()}`;
     try {
-      writeFileSync(tmpFile, oneLine, 'utf8');
+      writeFileSync(tmpFile, cleaned, 'utf8');
       const r = await exec(`tmux load-buffer "${tmpFile}" && tmux paste-buffer -t "${target}" -d`);
       if (r === null) {
-        throw new Error(`tmux paste failed for target=${target}, len=${oneLine.length}`);
+        throw new Error(`tmux paste failed for target=${target}, len=${cleaned.length}`);
       }
     } finally {
       try { unlinkSync(tmpFile); } catch {}

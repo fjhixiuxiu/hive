@@ -1,5 +1,6 @@
 #!/bin/bash
 # Start tmux sessions and hive server as the current user.
+# Usage: start-hive.sh [--no-sessions]
 # Designed for the sandboxed user — run via:
 #   sudo -u hivebot /path/to/start-hive.sh
 
@@ -17,7 +18,11 @@ LOG_FILE="$HOME/hive.log"
 
 cd "$HIVE_DIR"
 
-node start-sessions.js
+if [ "$1" != "--no-sessions" ]; then
+  node start-sessions.js
+else
+  echo "Skipping session startup (--no-sessions)"
+fi
 
 # Run hive server in a dedicated tmux session
 if tmux has-session -t hive-server 2>/dev/null; then
