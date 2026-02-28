@@ -87,9 +87,22 @@ class ProjectManager extends EventEmitter {
     if (this._reReviewPollTimes) delete this._reReviewPollTimes[id];
     // Trigger an immediate poll
     if (pm.enabled) {
-      this._poll(id).catch(err => log.error(`Rescan error for ${pm.name}:`, err.message));
+      this._poll(id).catch(err => log.error(`Scan Now error for ${pm.name}:`, err.message));
     }
-    log.info(`[pm] Rescan triggered for "${pm.name}"`);
+    log.info(`[pm] Scan Now triggered for "${pm.name}"`);
+  }
+
+  reset(id) {
+    const pm = this.pms.get(id);
+    if (!pm) return;
+    pm.seenKeys = [];
+    pm.tasksCreated = 0;
+    pm.lastPoll = null;
+    pm.lastError = null;
+    if (this._reReviewPollTimes) delete this._reReviewPollTimes[id];
+    this._save();
+    this.emit('pm:changed');
+    log.info(`[pm] Reset memory for "${pm.name}" — next poll will treat all issues as new`);
   }
 
   getAll() {
