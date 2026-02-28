@@ -7,6 +7,21 @@
 
 const { execSync } = require('child_process');
 const path = require('path');
+const fs = require('fs');
+
+// Load .env before config (config reads HIVE_REPO_DIR from env)
+const envPath = path.join(__dirname, '.env');
+if (fs.existsSync(envPath)) {
+  for (const line of fs.readFileSync(envPath, 'utf8').split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const eq = trimmed.indexOf('=');
+    if (eq > 0) {
+      process.env[trimmed.substring(0, eq)] = trimmed.substring(eq + 1);
+    }
+  }
+}
+
 const config = require('./hive.config');
 
 const templatePath = path.join(__dirname, 'worker.yml');
