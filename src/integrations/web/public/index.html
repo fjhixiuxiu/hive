@@ -392,6 +392,95 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .diff-ctx { color: var(--dim); }
 .git-file-row.selected { background: var(--bg3); }
 
+/* ── Git files sidebar (terminal view) ── */
+.git-files-sidebar {
+  width: 220px; min-width: 120px; max-width: 50%;
+  border-right: 1px solid var(--bg3); overflow-y: auto;
+  background: var(--bg); flex-shrink: 0; font-size: 12px;
+  position: relative;
+}
+.git-files-resize {
+  position: absolute; top: 0; right: -3px; bottom: 0; width: 6px;
+  cursor: col-resize; z-index: 5;
+}
+.git-files-resize:hover, .git-files-resize.dragging {
+  background: var(--purple); opacity: 0.4;
+}
+.git-files-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 10px; font-weight: 700; font-size: 12px;
+  border-bottom: 1px solid var(--bg3); color: var(--dim);
+}
+.git-files-close {
+  background: none; border: none; color: var(--dim); font-size: 16px;
+  cursor: pointer; padding: 0 2px; line-height: 1;
+}
+.git-files-close:hover { color: var(--fg); }
+.git-files-list { padding: 4px 0; }
+.git-files-list .git-file-row { padding: 4px 10px; font-size: 12px; gap: 6px; }
+.git-files-list .git-file-stat { display: none; }
+.git-files-sidebar .git-section { margin-bottom: 0; }
+.git-files-sidebar .git-section-title { padding: 8px 10px 4px; font-size: 10px; }
+.git-files-sidebar .git-log-row { padding: 4px 10px; font-size: 11px; gap: 6px; }
+.git-files-sidebar .git-log-hash { font-size: 10px; min-width: 48px; }
+.git-files-sidebar .git-log-time { display: none; }
+.git-files-sidebar .git-log-files { padding: 2px 8px 6px 28px; }
+.git-files-sidebar .git-log-files .git-file-row { font-size: 11px; padding: 2px 4px; }
+.pane-tabs-row {
+  display: flex; align-items: stretch; background: var(--bg);
+  border-bottom: 1px solid var(--bg3); flex-shrink: 0;
+}
+.pane-tabs-row .pane-tabs { border-bottom: none; flex: 1; }
+.git-files-toggle {
+  background: none; border: none; border-right: 1px solid var(--bg3);
+  color: var(--dim); font-size: 14px;
+  cursor: pointer; padding: 4px 10px; flex-shrink: 0;
+}
+.git-files-toggle:hover { color: var(--fg); background: var(--bg3); }
+.git-files-toggle.active { color: var(--purple); }
+
+/* ── Sidebar diff pane (shown as pane tab) ── */
+.sidebar-diff-pane {
+  flex: 1; display: none; flex-direction: column; overflow: hidden;
+  background: var(--bg);
+}
+.sidebar-diff-pane.active { display: flex; }
+.sidebar-diff-pane .diff-file-header {
+  padding: 6px 12px; background: var(--bg2); border-bottom: 1px solid var(--bg3);
+  font-family: 'SF Mono', 'Menlo', monospace; font-size: 13px; font-weight: 600;
+  color: var(--cyan); flex-shrink: 0;
+}
+.sidebar-diff-pane .diff-body {
+  flex: 1; overflow: auto; padding: 8px 12px; font-family: 'SF Mono', 'Menlo', monospace;
+  font-size: 12px; line-height: 1.6; white-space: pre-wrap; word-break: break-all;
+}
+
+/* ── In-progress status dropdown ─────── */
+.tasks-tab-wrap { position: relative; display: inline-flex; }
+#ip-tab-btn { padding-right: 0; }
+.ip-tab-caret {
+  font-size: 10px; opacity: 0.8;
+  padding: 6px 14px 6px 10px; margin: -6px 0 -6px 4px;
+  border-radius: 0 16px 16px 0; cursor: pointer;
+  border-left: 1px solid rgba(255,255,255,0.1);
+}
+.ip-tab-caret:hover { opacity: 1; background: rgba(255,255,255,0.1); }
+.ip-status-dropdown {
+  display: none; position: absolute; top: 100%; left: 0; margin-top: 4px;
+  background: var(--bg2); border: 1px solid var(--bg3); border-radius: 8px;
+  padding: 4px 0; min-width: 140px; z-index: 50; box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}
+.ip-status-dropdown.open { display: block; }
+.ip-status-option {
+  display: block; width: 100%; background: none; border: none; color: var(--dim);
+  font-size: 12px; font-weight: 600; padding: 6px 14px; cursor: pointer;
+  text-align: left;
+}
+.ip-status-option:hover { background: var(--bg3); color: var(--fg); }
+.ip-status-option.active { color: var(--purple); }
+
+/* (status sub-filters merged into In Progress dropdown) */
+
 /* ── Quick send bar ──────────────────── */
 #quick-bar {
   display: flex; gap: 6px; padding: 8px 10px;
@@ -1368,7 +1457,14 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
             </div>
           </div>
           <div class="tasks-tabs">
-            <button class="tasks-tab active" data-tab="inprogress">In Progress</button>
+            <div class="tasks-tab-wrap">
+              <button class="tasks-tab active" data-tab="inprogress" id="ip-tab-btn"><span id="ip-tab-label">In Progress</span><span class="ip-tab-caret" id="ip-tab-caret">&#9662;</span></button>
+              <div class="ip-status-dropdown" id="ip-status-dropdown">
+                <button class="ip-status-option active" data-status="">All</button>
+                <button class="ip-status-option" data-status="waiting">Waiting</button>
+                <button class="ip-status-option" data-status="working">Working</button>
+              </div>
+            </div>
             <button class="tasks-tab" data-tab="queued">Queued</button>
             <button class="tasks-tab" data-tab="completed">Completed</button>
             <button class="tasks-create-btn" id="tasks-create-btn">+ Create</button>
@@ -1395,9 +1491,26 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
             <button class="session-tab actions-tab" id="ts-actions-tab" style="display:none">&#9889; Actions</button>
           </div>
           <div class="tasks-session-empty" id="tasks-session-empty">Select an in-progress task to view its session</div>
-          <div class="session-tab-content active" id="ts-terminal-content" style="display:none">
-            <div class="pane-tabs" id="ts-pane-tabs" style="display:none"></div>
-            <div class="tasks-session-terminal" id="tasks-session-terminal"></div>
+          <div class="session-tab-content active" id="ts-terminal-content" style="display:none;flex-direction:row">
+            <div id="ts-git-files-sidebar" class="git-files-sidebar" style="display:none">
+              <div class="git-files-header">
+                <span>Git</span>
+                <button class="git-files-close" data-target="ts">&times;</button>
+              </div>
+              <div class="git-files-list" id="ts-git-files-list"></div>
+              <div class="git-files-resize" data-target="ts"></div>
+            </div>
+            <div style="flex:1;display:flex;flex-direction:column;min-width:0">
+              <div class="pane-tabs-row" id="ts-pane-tabs-row">
+                <button class="git-files-toggle" id="ts-git-files-toggle" title="Toggle changed files">&#128193;</button>
+                <div class="pane-tabs" id="ts-pane-tabs" style="display:none"></div>
+              </div>
+              <div class="tasks-session-terminal" id="tasks-session-terminal"></div>
+              <div class="sidebar-diff-pane" id="ts-sidebar-diff-pane">
+                <div class="diff-file-header" id="ts-sidebar-diff-filename"></div>
+                <div class="diff-body" id="ts-sidebar-diff-content"></div>
+              </div>
+            </div>
           </div>
           <div class="session-tab-content" id="ts-git-content" style="display:none">
             <div class="git-sidebar" id="ts-git-sidebar"></div>
@@ -1597,9 +1710,26 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         <button class="comments-toggle-btn" id="session-comments-toggle" style="display:none">Comments</button>
         <button class="session-tab checklist-tab" id="session-checklist-tab" style="display:none">&#9745; Checklist</button>
       </div>
-      <div class="session-tab-content active" id="session-terminal-content">
-        <div class="pane-tabs" id="pane-tabs" style="display:none"></div>
-        <div id="terminal-wrap"></div>
+      <div class="session-tab-content active" id="session-terminal-content" style="flex-direction:row">
+        <div id="git-files-sidebar" class="git-files-sidebar" style="display:none">
+          <div class="git-files-header">
+            <span>Git</span>
+            <button class="git-files-close" data-target="session">&times;</button>
+          </div>
+          <div class="git-files-list" id="git-files-list"></div>
+          <div class="git-files-resize" data-target="session"></div>
+        </div>
+        <div style="flex:1;display:flex;flex-direction:column;min-width:0">
+          <div class="pane-tabs-row" id="pane-tabs-row">
+            <button class="git-files-toggle" id="git-files-toggle" title="Toggle changed files">&#128193;</button>
+            <div class="pane-tabs" id="pane-tabs" style="display:none"></div>
+          </div>
+          <div id="terminal-wrap"></div>
+          <div class="sidebar-diff-pane" id="sidebar-diff-pane">
+            <div class="diff-file-header" id="sidebar-diff-filename"></div>
+            <div class="diff-body" id="sidebar-diff-content"></div>
+          </div>
+        </div>
       </div>
       <div class="session-tab-content" id="session-git-content">
         <div class="git-sidebar" id="git-sidebar"></div>
@@ -2001,6 +2131,8 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   let taskSourceFilter = new Set(); // empty = show all; non-empty = show only matching sources
   let selectedTaskIds = new Set();
   let tasksSessionNum = null;
+  let taskStatusFilter = null; // null = show all, 'waiting', 'working'
+  let gitFilesSidebarOpen = localStorage.getItem('gitFilesSidebarOpen') === 'true';
   let tasksSessionTerm = null;
   let tasksSessionFit = null;
   let tasksSessionMode = 'ask';
@@ -2589,16 +2721,34 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         break;
       }
       case 'git:info':
-        if (currentSession === String(msg.session)) renderGitPanel(msg, 'git-sidebar');
-        if (tasksSessionNum === String(msg.session) && activeTab === 'tasks-panel') renderGitPanel(msg, 'ts-git-sidebar');
+        if (currentSession === String(msg.session)) {
+          renderGitPanel(msg, 'git-sidebar');
+          renderGitFilesSidebar(msg, 'git-files-list');
+        }
+        if (tasksSessionNum === String(msg.session) && activeTab === 'tasks-panel') {
+          renderGitPanel(msg, 'ts-git-sidebar');
+          renderGitFilesSidebar(msg, 'ts-git-files-list');
+        }
         break;
       case 'git:diff':
-        if (currentSession === String(msg.session)) showDiffViewer(msg.file, msg.diff, 'git-diff');
-        if (tasksSessionNum === String(msg.session) && activeTab === 'tasks-panel') showDiffViewer(msg.file, msg.diff, 'ts-git-diff');
+        if (currentSession === String(msg.session)) {
+          showDiffViewer(msg.file, msg.diff, 'git-diff');
+          if (gitFilesSidebarOpen) showSidebarDiff(msg.file, msg.diff);
+        }
+        if (tasksSessionNum === String(msg.session) && activeTab === 'tasks-panel') {
+          showDiffViewer(msg.file, msg.diff, 'ts-git-diff');
+          if (gitFilesSidebarOpen) showSidebarDiff(msg.file, msg.diff, 'ts');
+        }
         break;
       case 'git:commit':
-        if (currentSession === String(msg.session)) expandCommitRow(msg.hash, msg.files, 'git-sidebar', currentSession);
-        if (tasksSessionNum === String(msg.session) && activeTab === 'tasks-panel') expandCommitRow(msg.hash, msg.files, 'ts-git-sidebar', tasksSessionNum);
+        if (currentSession === String(msg.session)) {
+          expandCommitRow(msg.hash, msg.files, 'git-sidebar', currentSession);
+          expandCommitRow(msg.hash, msg.files, 'git-files-list', currentSession);
+        }
+        if (tasksSessionNum === String(msg.session) && activeTab === 'tasks-panel') {
+          expandCommitRow(msg.hash, msg.files, 'ts-git-sidebar', tasksSessionNum);
+          expandCommitRow(msg.hash, msg.files, 'ts-git-files-list', tasksSessionNum);
+        }
         break;
       case 'idea:list':
         renderIdeas(msg.ideas || []);
@@ -2872,7 +3022,9 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         ws.send(JSON.stringify({ type: 'terminal:subscribe', session: currentSession, cols: term.cols, rows: term.rows }));
         // Discover all panes in the session
         ws.send(JSON.stringify({ type: 'terminal:panes', session: currentSession }));
+        ws.send(JSON.stringify({ type: 'git:info', session: currentSession }));
       }
+      applyGitFilesSidebarState('session');
       setTimeout(() => { const el = document.getElementById('terminal-wrap'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'end' }); }, 100);
     });
     applyNavPreferences();
@@ -2962,7 +3114,10 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   function switchPane(paneIdx, ctx) {
     const isTs = (ctx === 'ts');
     const curActive = isTs ? tsActivePane : activePane;
-    if (paneIdx === curActive) return;
+    const diffPaneId = isTs ? 'ts-sidebar-diff-pane' : 'sidebar-diff-pane';
+    const diffVisible = document.getElementById(diffPaneId).classList.contains('active');
+    if (paneIdx === curActive && !diffVisible) return;
+
     const claudeIdx = isTs ? tsClaudePaneIdx : claudePaneIdx;
     const isClaudePane = (paneIdx === claudeIdx);
     const barId = isTs ? 'ts-pane-tabs' : 'pane-tabs';
@@ -2970,13 +3125,16 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 
     if (isTs) { tsActivePane = paneIdx; } else { activePane = paneIdx; }
 
+    // Hide diff pane if switching to a real pane
+    switchFromDiffPane(ctx);
+
     // Update pane tab active state
     document.querySelectorAll(`#${barId} .pane-tab`).forEach(t => {
       t.classList.toggle('active', parseInt(t.dataset.paneIdx) === paneIdx);
     });
 
-    // Re-subscribe to the new pane
-    if (ws && ws.readyState === 1 && sessionNum) {
+    // Re-subscribe to the new pane (skip if just returning from diff to same pane)
+    if (paneIdx !== curActive && ws && ws.readyState === 1 && sessionNum) {
       if (isTs) {
         tsUserScrolledUp = false; tsPendingContent = null; tsLastContent = '';
         if (tasksSessionTerm) tasksSessionTerm.clear();
@@ -3295,6 +3453,53 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     });
   });
 
+  // ── Git files sidebar toggle ─────────────────────
+  document.getElementById('git-files-toggle').addEventListener('click', () => toggleGitFilesSidebar('session'));
+  document.getElementById('ts-git-files-toggle').addEventListener('click', () => toggleGitFilesSidebar('ts'));
+  document.querySelectorAll('.git-files-close').forEach(btn => {
+    btn.addEventListener('click', () => {
+      closeSidebarDiff(btn.dataset.target);
+      toggleGitFilesSidebar(btn.dataset.target);
+    });
+  });
+
+  // ── Git files sidebar resize drag ───────────────
+  document.querySelectorAll('.git-files-resize').forEach(handle => {
+    handle.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      const target = handle.dataset.target;
+      const sidebarId = target === 'ts' ? 'ts-git-files-sidebar' : 'git-files-sidebar';
+      const sidebar = document.getElementById(sidebarId);
+      if (!sidebar) return;
+      handle.classList.add('dragging');
+      const startX = e.clientX;
+      const startW = sidebar.offsetWidth;
+      function onMove(ev) {
+        const newW = Math.max(120, startW + (ev.clientX - startX));
+        sidebar.style.width = newW + 'px';
+      }
+      function onUp() {
+        handle.classList.remove('dragging');
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        localStorage.setItem('gitFilesSidebarWidth', sidebar.style.width);
+        // Refit terminal after resize
+        if (target === 'session') { if (term && fitAddon) requestAnimationFrame(() => fitTerminal()); }
+        else { requestAnimationFrame(() => fitTasksTerminal()); }
+      }
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+  });
+  // Restore saved width
+  const savedSidebarW = localStorage.getItem('gitFilesSidebarWidth');
+  if (savedSidebarW) {
+    const sb1 = document.getElementById('git-files-sidebar');
+    const sb2 = document.getElementById('ts-git-files-sidebar');
+    if (sb1) sb1.style.width = savedSidebarW;
+    if (sb2) sb2.style.width = savedSidebarW;
+  }
+
   // ── Comments drawer toggle ─────────────────────
   function closeAllCommentsDrawers() {
     document.querySelectorAll('.comments-drawer').forEach(d => d.classList.remove('open'));
@@ -3506,6 +3711,11 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       activeTaskTab = tab.dataset.tab;
       selectedTaskIds.clear();
       tasksSelectedTaskId = null;
+      taskStatusFilter = null; // reset sub-filter on tab switch
+      // Reset dropdown label and active state
+      document.getElementById('ip-tab-label').textContent = 'In Progress';
+      document.querySelectorAll('.ip-status-option').forEach(b => b.classList.toggle('active', b.dataset.status === ''));
+      document.getElementById('ip-status-dropdown').classList.remove('open');
       $$('.tasks-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === activeTaskTab));
       // Close live session when switching to queued tab
       if (activeTaskTab === 'queued') {
@@ -3518,6 +3728,53 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       renderTasks();
     });
   });
+
+  // ── In Progress status dropdown ────────
+  const ipTabBtn = document.getElementById('ip-tab-btn');
+  const ipTabLabel = document.getElementById('ip-tab-label');
+  const ipTabCaret = document.getElementById('ip-tab-caret');
+  const ipDropdown = document.getElementById('ip-status-dropdown');
+  // Clicking the caret toggles the dropdown
+  ipTabCaret.addEventListener('click', (e) => {
+    e.stopPropagation();
+    // If not on inprogress tab, switch to it first
+    if (activeTaskTab !== 'inprogress') {
+      activeTaskTab = 'inprogress';
+      taskStatusFilter = null;
+      $$('.tasks-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === activeTaskTab));
+      renderTasks();
+    }
+    ipDropdown.classList.toggle('open');
+  });
+  // Clicking the label area resets to All (if already on tab) or switches to tab
+  ipTabBtn.addEventListener('click', (e) => {
+    // If caret was clicked, it already handled it
+    if (e.target === ipTabCaret || e.target.closest('.ip-tab-caret')) return;
+    ipDropdown.classList.remove('open');
+    if (activeTaskTab === 'inprogress' && taskStatusFilter) {
+      // Reset to All
+      e.stopPropagation();
+      taskStatusFilter = null;
+      document.querySelectorAll('.ip-status-option').forEach(b => b.classList.toggle('active', b.dataset.status === ''));
+      ipTabLabel.textContent = 'In Progress';
+      renderTasks();
+    }
+    // Otherwise the .tasks-tab handler switches to the tab normally
+  });
+  document.querySelectorAll('.ip-status-option').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      taskStatusFilter = btn.dataset.status || null;
+      document.querySelectorAll('.ip-status-option').forEach(b =>
+        b.classList.toggle('active', b.dataset.status === (taskStatusFilter || '')));
+      ipDropdown.classList.remove('open');
+      // Update tab label
+      ipTabLabel.textContent = taskStatusFilter ? (taskStatusFilter.charAt(0).toUpperCase() + taskStatusFilter.slice(1)) : 'In Progress';
+      renderTasks();
+    });
+  });
+  // Close dropdown on outside click
+  document.addEventListener('click', () => ipDropdown.classList.remove('open'));
 
   // ── Task search ─────────────────────────────────
   const taskSearchInput = document.getElementById('tasks-search-input');
@@ -3816,7 +4073,9 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     if (ws && ws.readyState === 1) {
       ws.send(JSON.stringify({ type: 'terminal:subscribe', session: tasksSessionNum }));
       ws.send(JSON.stringify({ type: 'terminal:panes', session: tasksSessionNum }));
+      ws.send(JSON.stringify({ type: 'git:info', session: tasksSessionNum }));
     }
+    applyGitFilesSidebarState('ts');
     requestAnimationFrame(() => fitTasksTerminal());
     setTimeout(() => { const el = document.getElementById('tasks-session-terminal'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'end' }); }, 100);
   }
@@ -4142,9 +4401,29 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     const q = taskSearchQuery.toLowerCase();
     const matchesSearch = (t) => !q || t.text.toLowerCase().includes(q) || (t.source || '').toLowerCase().includes(q) || (t.designation || '').toLowerCase().includes(q) || String(t.assignedTo || '').includes(q);
     const matchesFilter = (t) => taskSourceFilter.size === 0 || taskSourceFilter.has(t.source);
-    const dispatched = tasks.filter(t => t.status === 'dispatched' && matchesSearch(t) && matchesFilter(t));
+    const matchesStatus = (t) => {
+      if (!taskStatusFilter) return true;
+      const s = fleetData.find(x => x.num === t.assignedTo);
+      if (taskStatusFilter === 'working') return s && s.state === 'working';
+      if (taskStatusFilter === 'waiting') return !s || s.state !== 'working';
+      return true;
+    };
+    const allDispatched = tasks.filter(t => t.status === 'dispatched' && matchesSearch(t) && matchesFilter(t));
+    const dispatched = allDispatched.filter(matchesStatus);
     const queued = tasks.filter(t => t.status === 'queued' && matchesSearch(t) && matchesFilter(t));
     const completed = tasks.filter(t => (t.status === 'completed' || t.status === 'failed') && matchesSearch(t) && matchesFilter(t));
+
+    // Update dropdown option counts
+    if (activeTaskTab === 'inprogress') {
+      const waitingCount = allDispatched.filter(t => { const s = fleetData.find(x => x.num === t.assignedTo); return !s || s.state !== 'working'; }).length;
+      const workingCount = allDispatched.length - waitingCount;
+      document.querySelectorAll('.ip-status-option').forEach(b => {
+        if (b.dataset.status === '') b.textContent = `All (${allDispatched.length})`;
+        else if (b.dataset.status === 'waiting') b.textContent = `Waiting (${waitingCount})`;
+        else if (b.dataset.status === 'working') b.textContent = `Working (${workingCount})`;
+      });
+    }
+
     let html = '';
     let visibleTasks = [];
 
@@ -6121,6 +6400,190 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 
   function closePmDialog() { pmDialog.classList.remove('visible'); editingPmId = null; }
 
+  // ── Git files sidebar (compact file list in terminal view) ──
+  function renderGitFilesSidebar(data, listId) {
+    const list = document.getElementById(listId);
+    if (!list) return;
+    const isTs = listId === 'ts-git-files-list';
+    const sessionNum = isTs ? tasksSessionNum : currentSession;
+    const ctx = isTs ? 'ts' : undefined;
+    const files = data.changedFiles || [];
+    const log = data.log || [];
+
+    if (!files.length && !log.length) {
+      list.innerHTML = '<div style="color:var(--dim);padding:8px 10px;font-size:11px">No changes</div>';
+      return;
+    }
+
+    list.innerHTML = '';
+
+    // 1. Uncommitted changed files
+    if (files.length) {
+      const section = document.createElement('div');
+      section.className = 'git-section';
+      let html = '<div class="git-section-title">Changed Files</div><div class="git-section-body">';
+      for (const f of files) {
+        const statusChar = f.status.charAt(0) || '?';
+        html += `<div class="git-file-row" data-file="${esc(f.file)}">
+          <span class="git-file-status ${statusChar}">${statusChar}</span>
+          <span class="git-file-name" title="${esc(f.file)}">${esc(f.file)}</span>
+        </div>`;
+      }
+      html += '</div>';
+      section.innerHTML = html;
+      section.querySelectorAll('.git-file-row').forEach(row => {
+        row.addEventListener('click', () => {
+          if (!sessionNum || !ws || ws.readyState !== 1) return;
+          list.querySelectorAll('.git-file-row').forEach(r => r.classList.remove('selected'));
+          row.classList.add('selected');
+          ws.send(JSON.stringify({ type: 'git:diff', session: sessionNum, file: row.dataset.file }));
+        });
+      });
+      list.appendChild(section);
+    }
+
+    // 2. Recent commits
+    if (log.length) {
+      const section = document.createElement('div');
+      section.className = 'git-section';
+      let html = '<div class="git-section-title">Recent Commits</div><div class="git-section-body">';
+      for (const c of log) {
+        html += `<div class="git-log-row" data-hash="${esc(c.hash)}">
+          <span class="git-log-hash">${esc(c.short)}</span>
+          <span class="git-log-msg">${esc(c.message)}</span>
+          <span class="git-log-time">${esc(c.relative)}</span>
+        </div>
+        <div class="git-log-files" data-for-hash="${esc(c.hash)}" data-sidebar="1"></div>`;
+      }
+      html += '</div>';
+      section.innerHTML = html;
+      // Click commit → expand/collapse + request files
+      section.querySelectorAll('.git-log-row').forEach(row => {
+        row.addEventListener('click', () => {
+          const hash = row.dataset.hash;
+          const filesEl = section.querySelector(`.git-log-files[data-for-hash="${hash}"]`);
+          const wasExpanded = row.classList.contains('expanded');
+          section.querySelectorAll('.git-log-row').forEach(r => r.classList.remove('expanded'));
+          section.querySelectorAll('.git-log-files').forEach(f => f.classList.remove('visible'));
+          if (wasExpanded) return;
+          row.classList.add('expanded');
+          filesEl.classList.add('visible');
+          if (!filesEl.dataset.loaded) {
+            filesEl.innerHTML = '<div class="git-log-loading">Loading files...</div>';
+            if (ws && ws.readyState === 1) {
+              ws.send(JSON.stringify({ type: 'git:commit', session: sessionNum, hash }));
+            }
+          }
+        });
+      });
+      list.appendChild(section);
+    }
+  }
+
+  function showSidebarDiff(file, diff, ctx) {
+    const isTs = (ctx === 'ts');
+    const paneId = isTs ? 'ts-sidebar-diff-pane' : 'sidebar-diff-pane';
+    const pane = document.getElementById(paneId);
+    if (!pane) return;
+    const fnEl = document.getElementById(isTs ? 'ts-sidebar-diff-filename' : 'sidebar-diff-filename');
+    const content = document.getElementById(isTs ? 'ts-sidebar-diff-content' : 'sidebar-diff-content');
+    fnEl.textContent = file;
+    if (!diff) {
+      content.innerHTML = '<span class="diff-ctx">No diff available</span>';
+    } else {
+      const lines = diff.split('\n');
+      content.innerHTML = lines.map(line => {
+        if (line.startsWith('+') && !line.startsWith('+++')) return `<div class="diff-add">${esc(line)}</div>`;
+        if (line.startsWith('-') && !line.startsWith('---')) return `<div class="diff-del">${esc(line)}</div>`;
+        if (line.startsWith('@@')) return `<div class="diff-hunk">${esc(line)}</div>`;
+        return `<div class="diff-ctx">${esc(line)}</div>`;
+      }).join('');
+    }
+    content.scrollTop = 0;
+    // Switch to diff pane tab
+    switchToDiffPane(ctx);
+  }
+
+  function switchToDiffPane(ctx) {
+    const isTs = (ctx === 'ts');
+    const barId = isTs ? 'ts-pane-tabs' : 'pane-tabs';
+    const paneId = isTs ? 'ts-sidebar-diff-pane' : 'sidebar-diff-pane';
+    const termId = isTs ? 'tasks-session-terminal' : 'terminal-wrap';
+    // Show pane bar even if it was hidden (need at least the diff tab)
+    const bar = document.getElementById(barId);
+    if (bar) bar.style.display = 'flex';
+    // Ensure Diff tab exists in bar
+    if (!bar.querySelector('.pane-tab[data-pane-idx="diff"]')) {
+      const btn = document.createElement('button');
+      btn.className = 'pane-tab';
+      btn.dataset.paneIdx = 'diff';
+      btn.textContent = 'Diff';
+      btn.addEventListener('click', () => switchToDiffPane(ctx));
+      bar.appendChild(btn);
+    }
+    // Activate diff tab, deactivate others
+    bar.querySelectorAll('.pane-tab').forEach(t => t.classList.toggle('active', t.dataset.paneIdx === 'diff'));
+    // Show diff pane, hide terminal
+    document.getElementById(paneId).classList.add('active');
+    document.getElementById(termId).style.display = 'none';
+  }
+
+  function switchFromDiffPane(ctx) {
+    const isTs = (ctx === 'ts');
+    const paneId = isTs ? 'ts-sidebar-diff-pane' : 'sidebar-diff-pane';
+    const termId = isTs ? 'tasks-session-terminal' : 'terminal-wrap';
+    document.getElementById(paneId).classList.remove('active');
+    document.getElementById(termId).style.display = '';
+  }
+
+  function closeSidebarDiff(target) {
+    const ctx = target === 'session' ? undefined : target;
+    const isTs = (target === 'ts');
+    const paneId = isTs ? 'ts-sidebar-diff-pane' : 'sidebar-diff-pane';
+    const termId = isTs ? 'tasks-session-terminal' : 'terminal-wrap';
+    // Hide diff, show terminal
+    document.getElementById(paneId).classList.remove('active');
+    document.getElementById(termId).style.display = '';
+    // Remove diff tab from bar
+    const barId = isTs ? 'ts-pane-tabs' : 'pane-tabs';
+    const diffTab = document.querySelector(`#${barId} .pane-tab[data-pane-idx="diff"]`);
+    if (diffTab) diffTab.remove();
+    // Restore active state on current pane tab
+    const curActive = isTs ? tsActivePane : activePane;
+    document.querySelectorAll(`#${barId} .pane-tab`).forEach(t => {
+      t.classList.toggle('active', parseInt(t.dataset.paneIdx) === curActive);
+    });
+    // Clear selection highlight
+    const listId = isTs ? 'ts-git-files-list' : 'git-files-list';
+    document.querySelectorAll(`#${listId} .git-file-row`).forEach(r => r.classList.remove('selected'));
+  }
+
+  function toggleGitFilesSidebar(target) {
+    gitFilesSidebarOpen = !gitFilesSidebarOpen;
+    localStorage.setItem('gitFilesSidebarOpen', gitFilesSidebarOpen);
+    applyGitFilesSidebarState(target);
+    // Close diff overlay when hiding sidebar
+    if (!gitFilesSidebarOpen) closeSidebarDiff(target);
+    // Refit terminal after sidebar toggle
+    if (target === 'session') { if (term && fitAddon) requestAnimationFrame(() => fitTerminal()); }
+    else { requestAnimationFrame(() => fitTasksTerminal()); }
+  }
+
+  function applyGitFilesSidebarState(target) {
+    if (target === 'session' || target === 'both') {
+      const sb = document.getElementById('git-files-sidebar');
+      const btn = document.getElementById('git-files-toggle');
+      if (sb) sb.style.display = gitFilesSidebarOpen ? '' : 'none';
+      if (btn) btn.classList.toggle('active', gitFilesSidebarOpen);
+    }
+    if (target === 'ts' || target === 'both') {
+      const sb = document.getElementById('ts-git-files-sidebar');
+      const btn = document.getElementById('ts-git-files-toggle');
+      if (sb) sb.style.display = gitFilesSidebarOpen ? '' : 'none';
+      if (btn) btn.classList.toggle('active', gitFilesSidebarOpen);
+    }
+  }
+
   // ── Git panel rendering ──────────────────────────
   function renderGitPanel(data, sidebarId) {
     const scroll = document.getElementById(sidebarId || 'git-sidebar');
@@ -6162,7 +6625,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         const statusChar = f.status.charAt(0) || '?';
         html += `<div class="git-file-row" data-file="${esc(f.file)}">
           <span class="git-file-status ${statusChar}">${statusChar}</span>
-          <span class="git-file-name">${esc(f.file)}</span>
+          <span class="git-file-name" title="${esc(f.file)}">${esc(f.file)}</span>
           ${statHtml}
         </div>`;
       }
@@ -6301,7 +6764,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     for (const f of files) {
       html += `<div class="git-file-row" data-file="${esc(f.file)}" data-commit="${esc(hash)}">
         <span class="git-file-status M">M</span>
-        <span class="git-file-name">${esc(f.file)}</span>
+        <span class="git-file-name" title="${esc(f.file)}">${esc(f.file)}</span>
         <span class="git-file-stat"><span class="add">+${f.added}</span> <span class="del">-${f.deleted}</span></span>
       </div>`;
     }
