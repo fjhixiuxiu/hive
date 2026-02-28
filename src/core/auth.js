@@ -14,6 +14,7 @@
 const https = require('https');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
+const log = require('./log');
 
 // Generate a random secret on startup if not provided
 const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(32).toString('hex');
@@ -25,17 +26,6 @@ const COOKIE_NAME = 'hive_session';
  */
 function isOAuthEnabled() {
   return !!(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET);
-}
-
-/**
- * Get the allowed users list from env.
- * HIVE_ALLOWED_USERS=nukulb,jeff,alice
- * If not set, any GitHub user can log in (rely on org check or VPN).
- */
-function getAllowedUsers() {
-  const raw = process.env.HIVE_ALLOWED_USERS || '';
-  if (!raw.trim()) return null; // null = no restriction
-  return raw.split(',').map(u => u.trim().toLowerCase()).filter(Boolean);
 }
 
 /**
@@ -128,7 +118,7 @@ function parseCookie(cookieHeader) {
  *   GET /auth/me              — return current user info (from JWT)
  *   GET /auth/logout          — clear cookie
  */
-function wireAuthRoutes(app) {
+function wireAuthRoutes(app, taskQueue) {
   if (!isOAuthEnabled()) return;
 
   const clientId = process.env.GITHUB_CLIENT_ID;
@@ -153,11 +143,23 @@ function wireAuthRoutes(app) {
     try {
       const accessToken = await exchangeCodeForToken(code);
       const user = await fetchGitHubUser(accessToken);
+      if (!user || !user.login) {
+        const reason = user?.message || 'unknown error';
+        log.error(`[auth] GitHub /user failed: ${reason}`);
+        return res.status(502).send(`GitHub API error: ${reason}. Please try again later.`);
+      }
 
-      // Check allowlist
-      const allowed = getAllowedUsers();
-      if (allowed && !allowed.includes(user.login.toLowerCase())) {
-        return res.status(403).send(`Access denied for ${user.login}. Contact your Hive admin.`);
+      // Gate access: admin user always allowed, otherwise must be pre-added
+      const adminUser = process.env.HIVE_ADMIN_USER;
+      const isAdmin = adminUser && adminUser.toLowerCase() === user.login.toLowerCase();
+      const isPreAdded = taskQueue && taskQueue.getUser(user.login.toLowerCase());
+      if (!isAdmin && !isPreAdded) {
+        return res.status(403).send('Access denied — ask your Hive admin to add you.');
+      }
+
+      // Register/update user profile in the permission system
+      if (taskQueue) {
+        taskQueue.ensureUser(user.login, user.name || user.login, user.avatar_url);
       }
 
       // Issue JWT and set cookie
@@ -170,10 +172,10 @@ function wireAuthRoutes(app) {
         path: '/',
       });
 
-      console.log(`[auth] ${user.login} logged in via GitHub OAuth`);
+      log.info(`[auth] ${user.login} logged in via GitHub OAuth`);
       res.redirect('/');
     } catch (err) {
-      console.error('[auth] OAuth error:', err.message);
+      log.error('[auth] OAuth error:', err.message);
       res.status(500).send('Authentication failed. Please try again.');
     }
   });

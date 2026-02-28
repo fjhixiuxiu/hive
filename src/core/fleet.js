@@ -1,5 +1,6 @@
 const path = require('path');
 const tmux = require('./tmux');
+const prStatus = require('./pr-status');
 
 /**
  * Get node-specific config, merging overrides from config.nodes[nodeId].
@@ -15,32 +16,6 @@ function getNodeConfig(config, nodeId) {
     sessions: { ...config.sessions, ...(nc.sessions || {}) },
     cache: { ...config.cache, ...(nc.cache || {}) },
   };
-}
-
-/**
- * Read the cache file for a session number.
- * Returns { prNum, prAdds, prDels, prFiles, ciResult, ciBuild, review } or null.
- */
-async function readCache(cacheConfig, node, num) {
-  const file = `${cacheConfig.statusPrefix}${num}`;
-  try {
-    const content = await node.readFile(file);
-    if (!content) return null;
-    const lines = content.split('\n');
-    const prNum = lines[0] || '';
-    if (!prNum) return null;
-    return {
-      prNum,
-      prAdds: lines[1] || '0',
-      prDels: lines[2] || '0',
-      prFiles: lines[3] || '0',
-      ciResult: lines[4] || '',
-      ciBuild: lines[5] || '',
-      review: lines[6] || '',
-    };
-  } catch {
-    return null;
-  }
 }
 
 /**
@@ -98,8 +73,8 @@ async function getSession(config, node, sessionName, nodeId) {
   const git = isRepo ? await node.gitInfo(repoDir) : { branch: '', staged: 0, modified: 0, untracked: 0 };
   const ticket = ticketFromBranch(git.branch);
 
-  // PR/CI from cache
-  const cache = num ? await readCache(nc.cache, node, num) : null;
+  // PR/CI data is merged in separately by refreshPRStatus() — not fetched here
+  const pr = git.branch ? prStatus.getCached(git.branch) : null;
 
   return {
     name: sessionName,
@@ -108,30 +83,48 @@ async function getSession(config, node, sessionName, nodeId) {
     branch: git.branch,
     ticket,
     git,
-    pr: cache,
+    pr,
   };
 }
 
 // Cache: { result, timestamp, pending }
 let _fleetCache = { result: null, ts: 0, pending: null };
-const FLEET_CACHE_TTL = 5000; // 5s
+const FLEET_CACHE_TTL = 10000; // 10s
 
 /**
- * Get status for all fleet sessions.
+ * Get status for all fleet sessions (cached for 5s to avoid hammering tmux/git/API).
  * @param {object} config - hive config
  * @param {NodeRouter} router
  */
 async function getFleetStatus(config, router) {
-  const all = await router.listAllSessions();
-  const matching = all.filter(({ name, nodeId }) => {
-    const nc = getNodeConfig(config, nodeId);
-    return nc.sessions.pattern.test(name);
-  });
-  return Promise.all(matching.map(async ({ name, nodeId, lastActivity }) => {
-    const node = router.getNode(nodeId);
-    const session = await getSession(config, node, name, nodeId);
-    return { ...session, nodeId, lastActivity };
-  }));
+  const now = Date.now();
+  if (_fleetCache.result && now - _fleetCache.ts < FLEET_CACHE_TTL) {
+    return _fleetCache.result;
+  }
+  if (_fleetCache.pending) return _fleetCache.pending;
+
+  _fleetCache.pending = (async () => {
+    const all = await router.listAllSessions();
+    const matching = all.filter(({ name, nodeId }) => {
+      const nc = getNodeConfig(config, nodeId);
+      return nc.sessions.pattern.test(name);
+    });
+    const result = await Promise.all(matching.map(async ({ name, nodeId, lastActivity }) => {
+      const node = router.getNode(nodeId);
+      const session = await getSession(config, node, name, nodeId);
+      return { ...session, nodeId, lastActivity };
+    }));
+    _fleetCache.result = result;
+    _fleetCache.ts = Date.now();
+    _fleetCache.pending = null;
+    return result;
+  })();
+  return _fleetCache.pending;
+}
+
+function invalidateCache() {
+  _fleetCache.result = null;
+  _fleetCache.ts = 0;
 }
 
 /**
@@ -170,12 +163,12 @@ async function findSession(config, router, query) {
 
 module.exports = {
   getNodeConfig,
-  readCache,
   readState,
   sessionNum,
   ticketFromBranch,
   getSession,
   getFleetStatus,
+  invalidateCache,
   peekSession,
   findSession,
 };

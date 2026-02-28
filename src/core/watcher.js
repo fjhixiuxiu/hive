@@ -1,6 +1,7 @@
 const EventEmitter = require('events');
 const fleet = require('./fleet');
 const tmux = require('./tmux');
+const log = require('./log');
 
 // Lines that look like Claude presenting choices to the user
 const OPTION_PATTERN = /^[-\u2013\u2022]\s+.{5,}/;
@@ -66,11 +67,11 @@ class Watcher extends EventEmitter {
     await this._seed();
 
     this.interval = setInterval(() => {
-      this._poll().catch(err => console.error('Watcher poll error:', err.message));
+      this._poll().catch(err => log.error('Watcher poll error:', err.message));
     }, this.config.watcher.interval);
     // Approval detection: poll working sessions every 10s
     this.approvalInterval = setInterval(() => {
-      this._checkApprovals().catch(err => console.error('Approval check error:', err.message));
+      this._checkApprovals().catch(err => log.error('Approval check error:', err.message));
     }, 10000);
   }
 

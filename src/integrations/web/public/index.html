@@ -425,12 +425,34 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   margin-left: auto; white-space: nowrap;
 }
 .tasks-create-btn:active { opacity: 0.8; }
+.tasks-filter-wrap { position: relative; flex-shrink: 0; }
+.tasks-filter-btn { background: var(--bg2); border: 1px solid var(--dim); color: var(--fg); font-size: 12px; font-weight: 600; padding: 8px 10px; border-radius: 6px; cursor: pointer; white-space: nowrap; height: 100%; }
+.tasks-filter-btn:hover { border-color: var(--purple); }
+.tasks-filter-btn.has-filter { border-color: var(--purple); color: var(--purple); }
+.tasks-filter-dropdown { display: none; position: absolute; top: 100%; right: 0; margin-top: 4px; background: var(--bg2); border: 1px solid var(--bg3); border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); z-index: 50; min-width: 200px; max-height: 320px; overflow-y: auto; padding: 4px 0; }
+.tasks-filter-dropdown.open { display: block; }
+.tasks-filter-option { display: flex; align-items: center; gap: 8px; padding: 6px 12px; font-size: 13px; cursor: pointer; color: var(--fg); }
+.tasks-filter-option:hover { background: var(--bg3); }
+.tasks-filter-option input { accent-color: var(--purple); width: 14px; height: 14px; cursor: pointer; }
+.tasks-filter-option .filter-count { color: var(--dim); font-size: 11px; margin-left: auto; }
 .tasks-scroll { flex: 1; overflow-y: auto; padding: 8px 10px; -webkit-overflow-scrolling: touch; }
 .task-section-label {
   font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;
   color: var(--dim); margin: 12px 0 6px; padding-left: 2px;
 }
 .task-section-label:first-child { margin-top: 0; }
+.idea-card {
+  background: var(--bg2); border-radius: 6px; padding: 10px 12px;
+  margin-bottom: 6px; border-left: 3px solid var(--yellow);
+  cursor: pointer; transition: background 0.1s;
+}
+.idea-card:hover { background: var(--bg3); }
+.idea-card.closed { border-left-color: var(--green); opacity: 0.65; }
+.idea-title { font-size: 14px; font-weight: 500; margin-bottom: 4px; }
+.idea-meta { font-size: 12px; color: var(--dim); display: flex; gap: 8px; align-items: center; }
+.idea-state { font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 4px; text-transform: uppercase; }
+.idea-state.open { background: rgba(241,250,140,0.15); color: var(--yellow); }
+.idea-state.closed { background: rgba(80,250,123,0.15); color: var(--green); }
 .task-card {
   background: var(--bg2); border-radius: 6px; padding: 10px 12px;
   margin-bottom: 6px; border-left: 3px solid var(--dim);
@@ -441,8 +463,9 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .task-card.dispatched { border-left-color: var(--yellow); }
 .task-card.completed { border-left-color: var(--green); opacity: 0.7; }
 .task-card.failed { border-left-color: var(--red); opacity: 0.7; }
-.task-card.selected { border-left-color: var(--purple); background: rgba(189,147,249,0.08); }
-.task-text { font-size: 14px; font-weight: 500; margin-bottom: 4px; }
+.task-card.selected { border-left-color: var(--purple); background: rgba(189,147,249,0.12); box-shadow: inset 0 0 0 1px rgba(189,147,249,0.25); opacity: 1; }
+.task-card.selected .task-text { color: var(--fg); }
+.task-text { font-size: 14px; font-weight: 500; margin-bottom: 4px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .task-meta { font-size: 12px; color: var(--dim); display: flex; gap: 8px; align-items: center; }
 .task-cancel {
   margin-left: auto; background: none; border: none; color: var(--red);
@@ -501,6 +524,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 }
 .picker-btn.selected { background: var(--purple); color: var(--bg); }
 .picker-btn:active { background: var(--purple); color: var(--bg); }
+.picker-btn.disabled { opacity: 0.35; cursor: not-allowed; }
 
 /* ── Tasks session pane ─────────────── */
 .tasks-session-header {
@@ -522,6 +546,13 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   flex: 1; min-height: 0; overflow: hidden; position: relative;
   background: var(--bg);
 }
+.snapshot-banner {
+  display: none; padding: 4px 12px; font-size: 11px; color: var(--dim);
+  background: rgba(255,255,255,0.03); border-bottom: 1px solid var(--bg3);
+  flex-shrink: 0;
+}
+.snapshot-banner.visible { display: block; }
+.tasks-session-terminal.snapshot-dimmed { opacity: 0.6; }
 .tasks-session-terminal .xterm { height: 100%; }
 .tasks-session-terminal .xterm-viewport { overflow-y: auto !important; }
 .tasks-session-empty {
@@ -633,7 +664,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   .tasks-list-pane { flex: 3; order: 1; border-right: 1px solid var(--bg3); }
   .tasks-session-pane {
     display: flex; flex: 7; order: 2; flex-direction: column; min-height: 0;
-    background: var(--bg); overflow: hidden;
+    background: var(--bg); overflow: hidden; position: relative;
   }
 }
 
@@ -860,7 +891,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 
 /* ── Session detail (now inside content area) ─── */
 #session-panel {
-  display: none; flex-direction: column; height: 100%; overflow: hidden;
+  display: none; flex-direction: column; height: 100%; overflow: hidden; position: relative;
 }
 #session-panel.active { display: flex; }
 #session-header {
@@ -870,13 +901,17 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 }
 #back-btn { background: none; border: none; color: var(--fg); font-size: 20px; cursor: pointer; padding: 4px 8px; border-radius: 4px; }
 #back-btn:active { background: var(--bg3); }
-#session-title { font-size: 16px; font-weight: 600; flex: 1; }
+#session-info { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
+#session-title { font-size: 16px; font-weight: 600; }
+#session-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 #session-branch { font-size: 12px; color: var(--dim); }
 #track-btn { background: var(--bg3); border: none; color: var(--purple); font-size: 11px; font-weight: 700; padding: 5px 10px; border-radius: 4px; cursor: pointer; }
 #track-btn:active { background: var(--purple); color: var(--bg); }
-#session-activity { font-size: 11px; color: var(--dim); opacity: 0.6; }
+#session-activity { font-size: 11px; color: var(--dim); opacity: 0.85; }
 #restart-btn { background: var(--bg3); border: none; color: var(--orange); font-size: 11px; font-weight: 700; padding: 5px 10px; border-radius: 4px; cursor: pointer; }
 #restart-btn:active { background: var(--orange); color: var(--bg); }
+#kill-btn { background: var(--bg3); border: none; color: #f44; font-size: 11px; font-weight: 700; padding: 5px 10px; border-radius: 4px; cursor: pointer; }
+#kill-btn:active { background: #f44; color: var(--bg); }
 #terminal-wrap { flex: 1; overflow: hidden; padding: 4px; position: relative; touch-action: none; min-height: 0; }
 #terminal-wrap .xterm { height: 100%; }
 .xterm .xterm-viewport { touch-action: pan-y !important; -webkit-overflow-scrolling: touch !important; overscroll-behavior: contain; }
@@ -934,6 +969,14 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
 .toast.out { animation: slideOut 0.2s ease-in forwards; }
 @keyframes slideOut { to { transform: translateX(100%); opacity: 0; } }
+.toast.spawning { border-left-color: var(--cyan); }
+.toast.spawning .toast-title::before {
+  content: ''; display: inline-block; width: 12px; height: 12px;
+  border: 2px solid var(--dim); border-top-color: var(--cyan);
+  border-radius: 50%; animation: spin 0.8s linear infinite;
+  margin-right: 6px; vertical-align: middle;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
 
 /* ── Designation badge on fleet cards ── */
 .card-designation {
@@ -1035,7 +1078,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   max-width: 360px; border: 1px solid var(--bg3);
 }
 .dialog-title { font-size: 16px; font-weight: 700; margin-bottom: 16px; }
-.slot-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 16px; }
+.slot-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 16px; max-height: 240px; overflow-y: auto; }
 .slot-btn {
   background: var(--bg3); border: none; color: var(--fg); font-size: 16px;
   font-weight: 700; height: 44px; border-radius: 8px; cursor: pointer;
@@ -1101,6 +1144,105 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   background: var(--bg3); border: none; color: var(--fg); font-size: 13px;
   padding: 8px 10px; border-radius: 6px; width: 100%; outline: none;
 }
+
+/* ── Task comments ─────────────────── */
+.comment-panel { padding: 8px 12px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; }
+.comment-panel-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--dim); margin-bottom: 6px; }
+.comment-item { display: flex; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--bg3); font-size: 13px; align-items: flex-start; }
+.comment-item:last-child { border-bottom: none; }
+.comment-avatar { width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0; }
+.comment-body { flex: 1; min-width: 0; }
+.comment-author { font-weight: 700; font-size: 12px; color: var(--fg); }
+.comment-time { font-size: 10px; color: var(--dim); margin-left: 6px; }
+.comment-text { color: var(--fg); line-height: 1.4; word-break: break-word; }
+.comment-delete { background: none; border: none; color: var(--dim); font-size: 12px; cursor: pointer; padding: 2px 4px; flex-shrink: 0; opacity: 0.5; }
+.comment-delete:hover { opacity: 1; color: var(--red); }
+.comment-input-row { display: flex; gap: 6px; margin-top: 6px; }
+.comment-input { flex: 1; background: var(--bg); border: 1px solid var(--bg3); color: var(--fg); padding: 6px 10px; border-radius: 6px; font-size: 12px; outline: none; min-width: 0; }
+.comment-input:focus { border-color: var(--purple); }
+.comment-input::placeholder { color: var(--dim); }
+.comment-send { background: var(--purple); border: none; color: var(--bg); font-size: 11px; font-weight: 700; padding: 6px 10px; border-radius: 6px; cursor: pointer; }
+.comment-send:active { opacity: 0.8; }
+.comment-count { font-size: 11px; color: var(--dim); margin-left: 4px; }
+
+/* ── Comments drawer (overlay) ────────── */
+.comments-drawer {
+  position: absolute; right: 0; top: 0; bottom: 0; width: 280px; z-index: 999;
+  background: rgba(26,26,46,0.97); border-left: 1px solid var(--bg3);
+  transform: translateX(100%); transition: transform 0.2s ease;
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.comments-drawer.open { transform: translateX(0); }
+.comments-toggle-btn {
+  background: none; border: none; color: var(--dim); font-size: 13px;
+  font-weight: 700; padding: 8px 20px; cursor: pointer;
+  border-bottom: 2px solid transparent; transition: color 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+.comments-toggle-btn:hover { color: var(--fg); }
+.comments-toggle-btn.has-comments { color: var(--cyan); }
+.task-link-btn { background: none; border: none; color: var(--dim); font-size: 11px; cursor: pointer; padding: 0 4px; opacity: 0.5; }
+.task-link-btn:hover { opacity: 1; color: var(--purple); }
+.task-resume-btn {
+  background: none; border: none; color: var(--cyan); font-size: 11px;
+  font-weight: 600; cursor: pointer; padding: 2px 6px;
+}
+.task-resume-btn:hover { color: var(--fg); }
+
+/* ── Admin panel (user permissions) ── */
+.admin-user-row { display: flex; align-items: center; gap: 10px; padding: 10px; background: var(--bg); border-radius: 6px; margin-bottom: 6px; flex-wrap: wrap; }
+.admin-user-avatar { width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0; }
+.admin-user-info { min-width: 100px; }
+.admin-user-name { font-weight: 700; font-size: 13px; }
+.admin-user-login { font-size: 11px; color: var(--dim); }
+.admin-perms { display: flex; gap: 4px; flex-wrap: wrap; flex: 1; }
+.admin-perm-chip { font-size: 10px; padding: 3px 8px; border-radius: 4px; cursor: pointer; border: 1px solid var(--bg3); background: var(--bg2); color: var(--dim); transition: all 0.15s; user-select: none; }
+.admin-perm-chip.active { background: rgba(80,250,123,0.15); color: var(--green); border-color: var(--green); }
+.admin-perm-chip.admin-perm { background: rgba(189,147,249,0.15); color: var(--purple); border-color: var(--purple); }
+.admin-perm-chip:hover { border-color: var(--fg); }
+.perm-hidden { display: none !important; }
+
+/* ── Checklist popup ────────────────────── */
+.checklist-tab { margin-left: auto !important; }
+.checklist-tab.partial { color: var(--cyan) !important; }
+.checklist-tab.done { color: var(--green) !important; }
+.checklist-popup { position: absolute; top: 100%; right: 8px; background: var(--bg2); border: 1px solid var(--bg3); border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); z-index: 1000; margin-top: 4px; max-height: 320px; display: flex; flex-direction: column; width: 280px; }
+.checklist-popup-header { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid var(--bg3); font-size: 12px; font-weight: 700; color: var(--dim); text-transform: uppercase; letter-spacing: 0.5px; }
+.checklist-popup-close { background: none; border: none; color: var(--dim); cursor: pointer; font-size: 16px; padding: 0 4px; }
+.checklist-popup-items { overflow-y: auto; flex: 1; padding: 4px 0; }
+.checklist-item { display: flex; align-items: center; gap: 8px; padding: 6px 12px; font-size: 13px; }
+.checklist-item:hover { background: var(--bg3); }
+.checklist-item input[type="checkbox"] { accent-color: var(--cyan); cursor: pointer; }
+.checklist-item-text { flex: 1; }
+.checklist-item-text.checked { text-decoration: line-through; color: var(--dim); }
+.checklist-item-del { background: none; border: none; color: var(--dim); cursor: pointer; font-size: 14px; padding: 0 2px; opacity: 0; }
+.checklist-item:hover .checklist-item-del { opacity: 1; }
+.checklist-popup-add { display: flex; gap: 6px; padding: 6px 12px; border-top: 1px solid var(--bg3); }
+.checklist-popup-add input { flex: 1; background: var(--bg); border: 1px solid var(--bg3); color: var(--fg); font-size: 12px; padding: 4px 8px; border-radius: 4px; outline: none; }
+.checklist-popup-add input:focus { border-color: var(--purple); }
+.checklist-popup-add button { background: var(--purple); border: none; color: var(--bg); font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 4px; cursor: pointer; }
+.checklist-popup-template { padding: 6px 12px; border-top: 1px solid var(--bg3); }
+.checklist-popup-template select { width: 100%; background: var(--bg); border: 1px solid var(--bg3); color: var(--fg); font-size: 12px; padding: 4px 8px; border-radius: 4px; outline: none; }
+.checklist-badge { font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 4px; background: rgba(139,233,253,0.12); color: var(--cyan); white-space: nowrap; }
+.checklist-badge.done { background: rgba(80,250,123,0.12); color: var(--green); }
+.checklist-tpl-item { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--bg3); font-size: 13px; }
+.checklist-tpl-item:last-child { border-bottom: none; }
+.checklist-tpl-name { flex: 1; font-weight: 600; }
+.checklist-tpl-count { color: var(--dim); font-size: 11px; }
+.checklist-tpl-actions button { background: none; border: none; color: var(--dim); cursor: pointer; font-size: 12px; padding: 2px 6px; }
+.checklist-tpl-actions button:hover { color: var(--fg); }
+
+/* ── Actions popup (contextual task actions) ────────── */
+.actions-tab { margin-left: 4px !important; }
+.actions-popup { position: absolute; top: 100%; right: 8px; background: var(--bg2); border: 1px solid var(--bg3); border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); z-index: 1000; margin-top: 4px; display: flex; flex-direction: column; width: 240px; }
+.actions-popup-header { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid var(--bg3); font-size: 12px; font-weight: 700; color: var(--dim); text-transform: uppercase; letter-spacing: 0.5px; }
+.actions-popup-close { background: none; border: none; color: var(--dim); cursor: pointer; font-size: 16px; padding: 0 4px; }
+.actions-popup-items { padding: 4px 0; }
+.actions-popup-item { display: flex; align-items: center; gap: 8px; padding: 8px 12px; font-size: 13px; font-weight: 600; cursor: pointer; background: none; border: none; width: 100%; text-align: left; transition: background 0.1s; }
+.actions-popup-item:hover { background: var(--bg3); }
+.actions-popup-item.loading { opacity: 0.4; pointer-events: none; }
+.actions-popup-item .action-label { flex: 1; }
+.actions-popup-item .action-confirm-icon { font-size: 10px; color: var(--dim); }
 </style>
 </head>
 <body>
@@ -1133,6 +1275,9 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     </button>
     <button class="nav-btn" data-tab="pm-panel">
       <span class="nav-icon">&#9881;</span>PMs
+    </button>
+    <button class="nav-btn" data-tab="ideas-panel">
+      <span class="nav-icon">&#128161;</span>Ideas
     </button>
     <button class="nav-btn" data-tab="more-panel">
       <span class="nav-icon">&#8943;</span>More
@@ -1170,6 +1315,10 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
           <div class="fleet-search-bar">
             <input id="tasks-search-input" type="text" placeholder="Search tasks..." autocomplete="off" style="flex:1;background:var(--bg2);border:1px solid var(--dim);border-radius:6px;color:var(--fg);padding:8px 32px 8px 12px;font:inherit;font-size:14px;outline:none">
             <button id="tasks-search-clear" class="fleet-search-clear" style="display:none">&times;</button>
+            <div class="tasks-filter-wrap" id="tasks-filter-wrap" style="display:none">
+              <button class="tasks-filter-btn" id="tasks-filter-btn">Sources</button>
+              <div class="tasks-filter-dropdown" id="tasks-filter-dropdown"></div>
+            </div>
           </div>
           <div class="tasks-tabs">
             <button class="tasks-tab active" data-tab="inprogress">In Progress</button>
@@ -1190,9 +1339,13 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
             <span class="tasks-session-branch" id="tasks-session-branch"></span>
             <button class="ts-open-btn" id="ts-open-session" style="display:none">Open Full Session</button>
           </div>
+          <div class="snapshot-banner" id="snapshot-banner"></div>
           <div class="tasks-session-tabs" id="tasks-session-tabs" style="display:none">
             <button class="session-tab active" data-tstab="terminal">Terminal</button>
             <button class="session-tab" data-tstab="git">Git</button>
+            <button class="comments-toggle-btn" id="ts-comments-toggle" style="display:none">Comments</button>
+            <button class="session-tab checklist-tab" id="ts-checklist-tab" style="display:none">&#9745; Checklist</button>
+            <button class="session-tab actions-tab" id="ts-actions-tab" style="display:none">&#9889; Actions</button>
           </div>
           <div class="tasks-session-empty" id="tasks-session-empty">Select an in-progress task to view its session</div>
           <div class="session-tab-content active" id="ts-terminal-content" style="display:none">
@@ -1209,6 +1362,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
               </div>
             </div>
           </div>
+          <div class="comments-drawer" id="ts-comments-drawer"></div>
           <div class="tasks-session-keys" id="tasks-session-keys" style="display:none">
             <button class="key-btn vim-toggle">VIM</button>
             <button class="key-btn ts-key-btn" data-key="Enter">Enter</button>
@@ -1291,7 +1445,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
             </div>
           </div>
         </div>
-        <div class="more-section">
+        <div class="more-section" id="broadcast-section">
           <div class="more-section-title">Broadcast</div>
           <select id="broadcast-target">
             <option value="all">All active sessions</option>
@@ -1324,6 +1478,19 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
           <div id="desig-defs-list"></div>
           <button class="desig-add-btn" id="desig-def-add-btn">+ Add Designation</button>
         </div>
+        <div class="more-section">
+          <div class="more-section-title">Checklist Templates</div>
+          <div id="checklist-tpl-list"></div>
+          <button class="desig-add-btn" id="checklist-tpl-add-btn">+ Add Template</button>
+        </div>
+        <div class="more-section perm-hidden" id="admin-users-section">
+          <div class="more-section-title">User Permissions</div>
+          <div id="admin-users-list"></div>
+          <div id="admin-add-user-form" style="display:flex;gap:6px;margin-top:8px;align-items:center">
+            <input id="admin-add-user-input" type="text" placeholder="GitHub username" style="flex:1;background:#1a1a3a;color:#e2e2f0;border:1px solid #333;border-radius:4px;padding:4px 8px;font-size:13px">
+            <button id="admin-add-user-btn" style="padding:4px 12px;background:#50fa7b;color:#0f0f23;border:none;border-radius:4px;cursor:pointer;font-size:13px;font-weight:600">Add</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -1335,19 +1502,35 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       </div>
     </div>
 
+    <!-- Ideas panel -->
+    <div id="ideas-panel" class="panel">
+      <div style="display:flex;align-items:center;padding:10px 12px 6px;gap:8px">
+        <span style="font-size:16px;font-weight:700;flex:1">Product Ideas</span>
+        <button class="tasks-create-btn" id="ideas-create-btn">+ New Idea</button>
+      </div>
+      <div id="ideas-list" style="flex:1;overflow-y:auto;padding:8px 12px;-webkit-overflow-scrolling:touch"></div>
+    </div>
+
     <!-- Session detail panel (replaces content, not an overlay) -->
     <div id="session-panel" class="panel">
       <div id="session-header">
         <button id="back-btn">&larr;</button>
-        <span id="session-title"></span>
-        <span id="session-branch"></span>
-        <button id="track-btn" title="Attach a tracking task to this session">Track</button>
-        <span id="session-activity"></span>
-        <button id="restart-btn" title="Restart Claude">Restart</button>
+        <div id="session-info">
+          <span id="session-title"></span>
+          <span id="session-branch"></span>
+          <span id="session-activity"></span>
+        </div>
+        <div id="session-actions">
+          <button id="track-btn" title="Attach a tracking task to this session">Track</button>
+          <button id="restart-btn" title="Restart Claude">Restart</button>
+          <button id="kill-btn" title="Kill this tmux session">Close</button>
+        </div>
       </div>
       <div class="session-tabs">
         <button class="session-tab active" data-stab="terminal">Terminal</button>
         <button class="session-tab" data-stab="git">Git</button>
+        <button class="comments-toggle-btn" id="session-comments-toggle" style="display:none">Comments</button>
+        <button class="session-tab checklist-tab" id="session-checklist-tab" style="display:none">&#9745; Checklist</button>
       </div>
       <div class="session-tab-content active" id="session-terminal-content">
         <div id="terminal-wrap"></div>
@@ -1363,6 +1546,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
           </div>
         </div>
       </div>
+      <div class="comments-drawer" id="session-comments-drawer"></div>
       <div id="keys-bar">
         <button class="key-btn vim-toggle">VIM</button>
         <button class="key-btn" data-key="Enter">Enter</button>
@@ -1446,6 +1630,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         <option value="github-prs">GitHub PRs</option>
         <option value="github-re-reviews">GitHub Re-Reviews</option>
         <option value="command">Command</option>
+        <option value="slack">Slack</option>
         <option value="manual">Manual</option>
         <option value="jenkins">Jenkins (Tests)</option>
         <option value="zoho">Zoho (Support)</option>
@@ -1496,6 +1681,11 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       <label class="pm-form-label">Task Instructions</label>
       <textarea class="pm-form-input" id="pm-form-manual-text" rows="4" placeholder="Describe the task..." style="resize:vertical;font-family:inherit"></textarea>
     </div>
+    <div class="pm-form-field pm-fields-slack" style="display:none">
+      <label class="pm-form-label">Channel ID <span style="color:var(--dim)">(optional)</span></label>
+      <input class="pm-form-input" id="pm-form-slack-channel" type="text" placeholder="Leave blank for all channels" autocomplete="off">
+      <span style="font-size:11px;color:var(--dim);margin-top:4px;display:block;">Tasks from @hive in this channel use this PM's routing config (designation, target session, instructions, checklist).</span>
+    </div>
     <div class="pm-form-field pm-fields-jenkins" style="display:none">
       <label class="pm-form-label">Job Path</label>
       <input class="pm-form-input" id="pm-form-jenkins-path" type="text" placeholder="webplatform/job/PR-123" autocomplete="off">
@@ -1531,6 +1721,12 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     <div class="pm-form-field">
       <label class="pm-form-label">Instructions <span style="color:var(--dim)">(included with each task)</span></label>
       <textarea class="pm-form-input" id="pm-form-instructions" rows="3" placeholder="e.g. Post a review comment on the PR — DO NOT approve" style="resize:vertical;font-family:inherit"></textarea>
+    </div>
+    <div class="pm-form-field">
+      <label class="pm-form-label">Checklist Template <span style="color:var(--dim)">(auto-seed on task creation)</span></label>
+      <select class="pm-form-select" id="pm-form-checklist-tpl">
+        <option value="">None</option>
+      </select>
     </div>
     <div class="pm-form-field">
       <label class="pm-form-label">Auto Threshold (story points)</label>
@@ -1621,6 +1817,60 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   </div>
 </div>
 
+<!-- Checklist template dialog -->
+<div class="dialog-overlay" id="checklist-tpl-dialog">
+  <div class="dialog" style="max-width:420px">
+    <div class="dialog-title" id="checklist-tpl-dialog-title">New Checklist Template</div>
+    <div class="task-dialog-field">
+      <label class="task-dialog-label">Name</label>
+      <input class="task-dialog-input" id="checklist-tpl-form-name" type="text" placeholder="e.g. Review Checklist" autocomplete="off" style="width:100%">
+    </div>
+    <div class="task-dialog-field">
+      <label class="task-dialog-label">Items <span style="color:var(--dim)">(one per line)</span></label>
+      <textarea class="task-dialog-input" id="checklist-tpl-form-items" rows="6" placeholder="Check CI&#10;Post review comment&#10;Approve PR" style="width:100%;resize:vertical;font-family:inherit"></textarea>
+    </div>
+    <div class="dialog-actions">
+      <button class="dialog-btn primary" id="checklist-tpl-save">Save</button>
+      <button class="dialog-btn" id="checklist-tpl-cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- New Idea dialog -->
+<div class="dialog-overlay" id="idea-dialog">
+  <div class="dialog" style="max-width:480px">
+    <div class="dialog-title">New Product Idea</div>
+    <div class="task-dialog-field">
+      <label class="task-dialog-label">Title <span style="color:var(--red)">*</span></label>
+      <input class="task-dialog-input" id="idea-dialog-title" type="text" placeholder="Short summary of the idea" autocomplete="off" style="width:100%">
+    </div>
+    <div class="task-dialog-field">
+      <label class="task-dialog-label">Description</label>
+      <textarea class="task-dialog-input" id="idea-dialog-body" rows="5" placeholder="Optional details..." style="width:100%;resize:vertical;font-family:inherit"></textarea>
+    </div>
+    <div class="dialog-actions">
+      <button class="dialog-btn primary" id="idea-dialog-save">Create</button>
+      <button class="dialog-btn" id="idea-dialog-cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Action confirm dialog -->
+<div class="dialog-overlay" id="action-confirm-dialog">
+  <div class="dialog" style="max-width:380px">
+    <div class="dialog-title" id="action-confirm-title">Confirm Action</div>
+    <div id="action-confirm-body" style="font-size:13px;color:var(--dim);margin-bottom:12px;line-height:1.5"></div>
+    <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:16px;cursor:pointer;color:var(--fg)">
+      <input type="checkbox" id="action-confirm-close-task" style="accent-color:var(--green);width:16px;height:16px">
+      Close task after
+    </label>
+    <div class="dialog-actions">
+      <button class="dialog-btn primary" id="action-confirm-submit">Confirm</button>
+      <button class="dialog-btn" id="action-confirm-cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <!-- Toasts -->
 <div id="toasts"></div>
 
@@ -1668,6 +1918,8 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   let feedPreviewFit = null;
   let pendingApprovals = [];
   let rules = [];
+  let checklistTemplates = [];
+  let checklistPopupTaskId = null;
   let unreadFeedCount = 0;
   let activeTab = 'fleet-panel';
   let previousTab = 'fleet-panel'; // remember which tab was active before session view
@@ -1676,6 +1928,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   let manualTarget = null;
   let activeTaskTab = 'inprogress';
   let taskSearchQuery = '';
+  let taskSourceFilter = new Set(); // empty = show all; non-empty = show only matching sources
   let selectedTaskIds = new Set();
   let tasksSessionNum = null;
   let tasksSessionTerm = null;
@@ -1694,12 +1947,15 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   let designationDefs = []; // [{ name, agentFiles, description }]
   let agentRoots = [];      // array of scan paths
   let agentFilesList = [];  // cached scan results
-  let spawnSlotMin = 17;
+  let spawnSlotMin = 1;
+  let spawnBaseDir = '~/ai-dev';
   let spawnSlotMax = 32;
   let pmList = [];        // PM objects from server
   let editingPmId = null; // PM being edited (null = creating new)
-  let activeSessionTab = 'terminal'; // 'terminal' or 'git'
+  let activeSessionTab = 'terminal'; // 'terminal', 'git', or 'comments'
   let fleetSearchTimer = null; // debounce timer for fleet search
+  let myPermissions = []; // current user's permissions (empty = legacy token mode, all allowed)
+  let allUsers = []; // all users (admin only)
 
   // ── DOM refs ──────────────────────────────────────
   const $ = (s) => document.querySelector(s);
@@ -1799,13 +2055,14 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   // ── URL routing ─────────────────────────────────
   const TAB_TO_HASH = {
     'fleet-panel': '/fleet', 'tasks-panel': '/tasks', 'feed-panel': '/feed',
-    'pm-panel': '/pm', 'more-panel': '/more', 'session-panel': '/session',
+    'pm-panel': '/pm', 'ideas-panel': '/ideas', 'more-panel': '/more', 'session-panel': '/session',
   };
   const HASH_TO_TAB = {};
   for (const [tab, hash] of Object.entries(TAB_TO_HASH)) HASH_TO_TAB[hash] = tab;
 
   function hashFromState() {
     if (activeTab === 'session-panel' && currentSession) return `/session/${currentSession}`;
+    if (activeTab === 'tasks-panel' && tasksSelectedTaskId) return `/tasks/${tasksSelectedTaskId}`;
     return TAB_TO_HASH[activeTab] || '/fleet';
   }
 
@@ -1826,12 +2083,20 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       switchTab('fleet-panel', true);
       return;
     }
+    const taskMatch = raw.match(/^\/tasks\/(.+)$/);
+    if (taskMatch) {
+      pendingRouteTask = taskMatch[1];
+      switchTab('tasks-panel', true);
+      selectTaskById(pendingRouteTask);
+      return;
+    }
     const tab = HASH_TO_TAB[raw];
     if (tab) { switchTab(tab, true); }
     else { switchTab('fleet-panel', true); }
   }
 
   let pendingRouteSession = null;
+  let pendingRouteTask = null;
 
   window.addEventListener('popstate', () => { if (authenticated) applyHash(); });
 
@@ -1888,7 +2153,8 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       }
     }
     if (tab === 'fleet-panel') renderGrid();
-    if (tab === 'more-panel') { renderDesignationGrid(); renderAgentRoots(); renderDesigDefs(); }
+    if (tab === 'ideas-panel' && ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'idea:list' }));
+    if (tab === 'more-panel') { renderDesignationGrid(); renderAgentRoots(); renderDesigDefs(); renderAdminUsers(); renderChecklistTemplates(); }
     const spawnBtn = document.getElementById('spawn-btn');
     if (spawnBtn) spawnBtn.classList.toggle('visible', tab === 'fleet-panel');
     if (tab === 'session-panel' && term && fitAddon && activeSessionTab === 'terminal') {
@@ -1925,6 +2191,68 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     name.textContent = currentUser.name || currentUser.login || '';
   }
 
+  // ── Permission helpers ───────────────────────────
+  function hasPerm(cap) {
+    // Legacy token mode (no OAuth / no permissions sent) = all allowed
+    if (!myPermissions.length) return true;
+    if (myPermissions.includes('admin')) return true;
+    return myPermissions.includes(cap);
+  }
+
+  function applyPermissionGates() {
+    // Create task button
+    const createBtn = document.getElementById('tasks-create-btn');
+    if (createBtn) createBtn.classList.toggle('perm-hidden', !hasPerm('create-tasks'));
+
+    // Quick-send bar (fleet panel)
+    const quickBar = document.getElementById('quick-bar');
+    if (quickBar) quickBar.classList.toggle('perm-hidden', !hasPerm('send-messages'));
+
+    // Session input bar
+    const inputBar = document.getElementById('input-bar');
+    if (inputBar) inputBar.classList.toggle('perm-hidden', !hasPerm('send-messages'));
+
+    // Session keys bar
+    const keysBar = document.getElementById('keys-bar');
+    if (keysBar) keysBar.classList.toggle('perm-hidden', !hasPerm('send-messages'));
+
+    // Restart button
+    const restartBtn = document.getElementById('restart-btn');
+    if (restartBtn) restartBtn.classList.toggle('perm-hidden', !hasPerm('restart'));
+
+    // Kill button (same permission as restart)
+    const killBtn = document.getElementById('kill-btn');
+    if (killBtn) killBtn.classList.toggle('perm-hidden', !hasPerm('restart'));
+
+    // Track button (attach task)
+    const trackBtn = document.getElementById('track-btn');
+    if (trackBtn) trackBtn.classList.toggle('perm-hidden', !hasPerm('create-tasks'));
+
+    // Tasks session input (sidebar in tasks panel)
+    const tsInput = document.getElementById('tasks-session-input');
+    if (tsInput) tsInput.classList.toggle('perm-hidden', !hasPerm('send-messages'));
+
+    // Tasks session keys
+    const tsKeys = document.getElementById('tasks-session-keys');
+    if (tsKeys) tsKeys.classList.toggle('perm-hidden', !hasPerm('send-messages'));
+
+    // Broadcast section in more panel
+    const broadcastSection = document.getElementById('broadcast-section');
+    if (broadcastSection) broadcastSection.classList.toggle('perm-hidden', !hasPerm('send-messages'));
+
+    // Spawn button
+    const spawnBtn = document.getElementById('spawn-btn');
+    if (spawnBtn && !hasPerm('admin')) spawnBtn.classList.add('perm-hidden');
+
+    // Admin users section in More
+    const adminSection = document.getElementById('admin-users-section');
+    if (adminSection) adminSection.classList.toggle('perm-hidden', !hasPerm('admin'));
+
+    // Cmd bar (slash commands)
+    const cmdBar = document.getElementById('cmd-bar');
+    if (cmdBar) cmdBar.classList.toggle('perm-hidden', !hasPerm('send-messages'));
+  }
+
   // ── Message handling ──────────────────────────────
   function handleMessage(msg) {
     switch (msg.type) {
@@ -1932,6 +2260,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         if (msg.ok) {
           authenticated = true; connBar.className = 'connected';
           if (msg.user) currentUser = msg.user;
+          if (msg.permissions) { myPermissions = msg.permissions; applyPermissionGates(); }
           authScreen.style.display = 'none'; mainView.style.display = 'flex';
           updateUserBadge();
           if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
@@ -1942,7 +2271,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
           authError.style.display = 'block'; authInput.value = ''; authInput.focus();
         }
         break;
-      case 'config': linkTemplates = msg.links || {}; break;
+      case 'config': linkTemplates = msg.links || {}; if (msg.spawnBaseDir) spawnBaseDir = msg.spawnBaseDir; break;
       case 'commands:list': tsCommands = msg.commands || []; renderCommands(tsCommands); break;
       case 'fleet:search:result':
         renderFleetSearchResults(msg.query, msg.results);
@@ -2013,18 +2342,29 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         break;
       case 'notify': handleNotify(msg); break;
       case 'restart:done': showToast('Restarted', `Session ${msg.session} — claude --resume`, 'success'); break;
+      case 'kill:done': closeSession(); showToast('Closed', `Session ${msg.session} killed`, 'success'); break;
       case 'keys:done': break;
-      case 'error': showToast('Error', msg.message, 'error'); break;
-      case 'tasks:list': tasks = msg.tasks || []; renderTasks(); updateTasksBadge(); break;
+      case 'error':
+        // Suppress noisy permission toasts — only show for explicit user actions
+        if (msg.message && msg.message.startsWith('Permission denied')) {
+          console.warn('[hive]', msg.message);
+        } else {
+          showToast('Error', msg.message, 'error');
+        }
+        break;
+      case 'tasks:list':
+        tasks = msg.tasks || []; renderTasks(); updateTasksBadge();
+        if (pendingRouteTask) { selectTaskById(pendingRouteTask); pendingRouteTask = null; }
+        break;
       case 'task:created': case 'task:dispatched': case 'task:completed': case 'task:failed': {
         const idx = tasks.findIndex(t => t.id === msg.task.id);
         if (idx >= 0) tasks[idx] = msg.task; else tasks.unshift(msg.task);
-        renderTasks(); updateTasksBadge(); break;
+        renderTasks(); updateTasksBadge(); updateChecklistButtons(); updateActionsButton(); break;
       }
       case 'task:updated': {
         const idx = tasks.findIndex(t => t.id === msg.task.id);
         if (idx >= 0) tasks[idx] = msg.task; else tasks.unshift(msg.task);
-        renderTasks(); updateTasksBadge(); break;
+        renderTasks(); updateTasksBadge(); updateChecklistButtons(); updateActionsButton(); refreshChecklistPopup(); break;
       }
       case 'task:cancelled': {
         const idx = tasks.findIndex(t => t.id === msg.task.id);
@@ -2034,6 +2374,15 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       }
       case 'task:snapshot': {
         showTaskSnapshotContent(msg.taskId, msg.content, msg.cols);
+        break;
+      }
+      case 'task:action:result': {
+        document.querySelectorAll(`.actions-popup-item[data-task-id="${msg.taskId}"]`).forEach(b => b.classList.remove('loading'));
+        if (msg.ok) {
+          showToast('Action Complete', msg.message || 'Done', 'success');
+        } else {
+          showToast('Action Failed', msg.error || 'Unknown error', 'error');
+        }
         break;
       }
       case 'auto:status': autoSessions = new Set(msg.sessions || []); renderAutoGrid(); if (activeTab === 'fleet-panel') renderGrid(); break;
@@ -2052,6 +2401,11 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       case 'approvals:list': pendingApprovals = msg.approvals || []; break;
       case 'broadcast:done': showToast('Broadcast', `${msg.sent} sent, ${msg.failed} failed`, msg.failed ? 'error' : 'success'); break;
       case 'rules:list': rules = msg.rules || []; renderRules(); break;
+      case 'checklistTemplates:list':
+        checklistTemplates = msg.templates || [];
+        if (activeTab === 'more-panel') renderChecklistTemplates();
+        updatePmChecklistTplSelector();
+        break;
       case 'designations:status':
         designations = msg.designations || {};
         renderDesignationGrid(); updateDesignationSelector(); updatePmDesignationSelector();
@@ -2079,8 +2433,10 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       case 'spawn:config':
         if (msg.min !== undefined) spawnSlotMin = msg.min;
         if (msg.max !== undefined) spawnSlotMax = msg.max;
+        if (msg.spawnBaseDir) spawnBaseDir = msg.spawnBaseDir;
         break;
       case 'spawn:done':
+        if (spawnToast) { spawnToast.remove(); spawnToast = null; }
         if (msg.success) showToast('Spawned', `Session ${msg.num} at ${msg.repoDir || ''}`, 'success');
         else showToast('Spawn failed', msg.error || 'Unknown error', 'error');
         closeSpawnDialog();
@@ -2088,6 +2444,40 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       case 'pm:list': pmList = msg.pms || []; renderPMs(); break;
       case 'pm:created': showToast('PM Created', msg.pm.name, 'success'); break;
       case 'pm:error': showToast('PM Error', `${msg.id}: ${msg.error}`, 'error'); break;
+      case 'user:permissions':
+        myPermissions = msg.permissions || [];
+        applyPermissionGates();
+        renderTasks(); // re-render to show/hide cancel buttons etc.
+        break;
+      case 'users:list':
+        allUsers = msg.users || [];
+        if (activeTab === 'more-panel') renderAdminUsers();
+        break;
+      case 'users:updated': {
+        const idx = allUsers.findIndex(u => u.login === msg.user.login);
+        if (idx >= 0) allUsers[idx] = msg.user; else allUsers.push(msg.user);
+        if (activeTab === 'more-panel') renderAdminUsers();
+        break;
+      }
+      case 'task:comment:added': {
+        const t = tasks.find(x => x.id === msg.taskId);
+        if (t) {
+          if (!t.comments) t.comments = [];
+          t.comments.push(msg.comment);
+          renderTasks();
+          renderCommentPanel(msg.taskId);
+        }
+        break;
+      }
+      case 'task:comment:deleted': {
+        const t = tasks.find(x => x.id === msg.taskId);
+        if (t && t.comments) {
+          t.comments = t.comments.filter(c => c.id !== msg.commentId);
+          renderTasks();
+          renderCommentPanel(msg.taskId);
+        }
+        break;
+      }
       case 'git:info':
         if (currentSession === String(msg.session)) renderGitPanel(msg, 'git-sidebar');
         if (tasksSessionNum === String(msg.session) && activeTab === 'tasks-panel') renderGitPanel(msg, 'ts-git-sidebar');
@@ -2099,6 +2489,16 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       case 'git:commit':
         if (currentSession === String(msg.session)) expandCommitRow(msg.hash, msg.files, 'git-sidebar', currentSession);
         if (tasksSessionNum === String(msg.session) && activeTab === 'tasks-panel') expandCommitRow(msg.hash, msg.files, 'ts-git-sidebar', tasksSessionNum);
+        break;
+      case 'idea:list':
+        renderIdeas(msg.ideas || []);
+        break;
+      case 'idea:created':
+        showToast('Idea Created', `#${msg.issue.number} ${msg.issue.title}`, 'success');
+        if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'idea:list' }));
+        break;
+      case 'idea:error':
+        showToast('Idea Error', msg.error, 'error');
         break;
     }
   }
@@ -2272,6 +2672,13 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     $$('.session-tab').forEach(t => t.classList.toggle('active', t.dataset.stab === 'terminal'));
     document.getElementById('session-terminal-content').classList.add('active');
     document.getElementById('session-git-content').classList.remove('active');
+    closeAllCommentsDrawers();
+    // Render comments for the tracked task and update badge
+    const sessionTask = tasks.find(t => t.assignedTo === s.num);
+    if (sessionTask) renderCommentPanel(sessionTask.id, 'session');
+    updateCommentBadge('session', sessionTask);
+    updateChecklistButtons();
+    updateActionsButton();
 
     if (!term) {
       term = new Terminal({
@@ -2300,6 +2707,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       if (ws && ws.readyState === 1) {
         ws.send(JSON.stringify({ type: 'terminal:subscribe', session: currentSession, cols: term.cols, rows: term.rows }));
       }
+      setTimeout(() => { const el = document.getElementById('terminal-wrap'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'end' }); }, 100);
     });
   }
 
@@ -2420,6 +2828,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   // ── Session tab switching ──────────────────────
   $$('.session-tab').forEach(tab => {
     tab.addEventListener('click', () => {
+      if (!tab.dataset.stab) return; // skip non-tab buttons (e.g. comments toggle)
       activeSessionTab = tab.dataset.stab;
       $$('.session-tab').forEach(t => t.classList.toggle('active', t.dataset.stab === activeSessionTab));
       document.getElementById('session-terminal-content').classList.toggle('active', activeSessionTab === 'terminal');
@@ -2431,6 +2840,43 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         ws.send(JSON.stringify({ type: 'git:info', session: currentSession }));
       }
     });
+  });
+
+  // ── Comments drawer toggle ─────────────────────
+  function closeAllCommentsDrawers() {
+    document.querySelectorAll('.comments-drawer').forEach(d => d.classList.remove('open'));
+  }
+
+  function toggleCommentsDrawer(drawerId, toggleBtnId) {
+    const drawer = document.getElementById(drawerId);
+    if (!drawer) return;
+    const isOpen = drawer.classList.contains('open');
+    closeAllCommentsDrawers();
+    if (!isOpen) {
+      // Populate before opening
+      if (drawerId === 'session-comments-drawer' && currentSession) {
+        const task = tasks.find(t => t.assignedTo === Number(currentSession));
+        if (task) renderCommentPanel(task.id, 'session');
+      } else if (drawerId === 'ts-comments-drawer' && commentPanelTaskId) {
+        renderCommentPanel(commentPanelTaskId, 'tasks');
+      }
+      drawer.classList.add('open');
+    }
+  }
+
+  document.getElementById('session-comments-toggle').addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleCommentsDrawer('session-comments-drawer', 'session-comments-toggle');
+  });
+  document.getElementById('ts-comments-toggle').addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleCommentsDrawer('ts-comments-drawer', 'ts-comments-toggle');
+  });
+
+  // Close drawer on outside click
+  document.addEventListener('click', (e) => {
+    if (e.target.closest('.comments-drawer') || e.target.closest('.comments-toggle-btn')) return;
+    closeAllCommentsDrawers();
   });
 
   // ── Auto-grow textareas ────────────────────────
@@ -2482,6 +2928,13 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     if (!confirm(`Restart Claude in session ${currentSession}?`)) return;
     ws.send(JSON.stringify({ type: 'restart', session: currentSession }));
     showToast('Restarting', `Session ${currentSession}`, 'success');
+  });
+
+  $('#kill-btn').addEventListener('click', () => {
+    if (!currentSession || !ws || ws.readyState !== 1) return;
+    if (!confirm(`Kill session ${currentSession}? This will destroy the tmux session.`)) return;
+    ws.send(JSON.stringify({ type: 'kill', session: currentSession }));
+    showToast('Closing', `Session ${currentSession}`, 'success');
   });
 
   // ── Command buttons ────────────────────────────
@@ -2645,13 +3098,21 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 
   function renderDialogSessionPicker() {
     taskDialogPicker.innerHTML = '';
-    const idle = fleetData.filter(s => s.state === 'idle');
-    for (const s of idle) {
-      const btn = document.createElement('button'); btn.className = `picker-btn${manualTarget === s.num ? ' selected' : ''}`; btn.textContent = s.num;
-      btn.addEventListener('click', () => { manualTarget = s.num; taskDialogPicker.querySelectorAll('.picker-btn').forEach(b => b.classList.remove('selected')); btn.classList.add('selected'); });
+    const sessions = fleetData;
+    for (const s of sessions) {
+      const activeTask = tasks.find(t => t.assignedTo === s.num && (t.status === 'dispatched' || t.status === 'queued'));
+      const busy = s.state !== 'idle' || !!activeTask;
+      const btn = document.createElement('button');
+      btn.className = `picker-btn${manualTarget === s.num ? ' selected' : ''}${busy ? ' disabled' : ''}`;
+      btn.textContent = s.num;
+      if (busy) {
+        btn.title = activeTask ? `Busy: ${activeTask.text}` : `State: ${s.state}`;
+      } else {
+        btn.addEventListener('click', () => { manualTarget = s.num; taskDialogPicker.querySelectorAll('.picker-btn').forEach(b => b.classList.remove('selected')); btn.classList.add('selected'); });
+      }
       taskDialogPicker.appendChild(btn);
     }
-    if (!idle.length) taskDialogPicker.innerHTML = '<span style="color:var(--dim);font-size:12px;padding:8px">No idle sessions</span>';
+    if (!sessions.length) taskDialogPicker.innerHTML = '<span style="color:var(--dim);font-size:12px;padding:8px">No sessions available</span>';
   }
 
   function openTaskDialog(taskId) {
@@ -2829,18 +3290,22 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     document.getElementById('tasks-session-empty').style.display = 'none';
     document.getElementById('tasks-session-header').style.display = '';
 
+    // Checklist/actions bar is always visible when a task is selected
+    updateChecklistButtons();
+    updateActionsButton();
+
+    // Always show tabs (checklist tab needs it); hide interactive-only controls
+    tabs.style.display = '';
     if (interactive) {
       keysBar.style.display = '';
       cmdBar.style.display = '';
       inputBar.style.display = '';
-      tabs.style.display = '';
       openBtn.style.display = '';
       renderTsCmdBar();
     } else {
       keysBar.style.display = 'none';
       cmdBar.style.display = 'none';
       inputBar.style.display = 'none';
-      tabs.style.display = 'none';
       openBtn.style.display = 'none';
     }
     // Reset to terminal tab
@@ -2849,18 +3314,21 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     termContent.classList.add('active');
     document.getElementById('ts-git-content').style.display = 'none';
     document.getElementById('ts-git-content').classList.remove('active');
+    closeAllCommentsDrawers();
   }
 
   function openTaskSession(sessionNum) {
-    if (tasksSessionNum === String(sessionNum)) return;
-    // Unsubscribe from previous
+    const sameSession = tasksSessionNum === String(sessionNum);
+    // Unsubscribe from previous (even if same — forces re-subscribe for fresh data)
     if (tasksSessionNum && ws && ws.readyState === 1) {
       ws.send(JSON.stringify({ type: 'terminal:unsubscribe' }));
     }
     tasksSessionNum = String(sessionNum);
-    tsPaneCols = 0; // reset until we get pane width from server
-    tsUserScrolledUp = false; tsPendingContent = null; tsLastContent = '';
-    ensureTasksSessionTerm();
+    if (!sameSession) {
+      tsPaneCols = 0; // reset until we get pane width from server
+      tsUserScrolledUp = false; tsPendingContent = null; tsLastContent = '';
+      ensureTasksSessionTerm();
+    }
 
     // Update header
     const session = fleetData.find(s => s.num === sessionNum);
@@ -2873,14 +3341,22 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       if (s) openSession(s);
     };
 
+    // Clear snapshot styling
+    document.getElementById('snapshot-banner').classList.remove('visible');
+    document.getElementById('snapshot-banner').textContent = '';
+    document.querySelector('.tasks-session-terminal').classList.remove('snapshot-dimmed');
+
     showTsSessionControls(true);
     updateTasksStatusLine();
+    updateChecklistButtons();
+    updateActionsButton();
 
-    // Subscribe
+    // Subscribe (always — ensures fresh subscription even after tab switches)
     if (ws && ws.readyState === 1) {
       ws.send(JSON.stringify({ type: 'terminal:subscribe', session: tasksSessionNum }));
     }
     requestAnimationFrame(() => fitTasksTerminal());
+    setTimeout(() => { const el = document.getElementById('tasks-session-terminal'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'end' }); }, 100);
   }
 
   function closeTaskSession() {
@@ -2903,6 +3379,9 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     document.getElementById('tasks-session-input').style.display = 'none';
     document.getElementById('tasks-session-tabs').style.display = 'none';
     document.getElementById('ts-open-session').style.display = 'none';
+    document.getElementById('ts-checklist-tab').style.display = 'none';
+    document.getElementById('ts-actions-tab').style.display = 'none';
+    closeActionsPopup();
   }
 
   function showTaskSnapshot(taskId) {
@@ -2910,9 +3389,22 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     ws.send(JSON.stringify({ type: 'task:snapshot', taskId }));
     ensureTasksSessionTerm();
     const task = tasks.find(t => t.id === taskId);
-    document.getElementById('tasks-session-title').textContent = task ? `Completed — Session ${task.assignedTo || '?'}` : 'Completed';
+    const completedAgo = task && task.completedAt ? ` \u00b7 ${timeAgo(task.completedAt)}` : '';
+    document.getElementById('tasks-session-title').textContent = task
+      ? `Snapshot \u2014 Session ${task.assignedTo || '?'}${completedAgo}`
+      : 'Completed';
     document.getElementById('tasks-session-branch').textContent = '';
     document.getElementById('tasks-session-header').style.display = '';
+    // Show snapshot banner
+    const banner = document.getElementById('snapshot-banner');
+    if (task && task.snapshot) {
+      banner.textContent = 'This is a saved snapshot \u2014 the session may have moved on';
+      banner.classList.add('visible');
+    } else {
+      banner.classList.remove('visible');
+      banner.textContent = '';
+    }
+    document.querySelector('.tasks-session-terminal').classList.add('snapshot-dimmed');
     showTsSessionControls(false); // read-only
     // Unsubscribe from live session
     if (tasksSessionNum && ws && ws.readyState === 1) {
@@ -2924,6 +3416,11 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 
   function showTaskSnapshotContent(taskId, content, cols) {
     ensureTasksSessionTerm();
+    if (!content) {
+      tasksSessionTerm.reset();
+      tasksSessionTerm.write('\r\n  No snapshot saved for this task\r\n');
+      return;
+    }
     if (cols && cols > 0) { tsPaneCols = cols; if (cols !== tasksSessionTerm.cols) tasksSessionTerm.resize(cols, tasksSessionTerm.rows); }
     tasksSessionTerm.reset();
     tasksSessionTerm.write(content);
@@ -3068,17 +3565,109 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   tsSendBtn.addEventListener('click', sendTasksMessage);
   tsMsgInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendTasksMessage(); } });
 
+  // ── Select a task by ID (for URL deep-linking) ─────
+  function selectTaskById(taskId) {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+    // Switch to the correct task tab
+    if (task.status === 'dispatched') activeTaskTab = 'inprogress';
+    else if (task.status === 'queued') activeTaskTab = 'queued';
+    else activeTaskTab = 'completed';
+    tasksSelectedTaskId = task.id;
+    renderTasks();
+    // Load session/snapshot + comments
+    if (task.status === 'dispatched' && task.assignedTo) {
+      openTaskSession(task.assignedTo);
+    } else if (task.status === 'completed' || task.status === 'failed') {
+      showTaskSnapshot(task.id);
+    } else if (task.status === 'queued' && task.actions && task.actions.length) {
+      // Show session panel tabs for queued tasks with actions
+      document.getElementById('tasks-session-tabs').style.display = '';
+      document.getElementById('tasks-session-empty').style.display = 'none';
+      document.getElementById('tasks-session-title').textContent = `PR #${(task.actionContext && task.actionContext.prNumber) || ''}`;
+    }
+    renderCommentPanel(task.id);
+    updateChecklistButtons();
+    updateActionsButton();
+    autoOpenActionsPopup();
+    // Scroll selected card into view
+    requestAnimationFrame(() => {
+      const card = tasksScroll.querySelector(`.task-card[data-id="${taskId}"]`);
+      if (card) card.scrollIntoView({ block: 'nearest' });
+    });
+  }
+
+  // ── Source filter dropdown ───────────────────────────
+  function renderFilterChips() {
+    const wrap = document.getElementById('tasks-filter-wrap');
+    const btn = document.getElementById('tasks-filter-btn');
+    const dropdown = document.getElementById('tasks-filter-dropdown');
+
+    const sourceCounts = new Map();
+    for (const t of tasks) {
+      if (t.source) sourceCounts.set(t.source, (sourceCounts.get(t.source) || 0) + 1);
+    }
+    if (sourceCounts.size <= 1) { wrap.style.display = 'none'; return; }
+    wrap.style.display = '';
+
+    for (const src of taskSourceFilter) {
+      if (!sourceCounts.has(src)) taskSourceFilter.delete(src);
+    }
+
+    // Update button label
+    if (taskSourceFilter.size === 0) {
+      btn.textContent = `Sources (${sourceCounts.size})`;
+      btn.classList.remove('has-filter');
+    } else {
+      btn.textContent = `Sources (${taskSourceFilter.size}/${sourceCounts.size})`;
+      btn.classList.add('has-filter');
+    }
+
+    // Build dropdown options
+    let html = '';
+    for (const [src, count] of [...sourceCounts.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+      const label = src.replace(/^pm:/, '');
+      const checked = taskSourceFilter.has(src) ? 'checked' : '';
+      html += `<label class="tasks-filter-option"><input type="checkbox" data-source="${esc(src)}" ${checked}><span>${esc(label)}</span><span class="filter-count">${count}</span></label>`;
+    }
+    dropdown.innerHTML = html;
+
+    dropdown.querySelectorAll('input[data-source]').forEach(cb => {
+      cb.addEventListener('change', () => {
+        const src = cb.dataset.source;
+        if (cb.checked) taskSourceFilter.add(src);
+        else taskSourceFilter.delete(src);
+        renderTasks();
+      });
+    });
+  }
+
+  // Toggle dropdown open/close
+  document.getElementById('tasks-filter-btn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    document.getElementById('tasks-filter-dropdown').classList.toggle('open');
+  });
+  // Close dropdown on outside click
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.tasks-filter-wrap')) {
+      document.getElementById('tasks-filter-dropdown').classList.remove('open');
+    }
+  });
+
   // ── Render tasks ───────────────────────────────────
   function renderTasks() {
     // Clean up selectedTaskIds for tasks that no longer exist
     const taskIds = new Set(tasks.map(t => t.id));
     for (const id of selectedTaskIds) { if (!taskIds.has(id)) selectedTaskIds.delete(id); }
 
+    renderFilterChips();
+
     const q = taskSearchQuery.toLowerCase();
     const matchesSearch = (t) => !q || t.text.toLowerCase().includes(q) || (t.source || '').toLowerCase().includes(q) || (t.designation || '').toLowerCase().includes(q) || String(t.assignedTo || '').includes(q);
-    const dispatched = tasks.filter(t => t.status === 'dispatched' && matchesSearch(t));
-    const queued = tasks.filter(t => t.status === 'queued' && matchesSearch(t));
-    const completed = tasks.filter(t => (t.status === 'completed' || t.status === 'failed') && matchesSearch(t));
+    const matchesFilter = (t) => taskSourceFilter.size === 0 || taskSourceFilter.has(t.source);
+    const dispatched = tasks.filter(t => t.status === 'dispatched' && matchesSearch(t) && matchesFilter(t));
+    const queued = tasks.filter(t => t.status === 'queued' && matchesSearch(t) && matchesFilter(t));
+    const completed = tasks.filter(t => (t.status === 'completed' || t.status === 'failed') && matchesSearch(t) && matchesFilter(t));
     let html = '';
     let visibleTasks = [];
 
@@ -3127,6 +3716,49 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       });
     });
 
+    // Wire resume buttons (completed tab)
+    tasksScroll.querySelectorAll('.task-resume-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const taskId = btn.dataset.id;
+        const sessionNum = parseInt(btn.dataset.session, 10);
+        const task = tasks.find(t => t.id === taskId);
+        if (!task) return;
+
+        // Validate session state
+        const session = fleetData.find(s => s.num === sessionNum);
+        if (!session || session.state === 'off') {
+          showToast('Cannot resume', 'Session is not running', 'error');
+          return;
+        }
+
+        // Check if session already has an active task
+        const busyTask = tasks.find(t => t.status === 'dispatched' && t.assignedTo === sessionNum);
+        if (busyTask) {
+          showToast('Cannot resume', `Session ${sessionNum} is busy with another task`, 'error');
+          return;
+        }
+
+        // Determine if we need to send /resume (a different task ran after this one)
+        const laterTask = tasks.find(t =>
+          t.assignedTo === sessionNum &&
+          t.id !== taskId &&
+          (t.status === 'completed' || t.status === 'failed') &&
+          t.completedAt && task.completedAt &&
+          t.completedAt > task.completedAt
+        );
+
+        ws.send(JSON.stringify({ type: 'task:resume', taskId, sendResume: !!laterTask }));
+        showToast('Resuming', `Task resumed on session ${sessionNum}`, 'success');
+
+        // Switch to In Progress tab
+        activeTaskTab = 'inprogress';
+        document.querySelectorAll('.tasks-tab').forEach(tab =>
+          tab.classList.toggle('active', tab.dataset.tab === 'inprogress'));
+        renderTasks();
+      });
+    });
+
     // Wire card clicks
     tasksScroll.querySelectorAll('.task-card').forEach(card => {
       card.addEventListener('click', () => {
@@ -3143,16 +3775,39 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
           // Desktop: load in tasks session pane
           tasksSelectedTaskId = task.id;
           openTaskSession(task.assignedTo);
+          renderCommentPanel(task.id);
+          updateChecklistButtons();
+          updateActionsButton();
+          autoOpenActionsPopup();
           // Update selection highlight
           tasksScroll.querySelectorAll('.task-card').forEach(c => c.classList.remove('selected'));
           card.classList.add('selected');
         } else if (activeTaskTab === 'completed' && (task.status === 'completed' || task.status === 'failed')) {
           tasksSelectedTaskId = task.id;
           showTaskSnapshot(task.id);
+          renderCommentPanel(task.id);
+          updateChecklistButtons();
+          updateActionsButton();
+          autoOpenActionsPopup();
           // Update selection highlight
           tasksScroll.querySelectorAll('.task-card').forEach(c => c.classList.remove('selected'));
           card.classList.add('selected');
+        } else if (activeTaskTab === 'queued') {
+          tasksSelectedTaskId = task.id;
+          renderCommentPanel(task.id);
+          updateChecklistButtons();
+          updateActionsButton();
+          // Show session panel tabs if task has actions
+          if (task.actions && task.actions.length) {
+            document.getElementById('tasks-session-tabs').style.display = '';
+            document.getElementById('tasks-session-empty').style.display = 'none';
+            document.getElementById('tasks-session-title').textContent = `PR #${(task.actionContext && task.actionContext.prNumber) || ''}`;
+          }
+          autoOpenActionsPopup();
+          tasksScroll.querySelectorAll('.task-card').forEach(c => c.classList.remove('selected'));
+          card.classList.add('selected');
         }
+        pushHash();
       });
     });
 
@@ -3165,6 +3820,17 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         updateTasksBulkBar();
       });
       cb.addEventListener('click', (e) => e.stopPropagation());
+    });
+    // Wire link buttons
+    tasksScroll.querySelectorAll('.task-link-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const url = `${location.origin}${location.pathname}#/tasks/${btn.dataset.id}`;
+        navigator.clipboard.writeText(url).then(() => {
+          btn.textContent = 'copied!';
+          setTimeout(() => { btn.innerHTML = '&#128279;'; }, 1500);
+        });
+      });
     });
     updateTasksBulkBar();
   }
@@ -3236,7 +3902,20 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     const prBadge = t.sourcePR ? `<span class="task-session-badge" style="background:rgba(139,233,253,0.15);color:var(--cyan)">PR #${t.sourcePR}</span>` : '';
     const originBadge = t.sourceSession ? `<span class="task-session-badge">S:${t.sourceSession}</span>` : '';
     const sourceLabel = t.source ? t.source.replace(/^pm:/, '') : '';
-    const sourceBadge = sourceLabel ? `<span class="task-designation" style="background:rgba(255,184,108,0.15);color:var(--orange)">${esc(sourceLabel)}</span>` : '';
+    const sourceColor = sourceLabel === 'attached' ? 'var(--dim)' : 'var(--orange)';
+    const sourceBg = sourceLabel === 'attached' ? 'rgba(255,255,255,0.05)' : 'rgba(255,184,108,0.15)';
+    const sourceBadge = sourceLabel ? `<span class="task-designation" style="background:${sourceBg};color:${sourceColor}">${esc(sourceLabel)}</span>` : '';
+    // Comment count badge
+    const commentCount = (t.comments && t.comments.length) || 0;
+    const commentBadge = commentCount > 0 ? `<span class="comment-count" title="${commentCount} comment(s)">&#128172; ${commentCount}</span>` : '';
+    // Checklist badge
+    let clBadge = '';
+    if (t.checklist && t.checklist.length > 0) {
+      const clDone = t.checklist.filter(i => i.checked).length;
+      const clTotal = t.checklist.length;
+      const clClass = clDone === clTotal ? 'done' : '';
+      clBadge = `<span class="checklist-badge ${clClass}" title="Checklist">\u2611 ${clDone}/${clTotal}</span>`;
+    }
 
     if (tabType === 'inprogress') {
       if (t.assignedTo) meta += ` · ${timeAgo(t.dispatchedAt || t.createdAt)}`;
@@ -3254,15 +3933,17 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
           waitBadge = `<span style="color:${color};font-weight:700;font-size:11px">waiting ${waitStr}</span>`;
         }
       }
+      const linkBtn = `<button class="task-link-btn" data-id="${t.id}" title="Copy link">&#128279;</button>`;
       const checked = selectedTaskIds.has(t.id) ? ' checked' : '';
-      return `<div class="task-card-row"><input type="checkbox" class="task-checkbox" data-id="${t.id}"${checked}><div class="task-card dispatched${selected}" data-id="${t.id}"><div class="task-text">${esc(t.text)}</div><div class="task-meta"><span>${meta} · ${ago}</span>${waitBadge}${sourceBadge}${desigBadge}${prBadge}${sessionBadge}</div></div></div>`;
+      return `<div class="task-card-row"><input type="checkbox" class="task-checkbox" data-id="${t.id}"${checked}><div class="task-card dispatched${selected}" data-id="${t.id}"><div class="task-text">${esc(t.text)}</div><div class="task-meta"><span>${meta} · ${ago}</span>${waitBadge}${sourceBadge}${desigBadge}${prBadge}${clBadge}${commentBadge}${linkBtn}${sessionBadge}</div></div></div>`;
     }
     if (tabType === 'queued') {
-      const editBtn = `<button class="task-edit-btn" data-id="${t.id}">Edit</button>`;
-      const cancelBtn = `<button class="task-cancel" data-id="${t.id}">Cancel</button>`;
-      const assignBtn = `<button class="task-assign-btn" data-id="${t.id}">Assign →</button>`;
+      const editBtn = hasPerm('create-tasks') ? `<button class="task-edit-btn" data-id="${t.id}">Edit</button>` : '';
+      const cancelBtn = hasPerm('cancel') ? `<button class="task-cancel" data-id="${t.id}">Cancel</button>` : '';
+      const assignBtn = hasPerm('dispatch') ? `<button class="task-assign-btn" data-id="${t.id}">Assign →</button>` : '';
+      const linkBtn = `<button class="task-link-btn" data-id="${t.id}" title="Copy link">&#128279;</button>`;
       const checked = selectedTaskIds.has(t.id) ? ' checked' : '';
-      return `<div class="task-card-row"><input type="checkbox" class="task-checkbox" data-id="${t.id}"${checked}><div class="task-card queued" data-id="${t.id}"><div class="task-text">${esc(t.text)}</div><div class="task-meta"><span>${meta} · ${ago}</span>${sourceBadge}${prBadge}${originBadge}${desigBadge}${editBtn}${assignBtn}${cancelBtn}</div></div></div>`;
+      return `<div class="task-card-row"><input type="checkbox" class="task-checkbox" data-id="${t.id}"${checked}><div class="task-card queued" data-id="${t.id}"><div class="task-text">${esc(t.text)}</div><div class="task-meta"><span>${meta} · ${ago}</span>${sourceBadge}${prBadge}${originBadge}${desigBadge}${clBadge}${commentBadge}${linkBtn}${editBtn}${assignBtn}${cancelBtn}</div></div></div>`;
     }
     // completed
     if (t.dispatchedAt && t.completedAt) {
@@ -3271,8 +3952,564 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     if (t.assignedTo) meta += ` · session ${t.assignedTo}`;
     if (t.status === 'failed') meta += ' · failed';
     const snippet = t.result ? `<div class="task-text" style="font-size:12px;color:var(--dim);margin-top:2px">${esc(t.result.substring(0, 80))}</div>` : '';
+    const sessionBadge = t.assignedTo ? `<span class="task-session-badge">S:${t.assignedTo}</span>` : '';
+    const resumeBtn = t.assignedTo ? `<button class="task-resume-btn" data-id="${t.id}" data-session="${t.assignedTo}">Resume</button>` : '';
+    const linkBtn = `<button class="task-link-btn" data-id="${t.id}" title="Copy link">&#128279;</button>`;
     const checked = selectedTaskIds.has(t.id) ? ' checked' : '';
-    return `<div class="task-card-row"><input type="checkbox" class="task-checkbox" data-id="${t.id}"${checked}><div class="task-card ${t.status}${selected}" data-id="${t.id}"><div class="task-text">${esc(t.text)}</div>${snippet}<div class="task-meta"><span>${meta} · ${ago}</span>${sourceBadge}${prBadge}${originBadge}${desigBadge}</div></div></div>`;
+    return `<div class="task-card-row"><input type="checkbox" class="task-checkbox" data-id="${t.id}"${checked}><div class="task-card ${t.status}${selected}" data-id="${t.id}"><div class="task-text">${esc(t.text)}</div>${snippet}<div class="task-meta"><span>${meta} · ${ago}</span>${sourceBadge}${prBadge}${originBadge}${desigBadge}${clBadge}${commentBadge}${linkBtn}${sessionBadge}${resumeBtn}</div></div></div>`;
+  }
+
+  // ── Comment panel (rendered into tab content divs) ─────
+  let commentPanelTaskId = null;
+
+  // target: 'tasks' (default) renders into #ts-comments-drawer, 'session' into #session-comments-drawer
+  function renderCommentPanel(taskId, target) {
+    if (!taskId) taskId = commentPanelTaskId;
+    if (!taskId) return;
+    commentPanelTaskId = taskId;
+    const task = tasks.find(t => t.id === taskId);
+    const comments = (task && task.comments) || [];
+
+    // Render into both containers so switching between views stays in sync
+    const containers = [];
+    const tsEl = document.getElementById('ts-comments-drawer');
+    const sessEl = document.getElementById('session-comments-drawer');
+    if (tsEl) containers.push(tsEl);
+    if (sessEl) containers.push(sessEl);
+    if (!containers.length) return;
+
+    // Build HTML
+    let html = `<div class="comment-panel"><div class="comment-panel-title">Comments (${comments.length})</div>`;
+    for (const c of comments) {
+      const canDelete = currentUser && (c.author === currentUser.login || hasPerm('admin'));
+      const delBtn = canDelete ? `<button class="comment-delete" data-task-id="${taskId}" data-comment-id="${c.id}" title="Delete">&times;</button>` : '';
+      html += `<div class="comment-item">
+        <div class="comment-body">
+          <span class="comment-author">${esc(c.authorName || c.author)}</span>
+          <span class="comment-time">${timeAgo(c.createdAt)}</span>
+          <div class="comment-text">${esc(c.text)}</div>
+        </div>
+        ${delBtn}
+      </div>`;
+    }
+    if (hasPerm('comment')) {
+      html += `<div class="comment-input-row">
+        <input class="comment-input" type="text" placeholder="Add a comment..." autocomplete="off">
+        <button class="comment-send">Post</button>
+      </div>`;
+    }
+    html += '</div>';
+
+    for (const container of containers) {
+      container.innerHTML = html;
+      // Wire comment send
+      const commentInput = container.querySelector('.comment-input');
+      const commentSendBtn = container.querySelector('.comment-send');
+      if (commentSendBtn && commentInput) {
+        commentSendBtn.addEventListener('click', () => sendComment(taskId, commentInput));
+        commentInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); sendComment(taskId, commentInput); } });
+      }
+      // Wire delete buttons
+      container.querySelectorAll('.comment-delete').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (ws && ws.readyState === 1) {
+            ws.send(JSON.stringify({ type: 'task:comment:delete', taskId: btn.dataset.taskId, commentId: btn.dataset.commentId }));
+          }
+        });
+      });
+    }
+
+    // Update badges
+    updateCommentBadge('tasks', task);
+    updateCommentBadge('session', task);
+  }
+
+  function updateCommentBadge(target, task) {
+    const count = (task && task.comments && task.comments.length) || 0;
+    const label = count > 0 ? `Comments (${count})` : 'Comments';
+    if (target === 'tasks') {
+      const btn = document.getElementById('ts-comments-toggle');
+      if (btn) { btn.style.display = task ? '' : 'none'; btn.textContent = label; btn.classList.toggle('has-comments', count > 0); }
+    } else {
+      const btn = document.getElementById('session-comments-toggle');
+      if (btn) { btn.style.display = task ? '' : 'none'; btn.textContent = label; btn.classList.toggle('has-comments', count > 0); }
+    }
+  }
+
+  function sendComment(taskId, inputEl) {
+    const text = inputEl.value.trim();
+    if (!text || !ws || ws.readyState !== 1) return;
+    ws.send(JSON.stringify({ type: 'task:comment:add', taskId, text }));
+    inputEl.value = '';
+  }
+
+  // ── Admin panel (user permissions in More tab) ───
+  const PERM_LABELS = {
+    'view': 'View', 'comment': 'Comment', 'create-tasks': 'Create Tasks',
+    'send-messages': 'Send Messages', 'cancel': 'Cancel', 'restart': 'Restart',
+    'dispatch': 'Dispatch', 'admin': 'Admin',
+  };
+
+  function renderAdminUsers() {
+    const section = document.getElementById('admin-users-section');
+    const list = document.getElementById('admin-users-list');
+    if (!section || !list) return;
+    if (!hasPerm('admin')) { section.classList.add('perm-hidden'); return; }
+    section.classList.remove('perm-hidden');
+    if (!allUsers.length) { list.innerHTML = '<div class="git-empty">No users registered yet.</div>'; return; }
+    let html = '';
+    for (const u of allUsers) {
+      const avatarHtml = u.avatar ? `<img class="admin-user-avatar" src="${esc(u.avatar)}" alt="">` : '';
+      const isSelf = currentUser && currentUser.login && u.login.toLowerCase() === currentUser.login.toLowerCase();
+      const removeBtnHtml = isSelf ? '' : `<button class="admin-remove-user-btn" data-login="${esc(u.login)}" title="Remove user" style="background:none;border:none;color:#ff5555;cursor:pointer;font-size:16px;padding:2px 6px;line-height:1">&times;</button>`;
+      let permsHtml = '';
+      const allPerms = ['view', 'comment', 'create-tasks', 'send-messages', 'cancel', 'restart', 'dispatch', 'admin'];
+      for (const p of allPerms) {
+        const active = u.permissions.includes(p);
+        const cls = active ? (p === 'admin' ? 'active admin-perm' : 'active') : '';
+        permsHtml += `<span class="admin-perm-chip ${cls}" data-login="${esc(u.login)}" data-perm="${p}">${PERM_LABELS[p]}</span>`;
+      }
+      html += `<div class="admin-user-row">
+        ${avatarHtml}
+        <div class="admin-user-info">
+          <div class="admin-user-name">${esc(u.name || u.login)}</div>
+          <div class="admin-user-login">${esc(u.login)}</div>
+        </div>
+        <div class="admin-perms">${permsHtml}</div>
+        ${removeBtnHtml}
+      </div>`;
+    }
+    list.innerHTML = html;
+    // Wire perm chip clicks
+    list.querySelectorAll('.admin-perm-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        const login = chip.dataset.login;
+        const perm = chip.dataset.perm;
+        const u = allUsers.find(x => x.login === login);
+        if (!u) return;
+        // Prevent self-demotion of admin
+        if (login === (currentUser && currentUser.login) && perm === 'admin') {
+          showToast('Denied', 'Cannot remove your own admin permission', 'error');
+          return;
+        }
+        let newPerms;
+        if (u.permissions.includes(perm)) {
+          newPerms = u.permissions.filter(p => p !== perm);
+        } else {
+          newPerms = [...u.permissions, perm];
+        }
+        if (ws && ws.readyState === 1) {
+          ws.send(JSON.stringify({ type: 'users:setPermissions', login, permissions: newPerms }));
+        }
+      });
+    });
+    // Wire remove user buttons
+    list.querySelectorAll('.admin-remove-user-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const login = btn.dataset.login;
+        if (confirm(`Remove user "${login}"? They will no longer be able to log in.`)) {
+          if (ws && ws.readyState === 1) {
+            ws.send(JSON.stringify({ type: 'users:remove', login }));
+          }
+        }
+      });
+    });
+  }
+
+  // Wire add user form
+  (function wireAddUserForm() {
+    const btn = document.getElementById('admin-add-user-btn');
+    const input = document.getElementById('admin-add-user-input');
+    if (!btn || !input) return;
+    function doAdd() {
+      const login = input.value.trim();
+      if (!login) return;
+      if (ws && ws.readyState === 1) {
+        ws.send(JSON.stringify({ type: 'users:add', login }));
+        input.value = '';
+      }
+    }
+    btn.addEventListener('click', doAdd);
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') doAdd(); });
+  })();
+
+  // ── Checklist popup + templates ────────────────────
+
+  function getActiveTaskForChecklist(context) {
+    // context: 'session' or 'tasks'
+    if (context === 'session' && currentSession) {
+      return tasks.find(t => t.status === 'dispatched' && String(t.assignedTo) === String(currentSession));
+    }
+    if (context === 'tasks') {
+      // Use the selected task in the tasks panel
+      if (tasksSelectedTaskId) {
+        return tasks.find(t => t.id === tasksSelectedTaskId);
+      }
+      // Fallback to dispatched task for session
+      if (tasksSessionNum) {
+        return tasks.find(t => t.status === 'dispatched' && String(t.assignedTo) === String(tasksSessionNum));
+      }
+    }
+    return null;
+  }
+
+  function updateChecklistButtons() {
+    ['session', 'tasks'].forEach(ctx => {
+      const tab = document.getElementById(ctx === 'session' ? 'session-checklist-tab' : 'ts-checklist-tab');
+      if (!tab) return;
+      const task = getActiveTaskForChecklist(ctx);
+      if (!task) { tab.style.display = 'none'; return; }
+      tab.style.display = '';
+      const cl = task.checklist || [];
+      const done = cl.filter(i => i.checked).length;
+      const total = cl.length;
+      tab.textContent = total > 0 ? `Checklist (${done}/${total})` : 'Checklist';
+      tab.className = 'session-tab checklist-tab';
+      if (total > 0 && done === total) tab.classList.add('done');
+      else if (total > 0 && done > 0) tab.classList.add('partial');
+    });
+  }
+
+  function closeChecklistPopup() {
+    checklistPopupTaskId = null;
+    document.querySelectorAll('.checklist-popup').forEach(p => p.remove());
+  }
+
+  function renderChecklistPopup(taskId, anchorBtn) {
+    closeChecklistPopup();
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+    checklistPopupTaskId = taskId;
+
+    const popup = document.createElement('div');
+    popup.className = 'checklist-popup';
+
+    const cl = task.checklist || [];
+    const done = cl.filter(i => i.checked).length;
+
+    let html = `<div class="checklist-popup-header"><span>Checklist ${cl.length > 0 ? done + '/' + cl.length : ''}</span><button class="checklist-popup-close">&times;</button></div>`;
+    html += '<div class="checklist-popup-items">';
+    for (const item of cl) {
+      html += `<div class="checklist-item" data-item-id="${item.id}">
+        <input type="checkbox" ${item.checked ? 'checked' : ''}>
+        <span class="checklist-item-text ${item.checked ? 'checked' : ''}">${esc(item.text)}</span>
+        <button class="checklist-item-del" title="Remove">&times;</button>
+      </div>`;
+    }
+    if (cl.length === 0) {
+      html += '<div style="padding:12px;color:var(--dim);font-size:12px;text-align:center">No items yet. Add one below or use a template.</div>';
+    }
+    html += '</div>';
+    html += `<div class="checklist-popup-add">
+      <input type="text" placeholder="Add item..." autocomplete="off">
+      <button>Add</button>
+    </div>`;
+    if (checklistTemplates.length > 0) {
+      html += '<div class="checklist-popup-template"><select><option value="">Use template...</option>';
+      for (const tpl of checklistTemplates) {
+        html += `<option value="${esc(tpl.name)}">${esc(tpl.name)} (${tpl.items.length} items)</option>`;
+      }
+      html += '</select></div>';
+    }
+    popup.innerHTML = html;
+
+    // Position anchored to the tab bar (drops down from tabs)
+    const tabBar = anchorBtn.closest('.tasks-session-tabs, .session-tabs');
+    if (tabBar) {
+      tabBar.style.position = 'relative';
+      tabBar.appendChild(popup);
+    } else {
+      anchorBtn.parentElement.style.position = 'relative';
+      anchorBtn.parentElement.appendChild(popup);
+    }
+
+    // Wire events
+    popup.querySelector('.checklist-popup-close').addEventListener('click', closeChecklistPopup);
+
+    popup.querySelectorAll('.checklist-item input[type="checkbox"]').forEach(cb => {
+      cb.addEventListener('change', () => {
+        const itemId = cb.closest('.checklist-item').dataset.itemId;
+        if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'task:checklist:toggle', taskId, itemId }));
+      });
+    });
+
+    popup.querySelectorAll('.checklist-item-del').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const itemId = btn.closest('.checklist-item').dataset.itemId;
+        if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'task:checklist:remove', taskId, itemId }));
+      });
+    });
+
+    const addInput = popup.querySelector('.checklist-popup-add input');
+    const addBtn = popup.querySelector('.checklist-popup-add button');
+    function doAdd() {
+      const text = addInput.value.trim();
+      if (!text) return;
+      if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'task:checklist:add', taskId, text }));
+      addInput.value = '';
+    }
+    addBtn.addEventListener('click', doAdd);
+    addInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') doAdd(); });
+
+    const tplSelect = popup.querySelector('.checklist-popup-template select');
+    if (tplSelect) {
+      tplSelect.addEventListener('change', () => {
+        const templateName = tplSelect.value;
+        if (!templateName) return;
+        if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'task:checklist:seed', taskId, templateName }));
+        tplSelect.value = '';
+      });
+    }
+  }
+
+  // Wire checklist tab buttons
+  document.getElementById('session-checklist-tab').addEventListener('click', (e) => {
+    e.stopPropagation();
+    const task = getActiveTaskForChecklist('session');
+    if (!task) return;
+    if (checklistPopupTaskId === task.id) { closeChecklistPopup(); return; }
+    renderChecklistPopup(task.id, e.currentTarget);
+  });
+
+  document.getElementById('ts-checklist-tab').addEventListener('click', (e) => {
+    e.stopPropagation();
+    const task = getActiveTaskForChecklist('tasks');
+    if (!task) return;
+    if (checklistPopupTaskId === task.id) { closeChecklistPopup(); return; }
+    renderChecklistPopup(task.id, e.currentTarget);
+  });
+
+  // Close popup on click outside
+  document.addEventListener('click', (e) => {
+    if (!checklistPopupTaskId) return;
+    if (e.target.closest('.checklist-popup') || e.target.closest('.checklist-tab')) return;
+    closeChecklistPopup();
+  });
+
+  // Re-render popup when task updates come in
+  function refreshChecklistPopup() {
+    if (!checklistPopupTaskId) return;
+    const task = tasks.find(t => t.id === checklistPopupTaskId);
+    if (!task) { closeChecklistPopup(); return; }
+    const existingPopup = document.querySelector('.checklist-popup');
+    if (!existingPopup) return;
+    const anchorTab = existingPopup.parentElement.querySelector('.checklist-tab');
+    if (anchorTab) renderChecklistPopup(checklistPopupTaskId, anchorTab);
+  }
+
+  // ── Actions popup (contextual task actions) ─────────
+  let actionsPopupTaskId = null;
+  let actionConfirmTaskId = null;
+  let actionConfirmActionId = null;
+
+  function getActiveTaskForActions(ctx) {
+    if (ctx === 'tasks') {
+      return tasksSelectedTaskId ? tasks.find(t => t.id === tasksSelectedTaskId) : null;
+    }
+    return null;
+  }
+
+  function updateActionsButton() {
+    const tab = document.getElementById('ts-actions-tab');
+    if (!tab) return;
+    const task = getActiveTaskForActions('tasks');
+    if (!task || !task.actions || !task.actions.length) { tab.style.display = 'none'; return; }
+    tab.style.display = '';
+    tab.textContent = `\u26A1 Actions (${task.actions.length})`;
+    tab.className = 'session-tab actions-tab';
+  }
+
+  function closeActionsPopup() {
+    actionsPopupTaskId = null;
+    document.querySelectorAll('.actions-popup').forEach(p => p.remove());
+  }
+
+  function renderActionsPopup(taskId, anchorBtn) {
+    closeActionsPopup();
+    const task = tasks.find(t => t.id === taskId);
+    if (!task || !task.actions || !task.actions.length) return;
+    actionsPopupTaskId = taskId;
+
+    const popup = document.createElement('div');
+    popup.className = 'actions-popup';
+
+    let html = `<div class="actions-popup-header"><span>Actions</span><button class="actions-popup-close">&times;</button></div>`;
+    html += '<div class="actions-popup-items">';
+    for (const a of task.actions) {
+      const confirmIcon = a.confirm ? '<span class="action-confirm-icon" title="Requires confirmation">\u26A0</span>' : '';
+      html += `<button class="actions-popup-item" data-task-id="${task.id}" data-action-id="${a.id}" data-confirm="${!!a.confirm}" style="color:${a.color}"><span class="action-label">${esc(a.label)}</span>${confirmIcon}</button>`;
+    }
+    html += '</div>';
+    popup.innerHTML = html;
+
+    const tabBar = anchorBtn.closest('.tasks-session-tabs, .session-tabs');
+    if (tabBar) {
+      tabBar.style.position = 'relative';
+      tabBar.appendChild(popup);
+    } else {
+      anchorBtn.parentElement.style.position = 'relative';
+      anchorBtn.parentElement.appendChild(popup);
+    }
+
+    popup.querySelector('.actions-popup-close').addEventListener('click', closeActionsPopup);
+
+    popup.querySelectorAll('.actions-popup-item').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openActionConfirmDialog(btn.dataset.taskId, btn.dataset.actionId, btn.querySelector('.action-label').textContent);
+      });
+    });
+  }
+
+  function sendTaskAction(taskId, actionId, closeTask, btn) {
+    if (!ws || ws.readyState !== 1) return;
+    if (btn) btn.classList.add('loading');
+    ws.send(JSON.stringify({ type: 'task:action', taskId, actionId, closeTask: !!closeTask }));
+  }
+
+  function openActionConfirmDialog(taskId, actionId, label) {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+    actionConfirmTaskId = taskId;
+    actionConfirmActionId = actionId;
+
+    const action = (task.actions || []).find(a => a.id === actionId);
+    const title = action ? action.label : label;
+    const ctx = task.actionContext || {};
+    let detail = '';
+    if (ctx.type === 'github-pr') detail = `PR #${ctx.prNumber} in ${ctx.repo}`;
+
+    document.getElementById('action-confirm-title').textContent = `Confirm: ${title}`;
+    document.getElementById('action-confirm-body').textContent = detail ? `This will ${title.toLowerCase()} for ${detail}` : `This will ${title.toLowerCase()} this task`;
+    document.getElementById('action-confirm-submit').style.background = action ? action.color : 'var(--red)';
+    document.getElementById('action-confirm-dialog').classList.add('visible');
+  }
+
+  document.getElementById('action-confirm-submit').addEventListener('click', () => {
+    if (actionConfirmTaskId && actionConfirmActionId) {
+      const btn = document.querySelector(`.actions-popup-item[data-task-id="${actionConfirmTaskId}"][data-action-id="${actionConfirmActionId}"]`);
+      const closeTask = document.getElementById('action-confirm-close-task').checked;
+      sendTaskAction(actionConfirmTaskId, actionConfirmActionId, closeTask, btn);
+    }
+    document.getElementById('action-confirm-dialog').classList.remove('visible');
+    document.getElementById('action-confirm-close-task').checked = false;
+    actionConfirmTaskId = null;
+    actionConfirmActionId = null;
+  });
+
+  document.getElementById('action-confirm-cancel').addEventListener('click', () => {
+    document.getElementById('action-confirm-dialog').classList.remove('visible');
+    document.getElementById('action-confirm-close-task').checked = false;
+    actionConfirmTaskId = null;
+    actionConfirmActionId = null;
+  });
+
+  // Wire actions tab button
+  document.getElementById('ts-actions-tab').addEventListener('click', (e) => {
+    e.stopPropagation();
+    const task = getActiveTaskForActions('tasks');
+    if (!task) return;
+    if (actionsPopupTaskId === task.id) { closeActionsPopup(); return; }
+    renderActionsPopup(task.id, e.currentTarget);
+  });
+
+  // Close actions popup on click outside
+  document.addEventListener('click', (e) => {
+    if (!actionsPopupTaskId) return;
+    if (e.target.closest('.actions-popup') || e.target.closest('.actions-tab')) return;
+    if (e.target.closest('#action-confirm-dialog')) return;
+    closeActionsPopup();
+  });
+
+  // Auto-open actions popup when task with actions is selected
+  function autoOpenActionsPopup() {
+    const task = getActiveTaskForActions('tasks');
+    if (!task || !task.actions || !task.actions.length) { closeActionsPopup(); return; }
+    const tab = document.getElementById('ts-actions-tab');
+    if (tab && tab.style.display !== 'none') {
+      renderActionsPopup(task.id, tab);
+    }
+  }
+
+  // ── Checklist template management (More panel) ─────
+
+  function renderChecklistTemplates() {
+    const list = document.getElementById('checklist-tpl-list');
+    if (!list) return;
+    if (!checklistTemplates.length) {
+      list.innerHTML = '<div style="color:var(--dim);font-size:12px;padding:4px">No templates yet.</div>';
+      return;
+    }
+    let html = '';
+    for (const tpl of checklistTemplates) {
+      html += `<div class="checklist-tpl-item" data-name="${esc(tpl.name)}">
+        <span class="checklist-tpl-name">${esc(tpl.name)}</span>
+        <span class="checklist-tpl-count">${tpl.items.length} item${tpl.items.length !== 1 ? 's' : ''}</span>
+        <span class="checklist-tpl-actions">
+          <button class="cl-tpl-edit" title="Edit">Edit</button>
+          <button class="cl-tpl-del" title="Delete">&times;</button>
+        </span>
+      </div>`;
+    }
+    list.innerHTML = html;
+    list.querySelectorAll('.cl-tpl-edit').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const name = btn.closest('.checklist-tpl-item').dataset.name;
+        const tpl = checklistTemplates.find(t => t.name === name);
+        if (tpl) openChecklistTplDialog(tpl);
+      });
+    });
+    list.querySelectorAll('.cl-tpl-del').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const name = btn.closest('.checklist-tpl-item').dataset.name;
+        if (confirm(`Delete template "${name}"?`)) {
+          if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'checklistTemplate:delete', name }));
+        }
+      });
+    });
+  }
+
+  let editingChecklistTplName = null;
+  const checklistTplDialog = document.getElementById('checklist-tpl-dialog');
+
+  document.getElementById('checklist-tpl-add-btn').addEventListener('click', () => openChecklistTplDialog(null));
+  document.getElementById('checklist-tpl-cancel').addEventListener('click', closeChecklistTplDialog);
+  checklistTplDialog.addEventListener('click', (e) => { if (e.target === checklistTplDialog) closeChecklistTplDialog(); });
+
+  function openChecklistTplDialog(tpl) {
+    editingChecklistTplName = tpl ? tpl.name : null;
+    document.getElementById('checklist-tpl-dialog-title').textContent = tpl ? 'Edit Checklist Template' : 'New Checklist Template';
+    document.getElementById('checklist-tpl-form-name').value = tpl ? tpl.name : '';
+    document.getElementById('checklist-tpl-form-items').value = tpl ? tpl.items.join('\n') : '';
+    checklistTplDialog.classList.add('visible');
+  }
+
+  function closeChecklistTplDialog() { checklistTplDialog.classList.remove('visible'); editingChecklistTplName = null; }
+
+  document.getElementById('checklist-tpl-save').addEventListener('click', () => {
+    const name = document.getElementById('checklist-tpl-form-name').value.trim();
+    const itemsRaw = document.getElementById('checklist-tpl-form-items').value;
+    const items = itemsRaw.split('\n').map(s => s.trim()).filter(Boolean);
+    if (!name) { showToast('Error', 'Name required', 'error'); return; }
+    if (!items.length) { showToast('Error', 'At least one item required', 'error'); return; }
+    // If renaming, delete old first
+    if (editingChecklistTplName && editingChecklistTplName !== name) {
+      if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'checklistTemplate:delete', name: editingChecklistTplName }));
+    }
+    if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'checklistTemplate:set', name, items }));
+    closeChecklistTplDialog();
+  });
+
+  function updatePmChecklistTplSelector() {
+    const sel = document.getElementById('pm-form-checklist-tpl');
+    if (!sel) return;
+    const val = sel.value;
+    sel.innerHTML = '<option value="">None</option>';
+    for (const tpl of checklistTemplates) {
+      sel.innerHTML += `<option value="${esc(tpl.name)}">${esc(tpl.name)}</option>`;
+    }
+    sel.value = val;
   }
 
   // ── Feed panel ────────────────────────────────────
@@ -4109,12 +5346,13 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   const spawnDialog = document.getElementById('spawn-dialog');
   const spawnBtn = document.getElementById('spawn-btn');
   let selectedSpawnSlot = null;
+  let spawnToast = null;
 
   spawnBtn.addEventListener('click', () => {
     if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'spawn:slots' }));
     document.getElementById('spawn-name').value = '';
     document.getElementById('spawn-git-url').value = '';
-    document.getElementById('spawn-base-dir').value = '~/ai-dev';
+    document.getElementById('spawn-base-dir').value = spawnBaseDir;
     document.getElementById('spawn-slot-min').value = spawnSlotMin;
     document.getElementById('spawn-slot-max').value = spawnSlotMax;
     selectedSpawnSlot = null;
@@ -4148,7 +5386,12 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     if (!params) return;
     if (ws && ws.readyState === 1) {
       ws.send(JSON.stringify({ type: 'spawn', ...params }));
-      showToast('Spawning', `Agent "${params.name}"...`, 'success');
+      if (spawnToast) spawnToast.remove();
+      spawnToast = document.createElement('div');
+      spawnToast.className = 'toast spawning';
+      spawnToast.innerHTML = `<div class="toast-title">Spawning agent...</div><div class="toast-body">Cloning repository</div>`;
+      toasts.appendChild(spawnToast);
+      closeSpawnDialog();
     }
   });
 
@@ -4159,7 +5402,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     grid.innerHTML = '';
     const avSet = new Set(available);
     selectedSpawnSlot = null;
-    const lo = slotMin || spawnSlotMin || 17;
+    const lo = slotMin || spawnSlotMin || 1;
     const hi = slotMax || spawnSlotMax || 32;
     for (let i = lo; i <= hi; i++) {
       const btn = document.createElement('button');
@@ -4204,12 +5447,18 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         </div>
         ${pm.lastError ? `<div class="pm-error">${esc(pm.lastError)}</div>` : ''}
         <div class="pm-actions">
+          <button class="pm-action-btn rescan" data-id="${pm.id}">Rescan</button>
           <button class="pm-action-btn edit" data-id="${pm.id}">Edit</button>
           <button class="pm-action-btn delete" data-id="${pm.id}">Delete</button>
         </div>
       `;
       card.querySelector('.pm-toggle').addEventListener('click', () => {
         if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'pm:toggle', id: pm.id }));
+      });
+      card.querySelector('.pm-action-btn.rescan').addEventListener('click', (e) => {
+        e.target.textContent = 'Scanning...';
+        if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'pm:rescan', id: pm.id }));
+        setTimeout(() => { e.target.textContent = 'Rescan'; }, 3000);
       });
       card.querySelector('.pm-action-btn.edit').addEventListener('click', () => openPmDialog(pm));
       card.querySelector('.pm-action-btn.delete').addEventListener('click', () => {
@@ -4234,7 +5483,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     const type = document.getElementById('pm-form-source').value;
     const isGithub = type === 'github-issues' || type === 'github-prs' || type === 'github-re-reviews';
     const isReReviews = type === 'github-re-reviews';
-    const types = ['jira', 'github', 're-reviews', 'manual', 'command', 'jenkins', 'zoho'];
+    const types = ['jira', 'github', 're-reviews', 'manual', 'command', 'jenkins', 'zoho', 'slack'];
     for (const t of types) {
       let show = false;
       if (t === type) show = true;
@@ -4250,11 +5499,11 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         if (i > 0) el.style.display = 'none';
       });
     }
-    // Hide poll interval and threshold for manual (no polling)
+    // Hide poll interval and threshold for manual/slack (no polling)
     const pollField = document.getElementById('pm-form-interval').closest('.pm-form-field');
     const threshField = document.getElementById('pm-form-threshold').closest('.pm-form-field');
-    if (pollField) pollField.style.display = type === 'manual' ? 'none' : '';
-    if (threshField) threshField.style.display = (type === 'manual' || type === 'command') ? 'none' : '';
+    if (pollField) pollField.style.display = (type === 'manual' || type === 'slack') ? 'none' : '';
+    if (threshField) threshField.style.display = (type === 'manual' || type === 'command' || type === 'slack') ? 'none' : '';
     const instrField = document.getElementById('pm-form-instructions').closest('.pm-form-field');
     if (instrField) instrField.style.display = type === 'command' ? 'none' : '';
   }
@@ -4288,6 +5537,9 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         if (!source.command) { showToast('Error', 'Command required', 'error'); return; }
         if (!source.command.startsWith('/')) source.command = '/' + source.command;
         break;
+      case 'slack':
+        source.channel = document.getElementById('pm-form-slack-channel').value.trim() || null;
+        break;
       case 'manual':
         source.text = document.getElementById('pm-form-manual-text').value.trim();
         if (!source.text) { showToast('Error', 'Task text required', 'error'); return; }
@@ -4310,6 +5562,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       targetSession: targetSessionVal ? parseInt(targetSessionVal) : null,
       taskFormat: document.getElementById('pm-form-taskformat').value.trim() || null,
       instructions: document.getElementById('pm-form-instructions').value.trim(),
+      checklistTemplate: document.getElementById('pm-form-checklist-tpl').value || null,
       autoThreshold: parseInt(document.getElementById('pm-form-threshold').value) || 3,
       pollInterval: parseInt(document.getElementById('pm-form-interval').value) || 60000,
     };
@@ -4341,6 +5594,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     document.getElementById('pm-form-gh-triggers').value = src.triggerPhrases || '';
     document.getElementById('pm-form-command').value = src.command || '';
     document.getElementById('pm-form-manual-text').value = src.text || '';
+    document.getElementById('pm-form-slack-channel').value = src.channel || '';
     document.getElementById('pm-form-jenkins-path').value = src.jobPath || '';
     document.getElementById('pm-form-zoho-dept').value = src.department || '';
     document.getElementById('pm-form-zoho-status').value = src.status || '';
@@ -4353,6 +5607,8 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     document.getElementById('pm-form-instructions').value = pm ? (pm.instructions || '') : '';
     document.getElementById('pm-form-threshold').value = pm ? pm.autoThreshold : 3;
     document.getElementById('pm-form-interval').value = pm ? pm.pollInterval : 60000;
+    updatePmChecklistTplSelector();
+    document.getElementById('pm-form-checklist-tpl').value = pm ? (pm.checklistTemplate || '') : '';
     togglePmSourceFields();
     pmDialog.classList.add('visible');
   }
@@ -4576,6 +5832,52 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     if (match) match.classList.add('selected');
   }
 
+  // ── Ideas panel ──────────────────────────────────
+  function renderIdeas(ideas) {
+    const list = document.getElementById('ideas-list');
+    if (!ideas.length) { list.innerHTML = '<div style="color:var(--dim);text-align:center;padding:40px 0;font-size:14px">No ideas yet. Click + New Idea to submit one.</div>'; return; }
+    ideas.sort((a, b) => b.number - a.number);
+    list.innerHTML = ideas.map(i => {
+      const isOpen = (i.state || '').toUpperCase() === 'OPEN';
+      const stateCls = isOpen ? 'open' : 'closed';
+      return `<div class="idea-card ${isOpen ? '' : 'closed'}" data-url="${esc(i.url)}">
+        <div class="idea-title">#${i.number} ${esc(i.title)}</div>
+        <div class="idea-meta"><span class="idea-state ${stateCls}">${isOpen ? 'open' : 'closed'}</span></div>
+      </div>`;
+    }).join('');
+    list.querySelectorAll('.idea-card').forEach(card => {
+      card.addEventListener('click', () => window.open(card.dataset.url, '_blank'));
+    });
+  }
+
+  (function initIdeasDialog() {
+    const overlay = document.getElementById('idea-dialog');
+    const titleInput = document.getElementById('idea-dialog-title');
+    const bodyInput = document.getElementById('idea-dialog-body');
+    const saveBtn = document.getElementById('idea-dialog-save');
+    const cancelBtn = document.getElementById('idea-dialog-cancel');
+    const createBtn = document.getElementById('ideas-create-btn');
+
+    function openDialog() { titleInput.value = ''; bodyInput.value = ''; overlay.classList.add('visible'); titleInput.focus(); }
+    function closeDialog() { overlay.classList.remove('visible'); }
+
+    createBtn.addEventListener('click', openDialog);
+    cancelBtn.addEventListener('click', closeDialog);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) closeDialog(); });
+
+    saveBtn.addEventListener('click', () => {
+      const title = titleInput.value.trim();
+      if (!title) { titleInput.focus(); return; }
+      if (ws && ws.readyState === 1) {
+        ws.send(JSON.stringify({ type: 'idea:create', title, body: bodyInput.value.trim() }));
+      }
+      closeDialog();
+    });
+
+    // Enter in title field submits
+    titleInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); saveBtn.click(); } });
+  })();
+
   // ── Notifications ─────────────────────────────────
   function handleNotify(msg) {
     switch (msg.event) {
@@ -4585,8 +5887,11 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   }
 
   function showToast(title, body, cls) {
+    if (cls === 'error') console.error(title, body);
     const el = document.createElement('div'); el.className = `toast ${cls || ''}`;
     el.innerHTML = `<div class="toast-title">${esc(title)}</div><div class="toast-body">${esc(body || '')}</div>`;
+    el.style.cursor = 'pointer';
+    el.addEventListener('click', () => { el.classList.add('out'); setTimeout(() => el.remove(), 200); });
     toasts.appendChild(el);
     setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 200); }, 5000);
   }
