@@ -891,7 +891,8 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 
 /* Session nav bar */
 #session-nav-bar { display:flex; gap:6px; padding:6px 12px; background:var(--bg2); border-bottom:1px solid var(--bg3); flex-shrink:0; }
-.session-nav-btn { background:var(--bg3); border:none; color:var(--fg); font-size:12px; font-weight:600; padding:5px 12px; border-radius:4px; cursor:pointer; }
+.session-nav-btn { background:var(--bg3); border:none; color:var(--fg); font-size:12px; font-weight:600; padding:5px 12px; border-radius:4px; cursor:pointer; transition:background 0.15s; }
+.session-nav-btn:hover:not(:disabled) { background:var(--bg4, #565f89); }
 .session-nav-btn:active { transform:scale(0.95); }
 .session-nav-btn.idle { color:var(--green); }
 .session-nav-btn:disabled { opacity:0.3; cursor:default; }
@@ -2739,7 +2740,6 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       setTimeout(() => { const el = document.getElementById('terminal-wrap'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'end' }); }, 100);
     });
     applyNavPreferences();
-    updateMiniFleetStrip();
   }
 
   let writingContent = false;
@@ -5583,8 +5583,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         </div>
         ${pm.lastError ? `<div class="pm-error">${esc(pm.lastError)}</div>` : ''}
         <div class="pm-actions">
-          <button class="pm-action-btn rescan" data-id="${pm.id}">Scan Now</button>
-          <button class="pm-action-btn reset" data-id="${pm.id}" style="background:#c0392b;color:#fff;">Reset</button>
+          <button class="pm-action-btn rescan" data-id="${pm.id}">Rescan</button>
           <button class="pm-action-btn edit" data-id="${pm.id}">Edit</button>
           <button class="pm-action-btn delete" data-id="${pm.id}">Delete</button>
         </div>
@@ -5595,12 +5594,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       card.querySelector('.pm-action-btn.rescan').addEventListener('click', (e) => {
         e.target.textContent = 'Scanning...';
         if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'pm:rescan', id: pm.id }));
-        setTimeout(() => { e.target.textContent = 'Scan Now'; }, 3000);
-      });
-      card.querySelector('.pm-action-btn.reset').addEventListener('click', () => {
-        if (confirm('This will forget all previously seen issues. The next poll will create tasks for everything matching the source query. Continue?')) {
-          if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'pm:reset', id: pm.id }));
-        }
+        setTimeout(() => { e.target.textContent = 'Rescan'; }, 3000);
       });
       card.querySelector('.pm-action-btn.edit').addEventListener('click', () => openPmDialog(pm));
       card.querySelector('.pm-action-btn.delete').addEventListener('click', () => {
