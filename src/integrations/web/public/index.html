@@ -889,6 +889,23 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .rule-toggle::after { content: ''; position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; border-radius: 50%; background: var(--fg); transition: transform 0.2s; }
 .rule-toggle.on::after { transform: translateX(20px); }
 
+/* Session nav bar */
+#session-nav-bar { display:flex; gap:6px; padding:6px 12px; background:var(--bg2); border-bottom:1px solid var(--bg3); flex-shrink:0; }
+.session-nav-btn { background:var(--bg3); border:none; color:var(--fg); font-size:12px; font-weight:600; padding:5px 12px; border-radius:4px; cursor:pointer; transition:background 0.15s; }
+.session-nav-btn:hover:not(:disabled) { background:var(--bg4, #565f89); }
+.session-nav-btn:active { transform:scale(0.95); }
+.session-nav-btn.idle { color:var(--green); }
+.session-nav-btn:disabled { opacity:0.3; cursor:default; }
+
+/* Mini fleet strip */
+#mini-fleet-strip { display:flex; gap:3px; padding:6px 12px; background:var(--bg2); border-bottom:1px solid var(--bg3); flex-shrink:0; overflow-x:auto; -webkit-overflow-scrolling:touch; }
+.mini-fleet-box { min-width:28px; height:24px; border-radius:4px; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; cursor:pointer; border:2px solid transparent; flex-shrink:0; }
+.mini-fleet-box:active { transform:scale(0.9); }
+.mini-fleet-box.s-idle { background:rgba(80,250,123,0.2); color:var(--green); }
+.mini-fleet-box.s-working { background:rgba(241,250,140,0.2); color:var(--yellow); }
+.mini-fleet-box.s-off { background:rgba(98,114,164,0.15); color:var(--dim); }
+.mini-fleet-box.current { border-color:var(--purple); }
+
 /* ── Session detail (now inside content area) ─── */
 #session-panel {
   display: none; flex-direction: column; height: 100%; overflow: hidden; position: relative;
@@ -1445,6 +1462,17 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
             </div>
           </div>
         </div>
+        <div class="more-section">
+          <div class="more-section-title">Session Navigation</div>
+          <div class="rule-row">
+            <span class="rule-name">Navigation buttons (Prev / Next / Next Idle)</span>
+            <button class="rule-toggle" id="toggle-nav-buttons"></button>
+          </div>
+          <div class="rule-row">
+            <span class="rule-name">Mini fleet strip</span>
+            <button class="rule-toggle" id="toggle-fleet-strip"></button>
+          </div>
+        </div>
         <div class="more-section" id="broadcast-section">
           <div class="more-section-title">Broadcast</div>
           <select id="broadcast-target">
@@ -1525,6 +1553,12 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
           <button id="restart-btn" title="Restart Claude">Restart</button>
           <button id="kill-btn" title="Kill this tmux session">Close</button>
         </div>
+      </div>
+      <div id="mini-fleet-strip" style="display:none"></div>
+      <div id="session-nav-bar" style="display:none">
+        <button id="nav-prev" class="session-nav-btn">&larr; Prev</button>
+        <button id="nav-next" class="session-nav-btn">Next &rarr;</button>
+        <button id="nav-next-idle" class="session-nav-btn idle">Next Idle</button>
       </div>
       <div class="session-tabs">
         <button class="session-tab active" data-stab="terminal">Terminal</button>
@@ -1956,6 +1990,8 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   let fleetSearchTimer = null; // debounce timer for fleet search
   let myPermissions = []; // current user's permissions (empty = legacy token mode, all allowed)
   let allUsers = []; // all users (admin only)
+  let showNavButtons = localStorage.getItem('hive_show_nav_buttons') !== 'false';
+  let showFleetStrip = localStorage.getItem('hive_show_fleet_strip') === 'true';
 
   // ── DOM refs ──────────────────────────────────────
   const $ = (s) => document.querySelector(s);
@@ -2293,6 +2329,8 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
             document.getElementById('session-activity').textContent = `active ${timeAgo(cs.lastActivity)}`;
           }
         }
+        // Update session nav strip and idle button
+        if (activeTab === 'session-panel') { updateMiniFleetStrip(); updateNavIdleButton(); }
         // Auto-refresh git tab if active
         if (activeTab === 'session-panel' && activeSessionTab === 'git' && currentSession && ws && ws.readyState === 1) {
           ws.send(JSON.stringify({ type: 'git:info', session: currentSession }));
@@ -2709,6 +2747,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       }
       setTimeout(() => { const el = document.getElementById('terminal-wrap'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'end' }); }, 100);
     });
+    applyNavPreferences();
   }
 
   let writingContent = false;
@@ -2824,6 +2863,111 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   }
 
   backBtn.addEventListener('click', closeSession);
+
+  // ── Session navigation (Prev / Next / Next Idle / Mini fleet strip) ──
+  function getSortedSessionList() {
+    return fleetData.filter(s => s.state !== 'off').sort((a, b) => a.num - b.num);
+  }
+
+  function navigateToSession(s) {
+    // Preserve previousTab so back button still returns to fleet grid
+    const savedPrev = previousTab;
+    openSession(s);
+    previousTab = savedPrev;
+  }
+
+  function navPrev() {
+    const sorted = getSortedSessionList();
+    if (sorted.length === 0) return;
+    const idx = sorted.findIndex(s => String(s.num) === currentSession);
+    const prev = idx <= 0 ? sorted[sorted.length - 1] : sorted[idx - 1];
+    navigateToSession(prev);
+  }
+
+  function navNext() {
+    const sorted = getSortedSessionList();
+    if (sorted.length === 0) return;
+    const idx = sorted.findIndex(s => String(s.num) === currentSession);
+    const next = idx < 0 || idx >= sorted.length - 1 ? sorted[0] : sorted[idx + 1];
+    navigateToSession(next);
+  }
+
+  function navNextIdle() {
+    const sorted = getSortedSessionList();
+    if (sorted.length === 0) return;
+    const idx = sorted.findIndex(s => String(s.num) === currentSession);
+    // Search forward from current position, wrapping around
+    for (let i = 1; i <= sorted.length; i++) {
+      const candidate = sorted[(idx + i) % sorted.length];
+      if (candidate.state === 'idle') { navigateToSession(candidate); return; }
+    }
+  }
+
+  function updateNavIdleButton() {
+    const btn = document.getElementById('nav-next-idle');
+    const hasIdle = fleetData.some(s => s.state === 'idle' && String(s.num) !== currentSession);
+    btn.disabled = !hasIdle;
+  }
+
+  function updateMiniFleetStrip() {
+    const strip = document.getElementById('mini-fleet-strip');
+    if (!showFleetStrip || activeTab !== 'session-panel') { strip.style.display = 'none'; return; }
+    strip.style.display = 'flex';
+    const sorted = fleetData.slice().sort((a, b) => a.num - b.num);
+    strip.innerHTML = '';
+    sorted.forEach(s => {
+      const box = document.createElement('div');
+      box.className = 'mini-fleet-box';
+      if (s.state === 'idle') box.classList.add('s-idle');
+      else if (s.state === 'working') box.classList.add('s-working');
+      else box.classList.add('s-off');
+      if (String(s.num) === currentSession) box.classList.add('current');
+      box.textContent = s.num;
+      if (s.state !== 'off') {
+        box.addEventListener('click', () => navigateToSession(s));
+      }
+      strip.appendChild(box);
+    });
+    // Scroll current into view
+    const cur = strip.querySelector('.current');
+    if (cur) cur.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+  }
+
+  function applyNavPreferences() {
+    const navBar = document.getElementById('session-nav-bar');
+    const strip = document.getElementById('mini-fleet-strip');
+    if (activeTab === 'session-panel') {
+      navBar.style.display = showNavButtons ? 'flex' : 'none';
+      if (showNavButtons) updateNavIdleButton();
+      strip.style.display = showFleetStrip ? 'flex' : 'none';
+      if (showFleetStrip) updateMiniFleetStrip();
+    } else {
+      navBar.style.display = 'none';
+      strip.style.display = 'none';
+    }
+  }
+
+  // Nav button click handlers
+  document.getElementById('nav-prev').addEventListener('click', navPrev);
+  document.getElementById('nav-next').addEventListener('click', navNext);
+  document.getElementById('nav-next-idle').addEventListener('click', navNextIdle);
+
+  // More tab toggle handlers
+  document.getElementById('toggle-nav-buttons').addEventListener('click', function() {
+    showNavButtons = !showNavButtons;
+    localStorage.setItem('hive_show_nav_buttons', showNavButtons);
+    this.classList.toggle('on', showNavButtons);
+    applyNavPreferences();
+  });
+  document.getElementById('toggle-fleet-strip').addEventListener('click', function() {
+    showFleetStrip = !showFleetStrip;
+    localStorage.setItem('hive_show_fleet_strip', showFleetStrip);
+    this.classList.toggle('on', showFleetStrip);
+    applyNavPreferences();
+  });
+  // Initialize toggle button states
+  document.getElementById('toggle-nav-buttons').classList.toggle('on', showNavButtons);
+  document.getElementById('toggle-fleet-strip').classList.toggle('on', showFleetStrip);
 
   // ── Session tab switching ──────────────────────
   $$('.session-tab').forEach(tab => {
