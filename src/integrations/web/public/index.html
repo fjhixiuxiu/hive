@@ -981,6 +981,12 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .status-chip.ci-run { background: rgba(241,250,140,0.15); color: var(--yellow); }
 .status-chip.review-ok { background: rgba(80,250,123,0.15); color: var(--green); }
 .status-chip.review-chg { background: rgba(255,85,85,0.15); color: var(--red); }
+.status-chip.mode-auto { background: rgba(139,233,253,0.2); color: var(--cyan); }
+.status-chip.mode-manual { background: rgba(98,114,164,0.15); color: var(--dim); }
+.status-chip.desig { text-transform: uppercase; }
+.desig-popover { position: fixed; background: var(--bg2); border: 1px solid var(--bg3); border-radius: 6px; padding: 4px 0; z-index: 200; min-width: 120px; max-height: 200px; overflow-y: auto; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+.desig-popover-item { padding: 6px 12px; font-size: 12px; cursor: pointer; white-space: nowrap; text-transform: uppercase; font-weight: 600; }
+.desig-popover-item:hover { background: var(--bg3); }
 #msg-input:focus { border-color: var(--purple); }
 #msg-input::placeholder { color: var(--dim); }
 #msg-input:disabled { opacity: 0.5; }
@@ -3004,6 +3010,21 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     const chips = [];
     const branch = s.branch || '';
 
+    // Mode chip (Auto/Manual)
+    const isAuto = autoSessions.has(s.num);
+    const modeClass = isAuto ? 'mode-auto' : 'mode-manual';
+    const modeLabel = isAuto ? 'Auto' : 'Manual';
+    chips.push(`<span class="status-chip ${modeClass}" data-action="toggle-auto" data-session="${s.num}">${modeLabel}</span>`);
+
+    // Designation chip
+    const desig = designations[s.num] || '';
+    if (desig) {
+      const dc = getDesigColor(desig);
+      chips.push(`<span class="status-chip desig" style="background:${dc.bg};color:${dc.fg}" data-action="pick-desig" data-session="${s.num}">${esc(desig)}</span>`);
+    } else {
+      chips.push(`<span class="status-chip desig" style="background:rgba(98,114,164,0.15);color:var(--dim)" data-action="pick-desig" data-session="${s.num}">No Desig</span>`);
+    }
+
     // PR chip
     if (s.pr && s.pr.prNum) {
       const prUrl = linkTemplates.pr ? linkTemplates.pr.replace('${prNum}', s.pr.prNum) : null;
@@ -3058,6 +3079,61 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     if (!bar) return;
     bar.innerHTML = tasksSessionNum ? renderStatusChips(tasksSessionNum) : '';
   }
+
+  // ── Status chip click handlers (delegated) ─────
+  function closeDesigPopover() {
+    const existing = document.querySelector('.desig-popover');
+    if (existing) existing.remove();
+  }
+
+  function showDesigPopover(chip, sessionNum) {
+    closeDesigPopover();
+    const rect = chip.getBoundingClientRect();
+    const popover = document.createElement('div');
+    popover.className = 'desig-popover';
+    popover.style.left = rect.left + 'px';
+    popover.style.bottom = (window.innerHeight - rect.top + 4) + 'px';
+    const desigNames = getDesignationNames();
+    for (const d of desigNames) {
+      const item = document.createElement('div');
+      item.className = 'desig-popover-item';
+      if (d) {
+        const dc = getDesigColor(d);
+        item.style.color = dc.fg;
+      } else {
+        item.style.color = 'var(--dim)';
+      }
+      item.textContent = d || '— None —';
+      item.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'designation:set', session: sessionNum, designation: d }));
+        closeDesigPopover();
+      });
+      popover.appendChild(item);
+    }
+    document.body.appendChild(popover);
+  }
+
+  function handleStatusChipClick(e) {
+    const chip = e.target.closest('[data-action]');
+    if (!chip) return;
+    const action = chip.dataset.action;
+    const sessionNum = Number(chip.dataset.session);
+    if (action === 'toggle-auto') {
+      toggleAutoLocal(sessionNum);
+      updateSessionStatusLine();
+      updateTasksStatusLine();
+    } else if (action === 'pick-desig') {
+      e.stopPropagation();
+      showDesigPopover(chip, sessionNum);
+    }
+  }
+
+  document.getElementById('session-status-line').addEventListener('click', handleStatusChipClick);
+  document.getElementById('ts-status-line').addEventListener('click', handleStatusChipClick);
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.desig-popover') && !e.target.closest('[data-action="pick-desig"]')) closeDesigPopover();
+  });
 
   // Fit terminal to container, but use pane cols if wider (prevents ANSI line wrapping artifacts)
   function fitTerminal() {
