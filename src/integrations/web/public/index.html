@@ -1135,6 +1135,35 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .desig-def-row .desig-def-name { font-weight: 700; min-width: 80px; }
 /* ── Fleet group headers ── */
 .fleet-group-header { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; padding: 12px 4px 4px; grid-column: 1 / -1; }
+/* ── Fleet view toggle ── */
+.fleet-view-toggle { display: flex; gap: 2px; padding: 4px 12px; flex-shrink: 0; }
+.fleet-view-btn { background: var(--bg3); border: none; color: var(--dim); font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 4px; cursor: pointer; }
+.fleet-view-btn:hover { color: var(--fg); }
+.fleet-view-btn.active { background: var(--purple); color: var(--bg); }
+/* ── Swimlane mode ── */
+#grid.swimlane { display: flex; flex-direction: column; gap: 8px; padding: 6px 10px; overflow-y: auto; }
+@media (min-width: 600px) { #grid.swimlane { padding: 6px 12px; } }
+@media (min-width: 900px) { #grid.swimlane { padding: 6px 16px; } }
+#grid.swimlane .fleet-group-header { display: none; }
+#grid.swimlane .fleet-swimlane {
+  display: flex; gap: 8px; overflow-x: auto; padding: 4px 0;
+  -webkit-overflow-scrolling: touch; scrollbar-width: thin;
+  align-items: stretch; flex-shrink: 0;
+}
+/* Lane label cell */
+.fleet-lane-label { display: none; }
+#grid.swimlane .fleet-lane-label {
+  display: flex; align-items: center; justify-content: center;
+  writing-mode: vertical-lr; text-orientation: mixed; transform: rotate(180deg);
+  font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px;
+  padding: 8px 4px; min-width: 28px; flex-shrink: 0;
+  background: var(--bg3); border-radius: 6px;
+}
+#grid.swimlane .fleet-swimlane .card {
+  width: 300px; min-width: 300px; max-width: 300px; flex-shrink: 0;
+}
+/* Hide designation badge (lane label shows it) */
+#grid.swimlane .card-designation { display: none; }
 /* ── Color swatch picker ── */
 .desig-color-swatches { display: flex; gap: 8px; padding: 4px 0; }
 .desig-color-swatch {
@@ -1435,6 +1464,10 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         <button id="fleet-search-clear" class="fleet-search-clear" style="display:none">&times;</button>
       </div>
       <div id="fleet-search-results" class="fleet-search-results" style="display:none"></div>
+      <div class="fleet-view-toggle" id="fleet-view-toggle">
+        <button class="fleet-view-btn active" data-view="grid" title="Grid view">&#9638; Grid</button>
+        <button class="fleet-view-btn" data-view="swimlane" title="Swimlane view">&#9776; Swimlane</button>
+      </div>
       <div id="grid"></div>
       <div id="quick-bar">
         <button id="quick-target">-</button>
@@ -2182,6 +2215,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   let allUsers = []; // all users (admin only)
   let showNavButtons = localStorage.getItem('hive_show_nav_buttons') !== 'false';
   let showFleetStrip = localStorage.getItem('hive_show_fleet_strip') === 'true';
+  let fleetViewMode = localStorage.getItem('hive_fleet_view') || 'grid';
 
   // ── DOM refs ──────────────────────────────────────
   const $ = (s) => document.querySelector(s);
@@ -2772,55 +2806,57 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   // ── Fleet grid rendering ──────────────────────────
   function renderGrid() {
     grid.innerHTML = '';
+    grid.classList.toggle('swimlane', fleetViewMode === 'swimlane');
 
-    // Group sessions by designation
-    const groups = {};   // desig name → [sessions]
-    const unassigned = [];
-    const hasAnyDesig = Object.keys(designations).length > 0;
-    for (const s of fleetData) {
-      const desig = designations[s.num];
-      if (desig) {
-        (groups[desig] = groups[desig] || []).push(s);
-      } else {
-        unassigned.push(s);
-      }
-    }
-
-    // Render designated groups first, then unassigned
-    const groupOrder = Object.keys(groups);
-    if (hasAnyDesig && unassigned.length) groupOrder.push(null); // null = unassigned
-
-    for (const gName of groupOrder) {
-      const sessions = gName ? groups[gName] : unassigned;
-      // Group header
-      const header = document.createElement('div');
-      header.className = 'fleet-group-header';
-      if (gName) {
-        const gc = getDesigColor(gName);
-        header.style.color = gc.fg;
-        header.textContent = gName;
-      } else {
-        header.style.color = 'var(--dim)';
-        header.textContent = 'Unassigned';
-      }
-      grid.appendChild(header);
-
-      for (const s of sessions) {
-        renderFleetCard(s);
-      }
-    }
-
-    // If no designations at all, render flat (no headers)
-    if (!hasAnyDesig) {
-      // Remove any headers we added
-      grid.innerHTML = '';
+    if (fleetViewMode === 'grid') {
+      // Flat grid — all sessions by number, no group headers
+      // Cards still show their designation badge
       for (const s of fleetData) renderFleetCard(s);
+    } else {
+      // Swimlane — group by designation, horizontal lanes
+      const groups = {};
+      const unassigned = [];
+      const hasAnyDesig = Object.keys(designations).length > 0;
+      for (const s of fleetData) {
+        const desig = designations[s.num];
+        if (desig) (groups[desig] = groups[desig] || []).push(s);
+        else unassigned.push(s);
+      }
+      const groupOrder = Object.keys(groups);
+      if (hasAnyDesig && unassigned.length) groupOrder.push(null);
+
+      for (const gName of groupOrder) {
+        const sessions = gName ? groups[gName] : unassigned;
+        // Swimlane row: label cell + cards
+        const lane = document.createElement('div');
+        lane.className = 'fleet-swimlane';
+        // Label cell
+        const label = document.createElement('div');
+        label.className = 'fleet-lane-label';
+        if (gName) {
+          const gc = getDesigColor(gName);
+          label.style.color = gc.fg;
+          label.style.background = gc.bg;
+          label.textContent = gName;
+        } else {
+          label.style.color = 'var(--dim)';
+          label.textContent = 'Unassigned';
+        }
+        lane.appendChild(label);
+        for (const s of sessions) renderFleetCard(s, lane);
+        grid.appendChild(lane);
+      }
+      // If no designations at all, render flat (no headers)
+      if (!hasAnyDesig) {
+        grid.innerHTML = '';
+        for (const s of fleetData) renderFleetCard(s);
+      }
     }
 
     if (quickSession) highlightQuickCard();
   }
 
-  function renderFleetCard(s) {
+  function renderFleetCard(s, container) {
     let borderCls = 'border-dim';
     if (s.pr && s.pr.ciResult === 'FAILURE') borderCls = 'border-red';
     else if (s.pr && s.pr.ciResult === 'SUCCESS') borderCls = 'border-green';
@@ -2884,7 +2920,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       }
     });
     card.addEventListener('click', () => openSession(s));
-    grid.appendChild(card);
+    (container || grid).appendChild(card);
   }
 
   // ── Fleet search ────────────────────────────────
@@ -2923,6 +2959,20 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     fleetSearchResults.innerHTML = '';
     fleetSearchInput.focus();
   });
+
+  // ── Fleet view toggle ──────────────────────────────
+  document.querySelectorAll('.fleet-view-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      fleetViewMode = btn.dataset.view;
+      localStorage.setItem('hive_fleet_view', fleetViewMode);
+      document.querySelectorAll('.fleet-view-btn').forEach(b =>
+        b.classList.toggle('active', b.dataset.view === fleetViewMode));
+      renderGrid();
+    });
+  });
+  // Apply saved state on load
+  document.querySelectorAll('.fleet-view-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.view === fleetViewMode));
 
   function renderFleetSearchResults(query, results) {
     if (!query || fleetSearchInput.value.trim() !== query) return; // stale result
