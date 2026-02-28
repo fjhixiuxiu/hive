@@ -309,6 +309,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       ws.send(JSON.stringify({ type: 'agentRoots:list', roots: taskQueue.getAgentRoots() }));
       ws.send(JSON.stringify({ type: 'agentFiles:list', files: taskQueue.agentFilesList }));
       ws.send(JSON.stringify({ type: 'checklistTemplates:list', templates: taskQueue.getChecklistTemplates() }));
+      ws.send(JSON.stringify({ type: 'spawnedAgents:list', agents: taskQueue.getSpawnedAgentsList() }));
       // Send users list to admins
       if (user && user.login && taskQueue.hasPermission(user.login, 'admin')) {
         ws.send(JSON.stringify({ type: 'users:list', users: taskQueue.getUsersList() }));
@@ -1045,6 +1046,30 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
         }).catch((err) => {
           if (ws.readyState === 1) {
             ws.send(JSON.stringify({ type: 'spawn:done', success: false, error: err.message }));
+          }
+        });
+        break;
+      }
+
+      case 'respawn:all': {
+        if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'admin')) break;
+        taskQueue.respawnAll().then((results) => {
+          if (ws.readyState === 1) {
+            ws.send(JSON.stringify({ type: 'respawn:done', ...results }));
+          }
+          // Broadcast updated spawned agents list
+          broadcast({ type: 'spawnedAgents:list', agents: taskQueue.getSpawnedAgentsList() });
+          // Refresh fleet for all clients after a delay
+          setTimeout(() => {
+            fleet.invalidateCache();
+            _previewCache.result = null;
+            _previewCache.ts = 0;
+            broadcastFleetStatus().catch(() => {});
+          }, 500);
+        }).catch((err) => {
+          if (ws.readyState === 1) {
+            ws.send(JSON.stringify({ type: 'respawn:done', respawned: [], skipped: [], failed: [{ num: 0, error: err.message }] }));
           }
         });
         break;
