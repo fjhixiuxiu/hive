@@ -550,10 +550,11 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       }
 
       case 'terminal:resize': {
-        // Note: resize-pane is intentionally NOT used here because sessions have
-        // multi-pane layouts (Claude | server | client). Resizing the Claude pane
-        // to match browser width would crush the other panes. Instead, xterm.js
-        // adapts to the pane's actual width via the cols sent in terminal:data.
+        const sub = termSubs.get(ws);
+        if (!sub || !msg.cols || !msg.rows) break;
+        console.log(`[resize] resize: session ${sub.name} → ${msg.cols}x${msg.rows}`);
+        const resizeTarget = `${sub.name}:.${config.sessions.claudePane}`;
+        await sub.node.exec(`tmux resize-pane -t "${resizeTarget}" -x ${msg.cols} -y ${msg.rows} 2>/dev/null`);
         break;
       }
 
@@ -1338,7 +1339,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
         const watcherActivity = watcher.sessionActivity.get(s.num);
         if (watcherActivity) s.lastActivity = watcherActivity;
         try {
-          const node = router.nodeFor(s.name);
+          const node = s._node || router.nodeFor(s.name);
           if (node) {
             const content = await fleet.peekSession(config, node, s.name);
             s.preview = cleanPreview(content);
@@ -1355,7 +1356,8 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
           totalChanges: s.git ? s.git.staged + s.git.modified + s.git.untracked : 0,
         };
       }
-      log.info(`[perf] getFleetWithPreviews: ${Date.now() - t0}ms`);
+      const withPreview = sessions.filter(s => s.preview).length;
+      log.info(`[perf] getFleetWithPreviews: ${Date.now() - t0}ms (${withPreview}/${sessions.length} have previews)`);
       _previewCache.result = sessions;
       _previewCache.ts = Date.now();
       _previewCache.pending = null;
