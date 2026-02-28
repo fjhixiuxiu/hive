@@ -1,6 +1,7 @@
 const EventEmitter = require('events');
 const https = require('https');
 const http = require('http');
+const log = require('./log');
 
 let nextPmId = 1;
 
@@ -28,6 +29,7 @@ class ProjectManager extends EventEmitter {
       autoThreshold: cfg.autoThreshold != null ? cfg.autoThreshold : 3,
       pollInterval: cfg.pollInterval || 60000,
       taskFormat: cfg.taskFormat || null,
+      checklistTemplate: cfg.checklistTemplate || null,
       enabled: false,
       seenKeys: [],
       tasksCreated: 0,
@@ -85,9 +87,9 @@ class ProjectManager extends EventEmitter {
     if (this._reReviewPollTimes) delete this._reReviewPollTimes[id];
     // Trigger an immediate poll
     if (pm.enabled) {
-      this._poll(id).catch(err => console.error(`Scan Now error for ${pm.name}:`, err.message));
+      this._poll(id).catch(err => log.error(`Scan Now error for ${pm.name}:`, err.message));
     }
-    console.log(`[pm] Scan Now triggered for "${pm.name}"`);
+    log.info(`[pm] Scan Now triggered for "${pm.name}"`);
   }
 
   reset(id) {
@@ -100,7 +102,7 @@ class ProjectManager extends EventEmitter {
     if (this._reReviewPollTimes) delete this._reReviewPollTimes[id];
     this._save();
     this.emit('pm:changed');
-    console.log(`[pm] Reset memory for "${pm.name}" — next poll will treat all issues as new`);
+    log.info(`[pm] Reset memory for "${pm.name}" — next poll will treat all issues as new`);
   }
 
   getAll() {
@@ -135,6 +137,7 @@ class ProjectManager extends EventEmitter {
         autoThreshold: data.autoThreshold != null ? data.autoThreshold : 3,
         pollInterval: data.pollInterval || 60000,
         taskFormat: data.taskFormat || null,
+        checklistTemplate: data.checklistTemplate || null,
         enabled: data.enabled || false,
         seenKeys: Array.isArray(data.seenKeys) ? data.seenKeys : [],
         tasksCreated: data.tasksCreated || 0,
@@ -146,7 +149,7 @@ class ProjectManager extends EventEmitter {
         this._startPolling(id);
       }
     }
-    console.log(`Loaded ${this.pms.size} project managers`);
+    log.info(`Loaded ${this.pms.size} project managers`);
   }
 
   // ── Polling ─────────────────────────────────────────
@@ -155,6 +158,11 @@ class ProjectManager extends EventEmitter {
     const pm = this.pms.get(id);
     if (!pm) return;
     this._stopPolling(id); // clear any existing
+
+    // Slack source: config-only, no polling (bot reads PM on demand)
+    if (pm.source.type === 'slack') {
+      return;
+    }
 
     // Manual source: create one task immediately, no polling
     if (pm.source.type === 'manual') {
@@ -207,7 +215,8 @@ class ProjectManager extends EventEmitter {
       taskText = pm.taskFormat.replace('{key}', key).replace('{summary}', text);
     }
     const fullText = pm.instructions ? `${taskText}\n\nInstructions: ${pm.instructions}` : taskText;
-    this.taskQueue.createTask(fullText, mode, pm.targetSession || null, pm.designation, { source: `pm:${pm.name}` });
+    const task = this.taskQueue.createTask(fullText, mode, pm.targetSession || null, pm.designation, { source: `pm:${pm.name}` });
+    this._seedChecklist(pm, task);
     pm.tasksCreated++;
     pm.lastPoll = Date.now();
     pm.lastError = null;
@@ -260,6 +269,7 @@ class ProjectManager extends EventEmitter {
         idle.num,
         pm.designation,
       );
+      this._seedChecklist(pm, task);
       pm.tasksCreated++;
       this.taskQueue.pushFeed(
         'task',
@@ -267,7 +277,8 @@ class ProjectManager extends EventEmitter {
         `PM "${pm.name}" dispatched ${command} to session ${idle.num}`,
       );
     } else {
-      this.taskQueue.createTask(command, 'auto', null, pm.designation);
+      const task = this.taskQueue.createTask(command, 'auto', null, pm.designation);
+      this._seedChecklist(pm, task);
       pm.tasksCreated++;
       this.taskQueue.pushFeed(
         'task',
@@ -285,6 +296,7 @@ class ProjectManager extends EventEmitter {
   async _poll(id) {
     const pm = this.pms.get(id);
     if (!pm || !pm.enabled) return;
+    if (pm.source.type === 'slack') return; // config-only, no polling
 
     try {
       let issues;
@@ -315,7 +327,7 @@ class ProjectManager extends EventEmitter {
           const assignee = pm.source.reviewer || 'hive';
           const body = `🐝 Already queued for review by \`${assignee}\``;
           this._commentOnPR(issue._repo, issue._prNumber, body).catch(err => {
-            console.error(`Failed to comment on PR #${issue._prNumber}:`, err.message);
+            log.error(`Failed to comment on PR #${issue._prNumber}:`, err.message);
           });
           continue;
         }
@@ -332,7 +344,19 @@ class ProjectManager extends EventEmitter {
           text = `[${issue.key}] ${issue.summary}`;
         }
         const fullText = pm.instructions ? `${text}\n\nInstructions: ${pm.instructions}` : text;
-        const task = this.taskQueue.createTask(fullText, mode, pm.targetSession || null, pm.designation, { source: `pm:${pm.name}` });
+        const meta = { source: `pm:${pm.name}` };
+
+        // Attach actionContext for PR-sourced tasks
+        if (pm.source.type === 'github-prs' || pm.source.type === 'github-re-reviews') {
+          const prMeta = this._parsePRFromKey(issue.key);
+          if (prMeta) {
+            meta.actionContext = { type: 'github-pr', repo: prMeta.repo, prNumber: prMeta.prNumber };
+            meta.pr = prMeta.prNumber;
+          }
+        }
+
+        const task = this.taskQueue.createTask(fullText, mode, pm.targetSession || null, pm.designation, meta);
+        this._seedChecklist(pm, task);
 
         // Post GitHub PR comment if this is a PR-sourced task
         if (pm.source.type === 'github-prs' || pm.source.type === 'github-re-reviews') {
@@ -344,7 +368,7 @@ class ProjectManager extends EventEmitter {
             const assignee = pm.source.reviewer || 'hive';
             const body = `🐝 **Queued for review** by \`${assignee}\` — ${posText} (${desig})`;
             this._commentOnPR(prInfo.repo, prInfo.prNumber, body).catch(err => {
-              console.error(`Failed to comment on PR #${prInfo.prNumber}:`, err.message);
+              log.error(`Failed to comment on PR #${prInfo.prNumber}:`, err.message);
             });
           }
         }
@@ -609,14 +633,16 @@ class ProjectManager extends EventEmitter {
     return false;
   }
 
-  _httpPost(urlStr, headers, body) {
+  _httpMethod(method, urlStr, headers, body) {
     return new Promise((resolve, reject) => {
       const url = new URL(urlStr);
       const mod = url.protocol === 'https:' ? https : http;
-      const data = JSON.stringify(body);
+      const data = body ? JSON.stringify(body) : '';
+      const reqHeaders = { ...headers, 'Content-Type': 'application/json' };
+      if (data) reqHeaders['Content-Length'] = Buffer.byteLength(data);
       const req = mod.request(urlStr, {
-        method: 'POST',
-        headers: { ...headers, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) },
+        method,
+        headers: reqHeaders,
         timeout: 15000,
       }, (res) => {
         let resBody = '';
@@ -631,9 +657,13 @@ class ProjectManager extends EventEmitter {
       });
       req.on('error', (err) => reject(new Error(`Request failed: ${err.message}`)));
       req.on('timeout', () => { req.destroy(); reject(new Error('Request timed out')); });
-      req.write(data);
+      if (data) req.write(data);
       req.end();
     });
+  }
+
+  _httpPost(urlStr, headers, body) {
+    return this._httpMethod('POST', urlStr, headers, body);
   }
 
   async _commentOnPR(repo, prNumber, body) {
@@ -679,6 +709,22 @@ class ProjectManager extends EventEmitter {
       req.on('error', (err) => reject(new Error(`Request failed: ${err.message}`)));
       req.on('timeout', () => { req.destroy(); reject(new Error('Request timed out')); });
     });
+  }
+
+  // ── Checklist seeding ───────────────────────────────
+
+  _seedChecklist(pm, task) {
+    if (!pm.checklistTemplate || !task) return;
+    const tpl = this.taskQueue.checklistTemplates.get(pm.checklistTemplate);
+    if (!tpl || !tpl.items || !tpl.items.length) return;
+    const checklist = tpl.items.map(text => ({
+      id: `cl-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      text,
+      checked: false,
+    }));
+    task.checklist = checklist;
+    this.taskQueue.emit('task:updated', task);
+    this.taskQueue._saveState();
   }
 
   // ── Helpers ─────────────────────────────────────────

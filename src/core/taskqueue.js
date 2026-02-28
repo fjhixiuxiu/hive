@@ -1,3 +1,4 @@
+const log = require('./log');
 const EventEmitter = require('events');
 const fs = require('fs');
 const path = require('path');
@@ -32,9 +33,10 @@ class TaskQueue extends EventEmitter {
     this.activeTaskBySession = new Map(); // session num -> task id
     this.lastDispatchedAt = new Map();   // session num -> timestamp of last task dispatch
     this.spawnedAgents = new Map();  // slot num -> { repoDir, name }
-    this.spawnSlotMin = 17;
+    this.spawnSlotMin = 1;
     this.spawnSlotMax = 32;
     this.vimMode = false;
+    this.checklistTemplates = new Map(); // name → { name, items: [string] }
 
     // Designation definitions + agent file scanning
     this.designationDefs = new Map(); // name → { name, agentFiles: [], description: '' }
@@ -73,14 +75,14 @@ class TaskQueue extends EventEmitter {
           if (s && s.state === 'idle') {
             staleCount++;
             const task = this.tasks.get(taskId);
-            console.log(`[reconcile] S:${num} is idle with dispatched task: "${(task?.text || '').slice(0, 60)}"`);
+            log.info(`[reconcile] S:${num} is idle with dispatched task: "${(task?.text || '').slice(0, 60)}"`);
           }
         }
         if (staleCount > 0) {
-          console.log(`[reconcile] ${staleCount} dispatched task(s) on idle sessions — watcher will handle transitions`);
+          log.info(`[reconcile] ${staleCount} dispatched task(s) on idle sessions — watcher will handle transitions`);
         }
       } catch (err) {
-        console.error('Startup reconcile error:', err.message);
+        log.error('Startup reconcile error:', err.message);
       }
     }, 12000);
 
@@ -96,7 +98,7 @@ class TaskQueue extends EventEmitter {
     // Delayed dispatch after startup -- give sessions time to boot (60s)
     // then check once. Ongoing dispatch is event-driven (session:idle, designation change, etc.)
     setTimeout(() => {
-      this._tryAutoDispatch().catch(err => console.error('Auto-dispatch error:', err.message));
+      this._tryAutoDispatch().catch(err => log.error('Auto-dispatch error:', err.message));
     }, 60000);
   }
 
@@ -119,6 +121,7 @@ class TaskQueue extends EventEmitter {
       sourcePR: (meta && meta.pr) || null,      // PR number that triggered this
       sourceSession: (meta && meta.session) || null, // session that triggered this
       createdBy: (meta && meta.createdBy) || null,   // GitHub login of creator
+      actionContext: (meta && meta.actionContext) || null, // contextual actions metadata
     };
     this.tasks.set(task.id, task);
     this.emit('task:created', task);
@@ -127,11 +130,11 @@ class TaskQueue extends EventEmitter {
 
     if (mode === 'manual' && targetSession) {
       this._dispatchTask(task, targetSession).catch(err =>
-        console.error('Dispatch error:', err.message));
+        log.error('Dispatch error:', err.message));
     } else if (mode === 'auto') {
       // Try to dispatch immediately to an idle auto-session
       this._tryAutoDispatch().catch(err =>
-        console.error('Auto-dispatch error:', err.message));
+        log.error('Auto-dispatch error:', err.message));
     }
 
     return task;
@@ -158,6 +161,7 @@ class TaskQueue extends EventEmitter {
       source: (meta && meta.source) || 'attached',
       sourcePR: (meta && meta.pr) || null,
       sourceSession: sessionNum,
+      actionContext: (meta && meta.actionContext) || null,
     };
     this.tasks.set(task.id, task);
     this.activeTaskBySession.set(sessionNum, task.id);
@@ -173,7 +177,7 @@ class TaskQueue extends EventEmitter {
     const task = this.tasks.get(taskId);
     if (!task || task.status !== 'queued') return null;
 
-    const allowed = ['text', 'mode', 'targetSession', 'designation'];
+    const allowed = ['text', 'mode', 'targetSession', 'designation', 'actionContext'];
     for (const key of allowed) {
       if (key in updates) task[key] = updates[key];
     }
@@ -207,6 +211,36 @@ class TaskQueue extends EventEmitter {
     return task;
   }
 
+  /**
+   * Resume a completed/failed task — put it back to dispatched (in-progress)
+   * on the same session it originally ran on, as a manual task so it won't
+   * auto-complete when the session goes idle.
+   */
+  resumeTask(taskId) {
+    const task = this.tasks.get(taskId);
+    if (!task) return null;
+    if (task.status !== 'completed' && task.status !== 'failed') return null;
+    if (!task.assignedTo) return null;
+
+    // Check if session already has an active task
+    const existingTaskId = this.activeTaskBySession.get(task.assignedTo);
+    if (existingTaskId && existingTaskId !== taskId) return null;
+
+    task.status = 'dispatched';
+    task.mode = 'manual';
+    task.completedAt = null;
+    task.lastActivityAt = Date.now();
+
+    this.activeTaskBySession.set(task.assignedTo, task.id);
+    // Don't set dispatchLock — manual tasks don't hold the lock
+
+    this.emit('task:dispatched', task);
+    this.pushFeed('task', task.assignedTo,
+      `Task resumed on session ${task.assignedTo}: "${task.text}"`);
+    this._saveState();
+    return task;
+  }
+
   completeTask(taskId, result, snapshot, snapshotCols) {
     const task = this.tasks.get(taskId);
     if (!task || task.status !== 'dispatched') return null;
@@ -231,7 +265,7 @@ class TaskQueue extends EventEmitter {
     this._saveState();
     // Dispatch next queued task now that a session is free
     this._tryAutoDispatch().catch(err =>
-      console.error('Auto-dispatch error:', err.message));
+      log.error('Auto-dispatch error:', err.message));
     return task;
   }
 
@@ -327,11 +361,32 @@ class TaskQueue extends EventEmitter {
     return true;
   }
 
+  /**
+   * Clean up all TaskQueue state for a killed session.
+   * Fails active task, removes dispatch lock and spawned agent tracking.
+   */
+  cleanupSession(num) {
+    const taskId = this.activeTaskBySession.get(num);
+    if (taskId) {
+      this.failTask(taskId, 'Session killed');
+    }
+    this.activeTaskBySession.delete(num);
+    this.dispatchLock.delete(num);
+    this.spawnedAgents.delete(num);
+    this.autoSessions.delete(num);
+    this.lastDispatchedAt.delete(num);
+    this.designations.delete(num);
+    this._saveState();
+  }
+
   _handleSessionIdle(num, preview, paneCols) {
     // Complete active task for this session
     const taskId = this.activeTaskBySession.get(num);
     if (taskId) {
-      this.completeTask(taskId, null, preview || null, paneCols);
+      const task = this.tasks.get(taskId);
+      if (!task || task.mode !== 'manual') {
+        this.completeTask(taskId, null, preview || null, paneCols);
+      }
     }
     this.dispatchLock.delete(num);
 
@@ -341,7 +396,7 @@ class TaskQueue extends EventEmitter {
     );
     if (pendingManual) {
       this._dispatchTask(pendingManual, num).catch(err =>
-        console.error('Manual retry dispatch error:', err.message));
+        log.error('Manual retry dispatch error:', err.message));
     }
   }
 
@@ -409,7 +464,7 @@ class TaskQueue extends EventEmitter {
     this.emit('auto:changed', this.getAutoSessions());
     // Re-evaluate dispatch with new auto-session set
     this._tryAutoDispatch().catch(err =>
-      console.error('Auto-dispatch error:', err.message));
+      log.error('Auto-dispatch error:', err.message));
     return this.autoSessions.has(num);
   }
 
@@ -433,7 +488,7 @@ class TaskQueue extends EventEmitter {
   }
 
   setSpawnSlotRange(min, max) {
-    min = parseInt(min) || 17;
+    min = parseInt(min) || 1;
     max = parseInt(max) || 32;
     if (min < 1) min = 1;
     if (max > 99) max = 99;
@@ -474,7 +529,7 @@ class TaskQueue extends EventEmitter {
     this.users.set(login, user);
     this.emit('users:changed', this.getUsersList());
     this._saveState();
-    console.log(`[auth] User "${login}" registered (${isAdmin ? 'admin' : 'viewer'})`);
+    log.info(`[auth] User "${login}" registered (${isAdmin ? 'admin' : 'viewer'})`);
     return user;
   }
 
@@ -517,7 +572,7 @@ class TaskQueue extends EventEmitter {
     this.users.set(login, user);
     this.emit('users:changed', this.getUsersList());
     this._saveState();
-    console.log(`[auth] User "${login}" pre-added by admin`);
+    log.info(`[auth] User "${login}" pre-added by admin`);
     return user;
   }
 
@@ -528,7 +583,7 @@ class TaskQueue extends EventEmitter {
     this.users.delete(login);
     this.emit('users:changed', this.getUsersList());
     this._saveState();
-    console.log(`[auth] User "${login}" removed by admin`);
+    log.info(`[auth] User "${login}" removed by admin`);
     return true;
   }
 
@@ -567,6 +622,81 @@ class TaskQueue extends EventEmitter {
     return true;
   }
 
+  // -- Checklist Templates -------------------------------------------
+
+  getChecklistTemplates() {
+    return Array.from(this.checklistTemplates.values());
+  }
+
+  setChecklistTemplate(name, items) {
+    if (!name) return null;
+    const template = { name, items: Array.isArray(items) ? items : [] };
+    this.checklistTemplates.set(name, template);
+    this.emit('checklistTemplates:changed', this.getChecklistTemplates());
+    this._saveState();
+    return template;
+  }
+
+  removeChecklistTemplate(name) {
+    if (!this.checklistTemplates.has(name)) return false;
+    this.checklistTemplates.delete(name);
+    this.emit('checklistTemplates:changed', this.getChecklistTemplates());
+    this._saveState();
+    return true;
+  }
+
+  // -- Task Checklist -----------------------------------------------
+
+  toggleChecklistItem(taskId, itemId) {
+    const task = this.tasks.get(taskId);
+    if (!task || !task.checklist) return null;
+    const item = task.checklist.find(i => i.id === itemId);
+    if (!item) return null;
+    item.checked = !item.checked;
+    this.emit('task:updated', task);
+    this._saveState();
+    return task;
+  }
+
+  addChecklistItem(taskId, text) {
+    const task = this.tasks.get(taskId);
+    if (!task) return null;
+    if (!task.checklist) task.checklist = [];
+    const item = {
+      id: `cl-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      text,
+      checked: false,
+    };
+    task.checklist.push(item);
+    this.emit('task:updated', task);
+    this._saveState();
+    return task;
+  }
+
+  removeChecklistItem(taskId, itemId) {
+    const task = this.tasks.get(taskId);
+    if (!task || !task.checklist) return null;
+    const idx = task.checklist.findIndex(i => i.id === itemId);
+    if (idx < 0) return null;
+    task.checklist.splice(idx, 1);
+    this.emit('task:updated', task);
+    this._saveState();
+    return task;
+  }
+
+  setTaskChecklist(taskId, checklist) {
+    const task = this.tasks.get(taskId);
+    if (!task) return null;
+    task.checklist = (checklist || []).map(item => ({
+      id: item.id || `cl-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      text: item.text,
+      checked: !!item.checked,
+    }));
+    this.emit('task:updated', task);
+    this._saveState();
+    return task;
+  }
+
   // -- Designations -------------------------------------------------
 
   setDesignation(num, designation) {
@@ -579,7 +709,7 @@ class TaskQueue extends EventEmitter {
     this.emit('designations:changed', this.getDesignations());
     // Re-evaluate dispatch with new designation mapping
     this._tryAutoDispatch().catch(err =>
-      console.error('Auto-dispatch error:', err.message));
+      log.error('Auto-dispatch error:', err.message));
   }
 
   getDesignations() {
@@ -694,15 +824,18 @@ class TaskQueue extends EventEmitter {
 
   async spawnSession({ num, baseDir, name, gitUrl } = {}) {
     if (!name) throw new Error('Agent name is required');
+    log.info(`[spawn] starting: name=${name}, num=${num ?? 'auto'}, baseDir=${baseDir || 'default'}, gitUrl=${gitUrl || 'none'}`);
 
     // Resolve base directory
-    baseDir = (baseDir || '~/ai-dev').replace(/^~/, os.homedir());
+    baseDir = (baseDir || process.env.HIVE_REPO_DIR || '~/ai-dev').replace(/^~/, os.homedir());
+    log.info(`[spawn] resolved baseDir=${baseDir}`);
 
     // Pick slot
     if (num === undefined || num === null) {
       const slots = await this.getAvailableSlots();
       if (!slots.length) throw new Error(`No available slots (${this.spawnSlotMin}-${this.spawnSlotMax} all occupied)`);
       num = slots[0];
+      log.info(`[spawn] auto-picked slot ${num}`);
     }
     if (num < this.spawnSlotMin || num > this.spawnSlotMax) throw new Error(`Spawn slots must be ${this.spawnSlotMin}-${this.spawnSlotMax}`);
 
@@ -713,6 +846,7 @@ class TaskQueue extends EventEmitter {
 
     // Build repo path: baseDir/name+num (e.g. ~/ai-dev/ios17)
     const repoDir = path.join(baseDir, `${name}${num}`);
+    log.info(`[spawn] repoDir=${repoDir}`);
 
     // Clone or create directory
     if (gitUrl) {
@@ -730,10 +864,17 @@ class TaskQueue extends EventEmitter {
     }
 
     // Start tmux session using agent.yml template
-    const agentYml = path.join(os.homedir(), 'dev', 'agents', 'tmux', 'agent.yml');
+    const agentYml = (
+      process.env.HIVE_AGENT_YML ||
+      path.join(os.homedir(), 'dev', 'agents', 'tmux', 'agent.yml')
+    ).replace(/^~/, os.homedir());
+    const tmuxCmd = `/bin/zsh -lc 'tmuxinator start -p ${agentYml} N=${num} ROOT="${repoDir}" --no-attach'`;
+    log.info(`[spawn] running: ${tmuxCmd}`);
     try {
-      execSync(`/bin/zsh -lc 'tmuxinator start -p ${agentYml} N=${num} ROOT="${repoDir}"'`, { timeout: 15000, stdio: 'pipe' });
+      await execAsync(tmuxCmd, { timeout: 15000 });
+      log.info(`[spawn] tmuxinator started session ${num}`);
     } catch (err) {
+      log.error(`[spawn] tmuxinator failed: ${err.message}`);
       throw new Error(`Failed to start session ${num}: ${err.message}`);
     }
 
@@ -743,11 +884,13 @@ class TaskQueue extends EventEmitter {
 
     // Wait for init then rename
     await new Promise(r => setTimeout(r, 2000));
-    try {
-      const renameScript = path.join(os.homedir(), 'dev', 'agents', 'tmux', 'rename.sh');
-      execSync(`bash "${renameScript}"`, { timeout: 10000, stdio: 'pipe' });
-    } catch {
-      // Rename is best-effort
+    const renameScript = process.env.HIVE_RENAME_SCRIPT;
+    if (renameScript) {
+      try {
+        execSync(`bash "${renameScript}"`, { timeout: 10000, stdio: 'pipe' });
+      } catch {
+        // Rename is best-effort
+      }
     }
 
     this.pushFeed('state', num, `Agent "${name}" spawned in slot ${num}`);
@@ -898,7 +1041,7 @@ class TaskQueue extends EventEmitter {
       switch (rule.action) {
         case 'auto-dispatch':
           this._tryAutoDispatch().catch(err =>
-            console.error('Auto-dispatch error:', err.message));
+            log.error('Auto-dispatch error:', err.message));
           break;
 
         case 'dispatch-fix':
@@ -950,6 +1093,11 @@ class TaskQueue extends EventEmitter {
       if (Array.isArray(data.agentRoots)) {
         this.agentRoots = data.agentRoots;
       }
+      if (Array.isArray(data.checklistTemplates)) {
+        for (const tpl of data.checklistTemplates) {
+          if (tpl.name) this.checklistTemplates.set(tpl.name, tpl);
+        }
+      }
       if (data.users && typeof data.users === 'object') {
         for (const [login, info] of Object.entries(data.users)) {
           this.users.set(login, info);
@@ -975,9 +1123,9 @@ class TaskQueue extends EventEmitter {
       if (Array.isArray(data.feed)) {
         this.feed = data.feed;
       }
-      console.log(`Loaded state: ${this.autoSessions.size} auto-sessions, ${this.designations.size} designations, ${this.designationDefs.size} defs, ${this.agentRoots.length} agent roots, ${this.spawnedAgents.size} spawned agents, ${this.users.size} users`);
-      if (this.tasks.size) console.log(`Restored ${this.tasks.size} tasks`);
-      if (this.feed.length) console.log(`Restored ${this.feed.length} feed entries`);
+      log.info(`Loaded state: ${this.autoSessions.size} auto-sessions, ${this.designations.size} designations, ${this.designationDefs.size} defs, ${this.agentRoots.length} agent roots, ${this.spawnedAgents.size} spawned agents, ${this.users.size} users`);
+      if (this.tasks.size) log.info(`Restored ${this.tasks.size} tasks`);
+      if (this.feed.length) log.info(`Restored ${this.feed.length} feed entries`);
     } catch {
       // No state file yet -- that's fine
     }
@@ -1017,6 +1165,7 @@ class TaskQueue extends EventEmitter {
       vimMode: this.vimMode,
       spawnSlotMin: this.spawnSlotMin,
       spawnSlotMax: this.spawnSlotMax,
+      checklistTemplates: this.getChecklistTemplates(),
     };
     // Merge PM data if pmManager is attached
     if (this._pmManager) {
@@ -1025,7 +1174,7 @@ class TaskQueue extends EventEmitter {
     try {
       fs.writeFileSync(STATE_FILE, JSON.stringify(data, null, 2));
     } catch (err) {
-      console.error('Failed to save state:', err.message);
+      log.error('Failed to save state:', err.message);
     }
   }
 
