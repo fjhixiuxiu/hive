@@ -51,6 +51,11 @@ module.exports = {
     /shift\+tab/,
     /ctrl-g to edit/,
     /\? for shortcuts/,
+    /Try "/,
+    /^\s*❯/,
+    /Do you want to proceed/,
+    /Esc to cancel/,
+    /Enter to select/,
   ],
 
   // Patterns that indicate Claude isn't running

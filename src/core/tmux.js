@@ -90,25 +90,149 @@ async function hasSession(name) {
 }
 
 /**
+ * Check if a line is a Claude Code TUI separator (─ repeated across the pane).
+ */
+function isSeparator(line) {
+  const trimmed = line.trim();
+  return trimmed.length >= 10 && /^[─━]+$/.test(trimmed);
+}
+
+/**
  * Detect Claude's state from a pane capture.
+ *
+ * Uses the Claude Code TUI structure: the bottom-most separator line (────)
+ * divides content/prompt from the status bar below. We find that separator,
+ * then check the lines above it for idle/off patterns.
+ *
+ * TUI layout when idle (prompt between separators):
+ *   [content]
+ *   ──────────────    ← 2nd separator (prompt top)
+ *   ❯ [input]        ← prompt line (may have typed text)
+ *   ──────────────    ← 1st separator from bottom (prompt bottom / status bar top)
+ *   Model: ...        ← status bar (ignored)
+ *   cwd: ...
+ *
+ * TUI layout when idle (permission/choice prompt below separator):
+ *   [content]
+ *   ──────────────    ← separator
+ *   Do you want to proceed?
+ *   ❯ 1. Yes
+ *   2. No
+ *   Esc to cancel
+ *
+ * TUI layout when working:
+ *   [tool output]
+ *   ──────────────    ← 1st separator from bottom
+ *   Model: ...        ← status bar (ignored)
+ *
  * @param {string} paneContent - raw pane capture text
  * @param {object} config - hive config with idlePatterns/offPatterns
  * @returns {'idle'|'working'|'off'}
  */
+// Interactive prompt patterns safe to check below the separator.
+// These only appear in permission/choice prompts, never in the status bar.
+// (Note: shift+tab appears in the status bar so is intentionally excluded.)
+const INTERACTIVE_PATTERNS = [/Do you want to proceed/, /Esc to cancel/, /Enter to select/, /^\s*❯/];
+
+// Active Claude status indicators — the ❯ prompt is visible but not usable.
+// Active lines use ellipsis (Doodling…, Doing...), completed lines don't (Sautéed for 14m).
+const ACTIVE_STATUS_RE = /[⏺✢✳✻☵⚡]\s+\S+(?:…|\.{3})/;
+
+// Incomplete checklist detection: Claude stopped mid-task with failures.
+// When a checklist has completed items (✓) AND failed items (✗), Claude
+// gave up instead of continuing — the task is not done, so treat as working.
+const CHECKLIST_PASS_RE = /^\s*[✓✔]/;
+const CHECKLIST_FAIL_RE = /^\s*[✗✘]/;
+
+function hasFailedChecklist(lines) {
+  let hasPass = false;
+  let hasFail = false;
+  for (const line of lines) {
+    if (CHECKLIST_PASS_RE.test(line)) hasPass = true;
+    if (CHECKLIST_FAIL_RE.test(line)) hasFail = true;
+    if (hasPass && hasFail) return true;
+  }
+  return false;
+}
+
 function detectState(paneContent, config) {
-  const lines = paneContent.split('\n').filter(l => l.trim());
-  if (lines.length === 0) return 'off';
+  const lines = paneContent.split('\n');
+  const state = _classifyState(lines, config);
 
-  const lastLine = lines[lines.length - 1]
-    .replace(/[^\x20-\x7E]/g, ''); // strip non-printable
+  // If idle but a visible checklist has failures, Claude stopped mid-task.
+  // Report as 'working' so hive doesn't auto-complete the task.
+  if (state === 'idle' && hasFailedChecklist(lines)) {
+    return 'working';
+  }
 
-  for (const pat of config.idlePatterns) {
-    if (pat.test(lastLine)) return 'idle';
+  return state;
+}
+
+function _classifyState(lines, config) {
+  // Find the bottom-most separator — everything below it is the status bar.
+  let separatorIdx = -1;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (isSeparator(lines[i])) {
+      separatorIdx = i;
+      break;
+    }
   }
-  for (const pat of config.offPatterns) {
-    if (pat.test(lastLine)) return 'off';
+
+  // Check below separator for interactive prompts (permission/choice menus).
+  // Newer Claude Code renders these below the separator instead of above it.
+  if (separatorIdx >= 0) {
+    for (let i = separatorIdx + 1; i < lines.length; i++) {
+      const raw = lines[i];
+      if (!raw.trim()) continue;
+      for (const pat of INTERACTIVE_PATTERNS) {
+        if (pat.test(raw)) return 'idle';
+      }
+    }
   }
-  return 'working';
+
+  // Determine which lines to check: above the separator, or all lines as fallback
+  const checkLines = separatorIdx >= 0
+    ? lines.slice(Math.max(0, separatorIdx - 5), separatorIdx)
+    : lines;
+
+  // Check for active Claude status (Doodling…, Doing…, Churning...) before idle.
+  // When Claude is working, the ❯ prompt is visible but not interactive.
+  for (const line of checkLines) {
+    if (ACTIVE_STATUS_RE.test(line)) return 'working';
+  }
+
+  // Scan upward from the bottom of the check region
+  let checked = 0;
+  for (let i = checkLines.length - 1; i >= 0 && checked < 6; i--) {
+    const raw = checkLines[i];
+    if (!raw.trim()) continue;
+    if (isSeparator(raw)) continue; // skip 2nd separator (above prompt)
+    checked++;
+
+    // Check raw line (catches Unicode like ❯)
+    for (const pat of config.idlePatterns) {
+      if (pat.test(raw)) return 'idle';
+    }
+    for (const pat of config.offPatterns) {
+      if (pat.test(raw)) return 'off';
+    }
+
+    // Strip non-printable for ASCII-based checks
+    const clean = raw.replace(/[^\x20-\x7E]/g, '').trim();
+    if (!clean) continue; // Unicode-only non-separator line
+
+    for (const pat of config.idlePatterns) {
+      if (pat.test(clean)) return 'idle';
+    }
+    for (const pat of config.offPatterns) {
+      if (pat.test(clean)) return 'off';
+    }
+
+    // Real content that isn't idle/off → working
+    return 'working';
+  }
+
+  return 'off';
 }
 
 /**
