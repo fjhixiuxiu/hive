@@ -177,6 +177,72 @@ describe('ProjectManager', () => {
     });
   });
 
+  describe('reset', () => {
+    it('clears seenKeys, tasksCreated, lastPoll, lastError', () => {
+      const created = pm.create({ name: 'Test PM' });
+      // Simulate some state
+      const pmObj = pm.get(created.id);
+      pmObj.seenKeys = ['KEY-1', 'KEY-2', 'KEY-3'];
+      pmObj.tasksCreated = 5;
+      pmObj.lastPoll = Date.now();
+      pmObj.lastError = 'some error';
+
+      pm.reset(created.id);
+
+      expect(pmObj.seenKeys).toEqual([]);
+      expect(pmObj.tasksCreated).toBe(0);
+      expect(pmObj.lastPoll).toBeNull();
+      expect(pmObj.lastError).toBeNull();
+    });
+
+    it('clears reReviewPollTimes for the PM', () => {
+      const created = pm.create({ name: 'Test PM' });
+      pm._reReviewPollTimes = { [created.id]: Date.now(), other: 12345 };
+
+      pm.reset(created.id);
+
+      expect(pm._reReviewPollTimes[created.id]).toBeUndefined();
+      expect(pm._reReviewPollTimes.other).toBe(12345);
+    });
+
+    it('emits pm:changed and saves', () => {
+      const created = pm.create({ name: 'Test' });
+      const spy = vi.fn();
+      pm.on('pm:changed', spy);
+      spy.mockClear(); // clear the create emission
+
+      pm.reset(created.id);
+
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(taskQueue._saveState).toHaveBeenCalled();
+    });
+
+    it('does nothing for non-existent PM', () => {
+      const spy = vi.fn();
+      pm.on('pm:changed', spy);
+
+      pm.reset('999');
+
+      expect(spy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('rescan', () => {
+    it('clears reReviewPollTimes for the PM', () => {
+      const created = pm.create({ name: 'Test', source: { type: 'slack' } });
+      pm._reReviewPollTimes = { [created.id]: Date.now() };
+
+      pm.rescan(created.id);
+
+      expect(pm._reReviewPollTimes[created.id]).toBeUndefined();
+    });
+
+    it('does nothing for non-existent PM', () => {
+      // Should not throw
+      pm.rescan('999');
+    });
+  });
+
   describe('stopAll', () => {
     it('stops all polling timers', () => {
       pm.create({ name: 'A', source: { type: 'slack' } });
