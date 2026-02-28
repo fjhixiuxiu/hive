@@ -1,5 +1,6 @@
 const TelegramBot = require('node-telegram-bot-api');
 const commands = require('./commands');
+const log = require('../../core/log');
 
 /**
  * Create and start the Telegram bot.
@@ -9,7 +10,7 @@ function createBot(config, watcher, router) {
     const chatId = process.env.TELEGRAM_CHAT_ID;
 
     if (!token || !chatId) {
-        console.log(
+        log.info(
             'Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID in .env — Telegram bot disabled',
         );
         return null;
@@ -26,7 +27,7 @@ function createBot(config, watcher, router) {
     // Helper to send a message (with error handling)
     function send(text, opts = {}) {
         return bot.sendMessage(allowedChatId, text, opts).catch((err) => {
-            console.error('Send error:', err.message);
+            log.error('Send error:', err.message);
             // Retry without formatting if it fails
             return bot
                 .sendMessage(allowedChatId, text.replace(/<[^>]+>/g, ''))
@@ -45,7 +46,7 @@ function createBot(config, watcher, router) {
             .catch((err) => {
                 // Ignore "message is not modified" errors (content unchanged)
                 if (err.message && err.message.includes('not modified')) return;
-                console.error('Edit error:', err.message);
+                log.error('Edit error:', err.message);
             });
     }
 
@@ -55,7 +56,7 @@ function createBot(config, watcher, router) {
             try {
                 await fn(...args);
             } catch (err) {
-                console.error('Command error:', err.message);
+                log.error('Command error:', err.message);
                 send(`Error: ${err.message}`).catch(() => {});
             }
         };
@@ -152,15 +153,15 @@ function createBot(config, watcher, router) {
     bot.on('polling_error', (err) => {
         // Ignore conflict errors during startup
         if (err.message && err.message.includes('409')) return;
-        console.error('Telegram polling error:', err.message);
+        log.error('Telegram polling error:', err.message);
     });
 
     // Catch unhandled promise rejections from the bot
     process.on('unhandledRejection', (err) => {
-        console.error('Unhandled rejection:', err.message || err);
+        log.error('Unhandled rejection:', err.message || err);
     });
 
-    console.log('Telegram bot started. Listening for commands...');
+    log.info('Telegram bot started. Listening for commands...');
     return bot;
 }
 
