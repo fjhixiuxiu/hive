@@ -14,6 +14,9 @@ windows:
       layout: main-vertical
       panes:
         - >
+          <% if @settings["SYSTEM_PROMPT_FILE"] %>
+          export HIVE_SYSTEM_PROMPT_FILE="<%= @settings["SYSTEM_PROMPT_FILE"] %>";
+          <% end %>
           tmux select-layout -t <%= @settings["N"] %> main-vertical 2>/dev/null;
           tmux resize-pane -t <%= @settings["N"] %>:.0 -x 60% 2>/dev/null;
           PROJECT_DIR=$(echo "$PWD" | sed 's|/|-|g');
@@ -38,6 +41,8 @@ on_project_exit:
           if echo "$CONTENT" | grep -q "Dark mode"; then
             tmux send-keys -t "$PANE" Enter;
           elif echo "$CONTENT" | grep -q "Yes, I trust this folder"; then
+            tmux send-keys -t "$PANE" Enter;
+          elif echo "$CONTENT" | grep -q "Yes, I accept"; then
             tmux send-keys -t "$PANE" Enter;
           fi;
         done;
