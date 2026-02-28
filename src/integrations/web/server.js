@@ -496,6 +496,30 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
         break;
       }
 
+      case 'terminal:panes': {
+        const found = await fleet.findSession(config, router, msg.session);
+        if (!found) {
+          ws.send(JSON.stringify({ type: 'error', message: `No session matching "${msg.session}"` }));
+          return;
+        }
+        const { name, nodeId } = found;
+        const node = router.getNode(nodeId);
+        try {
+          const raw = await node.exec(`tmux list-panes -t "${name}" -F '#{pane_index}|#{pane_current_command}' 2>/dev/null`);
+          const panes = (raw || '').trim().split('\n').filter(Boolean).map(line => {
+            const [idx, cmd] = line.split('|');
+            return { index: parseInt(idx, 10), command: cmd || 'unknown' };
+          });
+          // Mark the claudePane as the active/primary one
+          const claudeIdx = config.sessions.claudePane;
+          panes.forEach(p => { p.active = (p.index === claudeIdx); });
+          ws.send(JSON.stringify({ type: 'terminal:panes', session: msg.session, panes, claudePane: claudeIdx }));
+        } catch (err) {
+          ws.send(JSON.stringify({ type: 'terminal:panes', session: msg.session, panes: [], claudePane: config.sessions.claudePane }));
+        }
+        break;
+      }
+
       case 'terminal:subscribe': {
         // Unsubscribe from any previous session
         clearTermSub(ws);
@@ -506,21 +530,22 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
         }
         const { name, nodeId } = found;
         const node = router.getNode(nodeId);
-        const paneTarget = `${name}:.${config.sessions.claudePane}`;
+        const subPaneIdx = (typeof msg.pane === 'number') ? msg.pane : config.sessions.claudePane;
+        const paneTarget = `${name}:.${subPaneIdx}`;
         // Send immediately
         const { content: subContent, cols: subCols } = await capturePaneAnsi(node, paneTarget);
-        ws.send(JSON.stringify({ type: 'terminal:data', session: msg.session, content: subContent, cols: subCols }));
+        ws.send(JSON.stringify({ type: 'terminal:data', session: msg.session, pane: subPaneIdx, content: subContent, cols: subCols }));
         // Poll every 2s
         const interval = setInterval(async () => {
           if (ws.readyState !== 1) { clearTermSub(ws); return; }
           try {
             const { content: pollContent, cols: pollCols } = await capturePaneAnsi(node, paneTarget);
-            ws.send(JSON.stringify({ type: 'terminal:data', session: msg.session, content: pollContent, cols: pollCols }));
+            ws.send(JSON.stringify({ type: 'terminal:data', session: msg.session, pane: subPaneIdx, content: pollContent, cols: pollCols }));
           } catch {
             // Node may have disconnected
           }
         }, 2000);
-        termSubs.set(ws, { interval, session: msg.session, name, node });
+        termSubs.set(ws, { interval, session: msg.session, name, node, pane: subPaneIdx });
         break;
       }
 
@@ -575,6 +600,18 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
         }
         const { name, nodeId } = found;
         const node = router.getNode(nodeId);
+        // If targeting a non-Claude pane, send text directly via sendKeys (bypass relay)
+        if (typeof msg.pane === 'number' && msg.pane !== config.sessions.claudePane) {
+          const shellTarget = `${name}:.${msg.pane}`;
+          try {
+            await node.sendKeys(shellTarget, msg.message, true);
+            if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'tell:done', session: msg.session, success: true }));
+          } catch (err) {
+            log.error('tell (shell pane) error:', err);
+            if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'tell:done', session: msg.session, success: false, error: err.message }));
+          }
+          break;
+        }
         relay.tell(config, node, name, msg.message, { vimMode: taskQueue ? taskQueue.vimMode : false }).then((result) => {
           if (ws.readyState !== 1) return;
           ws.send(JSON.stringify({
@@ -602,7 +639,8 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
         }
         const { name, nodeId } = found;
         const node = router.getNode(nodeId);
-        const paneTarget = `${name}:.${config.sessions.claudePane}`;
+        const keysPaneIdx = (typeof msg.pane === 'number') ? msg.pane : config.sessions.claudePane;
+        const paneTarget = `${name}:.${keysPaneIdx}`;
         // msg.keys is an array of tmux key names, e.g. ["Enter"], ["Up"], ["Escape"]
         // Keys bar buttons always send raw — vim preamble only applies to typed text (ask/tell)
         for (const key of (msg.keys || [])) {
