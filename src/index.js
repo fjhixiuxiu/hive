@@ -2,6 +2,7 @@
 
 const path = require('path');
 const fs = require('fs');
+const log = require('./core/log');
 
 // Load .env from project root
 const envPath = path.join(__dirname, '..', '.env');
@@ -19,7 +20,7 @@ if (fs.existsSync(envPath)) {
 // Load config
 const configPath = path.join(__dirname, '..', 'hive.config.js');
 if (!fs.existsSync(configPath)) {
-    console.error(
+    log.error(
         'Missing hive.config.js -- copy from hive.config.example.js and customize.',
     );
     process.exit(1);
@@ -31,7 +32,7 @@ const LocalNode = require('./core/local-node');
 const NodeRouter = require('./core/node-router');
 const router = new NodeRouter();
 router.addNode(new LocalNode('local'));
-console.log('Node router initialized (local node)');
+log.info('Node router initialized (local node)');
 
 // Start core watcher
 const Watcher = require('./core/watcher');
@@ -39,12 +40,12 @@ const watcher = new Watcher(config, router);
 watcher
     .start()
     .then(() => {
-        console.log(
+        log.info(
             `Watcher started (polling every ${config.watcher.interval / 1000}s)`,
         );
     })
     .catch((err) => {
-        console.error('Watcher failed to start:', err.message);
+        log.error('Watcher failed to start:', err.message);
     });
 
 // Start Telegram integration (optional)
@@ -54,7 +55,7 @@ const telegramBot = createBot(config, watcher, router);
 // Start task queue
 const TaskQueue = require('./core/taskqueue');
 const taskQueue = new TaskQueue(config, watcher, router);
-console.log('Task queue initialized');
+log.info('Task queue initialized');
 
 // Patch config.sessions.repoDir to check spawned agents first
 const originalRepoDir = config.sessions.repoDir;
@@ -78,7 +79,7 @@ try {
 
 // Start Slack bot (optional — needs SLACK_APP_TOKEN + SLACK_BOT_TOKEN)
 const { createSlackBot } = require('./integrations/slack/bot');
-const slackBot = createSlackBot(taskQueue, config, router);
+const slackBot = createSlackBot(taskQueue, config, router, pmManager);
 
 // Start Web dashboard
 const {createWebServer} = require('./integrations/web/server');
@@ -92,7 +93,7 @@ const webServer = createWebServer(
 
 // Graceful shutdown
 process.on('SIGINT', () => {
-    console.log('\nShutting down...');
+    log.info('\nShutting down...');
     pmManager.stopAll();
     watcher.stop();
     if (webServer) webServer.close();

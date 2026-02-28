@@ -21,6 +21,16 @@ Configuration lives in `hive.config.js` — adjust session patterns, repo paths,
 - When testing commands as hivebot: `sudo -u hivebot -i` (login shell) not `sudo -u hivebot` (inherits your cwd which hivebot may not be able to access)
 - Paths resolve via `os.homedir()` -> `/Users/hivebot` when running as hivebot
 
+## Running Tests
+
+```bash
+npm test             # run all tests (vitest)
+npm run test:watch   # watch mode
+npm run test:coverage # with coverage
+```
+
+Tests live in `test/core/` (unit) and `test/e2e/` (integration). The test framework is [vitest](https://vitest.dev/).
+
 ## Contributing
 
 1. Fork the repo

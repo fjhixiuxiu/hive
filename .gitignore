@@ -5,3 +5,5 @@ test-bot.js
 .hive-state.json
 backups/
 .claude/
+coverage/
+.playwright-mcp/
