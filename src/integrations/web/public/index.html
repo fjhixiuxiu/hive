@@ -1838,6 +1838,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     </div>
     <div class="dialog-actions">
       <button class="dialog-btn primary" id="spawn-next">Next Available</button>
+      <button class="dialog-btn" id="respawn-all-btn" style="display:none">Respawn All (0)</button>
       <button class="dialog-btn" id="spawn-cancel">Cancel</button>
     </div>
   </div>
@@ -2204,6 +2205,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   let spawnSlotMin = 1;
   let spawnBaseDir = '~/ai-dev';
   let spawnSlotMax = 32;
+  let spawnedAgentsList = [];
   let pmList = [];        // PM objects from server
   let editingPmId = null; // PM being edited (null = creating new)
   let activeSessionTab = 'terminal'; // 'terminal', 'git', or 'comments'
@@ -2717,6 +2719,21 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         else showToast('Spawn failed', msg.error || 'Unknown error', 'error');
         closeSpawnDialog();
         break;
+      case 'spawnedAgents:list':
+        spawnedAgentsList = msg.agents || [];
+        updateRespawnButton();
+        break;
+      case 'respawn:done': {
+        if (spawnToast) { spawnToast.remove(); spawnToast = null; }
+        const rCount = (msg.respawned || []).length;
+        const sCount = (msg.skipped || []).length;
+        const fCount = (msg.failed || []).length;
+        if (fCount > 0) showToast('Respawn partial', `${rCount} respawned, ${sCount} skipped, ${fCount} failed`, 'error');
+        else if (rCount > 0) showToast('Respawn done', `${rCount} respawned, ${sCount} already running`, 'success');
+        else showToast('Respawn', `All ${sCount} sessions already running`, 'success');
+        closeSpawnDialog();
+        break;
+      }
       case 'pm:list': pmList = msg.pms || []; renderPMs(); break;
       case 'pm:created': showToast('PM Created', msg.pm.name, 'success'); break;
       case 'pm:error': showToast('PM Error', `${msg.id}: ${msg.error}`, 'error'); break;
@@ -6224,6 +6241,28 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   });
 
   function closeSpawnDialog() { spawnDialog.classList.remove('visible'); selectedSpawnSlot = null; }
+
+  function updateRespawnButton() {
+    const btn = document.getElementById('respawn-all-btn');
+    if (spawnedAgentsList.length > 0) {
+      btn.style.display = '';
+      btn.textContent = `Respawn All (${spawnedAgentsList.length})`;
+    } else {
+      btn.style.display = 'none';
+    }
+  }
+
+  document.getElementById('respawn-all-btn').addEventListener('click', () => {
+    if (ws && ws.readyState === 1) {
+      ws.send(JSON.stringify({ type: 'respawn:all' }));
+      if (spawnToast) spawnToast.remove();
+      spawnToast = document.createElement('div');
+      spawnToast.className = 'toast spawning';
+      spawnToast.innerHTML = `<div class="toast-title">Respawning...</div><div class="toast-body">Restarting ${spawnedAgentsList.length} session(s)</div>`;
+      toasts.appendChild(spawnToast);
+      closeSpawnDialog();
+    }
+  });
 
   function renderSpawnSlots(available, slotMin, slotMax) {
     const grid = document.getElementById('slot-grid');

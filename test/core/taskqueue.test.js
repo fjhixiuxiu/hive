@@ -534,4 +534,72 @@ describe('TaskQueue', () => {
       expect(tq.autoSessions.has(6)).toBe(false);
     });
   });
+
+  describe('respawnAll', () => {
+    it('attempts to respawn dead sessions and captures failures', async () => {
+      tq.spawnedAgents.set(5, { repoDir: '/tmp/nonexistent5', name: 'bot' });
+      tq.spawnedAgents.set(6, { repoDir: '/tmp/nonexistent6', name: 'bot' });
+      // No sessions running
+      fleetModule.getFleetStatus.mockResolvedValue([]);
+
+      const results = await tq.respawnAll();
+      // In test env, tmuxinator isn't available so both should fail
+      // The key thing: dead sessions are attempted, not skipped
+      expect(results.skipped).toEqual([]);
+      const attemptedNums = [...results.respawned, ...results.failed.map(f => f.num)].sort();
+      expect(attemptedNums).toEqual([5, 6]);
+    });
+
+    it('skips sessions that are already running', async () => {
+      tq.spawnedAgents.set(5, { repoDir: '/tmp/test5', name: 'bot' });
+      tq.spawnedAgents.set(6, { repoDir: '/tmp/test6', name: 'bot' });
+      // Both sessions already running
+      fleetModule.getFleetStatus.mockResolvedValue([
+        { num: 5, state: 'idle' },
+        { num: 6, state: 'working' },
+      ]);
+
+      const results = await tq.respawnAll();
+      expect(results.respawned).toEqual([]);
+      expect(results.skipped).toEqual([5, 6]);
+      expect(results.failed).toEqual([]);
+    });
+
+    it('returns empty results when no spawned agents', async () => {
+      fleetModule.getFleetStatus.mockResolvedValue([]);
+      const results = await tq.respawnAll();
+      expect(results.respawned).toEqual([]);
+      expect(results.skipped).toEqual([]);
+      expect(results.failed).toEqual([]);
+    });
+
+    it('mixes skipped and attempted for partial fleet', async () => {
+      tq.spawnedAgents.set(5, { repoDir: '/tmp/test5', name: 'alpha' });
+      tq.spawnedAgents.set(6, { repoDir: '/tmp/test6', name: 'beta' });
+      // Only slot 5 is running
+      fleetModule.getFleetStatus.mockResolvedValue([{ num: 5, state: 'idle' }]);
+
+      const results = await tq.respawnAll();
+      expect(results.skipped).toEqual([5]);
+      // Slot 6 was attempted (respawned or failed depending on env)
+      const attempted = [...results.respawned, ...results.failed.map(f => f.num)];
+      expect(attempted).toEqual([6]);
+    });
+  });
+
+  describe('getSpawnedAgentsList', () => {
+    it('returns spawned agents as array', () => {
+      tq.spawnedAgents.set(5, { repoDir: '/tmp/test5', name: 'alpha' });
+      tq.spawnedAgents.set(8, { repoDir: '/tmp/test8', name: 'beta' });
+      const list = tq.getSpawnedAgentsList();
+      expect(list).toEqual([
+        { num: 5, repoDir: '/tmp/test5', name: 'alpha' },
+        { num: 8, repoDir: '/tmp/test8', name: 'beta' },
+      ]);
+    });
+
+    it('returns empty array when no agents', () => {
+      expect(tq.getSpawnedAgentsList()).toEqual([]);
+    });
+  });
 });

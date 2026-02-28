@@ -917,6 +917,64 @@ class TaskQueue extends EventEmitter {
     return { num, repoDir };
   }
 
+  // -- Respawn ------------------------------------------------------
+
+  getSpawnedAgentsList() {
+    const list = [];
+    for (const [num, info] of this.spawnedAgents) {
+      list.push({ num, ...info });
+    }
+    return list;
+  }
+
+  async respawnAll() {
+    const results = { respawned: [], skipped: [], failed: [] };
+    if (this.spawnedAgents.size === 0) return results;
+
+    const sessions = await fleet.getFleetStatus(this.config, this.router);
+    const liveSessions = new Set(sessions.map(s => s.num));
+
+    const agentYml = (
+      process.env.HIVE_AGENT_YML ||
+      path.join(os.homedir(), 'dev', 'agents', 'tmux', 'agent.yml')
+    ).replace(/^~/, os.homedir());
+
+    for (const [num, info] of this.spawnedAgents) {
+      if (liveSessions.has(num)) {
+        results.skipped.push(num);
+        continue;
+      }
+      const tmuxCmd = `/bin/zsh -lc 'tmuxinator start -p ${agentYml} N=${num} ROOT="${info.repoDir}" --no-attach'`;
+      try {
+        await execAsync(tmuxCmd, { timeout: 15000 });
+        log.info(`[respawn] session ${num} (${info.name}) restarted`);
+        results.respawned.push(num);
+      } catch (err) {
+        log.error(`[respawn] session ${num} failed: ${err.message}`);
+        results.failed.push({ num, error: err.message });
+      }
+    }
+
+    if (results.respawned.length > 0) {
+      this.pushFeed('state', null, `Respawned ${results.respawned.length} session(s): ${results.respawned.join(', ')}`);
+    }
+
+    // Run rename script once after all respawns
+    if (results.respawned.length > 0) {
+      const renameScript = process.env.HIVE_RENAME_SCRIPT;
+      if (renameScript) {
+        await new Promise(r => setTimeout(r, 2000));
+        try {
+          execSync(`bash "${renameScript}"`, { timeout: 10000, stdio: 'pipe' });
+        } catch {
+          // Rename is best-effort
+        }
+      }
+    }
+
+    return results;
+  }
+
   // -- Broadcast ----------------------------------------------------
 
   async broadcast(message, target, specificSessions) {
