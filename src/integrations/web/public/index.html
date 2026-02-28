@@ -510,12 +510,32 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   font-weight: 700; padding: 0 14px; border-radius: 6px; cursor: pointer;
 }
 #quick-send:disabled { opacity: 0.3; cursor: default; }
-
+.history-pill-wrap { position: relative; }
+.history-pill {
+  background: var(--bg3); border: none; color: var(--dim); font-size: 14px;
+  width: 32px; height: 32px; border-radius: 6px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+.history-pill:hover { color: var(--fg); background: var(--bg); }
+.history-popup {
+  display: none; position: absolute; bottom: calc(100% + 4px); left: 0;
+  background: var(--bg2); border: 1px solid var(--bg3); border-radius: 8px;
+  box-shadow: 0 -4px 16px rgba(0,0,0,0.4); min-width: 220px; max-width: 320px;
+  max-height: 240px; overflow-y: auto; z-index: 60; padding: 4px 0;
+}
+.history-popup.open { display: block; }
+.history-popup-item {
+  display: block; width: 100%; text-align: left; background: none; border: none;
+  color: var(--fg); font-size: 12px; padding: 6px 10px; cursor: pointer;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.history-popup-item:hover { background: var(--bg3); }
+.history-popup-empty { color: var(--dim); font-size: 11px; padding: 8px 10px; }
 /* ── Tasks panel ─────────────────────── */
 .tasks-panes { display: flex; flex-direction: column; height: 100%; }
 .tasks-list-pane { flex: 1; display: flex; flex-direction: column; min-height: 0; order: 1; }
 .tasks-session-pane { display: none; }
-.tasks-tabs { display: flex; gap: 4px; padding: 8px 10px 0; flex-shrink: 0; align-items: center; }
+.tasks-tabs { display: flex; gap: 4px; padding: 4px 10px 0; flex-shrink: 0; align-items: center; }
 .tasks-tab {
   background: var(--bg3); border: none; color: var(--dim); font-size: 12px;
   font-weight: 700; padding: 6px 16px; border-radius: 16px; cursor: pointer;
@@ -604,7 +624,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .task-card-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
 .task-card-row .task-card { flex: 1; min-width: 0; margin-bottom: 0; }
 .tasks-bulk-bar {
-  display: flex; gap: 6px; padding: 8px 10px; align-items: center;
+  display: flex; gap: 6px; padding: 4px 10px; align-items: center;
   background: var(--bg2); border-bottom: 1px solid var(--bg3); flex-shrink: 0;
 }
 .tasks-bulk-bar .bulk-count { font-size: 12px; font-weight: 700; color: var(--fg); flex: 1; }
@@ -1072,9 +1092,13 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .status-chip.review-chg { background: rgba(255,85,85,0.15); color: var(--red); }
 .status-chip.mode-auto { background: rgba(139,233,253,0.2); color: var(--cyan); }
 .status-chip.mode-manual { background: rgba(98,114,164,0.15); color: var(--dim); }
+.status-chip.history-chip-btn { background: rgba(189,147,249,0.15); color: var(--purple); }
 .status-chip.desig { text-transform: uppercase; }
 .desig-popover { position: fixed; background: var(--bg2); border: 1px solid var(--bg3); border-radius: 6px; padding: 4px 0; z-index: 200; min-width: 120px; max-height: 200px; overflow-y: auto; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
 .desig-popover-item { padding: 6px 12px; font-size: 12px; cursor: pointer; white-space: nowrap; text-transform: uppercase; font-weight: 600; }
+.history-popover { position: fixed; background: var(--bg2); border: 1px solid var(--bg3); border-radius: 8px; padding: 4px 0; z-index: 200; min-width: 220px; max-width: 360px; max-height: 240px; overflow-y: auto; box-shadow: 0 -4px 16px rgba(0,0,0,0.4); }
+.history-popover-item { padding: 6px 12px; font-size: 12px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--fg); }
+.history-popover-item:hover { background: var(--bg3); }
 .desig-popover-item:hover { background: var(--bg3); }
 #msg-input:focus { border-color: var(--purple); }
 #msg-input::placeholder { color: var(--dim); }
@@ -1473,6 +1497,10 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         <button id="quick-target">-</button>
         <button id="quick-mode">Tell</button>
         <input id="quick-input" type="text" placeholder="Select a session..." disabled autocomplete="off">
+        <div class="history-pill-wrap" id="quick-history-wrap" style="display:none">
+          <button class="history-pill" id="quick-history-btn">&#8635;</button>
+          <div class="history-popup" id="quick-history-popup"></div>
+        </div>
         <button id="quick-send" disabled>Send</button>
       </div>
     </div>
@@ -2249,6 +2277,11 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   const sidebarSummary = $('#sidebar-summary');
   let quickSession = null;
   let quickSendMode = 'tell';
+  const msgHistory = {};
+  let msgHistoryIdx = -1;
+  let msgHistoryDraft = '';
+  const MSG_HISTORY_MAX = 10;
+  try { const saved = localStorage.getItem('hive_msg_history'); if (saved) Object.assign(msgHistory, JSON.parse(saved)); } catch(e) {}
 
   // ── Auth management ──────────────────────────────
   const TOKEN_KEY = 'hive_token';
@@ -3235,6 +3268,12 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     const chips = [];
     const branch = s.branch || '';
 
+    // History chip (only if history exists for this session)
+    const h = msgHistory[String(s.num)] || [];
+    if (h.length) {
+      chips.push(`<span class="status-chip history-chip-btn" data-action="show-history" data-session="${s.num}">History</span>`);
+    }
+
     // Mode chip (Auto/Manual)
     const isAuto = autoSessions.has(s.num);
     const modeClass = isAuto ? 'mode-auto' : 'mode-manual';
@@ -3351,13 +3390,53 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     } else if (action === 'pick-desig') {
       e.stopPropagation();
       showDesigPopover(chip, sessionNum);
+    } else if (action === 'show-history') {
+      e.stopPropagation();
+      showHistoryPopover(chip, sessionNum);
     }
+  }
+
+  function closeHistoryPopover() {
+    const existing = document.querySelector('.history-popover');
+    if (existing) existing.remove();
+  }
+
+  function showHistoryPopover(chip, sessionNum) {
+    closeHistoryPopover();
+    closeDesigPopover();
+    const h = msgHistory[String(sessionNum)] || [];
+    if (!h.length) return;
+    const rect = chip.getBoundingClientRect();
+    const popover = document.createElement('div');
+    popover.className = 'history-popover';
+    popover.style.left = rect.left + 'px';
+    popover.style.bottom = (window.innerHeight - rect.top + 4) + 'px';
+    const items = h.slice().reverse(); // newest first
+    for (const m of items) {
+      const item = document.createElement('div');
+      item.className = 'history-popover-item';
+      item.textContent = m;
+      item.title = m;
+      item.addEventListener('click', (e) => {
+        e.stopPropagation();
+        // Fill the correct input based on which panel is active
+        if (activeTab === 'session-panel') {
+          msgInput.value = m; msgInput.focus();
+        } else if (activeTab === 'tasks-panel') {
+          tsMsgInput.value = m; tsMsgInput.focus();
+        }
+        closeHistoryPopover();
+      });
+      popover.appendChild(item);
+    }
+    document.body.appendChild(popover);
   }
 
   document.getElementById('session-status-line').addEventListener('click', handleStatusChipClick);
   document.getElementById('ts-status-line').addEventListener('click', handleStatusChipClick);
   document.addEventListener('click', (e) => {
     if (!e.target.closest('.desig-popover') && !e.target.closest('[data-action="pick-desig"]')) closeDesigPopover();
+    if (!e.target.closest('.history-popover') && !e.target.closest('[data-action="show-history"]')) closeHistoryPopover();
   });
 
   // Fit terminal to container, but use pane cols if wider (prevents ANSI line wrapping artifacts)
@@ -3723,25 +3802,42 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     if (isShellPane) {
       ws.send(JSON.stringify({ type: 'tell', session: currentSession, message, pane: activePane }));
     } else if (mode === 'ask') {
-      if (askPending) { showToast('Busy', 'Still waiting for previous ask to complete', 'error'); return; }
-      askPending = true; msgInput.disabled = true; sendBtn.disabled = true;
       ws.send(JSON.stringify({ type: 'ask', session: currentSession, message }));
-      // Safety timeout: unlock input if ask:done never arrives
-      setTimeout(() => { if (askPending) { askPending = false; msgInput.disabled = false; sendBtn.disabled = false; showToast('Timeout', 'Ask timed out — input unlocked', 'error'); } }, 5 * 60 * 1000);
     }
     else { ws.send(JSON.stringify({ type: 'tell', session: currentSession, message })); }
+    pushMsgHistory(currentSession, text);
+    msgHistoryIdx = -1;
+    msgHistoryDraft = '';
     msgInput.value = '';
     msgInput.style.height = 'auto';
+    updateSessionStatusLine();
   }
 
   sendBtn.addEventListener('click', sendMessage);
-  msgInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } });
+  msgInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); return; }
+    if (!currentSession) return;
+    const h = msgHistory[currentSession] || [];
+    if (e.key === 'ArrowUp') {
+      if (!h.length) return;
+      e.preventDefault();
+      if (msgHistoryIdx === -1) msgHistoryDraft = msgInput.value;
+      if (msgHistoryIdx < h.length - 1) msgHistoryIdx++;
+      msgInput.value = h[h.length - 1 - msgHistoryIdx];
+    } else if (e.key === 'ArrowDown') {
+      if (msgHistoryIdx <= -1) return;
+      e.preventDefault();
+      msgHistoryIdx--;
+      msgInput.value = msgHistoryIdx === -1 ? msgHistoryDraft : h[h.length - 1 - msgHistoryIdx];
+    }
+  });
 
   // ── Quick send from grid ─────────────────────────
   function selectQuickSession(num) {
     quickSession = String(num); quickTarget.textContent = num; quickTarget.classList.remove('empty');
     quickInput.disabled = false; quickSendEl.disabled = false;
     quickInput.placeholder = `Message session ${num}...`; quickInput.focus(); highlightQuickCard();
+    msgHistoryIdx = -1; msgHistoryDraft = ''; updateHistoryPill('quick-history-wrap', quickSession);
   }
 
   function highlightQuickCard() {
@@ -3753,6 +3849,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     quickSession = null; quickTarget.textContent = '-'; quickTarget.classList.add('empty');
     quickInput.disabled = true; quickSendEl.disabled = true; quickInput.placeholder = 'Select a session...'; quickInput.value = '';
     grid.querySelectorAll('.card').forEach(c => c.style.outline = '');
+    msgHistoryIdx = -1; msgHistoryDraft = ''; updateHistoryPill('quick-history-wrap', quickSession);
   });
 
   quickMode.addEventListener('click', () => {
@@ -3761,16 +3858,83 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     quickMode.className = quickSendMode === 'ask' ? 'ask' : '';
   });
 
+  function pushMsgHistory(session, text) {
+    if (!text) return;
+    if (!msgHistory[session]) msgHistory[session] = [];
+    const h = msgHistory[session];
+    if (h.length && h[h.length - 1] === text) return;
+    h.push(text);
+    if (h.length > MSG_HISTORY_MAX) h.shift();
+    localStorage.setItem('hive_msg_history', JSON.stringify(msgHistory));
+  }
+
+  function updateHistoryPill(wrapId, session) {
+    const wrap = document.getElementById(wrapId);
+    const has = session && msgHistory[session] && msgHistory[session].length;
+    wrap.style.display = has ? '' : 'none';
+  }
+
+  function toggleHistoryPopup(popupId, session, inputEl) {
+    const popup = document.getElementById(popupId);
+    if (popup.classList.contains('open')) { popup.classList.remove('open'); return; }
+    // Close any other open popups
+    document.querySelectorAll('.history-popup.open').forEach(p => p.classList.remove('open'));
+    const h = (session && msgHistory[session]) || [];
+    if (!h.length) return;
+    const items = h.slice().reverse(); // newest first
+    popup.innerHTML = items.map(m =>
+      `<button class="history-popup-item" title="${esc(m)}">${esc(m)}</button>`
+    ).join('');
+    popup.querySelectorAll('.history-popup-item').forEach((btn, i) => {
+      btn.addEventListener('click', () => {
+        inputEl.value = items[i];
+        inputEl.focus();
+        popup.classList.remove('open');
+      });
+    });
+    popup.classList.add('open');
+  }
+
   function quickSendMessage() {
     const text = quickInput.value.trim();
     if (!text || !quickSession || !ws || ws.readyState !== 1) return;
     if (quickSendMode === 'ask') { ws.send(JSON.stringify({ type: 'ask', session: quickSession, message: text })); showToast('Ask sent', `Session ${quickSession}`, 'success'); }
     else { ws.send(JSON.stringify({ type: 'tell', session: quickSession, message: text })); }
+    pushMsgHistory(quickSession, text);
+    msgHistoryIdx = -1;
+    msgHistoryDraft = '';
     quickInput.value = '';
+    updateHistoryPill('quick-history-wrap', quickSession);
   }
 
   quickSendEl.addEventListener('click', quickSendMessage);
-  quickInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') quickSendMessage(); });
+  quickInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { quickSendMessage(); return; }
+    if (!quickSession) return;
+    const h = msgHistory[quickSession] || [];
+    if (e.key === 'ArrowUp') {
+      if (!h.length) return;
+      e.preventDefault();
+      if (msgHistoryIdx === -1) msgHistoryDraft = quickInput.value;
+      if (msgHistoryIdx < h.length - 1) msgHistoryIdx++;
+      quickInput.value = h[h.length - 1 - msgHistoryIdx];
+    } else if (e.key === 'ArrowDown') {
+      if (msgHistoryIdx <= -1) return;
+      e.preventDefault();
+      msgHistoryIdx--;
+      quickInput.value = msgHistoryIdx === -1 ? msgHistoryDraft : h[h.length - 1 - msgHistoryIdx];
+    }
+  });
+
+  document.getElementById('quick-history-btn').addEventListener('click', () => {
+    toggleHistoryPopup('quick-history-popup', quickSession, quickInput);
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.history-pill-wrap')) {
+      document.querySelectorAll('.history-popup.open').forEach(p => p.classList.remove('open'));
+    }
+  });
 
   // ── Tasks panel ───────────────────────────────────
   $$('.tasks-tab').forEach(tab => {
@@ -4142,6 +4306,8 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       ws.send(JSON.stringify({ type: 'terminal:panes', session: tasksSessionNum }));
       ws.send(JSON.stringify({ type: 'git:info', session: tasksSessionNum }));
     }
+    msgHistoryIdx = -1; msgHistoryDraft = '';
+    updateTasksStatusLine();
     applyGitFilesSidebarState('ts');
     requestAnimationFrame(() => fitTasksTerminal());
     setTimeout(() => { const el = document.getElementById('tasks-session-terminal'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'end' }); }, 100);
@@ -4156,6 +4322,8 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     tsActivePane = null; tsSessionPanes = []; tsClaudePaneIdx = null;
     renderPaneTabs('ts');
     updateInputForPane(true, 'ts');
+    updateTasksStatusLine();
+    msgHistoryIdx = -1; msgHistoryDraft = '';
     updateTasksStatusLine();
   }
 
@@ -4361,12 +4529,32 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     } else {
       ws.send(JSON.stringify({ type: tasksSessionMode, session: tasksSessionNum, message }));
     }
+    pushMsgHistory(tasksSessionNum, text);
+    msgHistoryIdx = -1;
+    msgHistoryDraft = '';
     tsMsgInput.value = '';
     tsMsgInput.style.height = 'auto';
+    updateTasksStatusLine();
     showToast('Sent', `${tasksSessionMode === 'ask' ? 'Ask' : 'Tell'} → session ${tasksSessionNum}`, 'success');
   }
   tsSendBtn.addEventListener('click', sendTasksMessage);
-  tsMsgInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendTasksMessage(); } });
+  tsMsgInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendTasksMessage(); return; }
+    if (!tasksSessionNum) return;
+    const h = msgHistory[tasksSessionNum] || [];
+    if (e.key === 'ArrowUp') {
+      if (!h.length) return;
+      e.preventDefault();
+      if (msgHistoryIdx === -1) msgHistoryDraft = tsMsgInput.value;
+      if (msgHistoryIdx < h.length - 1) msgHistoryIdx++;
+      tsMsgInput.value = h[h.length - 1 - msgHistoryIdx];
+    } else if (e.key === 'ArrowDown') {
+      if (msgHistoryIdx <= -1) return;
+      e.preventDefault();
+      msgHistoryIdx--;
+      tsMsgInput.value = msgHistoryIdx === -1 ? msgHistoryDraft : h[h.length - 1 - msgHistoryIdx];
+    }
+  });
 
   // ── Select a task by ID (for URL deep-linking) ─────
   function selectTaskById(taskId) {
