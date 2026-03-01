@@ -322,6 +322,7 @@ class TaskQueue extends EventEmitter {
     this.emit('task:dispatched', task);
     this.pushFeed('task', sessionNum,
       `Task dispatched to session ${sessionNum}: "${task.text}"`);
+    log.info(`[dispatch] Task ${task.id} dispatched to S:${sessionNum}: "${task.text.slice(0, 80)}"`);
     this._saveState();
 
     // Fire-and-forget: send the task text to Claude
@@ -350,6 +351,7 @@ class TaskQueue extends EventEmitter {
     };
 
     sendTask().then((result) => {
+      log.info(`[dispatch] Task ${task.id} send ${result.success ? 'OK' : 'FAILED'} to S:${sessionNum}${result.error ? ': ' + result.error : ''}`);
       if (!result.success) {
         this.failTask(task.id, result.error || 'Tell failed');
       }
@@ -382,6 +384,7 @@ class TaskQueue extends EventEmitter {
   _handleSessionIdle(num, preview, paneCols) {
     // Complete active task for this session
     const taskId = this.activeTaskBySession.get(num);
+    log.info(`[idle] S:${num} idle — ${taskId ? 'completing task ' + taskId : 'no active task'}`);
     if (taskId) {
       const task = this.tasks.get(taskId);
       if (!task || task.mode !== 'manual') {

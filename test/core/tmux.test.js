@@ -26,16 +26,20 @@ describe('tmux — pure functions', () => {
       expect(tmux.detectState('   \n  \n  ', config)).toBe('off');
     });
 
-    it('returns "working" for active content', () => {
-      expect(tmux.detectState('Compiling typescript...', config)).toBe('working');
-      expect(tmux.detectState('Reading file /src/index.js\nAnalyzing...', config)).toBe('working');
+    it('returns "off" for content without TUI separator (Claude not running)', () => {
+      expect(tmux.detectState('Compiling typescript...', config)).toBe('off');
+      expect(tmux.detectState('Reading file /src/index.js\nAnalyzing...', config)).toBe('off');
+    });
+
+    it('returns "working" for active content with TUI separator', () => {
+      const sep = '─'.repeat(40);
+      expect(tmux.detectState(`Compiling typescript...\n${sep}\nModel: Opus`, config)).toBe('working');
     });
 
     it('strips non-printable characters before matching', () => {
       // detectState strips chars outside 0x20-0x7E range, then tests against patterns
-      // \x1b is stripped but [ ] digits are printable, so ANSI codes leave residue
-      // This means raw ANSI content is "working" since the residue doesn't match idle/off
-      expect(tmux.detectState('\x1b[32m> \x1b[0m', config)).toBe('working');
+      // Without TUI separator, content is 'off' (Claude not running)
+      expect(tmux.detectState('\x1b[32m> \x1b[0m', config)).toBe('off');
       // Clean content with just > matches idle
       expect(tmux.detectState('> ', config)).toBe('idle');
     });

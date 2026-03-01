@@ -229,6 +229,7 @@ function _classifyState(lines, config) {
     }
 
     // Real content that isn't idle/off → working
+    if (separatorIdx < 0) return 'off';  // No TUI separator → Claude not running
     return 'working';
   }
 
