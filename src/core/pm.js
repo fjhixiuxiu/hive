@@ -33,6 +33,7 @@ class ProjectManager extends EventEmitter {
       schedule: cfg.schedule || null,
       taskFormat: cfg.taskFormat || null,
       checklistTemplate: cfg.checklistTemplate || null,
+      completionConditions: cfg.completionConditions || [],
       enabled: false,
       seenKeys: [],
       tasksCreated: 0,
@@ -142,6 +143,7 @@ class ProjectManager extends EventEmitter {
         schedule: data.schedule || null,
         taskFormat: data.taskFormat || null,
         checklistTemplate: data.checklistTemplate || null,
+        completionConditions: Array.isArray(data.completionConditions) ? data.completionConditions : [],
         enabled: data.enabled || false,
         seenKeys: Array.isArray(data.seenKeys) ? data.seenKeys : [],
         tasksCreated: data.tasksCreated || 0,
@@ -177,13 +179,13 @@ class ProjectManager extends EventEmitter {
     // Determine the callback based on source type
     let callback;
     if (pm.source.type === 'manual') {
-      callback = () => this._createManualTask(id);
+      callback = async () => { await this._createManualTask(id); await this._checkCompletions(id); };
     } else if (pm.source.type === 'command') {
-      callback = () => this._createCommandTask(id);
+      callback = async () => { await this._createCommandTask(id); await this._checkCompletions(id); };
     } else if (pm.source.type === 'script') {
-      callback = () => this._runScript(id);
+      callback = async () => { await this._runScript(id); await this._checkCompletions(id); };
     } else {
-      callback = () => this._poll(id);
+      callback = async () => { await this._poll(id); await this._checkCompletions(id); };
     }
 
     // Run immediately (skip for manual+schedule — those should only fire on cron)
@@ -437,6 +439,7 @@ class ProjectManager extends EventEmitter {
         }
 
         const task = this.taskQueue.createTask(fullText, mode, pm.targetSession || null, pm.designation, meta);
+        task.sourceKey = issue.key;
         this._seedChecklist(pm, task);
 
         // Post GitHub PR comment if this is a PR-sourced task
@@ -477,6 +480,73 @@ class ProjectManager extends EventEmitter {
       this.emit('pm:error', { id, error: err.message });
       this.emit('pm:changed');
     }
+  }
+
+  async _checkCompletions(id) {
+    const pm = this.pms.get(id);
+    if (!pm || !pm.enabled || !pm.completionConditions?.length) return;
+
+    const prefix = `pm:${pm.name}`;
+    const activeTasks = [...this.taskQueue.tasks.values()]
+      .filter(t => (t.status === 'queued' || t.status === 'dispatched') && t.source === prefix && t.sourceKey);
+
+    for (const task of activeTasks) {
+      try {
+        const reason = await this._evaluateCompletion(pm, task);
+        if (reason) {
+          if (task.status === 'dispatched') {
+            this.taskQueue.completeTask(task.id, `Auto-completed: ${reason}`);
+          } else {
+            // Queued tasks can't use completeTask (requires dispatched), mark directly
+            task.status = 'completed';
+            task.completedAt = Date.now();
+            task.result = `Auto-completed: ${reason}`;
+            this.taskQueue.emit('task:completed', task);
+          }
+          this.taskQueue.pushFeed('task', task.assignedTo,
+            `PM "${pm.name}" auto-completed task: ${reason}`);
+        }
+      } catch (err) {
+        log.error(`[pm] Completion check error for task ${task.id}:`, err.message);
+      }
+    }
+  }
+
+  async _evaluateCompletion(pm, task) {
+    for (const cond of pm.completionConditions) {
+      try {
+        if (cond.type === 'github-pr-state') {
+          const prInfo = this._parsePRFromKey(task.sourceKey);
+          if (!prInfo) continue;
+          const url = `https://api.github.com/repos/${prInfo.repo}/pulls/${prInfo.prNumber}`;
+          const pr = await this._httpRequest(url, this._githubHeaders());
+          if (cond.states.includes('merged') && pr.merged) {
+            return `PR #${prInfo.prNumber} merged`;
+          }
+          if (cond.states.includes('closed') && pr.state === 'closed' && !pr.merged) {
+            return `PR #${prInfo.prNumber} closed`;
+          }
+        } else if (cond.type === 'jira-status') {
+          const baseUrl = process.env.JIRA_BASE_URL;
+          const email = process.env.JIRA_EMAIL;
+          const apiToken = process.env.JIRA_API_TOKEN;
+          if (!baseUrl || !email || !apiToken) continue;
+          const auth = Buffer.from(`${email}:${apiToken}`).toString('base64');
+          const url = `${baseUrl}/rest/api/3/issue/${task.sourceKey}?fields=status`;
+          const issue = await this._httpRequest(url, {
+            'Authorization': `Basic ${auth}`,
+            'Accept': 'application/json',
+          });
+          const statusName = issue.fields?.status?.name;
+          if (statusName && cond.statuses.some(s => s.toLowerCase() === statusName.toLowerCase())) {
+            return `${task.sourceKey} status: ${statusName}`;
+          }
+        }
+      } catch (err) {
+        log.error(`[pm] Completion eval error (${cond.type}) for ${task.sourceKey}:`, err.message);
+      }
+    }
+    return null;
   }
 
   _evaluateComplexity(issue, threshold) {

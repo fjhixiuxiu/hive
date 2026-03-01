@@ -635,6 +635,220 @@ describe('ProjectManager', () => {
     });
   });
 
+  // ── Completion conditions ──
+
+  describe('completionConditions', () => {
+    it('stores completionConditions on create', () => {
+      const created = pm.create({
+        name: 'CC PM',
+        completionConditions: [{ type: 'github-pr-state', states: ['merged'] }],
+      });
+      expect(created.completionConditions).toEqual([{ type: 'github-pr-state', states: ['merged'] }]);
+    });
+
+    it('defaults completionConditions to empty array', () => {
+      const created = pm.create({ name: 'No CC' });
+      expect(created.completionConditions).toEqual([]);
+    });
+
+    it('serialization round-trip preserves completionConditions', () => {
+      pm.create({
+        name: 'CC Round Trip',
+        completionConditions: [
+          { type: 'github-pr-state', states: ['merged', 'closed'] },
+          { type: 'jira-status', statuses: ['Done', 'Closed'] },
+        ],
+      });
+      const data = pm.serialize();
+      expect(data[0].completionConditions).toHaveLength(2);
+
+      const pm2 = new ProjectManager(taskQueue);
+      pm2.loadState(data);
+      const loaded = pm2.getAll()[0];
+      expect(loaded.completionConditions).toEqual([
+        { type: 'github-pr-state', states: ['merged', 'closed'] },
+        { type: 'jira-status', statuses: ['Done', 'Closed'] },
+      ]);
+      pm2.stopAll();
+    });
+
+    it('loadState handles missing completionConditions (backward compat)', () => {
+      const pm2 = new ProjectManager(taskQueue);
+      pm2.loadState([{
+        id: '50',
+        name: 'Old PM',
+        source: { type: 'jira', jql: 'test' },
+        enabled: false,
+      }]);
+      expect(pm2.get('50').completionConditions).toEqual([]);
+      pm2.stopAll();
+    });
+
+    it('_checkCompletions skips PM without completionConditions', async () => {
+      const created = pm.create({ name: 'No CC PM' });
+      created.enabled = true;
+      const spy = vi.spyOn(pm, '_evaluateCompletion');
+      await pm._checkCompletions(created.id);
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it('_checkCompletions skips tasks without sourceKey', async () => {
+      const created = pm.create({
+        name: 'CC PM',
+        completionConditions: [{ type: 'github-pr-state', states: ['merged'] }],
+      });
+      created.enabled = true;
+      // Add a task without sourceKey
+      taskQueue.tasks.set('t1', {
+        id: 't1', status: 'queued', source: 'pm:CC PM', sourceKey: null,
+      });
+      const spy = vi.spyOn(pm, '_evaluateCompletion');
+      await pm._checkCompletions(created.id);
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it('_checkCompletions skips completed tasks', async () => {
+      const created = pm.create({
+        name: 'CC PM',
+        completionConditions: [{ type: 'github-pr-state', states: ['merged'] }],
+      });
+      created.enabled = true;
+      taskQueue.tasks.set('t1', {
+        id: 't1', status: 'completed', source: 'pm:CC PM', sourceKey: 'org/repo#1',
+      });
+      const spy = vi.spyOn(pm, '_evaluateCompletion');
+      await pm._checkCompletions(created.id);
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it('_checkCompletions auto-completes GitHub PR task when merged', async () => {
+      const created = pm.create({
+        name: 'GH PM',
+        completionConditions: [{ type: 'github-pr-state', states: ['merged', 'closed'] }],
+      });
+      created.enabled = true;
+      taskQueue.tasks.set('t1', {
+        id: 't1', status: 'queued', source: 'pm:GH PM', sourceKey: 'org/repo#42',
+      });
+      vi.spyOn(pm, '_httpRequest').mockResolvedValue({ merged: true, state: 'closed' });
+      vi.spyOn(pm, '_githubHeaders').mockReturnValue({ Authorization: 'Bearer test' });
+
+      await pm._checkCompletions(created.id);
+
+      const task = taskQueue.tasks.get('t1');
+      expect(task.status).toBe('completed');
+      expect(task.result).toContain('PR #42 merged');
+      expect(taskQueue.pushFeed).toHaveBeenCalledWith(
+        'task', undefined,
+        expect.stringContaining('auto-completed'),
+      );
+    });
+
+    it('_checkCompletions auto-completes dispatched task via completeTask', async () => {
+      const created = pm.create({
+        name: 'GH PM2',
+        completionConditions: [{ type: 'github-pr-state', states: ['closed'] }],
+      });
+      created.enabled = true;
+      taskQueue.tasks.set('t2', {
+        id: 't2', status: 'dispatched', source: 'pm:GH PM2', sourceKey: 'org/repo#10',
+        assignedTo: 5,
+      });
+      taskQueue.completeTask = vi.fn().mockReturnValue({
+        id: 't2', status: 'completed',
+      });
+      vi.spyOn(pm, '_httpRequest').mockResolvedValue({ merged: false, state: 'closed' });
+      vi.spyOn(pm, '_githubHeaders').mockReturnValue({ Authorization: 'Bearer test' });
+
+      await pm._checkCompletions(created.id);
+
+      expect(taskQueue.completeTask).toHaveBeenCalledWith('t2', 'Auto-completed: PR #10 closed');
+    });
+
+    it('_checkCompletions auto-completes JIRA task when status matches', async () => {
+      const created = pm.create({
+        name: 'JIRA PM',
+        completionConditions: [{ type: 'jira-status', statuses: ['Done', 'Closed'] }],
+      });
+      created.enabled = true;
+      taskQueue.tasks.set('t3', {
+        id: 't3', status: 'queued', source: 'pm:JIRA PM', sourceKey: 'DEV-123',
+      });
+      // Set env vars for JIRA
+      const origBase = process.env.JIRA_BASE_URL;
+      const origEmail = process.env.JIRA_EMAIL;
+      const origToken = process.env.JIRA_API_TOKEN;
+      process.env.JIRA_BASE_URL = 'https://test.atlassian.net';
+      process.env.JIRA_EMAIL = 'test@test.com';
+      process.env.JIRA_API_TOKEN = 'token';
+      vi.spyOn(pm, '_httpRequest').mockResolvedValue({
+        fields: { status: { name: 'Done' } },
+      });
+
+      await pm._checkCompletions(created.id);
+
+      const task = taskQueue.tasks.get('t3');
+      expect(task.status).toBe('completed');
+      expect(task.result).toContain('DEV-123 status: Done');
+
+      process.env.JIRA_BASE_URL = origBase;
+      process.env.JIRA_EMAIL = origEmail;
+      process.env.JIRA_API_TOKEN = origToken;
+    });
+
+    it('_checkCompletions does not complete when condition not met', async () => {
+      const created = pm.create({
+        name: 'GH PM3',
+        completionConditions: [{ type: 'github-pr-state', states: ['merged'] }],
+      });
+      created.enabled = true;
+      taskQueue.tasks.set('t4', {
+        id: 't4', status: 'queued', source: 'pm:GH PM3', sourceKey: 'org/repo#5',
+      });
+      vi.spyOn(pm, '_httpRequest').mockResolvedValue({ merged: false, state: 'open' });
+      vi.spyOn(pm, '_githubHeaders').mockReturnValue({ Authorization: 'Bearer test' });
+
+      await pm._checkCompletions(created.id);
+
+      expect(taskQueue.tasks.get('t4').status).toBe('queued');
+    });
+
+    it('_checkCompletions handles API errors gracefully', async () => {
+      const created = pm.create({
+        name: 'Err PM',
+        completionConditions: [{ type: 'github-pr-state', states: ['merged'] }],
+      });
+      created.enabled = true;
+      taskQueue.tasks.set('t5', {
+        id: 't5', status: 'queued', source: 'pm:Err PM', sourceKey: 'org/repo#99',
+      });
+      vi.spyOn(pm, '_httpRequest').mockRejectedValue(new Error('Network error'));
+      vi.spyOn(pm, '_githubHeaders').mockReturnValue({ Authorization: 'Bearer test' });
+
+      // Should not throw
+      await pm._checkCompletions(created.id);
+      expect(taskQueue.tasks.get('t5').status).toBe('queued');
+    });
+
+    it('_poll stores sourceKey on created tasks', async () => {
+      const created = pm.create({
+        name: 'SK PM',
+        source: { type: 'github-prs', repo: 'org/repo' },
+      });
+      created.enabled = true;
+      const mockTask = { id: 'st1', text: '', status: 'queued' };
+      taskQueue.createTask = vi.fn().mockReturnValue(mockTask);
+      vi.spyOn(pm, '_fetchGithubPrs').mockResolvedValue([
+        { key: 'org/repo#7', summary: 'Test PR', issueType: 'pr', storyPoints: null },
+      ]);
+      vi.spyOn(pm, '_checkCompletions').mockImplementation(() => {});
+
+      await pm._poll(created.id);
+
+      expect(mockTask.sourceKey).toBe('org/repo#7');
+    });
+  });
+
   // ── Integration / edge cases ──
 
   describe('integration / edge cases', () => {
