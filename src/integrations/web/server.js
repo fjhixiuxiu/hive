@@ -2,7 +2,7 @@ const http = require('http');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const { execFile } = require('child_process');
+const { execFile, execSync, spawn } = require('child_process');
 const express = require('express');
 const { WebSocketServer } = require('ws');
 const fleet = require('../../core/fleet');
@@ -1312,6 +1312,97 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
             ws.send(JSON.stringify({ type: 'idea:list', ideas: [] }));
           }
         });
+        break;
+      }
+
+      case 'update:status': {
+        if (!checkPermission(ws, user, 'admin')) break;
+        const hiveRoot = path.join(__dirname, '..', '..', '..');
+        try {
+          const branch = execSync('git branch --show-current', { cwd: hiveRoot, encoding: 'utf8' }).trim();
+          const commitRaw = execSync('git log -1 --format="%h|%s|%ar"', { cwd: hiveRoot, encoding: 'utf8' }).trim();
+          const [hash, subject, timeAgo] = commitRaw.split('|');
+          const branchesRaw = execSync('git branch -r --format="%(refname:short)"', { cwd: hiveRoot, encoding: 'utf8' }).trim();
+          const remoteBranches = branchesRaw.split('\n')
+            .map(b => b.replace(/^origin\//, ''))
+            .filter(b => b && b !== 'HEAD');
+          ws.send(JSON.stringify({ type: 'update:status', branch, hash, subject, timeAgo, remoteBranches }));
+        } catch (err) {
+          ws.send(JSON.stringify({ type: 'update:error', error: err.message }));
+        }
+        break;
+      }
+
+      case 'update:pull': {
+        if (!checkPermission(ws, user, 'admin')) break;
+        const hiveDir = path.join(__dirname, '..', '..', '..');
+        const targetBranch = msg.branch;
+        const sendLog = (step, output) => {
+          try { ws.send(JSON.stringify({ type: 'update:log', step, output })); } catch (_) {}
+        };
+        try {
+          // Step 0: stash local changes so pull doesn't conflict
+          const dirtyCheck = execSync('git status --porcelain', { cwd: hiveDir, encoding: 'utf8' }).trim();
+          let didStash = false;
+          if (dirtyCheck) {
+            sendLog('stash', 'Stashing local changes...');
+            execSync('git stash --include-untracked 2>&1', { cwd: hiveDir, encoding: 'utf8', timeout: 10000 });
+            didStash = true;
+            sendLog('stash', 'Done.');
+          }
+
+          // Step 1: fetch
+          sendLog('fetch', 'Running git fetch origin...');
+          const fetchOut = execSync('git fetch origin 2>&1', { cwd: hiveDir, encoding: 'utf8', timeout: 30000 });
+          sendLog('fetch', fetchOut || 'Done.');
+
+          // Step 2: checkout if different branch
+          const currentBranch = execSync('git branch --show-current', { cwd: hiveDir, encoding: 'utf8' }).trim();
+          if (targetBranch && targetBranch !== currentBranch) {
+            sendLog('checkout', `Switching to ${targetBranch}...`);
+            const checkoutOut = execSync(`git checkout ${targetBranch} 2>&1`, { cwd: hiveDir, encoding: 'utf8', timeout: 15000 });
+            sendLog('checkout', checkoutOut || 'Done.');
+          }
+
+          // Step 3: pull
+          sendLog('pull', 'Running git pull...');
+          const pullOut = execSync('git pull 2>&1', { cwd: hiveDir, encoding: 'utf8', timeout: 30000 });
+          sendLog('pull', pullOut || 'Done.');
+
+          // Step 3b: re-apply stashed changes
+          if (didStash) {
+            sendLog('stash', 'Re-applying local changes...');
+            try {
+              execSync('git stash pop 2>&1', { cwd: hiveDir, encoding: 'utf8', timeout: 10000 });
+              sendLog('stash', 'Done.');
+            } catch (stashErr) {
+              sendLog('stash', 'Stash pop had conflicts — local changes may need manual merge.');
+            }
+          }
+
+          // Step 4: npm test
+          sendLog('test', 'Running npm test...');
+          try {
+            const testOut = execSync('npm test 2>&1', { cwd: hiveDir, encoding: 'utf8', timeout: 120000 });
+            sendLog('test', testOut || 'All tests passed.');
+          } catch (testErr) {
+            sendLog('test', testErr.stdout || testErr.message);
+            ws.send(JSON.stringify({ type: 'update:error', error: 'Tests failed — aborting restart.' }));
+            break;
+          }
+
+          // Step 5: restart
+          sendLog('restart', 'Restarting hive...');
+          ws.send(JSON.stringify({ type: 'update:restarting' }));
+
+          const pid = process.pid;
+          const restartScript = `sleep 1 && kill ${pid} && cd "${hiveDir}" && node src/index.js > /tmp/hive.log 2>&1`;
+          const child = spawn('bash', ['-c', restartScript], { detached: true, stdio: 'ignore' });
+          child.unref();
+        } catch (err) {
+          sendLog('error', err.message);
+          ws.send(JSON.stringify({ type: 'update:error', error: err.message }));
+        }
         break;
       }
     }
