@@ -109,11 +109,21 @@ async function getFleetStatus(config, router) {
       const nc = getNodeConfig(config, nodeId);
       return nc.sessions.pattern.test(name);
     });
-    const result = await Promise.all(matching.map(async ({ name, nodeId, lastActivity }) => {
+    const all_sessions = await Promise.all(matching.map(async ({ name, nodeId, lastActivity }) => {
       const node = router.getNode(nodeId);
       const session = await getSession(config, node, name, nodeId);
       return { ...session, nodeId, lastActivity };
     }));
+    // Deduplicate by session num — keep the most recently active session
+    // (stale renamed tmux sessions like "5-old-branch" can linger alongside "5")
+    const byNum = new Map();
+    for (const s of all_sessions) {
+      const prev = byNum.get(s.num);
+      if (!prev || (s.lastActivity || 0) > (prev.lastActivity || 0)) {
+        byNum.set(s.num, s);
+      }
+    }
+    const result = Array.from(byNum.values()).sort((a, b) => a.num - b.num);
     _fleetCache.result = result;
     _fleetCache.ts = Date.now();
     _fleetCache.pending = null;
