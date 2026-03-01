@@ -685,9 +685,9 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 }
 .ts-scroll-pause {
   position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%);
-  background: var(--purple); color: var(--bg); font-size: 12px; font-weight: 600;
-  padding: 6px 14px; border-radius: 16px; cursor: pointer; z-index: 10; opacity: 0.9;
-  white-space: nowrap;
+  background: var(--purple); color: var(--bg);
+  padding: 8px; border-radius: 50%; cursor: pointer; z-index: 10; opacity: 0.9;
+  line-height: 0;
 }
 .ts-cmd-bar {
   display: flex; gap: 4px; padding: 6px 10px; background: var(--bg2);
@@ -1056,7 +1056,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 #terminal-wrap { flex: 1; overflow: hidden; padding: 4px; position: relative; touch-action: none; min-height: 0; }
 #terminal-wrap .xterm { height: 100%; }
 .xterm .xterm-viewport { touch-action: pan-y !important; -webkit-overflow-scrolling: touch !important; overscroll-behavior: contain; }
-#scroll-pause { position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%); background: var(--purple); color: var(--bg); font-size: 12px; font-weight: 600; padding: 6px 14px; border-radius: 16px; cursor: pointer; z-index: 10; opacity: 0.9; white-space: nowrap; }
+#scroll-pause { position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%); background: var(--purple); color: var(--bg); padding: 8px; border-radius: 50%; cursor: pointer; z-index: 10; opacity: 0.9; line-height: 0; }
 #keys-bar { display: flex; gap: 4px; padding: 6px 10px; background: var(--bg2); border-top: 1px solid var(--bg3); flex-shrink: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .key-btn { background: var(--bg3); border: none; color: var(--fg); font-size: 13px; font-weight: 600; padding: 8px 14px; border-radius: 6px; cursor: pointer; white-space: nowrap; flex-shrink: 0; font-family: 'SF Mono', 'Menlo', monospace; }
 .key-btn:active { background: var(--purple); color: var(--bg); }
@@ -3479,7 +3479,8 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     let el = document.getElementById('scroll-pause');
     if (show && !el) {
       el = document.createElement('div'); el.id = 'scroll-pause';
-      el.textContent = 'Scroll paused — tap to resume';
+      el.title = 'Scroll to bottom';
+      el.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>';
       el.addEventListener('click', () => { userScrolledUp = false; scrollIndicator(false); if (term) term.scrollToBottom(); if (pendingContent !== null) { writeTerminalContent(pendingContent); pendingContent = null; } });
       termWrap.appendChild(el);
     } else if (!show && el) { el.remove(); }
@@ -4219,7 +4220,8 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     let el = container.querySelector('.ts-scroll-pause');
     if (show && !el) {
       el = document.createElement('div'); el.className = 'ts-scroll-pause';
-      el.textContent = 'Scroll paused — tap to resume';
+      el.title = 'Scroll to bottom';
+      el.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>';
       el.addEventListener('click', () => { tsUserScrolledUp = false; tsScrollIndicator(false); if (tasksSessionTerm) tasksSessionTerm.scrollToBottom(); if (tsPendingContent !== null) { writeTasksSessionContent(tsPendingContent); tsPendingContent = null; } });
       container.appendChild(el);
     } else if (!show && el) { el.remove(); }
