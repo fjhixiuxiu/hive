@@ -168,15 +168,17 @@ class ProjectManager extends EventEmitter {
       return;
     }
 
-    // Manual source: create one task immediately, no polling
-    if (pm.source.type === 'manual') {
+    // Manual source: create one task immediately; if no schedule, stop
+    if (pm.source.type === 'manual' && !pm.schedule) {
       this._createManualTask(id);
       return;
     }
 
     // Determine the callback based on source type
     let callback;
-    if (pm.source.type === 'command') {
+    if (pm.source.type === 'manual') {
+      callback = () => this._createManualTask(id);
+    } else if (pm.source.type === 'command') {
       callback = () => this._createCommandTask(id);
     } else if (pm.source.type === 'script') {
       callback = () => this._runScript(id);
@@ -184,8 +186,10 @@ class ProjectManager extends EventEmitter {
       callback = () => this._poll(id);
     }
 
-    // Run immediately
-    callback();
+    // Run immediately (skip for manual+schedule — those should only fire on cron)
+    if (!(pm.source.type === 'manual' && pm.schedule)) {
+      callback();
+    }
 
     // Schedule repeats: cron expression takes precedence over interval
     if (pm.schedule && cron.validate(pm.schedule)) {
@@ -225,6 +229,13 @@ class ProjectManager extends EventEmitter {
       return;
     }
 
+    // Skip if there's already a queued or dispatched task with the same text
+    const expectedText = pm.instructions ? `${text}\n\nInstructions: ${pm.instructions}` : text;
+    const existing = [...this.taskQueue.tasks.values()].find(
+      (t) => t.text === expectedText && (t.status === 'queued' || t.status === 'dispatched'),
+    );
+    if (existing) return;
+
     const key = `manual-${id}-${Date.now()}`;
     pm.seenKeys.push(key);
     const mode = 'manual'; // manual tasks always go to manual queue
@@ -239,9 +250,11 @@ class ProjectManager extends EventEmitter {
     pm.lastPoll = Date.now();
     pm.lastError = null;
 
-    // Auto-disable after creating the task
-    pm.enabled = false;
-    this._stopPolling(id);
+    // Auto-disable after creating the task (unless scheduled to repeat)
+    if (!pm.schedule) {
+      pm.enabled = false;
+      this._stopPolling(id);
+    }
 
     this.taskQueue.pushFeed('task', null, `PM "${pm.name}" created manual task`);
     this._save();

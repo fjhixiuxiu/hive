@@ -6693,9 +6693,9 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         if (i > 0) el.style.display = 'none';
       });
     }
-    // Hide schedule for manual/slack (no polling)
+    // Hide schedule for slack (no polling); manual supports cron schedule
     const schedField = document.getElementById('pm-form-schedule-field');
-    if (schedField) schedField.style.display = (type === 'manual' || type === 'slack') ? 'none' : '';
+    if (schedField) schedField.style.display = (type === 'slack') ? 'none' : '';
     const threshField = document.getElementById('pm-form-threshold').closest('.pm-form-field');
     if (threshField) threshField.style.display = (type === 'manual' || type === 'command' || type === 'script' || type === 'slack') ? 'none' : '';
     const instrField = document.getElementById('pm-form-instructions').closest('.pm-form-field');
