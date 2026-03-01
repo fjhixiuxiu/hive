@@ -1888,6 +1888,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         <option value="github-prs">GitHub PRs</option>
         <option value="github-re-reviews">GitHub Re-Reviews</option>
         <option value="command">Command</option>
+        <option value="script">Script</option>
         <option value="slack">Slack</option>
         <option value="manual">Manual</option>
         <option value="jenkins">Jenkins (Tests)</option>
@@ -1934,6 +1935,19 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       <label class="pm-form-label">Command</label>
       <input class="pm-form-input" id="pm-form-command" type="text" placeholder="/cp-review" autocomplete="off">
       <span style="font-size:11px;color:var(--dim);margin-top:4px;display:block;">A Claude slash command. Runs immediately when enabled, then repeats on the poll interval. The command handles all logic — no instructions or threshold needed.</span>
+    </div>
+    <div class="pm-form-field pm-fields-script" style="display:none">
+      <label class="pm-form-label">Shell Script</label>
+      <textarea class="pm-form-input" id="pm-form-script" rows="4" placeholder="#!/bin/zsh&#10;curl -s https://api.example.com/health | jq .status" style="resize:vertical;font-family:monospace;font-size:12px"></textarea>
+      <span style="font-size:11px;color:var(--dim);margin-top:4px;display:block;">Runs via /bin/zsh -l with 30s timeout. Output is handled per the "On Output" setting below.</span>
+    </div>
+    <div class="pm-form-field pm-fields-script" style="display:none">
+      <label class="pm-form-label">On Output</label>
+      <select class="pm-form-select" id="pm-form-script-action">
+        <option value="feed">Post to feed only</option>
+        <option value="task">Always create task</option>
+        <option value="task-if-output">Create task only if output</option>
+      </select>
     </div>
     <div class="pm-form-field pm-fields-manual" style="display:none">
       <label class="pm-form-label">Task Instructions</label>
@@ -1990,14 +2004,24 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       <label class="pm-form-label">Auto Threshold (story points)</label>
       <input class="pm-form-input" id="pm-form-threshold" type="number" value="3" min="0" max="100">
     </div>
-    <div class="pm-form-field">
-      <label class="pm-form-label">Poll Interval</label>
-      <select class="pm-form-select" id="pm-form-interval">
-        <option value="30000">30 seconds</option>
-        <option value="60000" selected>1 minute</option>
-        <option value="300000">5 minutes</option>
-        <option value="900000">15 minutes</option>
-      </select>
+    <div class="pm-form-field" id="pm-form-schedule-field">
+      <label class="pm-form-label">Schedule</label>
+      <div style="display:flex;gap:4px;margin-bottom:6px">
+        <button type="button" class="pm-sched-tab selected" data-mode="interval" style="flex:1;padding:4px 0;font-size:11px;border:1px solid var(--border);background:var(--accent);color:#fff;border-radius:4px;cursor:pointer">Interval</button>
+        <button type="button" class="pm-sched-tab" data-mode="cron" style="flex:1;padding:4px 0;font-size:11px;border:1px solid var(--border);background:var(--surface);color:var(--text);border-radius:4px;cursor:pointer">Cron</button>
+      </div>
+      <div id="pm-sched-interval">
+        <select class="pm-form-select" id="pm-form-interval">
+          <option value="30000">30 seconds</option>
+          <option value="60000" selected>1 minute</option>
+          <option value="300000">5 minutes</option>
+          <option value="900000">15 minutes</option>
+        </select>
+      </div>
+      <div id="pm-sched-cron" style="display:none">
+        <input class="pm-form-input" id="pm-form-cron" type="text" placeholder="0 9 * * 1-5 (9am weekdays)" autocomplete="off">
+        <span style="font-size:11px;color:var(--dim);margin-top:4px;display:block;">Standard cron: min hour day month weekday</span>
+      </div>
     </div>
     <div class="dialog-actions">
       <button class="dialog-btn primary" id="pm-form-save">Save</button>
@@ -6498,6 +6522,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         </div>
         <div class="pm-meta">
           <span>${pm.source.type}</span>
+          <span>${pm.schedule ? 'cron: ' + esc(pm.schedule) : pm.pollInterval ? 'every ' + (pm.pollInterval < 60000 ? (pm.pollInterval/1000)+'s' : (pm.pollInterval/60000)+'m') : ''}</span>
           <span>${pm.tasksCreated || 0} tasks</span>
           <span>polled ${lastPoll}</span>
         </div>
@@ -6541,11 +6566,27 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 
   document.getElementById('pm-form-source').addEventListener('change', togglePmSourceFields);
 
+  // Schedule tab toggle (interval vs cron)
+  document.querySelectorAll('.pm-sched-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.pm-sched-tab').forEach(t => {
+        t.classList.remove('selected');
+        t.style.background = 'var(--surface)'; t.style.color = 'var(--text)';
+      });
+      tab.classList.add('selected');
+      tab.style.background = 'var(--accent)'; tab.style.color = '#fff';
+      const mode = tab.dataset.mode;
+      document.getElementById('pm-sched-interval').style.display = mode === 'interval' ? '' : 'none';
+      document.getElementById('pm-sched-cron').style.display = mode === 'cron' ? '' : 'none';
+      if (mode === 'interval') document.getElementById('pm-form-cron').value = '';
+    });
+  });
+
   function togglePmSourceFields() {
     const type = document.getElementById('pm-form-source').value;
     const isGithub = type === 'github-issues' || type === 'github-prs' || type === 'github-re-reviews';
     const isReReviews = type === 'github-re-reviews';
-    const types = ['jira', 'github', 're-reviews', 'manual', 'command', 'jenkins', 'zoho', 'slack'];
+    const types = ['jira', 'github', 're-reviews', 'manual', 'command', 'script', 'jenkins', 'zoho', 'slack'];
     for (const t of types) {
       let show = false;
       if (t === type) show = true;
@@ -6561,11 +6602,11 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         if (i > 0) el.style.display = 'none';
       });
     }
-    // Hide poll interval and threshold for manual/slack (no polling)
-    const pollField = document.getElementById('pm-form-interval').closest('.pm-form-field');
+    // Hide schedule for manual/slack (no polling)
+    const schedField = document.getElementById('pm-form-schedule-field');
+    if (schedField) schedField.style.display = (type === 'manual' || type === 'slack') ? 'none' : '';
     const threshField = document.getElementById('pm-form-threshold').closest('.pm-form-field');
-    if (pollField) pollField.style.display = (type === 'manual' || type === 'slack') ? 'none' : '';
-    if (threshField) threshField.style.display = (type === 'manual' || type === 'command' || type === 'slack') ? 'none' : '';
+    if (threshField) threshField.style.display = (type === 'manual' || type === 'command' || type === 'script' || type === 'slack') ? 'none' : '';
     const instrField = document.getElementById('pm-form-instructions').closest('.pm-form-field');
     if (instrField) instrField.style.display = type === 'command' ? 'none' : '';
   }
@@ -6599,6 +6640,11 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         if (!source.command) { showToast('Error', 'Command required', 'error'); return; }
         if (!source.command.startsWith('/')) source.command = '/' + source.command;
         break;
+      case 'script':
+        source.script = document.getElementById('pm-form-script').value.trim();
+        source.scriptAction = document.getElementById('pm-form-script-action').value;
+        if (!source.script) { showToast('Error', 'Script required', 'error'); return; }
+        break;
       case 'slack':
         source.channel = document.getElementById('pm-form-slack-channel').value.trim() || null;
         break;
@@ -6627,6 +6673,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       checklistTemplate: document.getElementById('pm-form-checklist-tpl').value || null,
       autoThreshold: parseInt(document.getElementById('pm-form-threshold').value) || 3,
       pollInterval: parseInt(document.getElementById('pm-form-interval').value) || 60000,
+      schedule: document.getElementById('pm-form-cron').value.trim() || null,
     };
     if (!cfg.name) { showToast('Error', 'Name required', 'error'); return; }
     if (ws && ws.readyState === 1) {
@@ -6655,6 +6702,8 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     document.getElementById('pm-form-gh-reviewer').value = src.reviewer || '';
     document.getElementById('pm-form-gh-triggers').value = src.triggerPhrases || '';
     document.getElementById('pm-form-command').value = src.command || '';
+    document.getElementById('pm-form-script').value = src.script || '';
+    document.getElementById('pm-form-script-action').value = src.scriptAction || 'feed';
     document.getElementById('pm-form-manual-text').value = src.text || '';
     document.getElementById('pm-form-slack-channel').value = src.channel || '';
     document.getElementById('pm-form-jenkins-path').value = src.jobPath || '';
@@ -6669,6 +6718,16 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     document.getElementById('pm-form-instructions').value = pm ? (pm.instructions || '') : '';
     document.getElementById('pm-form-threshold').value = pm ? pm.autoThreshold : 3;
     document.getElementById('pm-form-interval').value = pm ? pm.pollInterval : 60000;
+    document.getElementById('pm-form-cron').value = pm ? (pm.schedule || '') : '';
+    // Set schedule tab state
+    const hasCron = pm && pm.schedule;
+    document.querySelectorAll('.pm-sched-tab').forEach(t => t.classList.toggle('selected', t.dataset.mode === (hasCron ? 'cron' : 'interval')));
+    document.querySelectorAll('.pm-sched-tab').forEach(t => {
+      if (t.classList.contains('selected')) { t.style.background = 'var(--accent)'; t.style.color = '#fff'; }
+      else { t.style.background = 'var(--surface)'; t.style.color = 'var(--text)'; }
+    });
+    document.getElementById('pm-sched-interval').style.display = hasCron ? 'none' : '';
+    document.getElementById('pm-sched-cron').style.display = hasCron ? '' : 'none';
     updatePmChecklistTplSelector();
     document.getElementById('pm-form-checklist-tpl').value = pm ? (pm.checklistTemplate || '') : '';
     togglePmSourceFields();
