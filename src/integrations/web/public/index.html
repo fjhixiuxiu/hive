@@ -2416,6 +2416,36 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 
   // ── WebSocket connection ──────────────────────────
   let reconnectTimer = null;
+  let lastMessageTime = 0;  // timestamp of last message received from server
+  let pongTimer = null;     // timeout waiting for pong response
+
+  function forceReconnect() {
+    if (pongTimer) { clearTimeout(pongTimer); pongTimer = null; }
+    if (ws) { try { ws.onclose = null; ws.close(); } catch(_) {} ws = null; }
+    connBar.className = 'disconnected';
+    authenticated = false;
+    connect();
+  }
+
+  // Queue of callbacks to run after reconnect completes (auth + fleet received)
+  let onReconnectCallbacks = [];
+
+  // Returns true if WS is connected and recently active (not zombie).
+  // Hive broadcasts fleet data every ~15s, so 30s of silence = dead.
+  // Pass an optional callback to run after reconnect if socket was dead.
+  function isAlive(onReconnect) {
+    if (!ws || ws.readyState !== 1) {
+      if (onReconnect) onReconnectCallbacks.push(onReconnect);
+      if (!ws || ws.readyState > 1) connect();
+      return false;
+    }
+    if (lastMessageTime && Date.now() - lastMessageTime > 30000) {
+      if (onReconnect) onReconnectCallbacks.push(onReconnect);
+      forceReconnect();
+      return false;
+    }
+    return true;
+  }
 
   function connect() {
     if (ws && ws.readyState <= 1) return;
@@ -2423,12 +2453,13 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
     ws = new WebSocket(`${proto}//${location.host}`);
     ws.onopen = () => {
+      lastMessageTime = Date.now();
       console.time('auth→fleet');
       // Cookie auth: server reads JWT from upgrade request headers automatically
       // Token auth: send token in message
       ws.send(JSON.stringify({ type: 'auth', token: token === 'cookie' ? '' : token }));
     };
-    ws.onmessage = (e) => { handleMessage(JSON.parse(e.data)); };
+    ws.onmessage = (e) => { lastMessageTime = Date.now(); handleMessage(JSON.parse(e.data)); };
     ws.onclose = () => { connBar.className = 'disconnected'; authenticated = false; askPending = false; msgInput.disabled = false; sendBtn.disabled = false; scheduleReconnect(); };
     ws.onerror = () => {};
   }
@@ -2437,6 +2468,34 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     if (reconnectTimer) return;
     reconnectTimer = setTimeout(() => { reconnectTimer = null; if (token) connect(); }, 3000);
   }
+
+  // Reconnect when returning from sleep/background
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible' || !token) return;
+    if (!ws || ws.readyState > 1) {
+      connect();
+      return;
+    }
+    // If no message received in 30s, socket is definitely dead
+    const stale = Date.now() - lastMessageTime > 30000;
+    if (stale) {
+      forceReconnect();
+      return;
+    }
+    // Socket might be ok — ping it and wait for pong
+    try {
+      ws.send(JSON.stringify({ type: 'ping' }));
+    } catch (_) {
+      forceReconnect();
+      return;
+    }
+    // If no pong within 3s, force reconnect
+    if (pongTimer) clearTimeout(pongTimer);
+    pongTimer = setTimeout(() => {
+      pongTimer = null;
+      forceReconnect();
+    }, 3000);
+  });
 
   // ── URL routing ─────────────────────────────────
   const TAB_TO_HASH = {
@@ -2527,10 +2586,14 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     }
     if (tab === 'tasks-panel') {
       // Re-subscribe if we had a session open (preserve active pane)
-      if (tasksSessionNum && ws && ws.readyState === 1) {
-        const msg = { type: 'terminal:subscribe', session: tasksSessionNum };
-        if (tsActivePane !== null) msg.pane = tsActivePane;
-        ws.send(JSON.stringify(msg));
+      if (tasksSessionNum) {
+        const resubTasks = () => {
+          if (!ws || ws.readyState !== 1 || !tasksSessionNum) return;
+          const m = { type: 'terminal:subscribe', session: tasksSessionNum };
+          if (tsActivePane !== null) m.pane = tsActivePane;
+          ws.send(JSON.stringify(m));
+        };
+        if (isAlive(resubTasks)) resubTasks();
       }
       requestAnimationFrame(() => fitTasksTerminal());
       renderTasks();
@@ -2549,10 +2612,14 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     if (tab === 'session-panel' && term && fitAddon && activeSessionTab === 'terminal') {
       requestAnimationFrame(() => fitTerminal());
       // Re-subscribe in case tasks panel took over the subscription (preserve active pane)
-      if (currentSession && ws && ws.readyState === 1) {
-        const msg = { type: 'terminal:subscribe', session: currentSession };
-        if (activePane !== null) msg.pane = activePane;
-        ws.send(JSON.stringify(msg));
+      if (currentSession) {
+        const resubscribe = () => {
+          if (!ws || ws.readyState !== 1 || !currentSession) return;
+          const m = { type: 'terminal:subscribe', session: currentSession };
+          if (activePane !== null) m.pane = activePane;
+          ws.send(JSON.stringify(m));
+        };
+        if (isAlive(resubscribe)) resubscribe();
       }
     }
     if (!fromRoute) pushHash();
@@ -2662,6 +2729,9 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
           authError.style.display = 'block'; authInput.value = ''; authInput.focus();
         }
         break;
+      case 'pong':
+        if (pongTimer) { clearTimeout(pongTimer); pongTimer = null; }
+        break;
       case 'config': linkTemplates = msg.links || {}; if (msg.spawnBaseDir) spawnBaseDir = msg.spawnBaseDir; break;
       case 'commands:list': tsCommands = msg.commands || []; renderCommands(tsCommands); break;
       case 'fleet:search:result':
@@ -2694,6 +2764,11 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         if (pendingRouteSession) {
           const s = fleetData.find(x => String(x.num) === pendingRouteSession);
           if (s) { pendingRouteSession = null; openSession(s, true); }
+        }
+        // Flush any queued actions from reconnect (e.g. user clicked a session while socket was dead)
+        if (onReconnectCallbacks.length) {
+          const cbs = onReconnectCallbacks.splice(0);
+          cbs.forEach(cb => { try { cb(); } catch(_) {} });
         }
         break;
       case 'terminal:panes':
@@ -3270,11 +3345,14 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       fitTerminal();
       term.clear();
       // Subscribe after fit so cols/rows reflect actual terminal size
-      if (ws && ws.readyState === 1) {
+      const subscribeSession = () => {
+        if (!ws || ws.readyState !== 1 || !currentSession) return;
         ws.send(JSON.stringify({ type: 'terminal:subscribe', session: currentSession, cols: term.cols, rows: term.rows }));
-        // Discover all panes in the session
         ws.send(JSON.stringify({ type: 'terminal:panes', session: currentSession }));
         ws.send(JSON.stringify({ type: 'git:info', session: currentSession }));
+      };
+      if (isAlive(subscribeSession)) {
+        subscribeSession();
       }
       applyGitFilesSidebarState('session');
       setTimeout(() => { const el = document.getElementById('terminal-wrap'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'end' }); }, 100);
@@ -4459,12 +4537,16 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     updateActionsButton();
 
     // Subscribe (always — ensures fresh subscription even after tab switches)
-    if (ws && ws.readyState === 1) {
+    const subscribeTasks = () => {
+      if (!ws || ws.readyState !== 1 || !tasksSessionNum) return;
       const subMsg = { type: 'terminal:subscribe', session: tasksSessionNum };
       if (sameSession && tsActivePane !== null) subMsg.pane = tsActivePane;
       ws.send(JSON.stringify(subMsg));
       ws.send(JSON.stringify({ type: 'terminal:panes', session: tasksSessionNum }));
       ws.send(JSON.stringify({ type: 'git:info', session: tasksSessionNum }));
+    };
+    if (isAlive(subscribeTasks)) {
+      subscribeTasks();
     }
     msgHistoryIdx = -1; msgHistoryDraft = '';
     updateTasksStatusLine();

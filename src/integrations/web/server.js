@@ -452,6 +452,10 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
 
   async function handleMessage(ws, msg, user) {
     switch (msg.type) {
+      case 'ping':
+        ws.send(JSON.stringify({ type: 'pong' }));
+        break;
+
       case 'fleet:get':
         await sendFleetStatus(ws);
         break;
@@ -1496,6 +1500,20 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       _previewCache.result = sessions;
       _previewCache.ts = Date.now();
       _previewCache.pending = null;
+
+      // Write session label map for tmux tabs.sh (non-blocking)
+      const FIXED_NAMES = { 1: 'Reviews', 2: 'Ideas', 3: 'Urgent', 4: 'Tests' };
+      const labels = {};
+      for (const s of sessions) {
+        if (s.num == null) continue;
+        if (FIXED_NAMES[s.num]) {
+          labels[s.num] = FIXED_NAMES[s.num];
+        } else if (s.branch && s.branch !== 'master' && s.branch !== 'main') {
+          labels[s.num] = s.branch.replace(/^[^/]+\//, '');
+        }
+      }
+      fs.writeFile('/tmp/hive-session-labels.json', JSON.stringify(labels), () => {});
+
       return sessions;
     })();
     return _previewCache.pending;
