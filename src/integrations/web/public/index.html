@@ -2472,9 +2472,11 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       if (feedPreviewTimer) { clearInterval(feedPreviewTimer); feedPreviewTimer = null; }
     }
     if (tab === 'tasks-panel') {
-      // Re-subscribe if we had a session open
+      // Re-subscribe if we had a session open (preserve active pane)
       if (tasksSessionNum && ws && ws.readyState === 1) {
-        ws.send(JSON.stringify({ type: 'terminal:subscribe', session: tasksSessionNum }));
+        const msg = { type: 'terminal:subscribe', session: tasksSessionNum };
+        if (tsActivePane !== null) msg.pane = tsActivePane;
+        ws.send(JSON.stringify(msg));
       }
       requestAnimationFrame(() => fitTasksTerminal());
       renderTasks();
@@ -2491,9 +2493,11 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     if (spawnBtn) spawnBtn.classList.toggle('visible', tab === 'fleet-panel');
     if (tab === 'session-panel' && term && fitAddon && activeSessionTab === 'terminal') {
       requestAnimationFrame(() => fitTerminal());
-      // Re-subscribe in case tasks panel took over the subscription
+      // Re-subscribe in case tasks panel took over the subscription (preserve active pane)
       if (currentSession && ws && ws.readyState === 1) {
-        ws.send(JSON.stringify({ type: 'terminal:subscribe', session: currentSession }));
+        const msg = { type: 'terminal:subscribe', session: currentSession };
+        if (activePane !== null) msg.pane = activePane;
+        ws.send(JSON.stringify(msg));
       }
     }
     if (!fromRoute) pushHash();
@@ -2652,7 +2656,9 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         }
         break;
       case 'terminal:data':
+        // Ignore data from stale pane subscriptions (race between clearInterval and in-flight poll)
         if (term && currentSession === String(msg.session)) {
+          if (typeof msg.pane === 'number' && activePane !== null && msg.pane !== activePane) break;
           if (msg.cols && msg.cols > 0) { paneCols = msg.cols; if (msg.cols !== term.cols) term.resize(msg.cols, term.rows); }
           if (msg.content === lastContent) break;
           if (userScrolledUp) { pendingContent = msg.content; }
@@ -2662,6 +2668,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
           writeFeedPreviewContent(msg.content);
         }
         if (tasksSessionTerm && tasksSessionNum === String(msg.session) && activeTab === 'tasks-panel') {
+          if (typeof msg.pane === 'number' && tsActivePane !== null && msg.pane !== tsActivePane) break;
           if (msg.cols && msg.cols > 0) { tsPaneCols = msg.cols; if (msg.cols !== tasksSessionTerm.cols) tasksSessionTerm.resize(msg.cols, tasksSessionTerm.rows); }
           if (msg.content === tsLastContent) break;
           if (tsUserScrolledUp) { tsPendingContent = msg.content; }
@@ -4345,7 +4352,9 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 
     // Subscribe (always — ensures fresh subscription even after tab switches)
     if (ws && ws.readyState === 1) {
-      ws.send(JSON.stringify({ type: 'terminal:subscribe', session: tasksSessionNum }));
+      const subMsg = { type: 'terminal:subscribe', session: tasksSessionNum };
+      if (sameSession && tsActivePane !== null) subMsg.pane = tsActivePane;
+      ws.send(JSON.stringify(subMsg));
       ws.send(JSON.stringify({ type: 'terminal:panes', session: tasksSessionNum }));
       ws.send(JSON.stringify({ type: 'git:info', session: tasksSessionNum }));
     }
