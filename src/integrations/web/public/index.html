@@ -1481,6 +1481,9 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     <button class="nav-btn" data-tab="ideas-panel">
       <span class="nav-icon">&#128161;</span>Ideas
     </button>
+    <button class="nav-btn" data-tab="update-panel">
+      <span class="nav-icon">&#8635;</span>Update
+    </button>
     <button class="nav-btn" data-tab="more-panel">
       <span class="nav-icon">&#8943;</span>More
     </button>
@@ -1758,6 +1761,37 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         <button class="tasks-create-btn" id="ideas-create-btn">+ New Idea</button>
       </div>
       <div id="ideas-list" style="flex:1;overflow-y:auto;padding:8px 12px;-webkit-overflow-scrolling:touch"></div>
+    </div>
+
+    <!-- Update panel -->
+    <div id="update-panel" class="panel">
+      <div style="display:flex;align-items:center;padding:10px 12px 6px;gap:8px">
+        <span style="font-size:16px;font-weight:700;flex:1">Update Hive</span>
+      </div>
+      <div style="flex:1;overflow-y:auto;padding:8px 12px;-webkit-overflow-scrolling:touch">
+        <div id="update-status-card" style="background:var(--card);border-radius:8px;padding:12px;margin-bottom:12px">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+            <span style="font-weight:600">Branch:</span>
+            <span id="update-branch" style="color:var(--cyan);font-family:monospace">—</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+            <span style="font-weight:600">Commit:</span>
+            <span id="update-commit" style="color:var(--fg-dim);font-family:monospace">—</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-weight:600">Updated:</span>
+            <span id="update-time" style="color:var(--fg-dim)">—</span>
+          </div>
+        </div>
+        <div style="margin-bottom:12px">
+          <label style="font-weight:600;display:block;margin-bottom:4px">Target Branch</label>
+          <select id="update-branch-select" style="width:100%;padding:8px;border-radius:6px;border:1px solid var(--border);background:var(--card);color:var(--fg);font-family:monospace;font-size:14px"></select>
+        </div>
+        <button id="update-pull-btn" style="width:100%;padding:12px;border:none;border-radius:8px;background:var(--green);color:#fff;font-size:15px;font-weight:700;cursor:pointer;margin-bottom:12px">Pull &amp; Restart</button>
+        <div style="background:var(--card);border-radius:8px;padding:8px;min-height:120px;max-height:300px;overflow-y:auto" id="update-log-wrap">
+          <pre id="update-log" style="margin:0;font-family:monospace;font-size:12px;white-space:pre-wrap;color:var(--fg-dim)"></pre>
+        </div>
+      </div>
     </div>
 
     <!-- Session detail panel (replaces content, not an overlay) -->
@@ -2407,7 +2441,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   // ── URL routing ─────────────────────────────────
   const TAB_TO_HASH = {
     'fleet-panel': '/fleet', 'tasks-panel': '/tasks', 'feed-panel': '/feed',
-    'pm-panel': '/pm', 'ideas-panel': '/ideas', 'more-panel': '/more', 'session-panel': '/session',
+    'pm-panel': '/pm', 'ideas-panel': '/ideas', 'update-panel': '/update', 'more-panel': '/more', 'session-panel': '/session',
   };
   const HASH_TO_TAB = {};
   for (const [tab, hash] of Object.entries(TAB_TO_HASH)) HASH_TO_TAB[hash] = tab;
@@ -2508,6 +2542,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     }
     if (tab === 'fleet-panel') renderGrid();
     if (tab === 'ideas-panel' && ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'idea:list' }));
+    if (tab === 'update-panel' && ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'update:status' }));
     if (tab === 'more-panel') { renderDesignationGrid(); renderAgentRoots(); renderDesigDefs(); renderAdminUsers(); renderChecklistTemplates(); }
     const spawnBtn = document.getElementById('spawn-btn');
     if (spawnBtn) spawnBtn.classList.toggle('visible', tab === 'fleet-panel');
@@ -2908,6 +2943,59 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       case 'idea:error':
         showToast('Idea Error', msg.error, 'error');
         break;
+      case 'update:status': {
+        const branchEl = document.getElementById('update-branch');
+        const commitEl = document.getElementById('update-commit');
+        const timeEl = document.getElementById('update-time');
+        const sel = document.getElementById('update-branch-select');
+        if (branchEl) branchEl.textContent = msg.branch;
+        if (commitEl) commitEl.textContent = msg.hash + ' — ' + msg.subject;
+        if (timeEl) timeEl.textContent = msg.timeAgo;
+        if (sel) {
+          sel.innerHTML = '';
+          (msg.remoteBranches || []).forEach(b => {
+            const opt = document.createElement('option');
+            opt.value = b; opt.textContent = b;
+            if (b === msg.branch) opt.selected = true;
+            sel.appendChild(opt);
+          });
+        }
+        const btn = document.getElementById('update-pull-btn');
+        if (btn) { btn.disabled = false; btn.textContent = 'Pull & Restart'; }
+        break;
+      }
+      case 'update:log': {
+        const logEl = document.getElementById('update-log');
+        const wrap = document.getElementById('update-log-wrap');
+        if (logEl) {
+          logEl.textContent += '[' + msg.step + '] ' + msg.output + '\n';
+          if (wrap) wrap.scrollTop = wrap.scrollHeight;
+        }
+        break;
+      }
+      case 'update:error': {
+        const logEl = document.getElementById('update-log');
+        const wrap = document.getElementById('update-log-wrap');
+        if (logEl) {
+          logEl.textContent += '\u274C ERROR: ' + msg.error + '\n';
+          if (wrap) wrap.scrollTop = wrap.scrollHeight;
+        }
+        const btn = document.getElementById('update-pull-btn');
+        if (btn) { btn.disabled = false; btn.textContent = 'Pull & Restart'; btn.style.background = 'var(--red)'; }
+        showToast('Update Error', msg.error, 'error');
+        break;
+      }
+      case 'update:restarting': {
+        const logEl = document.getElementById('update-log');
+        const wrap = document.getElementById('update-log-wrap');
+        if (logEl) {
+          logEl.textContent += '\u21BB Restarting hive... connection will drop briefly.\n';
+          if (wrap) wrap.scrollTop = wrap.scrollHeight;
+        }
+        const btn = document.getElementById('update-pull-btn');
+        if (btn) { btn.disabled = true; btn.textContent = 'Restarting...'; }
+        break;
+      }
     }
   }
 
@@ -7327,6 +7415,23 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 
     // Enter in title field submits
     titleInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); saveBtn.click(); } });
+  })();
+
+  // ── Update panel ─────────────────────────────────
+  (function initUpdatePanel() {
+    const pullBtn = document.getElementById('update-pull-btn');
+    if (!pullBtn) return;
+    pullBtn.addEventListener('click', () => {
+      if (!ws || ws.readyState !== 1) return;
+      const sel = document.getElementById('update-branch-select');
+      const branch = sel ? sel.value : '';
+      const logEl = document.getElementById('update-log');
+      if (logEl) logEl.textContent = '';
+      pullBtn.disabled = true;
+      pullBtn.textContent = 'Pulling...';
+      pullBtn.style.background = 'var(--green)';
+      ws.send(JSON.stringify({ type: 'update:pull', branch }));
+    });
   })();
 
   // ── Notifications ─────────────────────────────────
