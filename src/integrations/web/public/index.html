@@ -1333,6 +1333,9 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   background: var(--bg3); border: none; color: var(--fg); font-size: 13px;
   padding: 8px 10px; border-radius: 6px; width: 100%; outline: none;
 }
+.pm-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+.pm-form-grid .pm-form-field.full-width { grid-column: 1 / -1; }
+@media (max-width: 599px) { .pm-form-grid { grid-template-columns: 1fr; } }
 
 /* ── Task comments ─────────────────── */
 .comment-panel { padding: 8px 12px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; }
@@ -1874,8 +1877,9 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 
 <!-- PM form dialog -->
 <div class="dialog-overlay" id="pm-dialog">
-  <div class="dialog" style="max-width:400px">
+  <div class="dialog" style="max-width:640px">
     <div class="dialog-title" id="pm-dialog-title">New Project Manager</div>
+    <div class="pm-form-grid">
     <div class="pm-form-field">
       <label class="pm-form-label">Name</label>
       <input class="pm-form-input" id="pm-form-name" type="text" placeholder="e.g. Frontend Bugs" autocomplete="off">
@@ -1895,23 +1899,23 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         <option value="zoho">Zoho (Support)</option>
       </select>
     </div>
-    <div class="pm-form-field pm-fields-jira">
+    <div class="pm-form-field pm-fields-jira full-width">
       <label class="pm-form-label">JQL Query</label>
       <input class="pm-form-input" id="pm-form-jql" type="text" placeholder="project = DEV AND status = Open" autocomplete="off">
     </div>
-    <div class="pm-form-field pm-fields-github" style="display:none">
+    <div class="pm-form-field pm-fields-github full-width" style="display:none">
       <label class="pm-form-label">Repo (owner/name)</label>
       <input class="pm-form-input" id="pm-form-gh-repo" type="text" placeholder="mavencare/webplatform" autocomplete="off">
     </div>
-    <div class="pm-form-field pm-fields-github" style="display:none">
+    <div class="pm-form-field pm-fields-github full-width" style="display:none">
       <label class="pm-form-label">Labels <span style="color:var(--dim)">(comma-separated, optional)</span></label>
       <input class="pm-form-input" id="pm-form-gh-labels" type="text" placeholder="bug,help wanted" autocomplete="off">
     </div>
-    <div class="pm-form-field pm-fields-github" style="display:none">
+    <div class="pm-form-field pm-fields-github full-width" style="display:none">
       <label class="pm-form-label">Exclude Labels <span style="color:var(--dim)">(comma-separated, optional)</span></label>
       <input class="pm-form-input" id="pm-form-gh-exclude-labels" type="text" placeholder="wontfix,duplicate" autocomplete="off">
     </div>
-    <div class="pm-form-field pm-fields-github" style="display:none">
+    <div class="pm-form-field pm-fields-github full-width" style="display:none">
       <label class="pm-form-label">State</label>
       <select class="pm-form-select" id="pm-form-gh-state">
         <option value="open">Open</option>
@@ -1919,29 +1923,29 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         <option value="all">All</option>
       </select>
     </div>
-    <div class="pm-form-field pm-fields-github" style="display:none">
+    <div class="pm-form-field pm-fields-github full-width" style="display:none">
       <label class="pm-form-label">Author <span style="color:var(--dim)">(GitHub username, optional)</span></label>
       <input class="pm-form-input" id="pm-form-gh-author" type="text" placeholder="jeffheifetz" autocomplete="off">
     </div>
-    <div class="pm-form-field pm-fields-re-reviews" style="display:none">
+    <div class="pm-form-field pm-fields-re-reviews full-width" style="display:none">
       <label class="pm-form-label">Reviewer Username</label>
       <input class="pm-form-input" id="pm-form-gh-reviewer" type="text" placeholder="github-username" autocomplete="off">
     </div>
-    <div class="pm-form-field pm-fields-re-reviews" style="display:none">
+    <div class="pm-form-field pm-fields-re-reviews full-width" style="display:none">
       <label class="pm-form-label">Trigger Phrases <span style="color:var(--dim)">(comma-separated)</span></label>
       <input class="pm-form-input" id="pm-form-gh-triggers" type="text" placeholder="ready for review, ptal, addressed" autocomplete="off">
     </div>
-    <div class="pm-form-field pm-fields-command" style="display:none">
+    <div class="pm-form-field pm-fields-command full-width" style="display:none">
       <label class="pm-form-label">Command</label>
       <input class="pm-form-input" id="pm-form-command" type="text" placeholder="/cp-review" autocomplete="off">
       <span style="font-size:11px;color:var(--dim);margin-top:4px;display:block;">A Claude slash command. Runs immediately when enabled, then repeats on the poll interval. The command handles all logic — no instructions or threshold needed.</span>
     </div>
-    <div class="pm-form-field pm-fields-script" style="display:none">
+    <div class="pm-form-field pm-fields-script full-width" style="display:none">
       <label class="pm-form-label">Shell Script</label>
       <textarea class="pm-form-input" id="pm-form-script" rows="4" placeholder="#!/bin/zsh&#10;curl -s https://api.example.com/health | jq .status" style="resize:vertical;font-family:monospace;font-size:12px"></textarea>
       <span style="font-size:11px;color:var(--dim);margin-top:4px;display:block;">Runs via /bin/zsh -l with 30s timeout. Output is handled per the "On Output" setting below.</span>
     </div>
-    <div class="pm-form-field pm-fields-script" style="display:none">
+    <div class="pm-form-field pm-fields-script full-width" style="display:none">
       <label class="pm-form-label">On Output</label>
       <select class="pm-form-select" id="pm-form-script-action">
         <option value="feed">Post to feed only</option>
@@ -1949,28 +1953,28 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         <option value="task-if-output">Create task only if output</option>
       </select>
     </div>
-    <div class="pm-form-field pm-fields-manual" style="display:none">
+    <div class="pm-form-field pm-fields-manual full-width" style="display:none">
       <label class="pm-form-label">Task Instructions</label>
       <textarea class="pm-form-input" id="pm-form-manual-text" rows="4" placeholder="Describe the task..." style="resize:vertical;font-family:inherit"></textarea>
     </div>
-    <div class="pm-form-field pm-fields-slack" style="display:none">
+    <div class="pm-form-field pm-fields-slack full-width" style="display:none">
       <label class="pm-form-label">Channel ID <span style="color:var(--dim)">(optional)</span></label>
       <input class="pm-form-input" id="pm-form-slack-channel" type="text" placeholder="Leave blank for all channels" autocomplete="off">
       <span style="font-size:11px;color:var(--dim);margin-top:4px;display:block;">Tasks from @hive in this channel use this PM's routing config (designation, target session, instructions, checklist).</span>
     </div>
-    <div class="pm-form-field pm-fields-jenkins" style="display:none">
+    <div class="pm-form-field pm-fields-jenkins full-width" style="display:none">
       <label class="pm-form-label">Job Path</label>
       <input class="pm-form-input" id="pm-form-jenkins-path" type="text" placeholder="webplatform/job/PR-123" autocomplete="off">
     </div>
-    <div class="pm-form-field pm-fields-zoho" style="display:none">
+    <div class="pm-form-field pm-fields-zoho full-width" style="display:none">
       <label class="pm-form-label">Department ID</label>
       <input class="pm-form-input" id="pm-form-zoho-dept" type="text" placeholder="Department ID" autocomplete="off">
     </div>
-    <div class="pm-form-field pm-fields-zoho" style="display:none">
+    <div class="pm-form-field pm-fields-zoho full-width" style="display:none">
       <label class="pm-form-label">Status Filter</label>
       <input class="pm-form-input" id="pm-form-zoho-status" type="text" placeholder="Open" autocomplete="off">
     </div>
-    <div class="pm-form-field pm-fields-zoho" style="display:none">
+    <div class="pm-form-field pm-fields-zoho full-width" style="display:none">
       <label class="pm-form-label">Search Query <span style="color:var(--dim)">(optional)</span></label>
       <input class="pm-form-input" id="pm-form-zoho-query" type="text" placeholder="keyword search" autocomplete="off">
     </div>
@@ -1990,7 +1994,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       <label class="pm-form-label">Task Format <span style="color:var(--dim)">(use {key} and {summary} as placeholders)</span></label>
       <input class="pm-form-input" id="pm-form-taskformat" type="text" placeholder="e.g. /start-task {key}" autocomplete="off">
     </div>
-    <div class="pm-form-field">
+    <div class="pm-form-field full-width">
       <label class="pm-form-label">Instructions <span style="color:var(--dim)">(included with each task)</span></label>
       <textarea class="pm-form-input" id="pm-form-instructions" rows="3" placeholder="e.g. Post a review comment on the PR — DO NOT approve" style="resize:vertical;font-family:inherit"></textarea>
     </div>
@@ -2023,6 +2027,22 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         <span style="font-size:11px;color:var(--dim);margin-top:4px;display:block;">Standard cron: min hour day month weekday</span>
       </div>
     </div>
+    <div class="pm-form-field pm-fields-completion" style="display:none">
+      <label class="pm-form-label">Completion Conditions</label>
+      <div id="pm-form-cc-github" style="display:none">
+        <label style="font-size:13px;color:var(--fg);cursor:pointer;display:flex;align-items:center;gap:6px;margin-bottom:4px">
+          <input type="checkbox" id="pm-form-cc-merged"> Auto-complete when PR is merged
+        </label>
+        <label style="font-size:13px;color:var(--fg);cursor:pointer;display:flex;align-items:center;gap:6px">
+          <input type="checkbox" id="pm-form-cc-closed"> Auto-complete when PR is closed
+        </label>
+      </div>
+      <div id="pm-form-cc-jira" style="display:none">
+        <input class="pm-form-input" id="pm-form-cc-jira-statuses" type="text" placeholder="Done, Closed, Ready For Testing" autocomplete="off">
+        <span style="font-size:11px;color:var(--dim);margin-top:4px;display:block;">Comma-separated JIRA statuses that auto-complete the task</span>
+      </div>
+    </div>
+    </div><!-- /pm-form-grid -->
     <div class="dialog-actions">
       <button class="dialog-btn primary" id="pm-form-save">Save</button>
       <button class="dialog-btn" id="pm-form-cancel">Cancel</button>
@@ -6611,6 +6631,17 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     if (threshField) threshField.style.display = (type === 'manual' || type === 'command' || type === 'script' || type === 'slack') ? 'none' : '';
     const instrField = document.getElementById('pm-form-instructions').closest('.pm-form-field');
     if (instrField) instrField.style.display = type === 'command' ? 'none' : '';
+    // Completion conditions: show for source types that support it
+    const ccField = document.querySelector('.pm-fields-completion');
+    const ccGithub = document.getElementById('pm-form-cc-github');
+    const ccJira = document.getElementById('pm-form-cc-jira');
+    if (ccField) {
+      const isGhType = type === 'github-prs' || type === 'github-re-reviews' || type === 'github-issues';
+      const isJiraType = type === 'jira';
+      ccField.style.display = (isGhType || isJiraType) ? '' : 'none';
+      if (ccGithub) ccGithub.style.display = isGhType ? '' : 'none';
+      if (ccJira) ccJira.style.display = isJiraType ? '' : 'none';
+    }
   }
 
   document.getElementById('pm-form-save').addEventListener('click', () => {
@@ -6677,6 +6708,23 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       pollInterval: parseInt(document.getElementById('pm-form-interval').value) || 60000,
       schedule: document.getElementById('pm-form-cron').value.trim() || null,
     };
+    // Collect completion conditions
+    const completionConditions = [];
+    const isGhType = sourceType === 'github-prs' || sourceType === 'github-re-reviews' || sourceType === 'github-issues';
+    if (isGhType) {
+      const states = [];
+      if (document.getElementById('pm-form-cc-merged').checked) states.push('merged');
+      if (document.getElementById('pm-form-cc-closed').checked) states.push('closed');
+      if (states.length) completionConditions.push({ type: 'github-pr-state', states });
+    }
+    if (sourceType === 'jira') {
+      const raw = document.getElementById('pm-form-cc-jira-statuses').value.trim();
+      if (raw) {
+        const statuses = raw.split(',').map(s => s.trim()).filter(Boolean);
+        if (statuses.length) completionConditions.push({ type: 'jira-status', statuses });
+      }
+    }
+    cfg.completionConditions = completionConditions;
     if (!cfg.name) { showToast('Error', 'Name required', 'error'); return; }
     if (ws && ws.readyState === 1) {
       if (editingPmId) {
@@ -6732,6 +6780,13 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     document.getElementById('pm-sched-cron').style.display = hasCron ? '' : 'none';
     updatePmChecklistTplSelector();
     document.getElementById('pm-form-checklist-tpl').value = pm ? (pm.checklistTemplate || '') : '';
+    // Populate completion conditions
+    const cc = pm && pm.completionConditions ? pm.completionConditions : [];
+    const ghCond = cc.find(c => c.type === 'github-pr-state');
+    document.getElementById('pm-form-cc-merged').checked = ghCond ? ghCond.states.includes('merged') : false;
+    document.getElementById('pm-form-cc-closed').checked = ghCond ? ghCond.states.includes('closed') : false;
+    const jiraCond = cc.find(c => c.type === 'jira-status');
+    document.getElementById('pm-form-cc-jira-statuses').value = jiraCond ? jiraCond.statuses.join(', ') : '';
     togglePmSourceFields();
     pmDialog.classList.add('visible');
   }
