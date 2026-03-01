@@ -1,6 +1,8 @@
 const EventEmitter = require('events');
 const https = require('https');
 const http = require('http');
+const { exec } = require('child_process');
+const cron = require('node-cron');
 const log = require('./log');
 
 let nextPmId = 1;
@@ -28,6 +30,7 @@ class ProjectManager extends EventEmitter {
       targetSession: cfg.targetSession || null,
       autoThreshold: cfg.autoThreshold != null ? cfg.autoThreshold : 3,
       pollInterval: cfg.pollInterval || 60000,
+      schedule: cfg.schedule || null,
       taskFormat: cfg.taskFormat || null,
       checklistTemplate: cfg.checklistTemplate || null,
       enabled: false,
@@ -136,6 +139,7 @@ class ProjectManager extends EventEmitter {
         targetSession: data.targetSession || null,
         autoThreshold: data.autoThreshold != null ? data.autoThreshold : 3,
         pollInterval: data.pollInterval || 60000,
+        schedule: data.schedule || null,
         taskFormat: data.taskFormat || null,
         checklistTemplate: data.checklistTemplate || null,
         enabled: data.enabled || false,
@@ -170,27 +174,41 @@ class ProjectManager extends EventEmitter {
       return;
     }
 
-    // Command source: run immediately, then repeat on interval
+    // Determine the callback based on source type
+    let callback;
     if (pm.source.type === 'command') {
-      this._createCommandTask(id);
-      const interval = setInterval(
-        () => this._createCommandTask(id),
-        pm.pollInterval,
-      );
-      this.timers.set(id, interval);
-      return;
+      callback = () => this._createCommandTask(id);
+    } else if (pm.source.type === 'script') {
+      callback = () => this._runScript(id);
+    } else {
+      callback = () => this._poll(id);
     }
 
-    // Poll immediately, then on interval
-    this._poll(id);
-    const interval = setInterval(() => this._poll(id), pm.pollInterval);
-    this.timers.set(id, interval);
+    // Run immediately
+    callback();
+
+    // Schedule repeats: cron expression takes precedence over interval
+    if (pm.schedule && cron.validate(pm.schedule)) {
+      const task = cron.schedule(pm.schedule, callback);
+      this.timers.set(id, task);
+    } else {
+      if (pm.schedule && !cron.validate(pm.schedule)) {
+        log.error(`[pm] Invalid cron expression "${pm.schedule}" for "${pm.name}", falling back to interval`);
+        pm.lastError = `Invalid cron expression: ${pm.schedule}`;
+      }
+      const interval = setInterval(callback, pm.pollInterval);
+      this.timers.set(id, interval);
+    }
   }
 
   _stopPolling(id) {
     const timer = this.timers.get(id);
     if (timer) {
-      clearInterval(timer);
+      if (typeof timer.stop === 'function') {
+        timer.stop(); // cron ScheduledTask
+      } else {
+        clearInterval(timer); // plain interval handle
+      }
       this.timers.delete(id);
     }
   }
@@ -291,6 +309,56 @@ class ProjectManager extends EventEmitter {
     pm.lastError = null;
     this._save();
     this.emit('pm:changed');
+  }
+
+  async _runScript(id) {
+    const pm = this.pms.get(id);
+    if (!pm || !pm.enabled) return;
+
+    const script = (pm.source.script || '').trim();
+    if (!script) return;
+
+    const action = pm.source.scriptAction || 'feed';
+
+    try {
+      const output = await this._exec(script, { shell: '/bin/zsh -l', timeout: 30000 });
+
+      pm.lastPoll = Date.now();
+      pm.lastError = null;
+
+      if (action === 'feed') {
+        if (output) {
+          this.taskQueue.pushFeed('task', null, `PM "${pm.name}" script output: ${output}`);
+        }
+      } else if (action === 'task' || (action === 'task-if-output' && output)) {
+        // Skip if there's already a queued or active task from this PM/script
+        const existing = [...this.taskQueue.tasks.values()].find(
+          (t) =>
+            t.meta && t.meta.source === `pm:${pm.name}` &&
+            (t.status === 'queued' ||
+              t.status === 'dispatched' ||
+              t.status === 'in-progress'),
+        );
+        if (!existing) {
+          const mode = pm.targetSession ? 'manual' : 'auto';
+          let taskText = output || '(no output)';
+          if (pm.instructions) taskText = `${taskText}\n\nInstructions: ${pm.instructions}`;
+          const task = this.taskQueue.createTask(taskText, mode, pm.targetSession || null, pm.designation, { source: `pm:${pm.name}` });
+          this._seedChecklist(pm, task);
+          pm.tasksCreated++;
+          this.taskQueue.pushFeed('task', null, `PM "${pm.name}" created task from script output`);
+        }
+      }
+      // action === 'task-if-output' with empty output: do nothing
+
+      this._save();
+      this.emit('pm:changed');
+    } catch (err) {
+      pm.lastPoll = Date.now();
+      pm.lastError = err.message;
+      this._save();
+      this.emit('pm:changed');
+    }
   }
 
   async _poll(id) {
@@ -745,6 +813,15 @@ class ProjectManager extends EventEmitter {
   }
 
   // ── Helpers ─────────────────────────────────────────
+
+  _exec(script, options) {
+    return new Promise((resolve, reject) => {
+      exec(script, options, (err, stdout, stderr) => {
+        if (err) return reject(err);
+        resolve((stdout || '').trim());
+      });
+    });
+  }
 
   _save() {
     this.taskQueue._saveState();

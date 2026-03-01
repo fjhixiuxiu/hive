@@ -1079,6 +1079,14 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       case 'pm:create': {
         if (!pmManager) break;
         if (!checkPermission(ws, user, 'admin')) break;
+        const cronExpr = msg.config && msg.config.schedule;
+        if (cronExpr) {
+          const nodeCron = require('node-cron');
+          if (!nodeCron.validate(cronExpr)) {
+            ws.send(JSON.stringify({ type: 'error', message: `Invalid cron expression: ${cronExpr}` }));
+            break;
+          }
+        }
         const pm = pmManager.create(msg.config);
         ws.send(JSON.stringify({ type: 'pm:created', pm }));
         broadcast({ type: 'pm:list', pms: pmManager.getAll() });
@@ -1088,6 +1096,14 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       case 'pm:update': {
         if (!pmManager) break;
         if (!checkPermission(ws, user, 'admin')) break;
+        const updateCron = msg.updates && msg.updates.schedule;
+        if (updateCron) {
+          const nodeCron = require('node-cron');
+          if (!nodeCron.validate(updateCron)) {
+            ws.send(JSON.stringify({ type: 'error', message: `Invalid cron expression: ${updateCron}` }));
+            break;
+          }
+        }
         pmManager.update(msg.id, msg.updates);
         broadcast({ type: 'pm:list', pms: pmManager.getAll() });
         break;
