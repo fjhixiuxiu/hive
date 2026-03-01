@@ -536,17 +536,19 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
         // Send immediately
         const { content: subContent, cols: subCols } = await capturePaneAnsi(node, paneTarget);
         ws.send(JSON.stringify({ type: 'terminal:data', session: msg.session, pane: subPaneIdx, content: subContent, cols: subCols }));
-        // Poll every 2s
-        const interval = setInterval(async () => {
-          if (ws.readyState !== 1) { clearTermSub(ws); return; }
+        // Poll every 2s (guard against stale callbacks after clearInterval)
+        const sub = { interval: null, session: msg.session, name, node, pane: subPaneIdx, cancelled: false };
+        sub.interval = setInterval(async () => {
+          if (sub.cancelled || ws.readyState !== 1) { clearTermSub(ws); return; }
           try {
             const { content: pollContent, cols: pollCols } = await capturePaneAnsi(node, paneTarget);
+            if (sub.cancelled) return; // check again after async
             ws.send(JSON.stringify({ type: 'terminal:data', session: msg.session, pane: subPaneIdx, content: pollContent, cols: pollCols }));
           } catch {
             // Node may have disconnected
           }
         }, 2000);
-        termSubs.set(ws, { interval, session: msg.session, name, node, pane: subPaneIdx });
+        termSubs.set(ws, sub);
         break;
       }
 
@@ -1318,6 +1320,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
   function clearTermSub(ws) {
     const sub = termSubs.get(ws);
     if (sub) {
+      sub.cancelled = true;
       clearInterval(sub.interval);
       termSubs.delete(ws);
     }

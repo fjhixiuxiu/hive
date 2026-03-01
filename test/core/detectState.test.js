@@ -158,14 +158,14 @@ describe('detectState — production config', () => {
     expect(detectState(content, config)).toBe('working');
   });
 
-  it('detects working: Claude generating text (no separator)', () => {
+  it('detects off: Claude output without separator (Claude not running)', () => {
     const content = pane(
       'I will now implement the feature by modifying the following files:',
       '',
       '1. src/core/tmux.js - Update detectState',
       '2. src/core/fleet.js - Increase capture lines',
     );
-    expect(detectState(content, config)).toBe('working');
+    expect(detectState(content, config)).toBe('off');
   });
 
   it('detects working: Doodling with prompt visible (ASCII dots)', () => {
@@ -335,12 +335,12 @@ describe('detectState — production config', () => {
     expect(detectState(content, config)).toBe('idle');
   });
 
-  it('ignores short Unicode sequences that are not separators', () => {
+  it('treats short Unicode sequences without separator as off', () => {
     const content = pane(
       '\u2500\u2500\u2500',
       '  Some working output',
     );
-    expect(detectState(content, config)).toBe('working');
+    expect(detectState(content, config)).toBe('off');
   });
 
   it('does not false-positive on prompt mid-line in content', () => {

@@ -294,16 +294,16 @@ describe('ProjectManager', () => {
       expect(pm.timers.has(created.id)).toBe(true);
     });
 
-    it('manual source ignores schedule field', () => {
+    it('manual source with schedule uses cron timer', () => {
       const created = pm.create({
         name: 'Manual',
         source: { type: 'manual', text: 'Do it' },
         schedule: '*/5 * * * *',
       });
       pm.toggle(created.id);
-      // Manual fires once, auto-disables — no timer set
-      expect(pm.timers.has(created.id)).toBe(false);
-      expect(pm.get(created.id).enabled).toBe(false);
+      // Manual + schedule uses cron, stays enabled
+      expect(pm.timers.has(created.id)).toBe(true);
+      expect(pm.get(created.id).enabled).toBe(true);
     });
 
     it('slack source ignores schedule field', () => {
@@ -852,15 +852,15 @@ describe('ProjectManager', () => {
   // ── Integration / edge cases ──
 
   describe('integration / edge cases', () => {
-    it('PM with schedule + manual source — schedule is ignored', () => {
+    it('PM with schedule + manual source — uses cron schedule', () => {
       const created = pm.create({
         name: 'Manual Cron',
         source: { type: 'manual', text: 'Do it' },
         schedule: '*/5 * * * *',
       });
       pm.toggle(created.id);
-      expect(pm.timers.has(created.id)).toBe(false);
-      expect(pm.get(created.id).enabled).toBe(false);
+      expect(pm.timers.has(created.id)).toBe(true);
+      expect(pm.get(created.id).enabled).toBe(true);
     });
 
     it('PM with schedule + slack source — schedule is ignored', () => {

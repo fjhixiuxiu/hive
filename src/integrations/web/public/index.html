@@ -626,6 +626,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .tasks-bulk-bar {
   display: flex; gap: 6px; padding: 4px 10px; align-items: center;
   background: var(--bg2); border-bottom: 1px solid var(--bg3); flex-shrink: 0;
+  margin-top: 6px;
 }
 .tasks-bulk-bar .bulk-count { font-size: 12px; font-weight: 700; color: var(--fg); flex: 1; }
 .tasks-bulk-bar .bulk-btn {
@@ -663,6 +664,15 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   white-space: nowrap;
 }
 .ts-open-btn:active { background: var(--purple); color: var(--bg); }
+.ts-nav-btn {
+  background: var(--bg3); border: none; color: var(--fg); font-size: 11px;
+  font-weight: 600; padding: 5px 10px; border-radius: 4px; cursor: pointer;
+  transition: background 0.15s; white-space: nowrap;
+}
+.ts-nav-btn:hover:not(:disabled) { background: var(--bg4, #565f89); }
+.ts-nav-btn:active { transform: scale(0.95); }
+.ts-nav-btn:disabled { opacity: 0.3; cursor: default; }
+.ts-nav-btn.ts-done-btn { color: var(--green); }
 .tasks-session-tabs {
   display: flex; gap: 0; background: var(--bg2); border-bottom: 1px solid var(--bg3); flex-shrink: 0;
 }
@@ -1544,6 +1554,9 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
           <div class="tasks-session-header" id="tasks-session-header">
             <span class="tasks-session-title" id="tasks-session-title">Session</span>
             <span class="tasks-session-branch" id="tasks-session-branch"></span>
+            <button class="ts-nav-btn" id="ts-nav-prev" style="display:none">&larr; Prev</button>
+            <button class="ts-nav-btn" id="ts-nav-next" style="display:none">Next &rarr;</button>
+            <button class="ts-nav-btn ts-done-btn" id="ts-nav-done" style="display:none">Mark Done</button>
             <button class="ts-open-btn" id="ts-open-session" style="display:none">Open Full Session</button>
           </div>
           <div class="snapshot-banner" id="snapshot-banner"></div>
@@ -2479,9 +2492,11 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       if (feedPreviewTimer) { clearInterval(feedPreviewTimer); feedPreviewTimer = null; }
     }
     if (tab === 'tasks-panel') {
-      // Re-subscribe if we had a session open
+      // Re-subscribe if we had a session open (preserve active pane)
       if (tasksSessionNum && ws && ws.readyState === 1) {
-        ws.send(JSON.stringify({ type: 'terminal:subscribe', session: tasksSessionNum }));
+        const msg = { type: 'terminal:subscribe', session: tasksSessionNum };
+        if (tsActivePane !== null) msg.pane = tsActivePane;
+        ws.send(JSON.stringify(msg));
       }
       requestAnimationFrame(() => fitTasksTerminal());
       renderTasks();
@@ -2498,9 +2513,11 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     if (spawnBtn) spawnBtn.classList.toggle('visible', tab === 'fleet-panel');
     if (tab === 'session-panel' && term && fitAddon && activeSessionTab === 'terminal') {
       requestAnimationFrame(() => fitTerminal());
-      // Re-subscribe in case tasks panel took over the subscription
+      // Re-subscribe in case tasks panel took over the subscription (preserve active pane)
       if (currentSession && ws && ws.readyState === 1) {
-        ws.send(JSON.stringify({ type: 'terminal:subscribe', session: currentSession }));
+        const msg = { type: 'terminal:subscribe', session: currentSession };
+        if (activePane !== null) msg.pane = activePane;
+        ws.send(JSON.stringify(msg));
       }
     }
     if (!fromRoute) pushHash();
@@ -2659,7 +2676,9 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         }
         break;
       case 'terminal:data':
+        // Ignore data from stale pane subscriptions (race between clearInterval and in-flight poll)
         if (term && currentSession === String(msg.session)) {
+          if (typeof msg.pane === 'number' && activePane !== null && msg.pane !== activePane) break;
           if (msg.cols && msg.cols > 0) { paneCols = msg.cols; if (msg.cols !== term.cols) term.resize(msg.cols, term.rows); }
           if (msg.content === lastContent) break;
           if (userScrolledUp) { pendingContent = msg.content; }
@@ -2669,6 +2688,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
           writeFeedPreviewContent(msg.content);
         }
         if (tasksSessionTerm && tasksSessionNum === String(msg.session) && activeTab === 'tasks-panel') {
+          if (typeof msg.pane === 'number' && tsActivePane !== null && msg.pane !== tsActivePane) break;
           if (msg.cols && msg.cols > 0) { tsPaneCols = msg.cols; if (msg.cols !== tasksSessionTerm.cols) tasksSessionTerm.resize(msg.cols, tasksSessionTerm.rows); }
           if (msg.content === tsLastContent) break;
           if (tsUserScrolledUp) { tsPendingContent = msg.content; }
@@ -2714,7 +2734,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       case 'task:created': case 'task:dispatched': case 'task:completed': case 'task:failed': {
         const idx = tasks.findIndex(t => t.id === msg.task.id);
         if (idx >= 0) tasks[idx] = msg.task; else tasks.unshift(msg.task);
-        renderTasks(); updateTasksBadge(); updateChecklistButtons(); updateActionsButton(); break;
+        renderTasks(); updateTasksBadge(); updateChecklistButtons(); updateActionsButton(); updateTsNavButtons(); break;
       }
       case 'task:updated': {
         const idx = tasks.findIndex(t => t.id === msg.task.id);
@@ -3864,12 +3884,16 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     if (!currentSession) return;
     const h = msgHistory[currentSession] || [];
     if (e.key === 'ArrowUp') {
+      // Only trigger history when cursor is on the first line
+      if (msgInput.value.lastIndexOf('\n', msgInput.selectionStart - 1) !== -1) return;
       if (!h.length) return;
       e.preventDefault();
       if (msgHistoryIdx === -1) msgHistoryDraft = msgInput.value;
       if (msgHistoryIdx < h.length - 1) msgHistoryIdx++;
       msgInput.value = h[h.length - 1 - msgHistoryIdx];
     } else if (e.key === 'ArrowDown') {
+      // Only trigger history when cursor is on the last line
+      if (msgInput.value.indexOf('\n', msgInput.selectionStart) !== -1) return;
       if (msgHistoryIdx <= -1) return;
       e.preventDefault();
       msgHistoryIdx--;
@@ -4348,7 +4372,9 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 
     // Subscribe (always — ensures fresh subscription even after tab switches)
     if (ws && ws.readyState === 1) {
-      ws.send(JSON.stringify({ type: 'terminal:subscribe', session: tasksSessionNum }));
+      const subMsg = { type: 'terminal:subscribe', session: tasksSessionNum };
+      if (sameSession && tsActivePane !== null) subMsg.pane = tsActivePane;
+      ws.send(JSON.stringify(subMsg));
       ws.send(JSON.stringify({ type: 'terminal:panes', session: tasksSessionNum }));
       ws.send(JSON.stringify({ type: 'git:info', session: tasksSessionNum }));
     }
@@ -4589,12 +4615,14 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     if (!tasksSessionNum) return;
     const h = msgHistory[tasksSessionNum] || [];
     if (e.key === 'ArrowUp') {
+      if (tsMsgInput.value.lastIndexOf('\n', tsMsgInput.selectionStart - 1) !== -1) return;
       if (!h.length) return;
       e.preventDefault();
       if (msgHistoryIdx === -1) msgHistoryDraft = tsMsgInput.value;
       if (msgHistoryIdx < h.length - 1) msgHistoryIdx++;
       tsMsgInput.value = h[h.length - 1 - msgHistoryIdx];
     } else if (e.key === 'ArrowDown') {
+      if (tsMsgInput.value.indexOf('\n', tsMsgInput.selectionStart) !== -1) return;
       if (msgHistoryIdx <= -1) return;
       e.preventDefault();
       msgHistoryIdx--;
@@ -4632,6 +4660,62 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       const card = tasksScroll.querySelector(`.task-card[data-id="${taskId}"]`);
       if (card) card.scrollIntoView({ block: 'nearest' });
     });
+    updateTsNavButtons();
+  }
+
+  function getTaskNavList() {
+    return tasks.filter(t => t.status === 'dispatched');
+  }
+
+  function updateTsNavButtons() {
+    const navList = getTaskNavList();
+    const cur = tasksSelectedTaskId ? tasks.find(t => t.id === tasksSelectedTaskId) : null;
+    const isDispatched = cur && cur.status === 'dispatched';
+    const hasMultiple = navList.length > 1;
+    const prevBtn = document.getElementById('ts-nav-prev');
+    const nextBtn = document.getElementById('ts-nav-next');
+    const doneBtn = document.getElementById('ts-nav-done');
+    // Show buttons only when a task session is open
+    const show = !!tasksSelectedTaskId && isDispatched;
+    prevBtn.style.display = show ? '' : 'none';
+    nextBtn.style.display = show ? '' : 'none';
+    doneBtn.style.display = show ? '' : 'none';
+    prevBtn.disabled = !hasMultiple;
+    nextBtn.disabled = !hasMultiple;
+    doneBtn.disabled = !isDispatched;
+  }
+
+  function tsNavPrev() {
+    const navList = getTaskNavList();
+    if (navList.length < 2) return;
+    const idx = navList.findIndex(t => t.id === tasksSelectedTaskId);
+    const prev = idx <= 0 ? navList[navList.length - 1] : navList[idx - 1];
+    selectTaskById(prev.id);
+  }
+
+  function tsNavNext() {
+    const navList = getTaskNavList();
+    if (navList.length < 2) return;
+    const idx = navList.findIndex(t => t.id === tasksSelectedTaskId);
+    const next = idx < 0 || idx >= navList.length - 1 ? navList[0] : navList[idx + 1];
+    selectTaskById(next.id);
+  }
+
+  function tsNavDone() {
+    const cur = tasksSelectedTaskId ? tasks.find(t => t.id === tasksSelectedTaskId) : null;
+    if (!cur || cur.status !== 'dispatched' || !ws || ws.readyState !== 1) return;
+    ws.send(JSON.stringify({ type: 'task:complete', taskId: cur.id }));
+    showToast('Task Done', `Marked "${cur.title || cur.id}" as done`, 'success');
+    // Auto-advance to next dispatched task
+    const navList = getTaskNavList().filter(t => t.id !== cur.id);
+    if (navList.length > 0) {
+      const idx = getTaskNavList().findIndex(t => t.id === cur.id);
+      const next = idx >= navList.length ? navList[0] : navList[Math.max(0, idx)] || navList[0];
+      setTimeout(() => selectTaskById(next.id), 200);
+    } else {
+      tasksSelectedTaskId = null;
+      updateTsNavButtons();
+    }
   }
 
   // ── Source filter dropdown ───────────────────────────
@@ -4949,6 +5033,11 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     renderTasks();
     updateTasksBadge();
   });
+
+  // Task nav buttons
+  document.getElementById('ts-nav-prev').addEventListener('click', tsNavPrev);
+  document.getElementById('ts-nav-next').addEventListener('click', tsNavNext);
+  document.getElementById('ts-nav-done').addEventListener('click', tsNavDone);
 
   function taskCardHtml(t, tabType) {
     const ago = timeAgo(t.createdAt);
@@ -6624,9 +6713,9 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         if (i > 0) el.style.display = 'none';
       });
     }
-    // Hide schedule for manual/slack (no polling)
+    // Hide schedule for slack (no polling); manual supports cron schedule
     const schedField = document.getElementById('pm-form-schedule-field');
-    if (schedField) schedField.style.display = (type === 'manual' || type === 'slack') ? 'none' : '';
+    if (schedField) schedField.style.display = (type === 'slack') ? 'none' : '';
     const threshField = document.getElementById('pm-form-threshold').closest('.pm-form-field');
     if (threshField) threshField.style.display = (type === 'manual' || type === 'command' || type === 'script' || type === 'slack') ? 'none' : '';
     const instrField = document.getElementById('pm-form-instructions').closest('.pm-form-field');
