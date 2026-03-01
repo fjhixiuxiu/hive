@@ -386,6 +386,9 @@ class TaskQueue extends EventEmitter {
       const task = this.tasks.get(taskId);
       if (!task || task.mode !== 'manual') {
         this.completeTask(taskId, null, preview || null, paneCols);
+      } else {
+        // Manual task still active — don't clear locks or dispatch next
+        return;
       }
     }
     this.dispatchLock.delete(num);
