@@ -408,6 +408,9 @@ class TaskQueue extends EventEmitter {
       const task = this.tasks.get(taskId);
       if (!task || (task.mode !== 'manual' && this.taskAutoComplete)) {
         this.completeTask(taskId, null, preview || null, paneCols);
+      } else if (task.source && task.source.startsWith('slack:')) {
+        // Slack-originated manual tasks complete on idle like auto tasks
+        this.completeTask(taskId, null, preview || null, paneCols);
       } else {
         // Manual task or auto-complete disabled — don't clear locks or dispatch next
         return;
