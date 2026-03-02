@@ -1471,6 +1471,107 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .actions-popup-item.loading { opacity: 0.4; pointer-events: none; }
 .actions-popup-item .action-label { flex: 1; }
 .actions-popup-item .action-confirm-icon { font-size: 10px; color: var(--dim); }
+
+/* ── Setup wizard ─────────────────────── */
+#setup-wizard {
+  display: none; position: fixed; inset: 0; z-index: 200;
+  background: var(--bg); flex-direction: column; align-items: center; justify-content: center;
+  padding: 24px;
+}
+#setup-wizard.visible { display: flex; }
+.setup-container {
+  width: 100%; max-width: 520px; display: flex; flex-direction: column; gap: 24px;
+}
+.setup-header { text-align: center; }
+.setup-header h1 { font-size: 28px; font-weight: 700; letter-spacing: -1px; margin-bottom: 4px; }
+.setup-header h1 span { color: var(--green); }
+.setup-header p { color: var(--dim); font-size: 14px; }
+.setup-steps {
+  display: flex; justify-content: center; gap: 8px; padding: 8px 0;
+}
+.setup-step-dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--bg3); transition: background 0.2s;
+}
+.setup-step-dot.active { background: var(--purple); }
+.setup-step-dot.done { background: var(--green); }
+.setup-body {
+  background: var(--bg2); border-radius: 10px; padding: 24px;
+  min-height: 220px; display: flex; flex-direction: column; gap: 16px;
+}
+.setup-step { display: none; flex-direction: column; gap: 16px; }
+.setup-step.active { display: flex; }
+.setup-step h2 { font-size: 18px; font-weight: 700; }
+.setup-step p { color: var(--dim); font-size: 13px; line-height: 1.5; }
+.setup-label { font-size: 13px; font-weight: 600; color: var(--fg); margin-bottom: 4px; }
+.setup-input {
+  background: var(--bg); border: 1px solid var(--bg3); color: var(--fg);
+  padding: 10px 14px; border-radius: 6px; font-size: 14px; width: 100%;
+  font-family: 'SF Mono', 'Menlo', 'Monaco', monospace; outline: none;
+  transition: border-color 0.15s;
+}
+.setup-input:focus { border-color: var(--purple); }
+.setup-input.valid { border-color: var(--green); }
+.setup-input.invalid { border-color: var(--red); }
+.setup-validation {
+  font-size: 12px; min-height: 18px; transition: color 0.15s;
+}
+.setup-validation.ok { color: var(--green); }
+.setup-validation.err { color: var(--red); }
+.setup-validation.warn { color: var(--yellow); }
+.setup-checkbox-row {
+  display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer;
+}
+.setup-checkbox-row input[type="checkbox"] {
+  accent-color: var(--purple); width: 16px; height: 16px; cursor: pointer;
+}
+.setup-slider-wrap { display: flex; flex-direction: column; gap: 12px; align-items: center; }
+.setup-agent-count {
+  font-size: 64px; font-weight: 800; color: var(--purple); line-height: 1;
+}
+.setup-slider {
+  width: 100%; accent-color: var(--purple); cursor: pointer;
+}
+.setup-names-grid {
+  display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px;
+}
+.setup-name-input {
+  background: var(--bg); border: 1px solid var(--bg3); color: var(--fg);
+  padding: 8px 10px; border-radius: 6px; font-size: 13px; outline: none;
+  transition: border-color 0.15s;
+}
+.setup-name-input:focus { border-color: var(--purple); }
+.setup-name-label { font-size: 11px; color: var(--dim); margin-bottom: 2px; }
+.setup-review-table {
+  width: 100%; font-size: 14px; border-collapse: collapse;
+}
+.setup-review-table td {
+  padding: 8px 0; border-bottom: 1px solid var(--bg3);
+}
+.setup-review-table td:first-child { color: var(--dim); font-weight: 600; width: 120px; }
+.setup-review-table td:last-child { font-family: 'SF Mono', 'Menlo', monospace; }
+.setup-footer {
+  display: flex; justify-content: space-between; align-items: center; gap: 12px;
+}
+.setup-btn {
+  padding: 10px 24px; border-radius: 6px; font-size: 14px; font-weight: 600;
+  border: none; cursor: pointer; transition: opacity 0.15s, background 0.15s;
+}
+.setup-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.setup-btn.primary { background: var(--purple); color: var(--bg); }
+.setup-btn.primary:hover:not(:disabled) { opacity: 0.9; }
+.setup-btn.launch { background: var(--green); color: var(--bg); }
+.setup-btn.launch:hover:not(:disabled) { opacity: 0.9; }
+.setup-btn.secondary { background: var(--bg3); color: var(--fg); }
+.setup-btn.secondary:hover:not(:disabled) { background: var(--dim); }
+.setup-skip { color: var(--dim); font-size: 12px; text-decoration: underline; cursor: pointer; background: none; border: none; }
+.setup-skip:hover { color: var(--fg); }
+.setup-spinner {
+  display: inline-block; width: 18px; height: 18px; border: 2px solid var(--bg);
+  border-top-color: transparent; border-radius: 50%;
+  animation: spin 0.6s linear infinite; vertical-align: middle; margin-right: 8px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
 </style>
 </head>
 <body>
@@ -1480,6 +1581,76 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   <h1><span>hive</span> fleet</h1>
   <input id="auth-input" type="password" placeholder="Enter token" autocomplete="off" autofocus>
   <div id="auth-error">Invalid token</div>
+</div>
+
+<!-- Setup wizard (shown on first run) -->
+<div id="setup-wizard">
+  <div class="setup-container">
+    <div class="setup-header">
+      <h1><span>hive</span> setup</h1>
+      <p>Let's configure your fleet in a few quick steps</p>
+    </div>
+    <div class="setup-steps">
+      <div class="setup-step-dot active" data-step="0"></div>
+      <div class="setup-step-dot" data-step="1"></div>
+      <div class="setup-step-dot" data-step="2"></div>
+      <div class="setup-step-dot" data-step="3"></div>
+      <div class="setup-step-dot" data-step="4"></div>
+    </div>
+    <div class="setup-body">
+      <!-- Step 0: Name your hive -->
+      <div class="setup-step active" data-step="0">
+        <h2>Name your hive</h2>
+        <p>A unique name for this hive instance. Used as a prefix for tmux sessions. If running multiple hives, each needs a different name.</p>
+        <div>
+          <div class="setup-label">Hive name</div>
+          <input class="setup-input" id="setup-hive-name" type="text" placeholder="e.g. dev, prod, test" maxlength="20" autocomplete="off" spellcheck="false">
+          <div class="setup-validation" id="setup-name-validation"></div>
+        </div>
+      </div>
+      <!-- Step 1: Repo path -->
+      <div class="setup-step" data-step="1">
+        <h2>Repository path</h2>
+        <p>Where is the repo your agents will work in? Each agent gets its own copy (path + number suffix).</p>
+        <div>
+          <div class="setup-label">Repo directory</div>
+          <input class="setup-input" id="setup-repo-path" type="text" placeholder="~/dev/myproject" autocomplete="off" spellcheck="false">
+          <div class="setup-validation" id="setup-path-validation"></div>
+        </div>
+        <label class="setup-checkbox-row">
+          <input type="checkbox" id="setup-shared-repo">
+          <span>Shared repo (all agents use the same directory, no number suffix)</span>
+        </label>
+      </div>
+      <!-- Step 2: Agent count -->
+      <div class="setup-step" data-step="2">
+        <h2>How many agents?</h2>
+        <p>Each agent runs in its own tmux session with Claude Code.</p>
+        <div class="setup-slider-wrap">
+          <div class="setup-agent-count" id="setup-count-display">4</div>
+          <input type="range" class="setup-slider" id="setup-agent-count" min="1" max="16" value="4">
+        </div>
+      </div>
+      <!-- Step 3: Name agents -->
+      <div class="setup-step" data-step="3">
+        <h2>Name your agents <span style="color:var(--dim);font-size:14px;font-weight:400">(optional)</span></h2>
+        <p>Give each slot a role name, or leave the defaults.</p>
+        <div class="setup-names-grid" id="setup-names-grid"></div>
+      </div>
+      <!-- Step 4: Review + Launch -->
+      <div class="setup-step" data-step="4">
+        <h2>Review &amp; launch</h2>
+        <table class="setup-review-table" id="setup-review-table"></table>
+      </div>
+    </div>
+    <div class="setup-footer">
+      <button class="setup-skip" id="setup-skip-btn">Skip setup</button>
+      <div style="display:flex;gap:8px;">
+        <button class="setup-btn secondary" id="setup-back-btn" style="display:none;">Back</button>
+        <button class="setup-btn primary" id="setup-next-btn" disabled>Next</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- Connection status bar -->
@@ -2425,6 +2596,194 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   const MSG_HISTORY_MAX = 10;
   try { const saved = localStorage.getItem('hive_msg_history'); if (saved) Object.assign(msgHistory, JSON.parse(saved)); } catch(e) {}
 
+  // ── Setup wizard ──────────────────────────────────
+  const setupWizard = $('#setup-wizard');
+  const setupHiveName = $('#setup-hive-name');
+  const setupNameValidation = $('#setup-name-validation');
+  const setupRepoPath = $('#setup-repo-path');
+  const setupPathValidation = $('#setup-path-validation');
+  const setupSharedRepo = $('#setup-shared-repo');
+  const setupAgentCount = $('#setup-agent-count');
+  const setupCountDisplay = $('#setup-count-display');
+  const setupNamesGrid = $('#setup-names-grid');
+  const setupReviewTable = $('#setup-review-table');
+  const setupBackBtn = $('#setup-back-btn');
+  const setupNextBtn = $('#setup-next-btn');
+  const setupSkipBtn = $('#setup-skip-btn');
+
+  let setupCurrentStep = 0;
+  let setupHiveNameValid = true; // empty is valid (optional)
+  let setupPathValid = false;
+  let setupPathResolved = '';
+  let setupPathHasGit = false;
+  let setupLaunching = false;
+  let setupValidateTimer = null;
+
+  function setupUpdateDots() {
+    $$('.setup-step-dot').forEach(dot => {
+      const s = parseInt(dot.dataset.step);
+      dot.classList.toggle('active', s === setupCurrentStep);
+      dot.classList.toggle('done', s < setupCurrentStep);
+    });
+  }
+
+  function setupShowStep(step) {
+    setupCurrentStep = step;
+    $$('.setup-step').forEach(el => el.classList.toggle('active', parseInt(el.dataset.step) === step));
+    setupUpdateDots();
+    setupBackBtn.style.display = step > 0 ? '' : 'none';
+    if (step === 4) {
+      setupNextBtn.textContent = 'Launch Fleet';
+      setupNextBtn.classList.remove('primary');
+      setupNextBtn.classList.add('launch');
+      setupNextBtn.disabled = false;
+      setupBuildReview();
+    } else {
+      setupNextBtn.textContent = 'Next';
+      setupNextBtn.classList.remove('launch');
+      setupNextBtn.classList.add('primary');
+    }
+    // Step 0: hive name (optional — always valid, but validate format if non-empty)
+    if (step === 0) setupNextBtn.disabled = !setupHiveNameValid;
+    // Step 1: disable Next until path validates
+    if (step === 1) setupNextBtn.disabled = !setupPathValid;
+    // Step 2/3: always enabled
+    if (step === 2 || step === 3) { setupNextBtn.disabled = false; setupBuildNamesGrid(); }
+  }
+
+  function setupBuildNamesGrid() {
+    const count = parseInt(setupAgentCount.value);
+    setupNamesGrid.innerHTML = '';
+    for (let i = 1; i <= count; i++) {
+      const existing = setupNamesGrid.querySelector(`[data-slot="${i}"]`);
+      const val = existing ? existing.value : `Slot ${i}`;
+      const div = document.createElement('div');
+      div.innerHTML = `<div class="setup-name-label">Agent ${i}</div><input class="setup-name-input" data-slot="${i}" value="${esc(val)}" maxlength="30">`;
+      setupNamesGrid.appendChild(div);
+    }
+  }
+
+  function setupBuildReview() {
+    const hiveName = setupHiveName.value.trim();
+    const count = parseInt(setupAgentCount.value);
+    const shared = setupSharedRepo.checked;
+    const names = [];
+    setupNamesGrid.querySelectorAll('.setup-name-input').forEach(inp => {
+      names.push(inp.value.trim() || `Slot ${inp.dataset.slot}`);
+    });
+    const prefix = hiveName ? hiveName + '-' : '';
+    const sessionExample = `${prefix}1, ${prefix}2, ...`;
+    setupReviewTable.innerHTML = `
+      ${hiveName ? `<tr><td>Hive name</td><td>${esc(hiveName)}</td></tr>` : ''}
+      <tr><td>Sessions</td><td>${esc(sessionExample)}</td></tr>
+      <tr><td>Repo path</td><td>${esc(setupRepoPath.value.trim())}</td></tr>
+      <tr><td>Mode</td><td>${shared ? 'Shared (single directory)' : 'Numbered (path + N suffix)'}</td></tr>
+      <tr><td>Agents</td><td>${count}</td></tr>
+      <tr><td>Names</td><td>${names.map(n => esc(n)).join(', ')}</td></tr>
+    `;
+  }
+
+  function handleSetupPathValidation(msg) {
+    setupPathValid = msg.valid;
+    setupPathResolved = msg.resolved || '';
+    setupPathHasGit = msg.hasGit || false;
+    const v = setupPathValidation;
+    if (msg.valid && msg.hasGit) {
+      v.textContent = 'Valid git repository';
+      v.className = 'setup-validation ok';
+      setupRepoPath.className = 'setup-input valid';
+    } else if (msg.valid) {
+      v.textContent = 'Directory exists (no .git found — that\'s OK)';
+      v.className = 'setup-validation warn';
+      setupRepoPath.className = 'setup-input valid';
+    } else {
+      v.textContent = 'Directory not found';
+      v.className = 'setup-validation err';
+      setupRepoPath.className = 'setup-input invalid';
+    }
+    if (setupCurrentStep === 1) setupNextBtn.disabled = !msg.valid;
+  }
+
+  // Hive name validation (optional, but must be valid format if non-empty)
+  const HIVE_NAME_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/i;
+  setupHiveName.addEventListener('input', () => {
+    const val = setupHiveName.value.trim();
+    if (!val) {
+      setupHiveNameValid = true;
+      setupNameValidation.textContent = 'Optional — leave empty for bare session numbers (1, 2, ...)';
+      setupNameValidation.className = 'setup-validation';
+      setupHiveName.className = 'setup-input';
+    } else if (HIVE_NAME_RE.test(val)) {
+      setupHiveNameValid = true;
+      setupNameValidation.textContent = `Sessions will be named ${val}-1, ${val}-2, ...`;
+      setupNameValidation.className = 'setup-validation ok';
+      setupHiveName.className = 'setup-input valid';
+    } else {
+      setupHiveNameValid = false;
+      setupNameValidation.textContent = 'Letters, numbers, and hyphens only. Must start/end with letter or number.';
+      setupNameValidation.className = 'setup-validation err';
+      setupHiveName.className = 'setup-input invalid';
+    }
+    if (setupCurrentStep === 0) setupNextBtn.disabled = !setupHiveNameValid;
+  });
+
+  // Debounced path validation
+  setupRepoPath.addEventListener('input', () => {
+    clearTimeout(setupValidateTimer);
+    const val = setupRepoPath.value.trim();
+    if (!val) {
+      setupPathValid = false;
+      setupPathValidation.textContent = '';
+      setupPathValidation.className = 'setup-validation';
+      setupRepoPath.className = 'setup-input';
+      setupNextBtn.disabled = true;
+      return;
+    }
+    setupValidateTimer = setTimeout(() => {
+      if (ws && ws.readyState === 1) {
+        ws.send(JSON.stringify({ type: 'setup:validate-path', path: val }));
+      }
+    }, 400);
+  });
+
+  setupAgentCount.addEventListener('input', () => {
+    setupCountDisplay.textContent = setupAgentCount.value;
+  });
+
+  setupNextBtn.addEventListener('click', () => {
+    if (setupCurrentStep < 4) {
+      setupShowStep(setupCurrentStep + 1);
+    } else {
+      // Launch
+      setupLaunching = true;
+      setupNextBtn.disabled = true;
+      setupNextBtn.innerHTML = '<span class="setup-spinner"></span>Launching...';
+      const count = parseInt(setupAgentCount.value);
+      const roles = {};
+      setupNamesGrid.querySelectorAll('.setup-name-input').forEach(inp => {
+        roles[parseInt(inp.dataset.slot)] = inp.value.trim() || `Slot ${inp.dataset.slot}`;
+      });
+      ws.send(JSON.stringify({
+        type: 'setup:launch',
+        hiveName: setupHiveName.value.trim(),
+        repoDir: setupRepoPath.value.trim(),
+        agentCount: count,
+        sharedRepo: setupSharedRepo.checked,
+        roles,
+      }));
+    }
+  });
+
+  setupBackBtn.addEventListener('click', () => {
+    if (setupCurrentStep > 0) setupShowStep(setupCurrentStep - 1);
+  });
+
+  setupSkipBtn.addEventListener('click', () => {
+    if (ws && ws.readyState === 1) {
+      ws.send(JSON.stringify({ type: 'setup:skip' }));
+    }
+  });
+
   // ── Auth management ──────────────────────────────
   const TOKEN_KEY = 'hive_token';
   let token = localStorage.getItem(TOKEN_KEY);
@@ -2783,7 +3142,33 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       case 'pong':
         if (pongTimer) { clearTimeout(pongTimer); pongTimer = null; }
         break;
-      case 'config': linkTemplates = msg.links || {}; if (msg.spawnBaseDir) spawnBaseDir = msg.spawnBaseDir; break;
+      // -- Setup wizard messages --
+      case 'setup:required':
+        authScreen.style.display = 'none'; mainView.style.display = 'none';
+        setupWizard.classList.add('visible');
+        break;
+      case 'setup:validate-path:result':
+        handleSetupPathValidation(msg);
+        break;
+      case 'setup:complete':
+        setupWizard.classList.remove('visible');
+        mainView.style.display = 'flex';
+        showToast('Setup complete', msg.sessionsCreated > 0 ? `${msg.sessionsCreated} session(s) created` : 'Ready to go', 'success');
+        break;
+      case 'setup:error':
+        setupLaunching = false;
+        setupNextBtn.disabled = false;
+        setupNextBtn.textContent = 'Launch Fleet';
+        showToast('Setup error', msg.error, 'error');
+        break;
+      case 'config':
+        linkTemplates = msg.links || {};
+        if (msg.spawnBaseDir) spawnBaseDir = msg.spawnBaseDir;
+        if (msg.hiveName) {
+          document.getElementById('sidebar-logo').innerHTML =
+            '<span style="color:var(--green)">' + esc(msg.hiveName) + '</span> hive';
+        }
+        break;
       case 'commands:list': tsCommands = msg.commands || []; renderCommands(tsCommands); break;
       case 'fleet:search:result':
         renderFleetSearchResults(msg.query, msg.results);

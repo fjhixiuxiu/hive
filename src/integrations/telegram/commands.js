@@ -328,7 +328,7 @@ async function peek(config, send, router, query) {
     return;
   }
 
-  const num = fleet.sessionNum(name);
+  const num = fleet.sessionNum(name, config.sessions.namePrefix);
 
   // Convert markdown to formatted HTML
   const formatted = mdToHtml(content);
@@ -349,7 +349,7 @@ async function ask(config, send, edit, router, query, message) {
 
   const { name, nodeId } = found;
   const node = router.getNode(nodeId);
-  const num = fleet.sessionNum(name);
+  const num = fleet.sessionNum(name, config.sessions.namePrefix);
 
   const sentMsg = await send(`\u23f3 <b>Session ${num}</b> -- thinking...`, HTML);
   const msgId = sentMsg && sentMsg.message_id;
@@ -396,7 +396,7 @@ async function tell(config, send, router, query, message) {
   const node = router.getNode(nodeId);
   const result = await relay.tell(config, node, name, message);
   if (result.success) {
-    send(`\ud83d\udce8 Sent to session ${fleet.sessionNum(name)}`, HTML);
+    send(`\ud83d\udce8 Sent to session ${fleet.sessionNum(name, config.sessions.namePrefix)}`, HTML);
   } else {
     send(`\u274c ${esc(result.error)}`, HTML);
   }
@@ -413,7 +413,7 @@ async function restart(config, send, router, query) {
   await node.exec(`tmux send-keys -t "${paneTarget}" Escape`);
   setTimeout(async () => {
     await node.sendKeys(paneTarget, '/exit', true);
-    send(`\u267b\ufe0f Restarting Claude in session ${fleet.sessionNum(name)}...`, HTML);
+    send(`\u267b\ufe0f Restarting Claude in session ${fleet.sessionNum(name, config.sessions.namePrefix)}...`, HTML);
     setTimeout(async () => {
       await node.sendKeys(paneTarget, 'claude --resume', true);
     }, 3000);
@@ -428,7 +428,7 @@ async function kill(config, send, router, query) {
   const node = router.getNode(nodeId);
   const ok = await node.killSession(name);
   if (ok) {
-    send(`\ud83d\udc80 Session ${fleet.sessionNum(name)} killed.`, HTML);
+    send(`\ud83d\udc80 Session ${fleet.sessionNum(name, config.sessions.namePrefix)} killed.`, HTML);
   } else {
     send(`\u274c Failed to kill session.`, HTML);
   }

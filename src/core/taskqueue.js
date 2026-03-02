@@ -8,6 +8,7 @@ const { promisify } = require('util');
 const execAsync = promisify(exec);
 const relay = require('./relay');
 const fleet = require('./fleet');
+const sessionManager = require('./session-manager');
 
 const STATE_FILE = path.join(__dirname, '..', '..', '.hive-state.json');
 
@@ -911,18 +912,17 @@ class TaskQueue extends EventEmitter {
       }
     }
 
-    // Start tmux session using agent.yml template
-    const agentYml = (
-      process.env.HIVE_AGENT_YML ||
-      path.join(os.homedir(), 'dev', 'agents', 'tmux', 'agent.yml')
-    ).replace(/^~/, os.homedir());
-    const tmuxCmd = `/bin/zsh -lc 'tmuxinator start -p ${agentYml} N=${num} ROOT="${repoDir}" --no-attach'`;
-    log.info(`[spawn] running: ${tmuxCmd}`);
+    // Start tmux session via session-manager (no tmuxinator dependency)
+    const size = this.config.tmux?.defaultSize || { cols: 200, rows: 50 };
+    const prefix = this.config.sessions?.namePrefix || '';
+    const sessionName = `${prefix}${num}`;
+    log.info(`[spawn] creating session ${sessionName} at ${repoDir}`);
     try {
-      await execAsync(tmuxCmd, { timeout: 15000 });
-      log.info(`[spawn] tmuxinator started session ${num}`);
+      await sessionManager.createSession(sessionName, repoDir, { panes: 3, tmuxLayout: 'main-vertical', claudePaneWidth: '50%' }, size);
+      await sessionManager.startClaude(sessionName, this.config.sessions.claudePane);
+      log.info(`[spawn] session ${sessionName} created`);
     } catch (err) {
-      log.error(`[spawn] tmuxinator failed: ${err.message}`);
+      log.error(`[spawn] session creation failed: ${err.message}`);
       throw new Error(`Failed to start session ${num}: ${err.message}`);
     }
 
@@ -962,20 +962,19 @@ class TaskQueue extends EventEmitter {
     const sessions = await fleet.getFleetStatus(this.config, this.router);
     const liveSessions = new Set(sessions.map(s => s.num));
 
-    const agentYml = (
-      process.env.HIVE_AGENT_YML ||
-      path.join(os.homedir(), 'dev', 'agents', 'tmux', 'agent.yml')
-    ).replace(/^~/, os.homedir());
+    const size = this.config.tmux?.defaultSize || { cols: 200, rows: 50 };
+    const prefix = this.config.sessions?.namePrefix || '';
 
     for (const [num, info] of this.spawnedAgents) {
       if (liveSessions.has(num)) {
         results.skipped.push(num);
         continue;
       }
-      const tmuxCmd = `/bin/zsh -lc 'tmuxinator start -p ${agentYml} N=${num} ROOT="${info.repoDir}" --no-attach'`;
+      const sessionName = `${prefix}${num}`;
       try {
-        await execAsync(tmuxCmd, { timeout: 15000 });
-        log.info(`[respawn] session ${num} (${info.name}) restarted`);
+        await sessionManager.createSession(sessionName, info.repoDir, { panes: 3, tmuxLayout: 'main-vertical', claudePaneWidth: '50%' }, size);
+        await sessionManager.startClaude(sessionName, this.config.sessions.claudePane);
+        log.info(`[respawn] session ${sessionName} (${info.name}) restarted`);
         results.respawned.push(num);
       } catch (err) {
         log.error(`[respawn] session ${num} failed: ${err.message}`);

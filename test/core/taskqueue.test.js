@@ -7,6 +7,7 @@ const fs = require('fs');
 const fleetModule = require('../../src/core/fleet');
 const relayModule = require('../../src/core/relay');
 const logModule = require('../../src/core/log');
+const sessionManagerModule = require('../../src/core/session-manager');
 const TaskQueue = require('../../src/core/taskqueue');
 const NodeRouter = require('../../src/core/node-router');
 
@@ -27,6 +28,8 @@ describe('TaskQueue', () => {
     vi.spyOn(relayModule, 'ask').mockResolvedValue({ success: true, response: 'done' });
     vi.spyOn(logModule, 'info').mockImplementation(() => {});
     vi.spyOn(logModule, 'error').mockImplementation(() => {});
+    vi.spyOn(sessionManagerModule, 'createSession').mockRejectedValue(new Error('no tmux in test'));
+    vi.spyOn(sessionManagerModule, 'startClaude').mockResolvedValue();
 
     config = createMockConfig();
     watcher = createMockWatcher();
