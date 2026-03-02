@@ -136,6 +136,48 @@ describe('TaskQueue', () => {
     });
   });
 
+  describe('taskAutoComplete', () => {
+    it('defaults to true', () => {
+      expect(tq.taskAutoComplete).toBe(true);
+    });
+
+    it('auto-completes auto task on idle when enabled', () => {
+      tq.taskAutoComplete = true;
+      const task = tq.createTask('Test', 'auto', null, null);
+      task.status = 'dispatched';
+      task.assignedTo = 6;
+      task.dispatchedAt = Date.now();
+      tq.activeTaskBySession.set(6, task.id);
+
+      tq._handleSessionIdle(6, null, null);
+      expect(task.status).toBe('completed');
+    });
+
+    it('does NOT auto-complete auto task on idle when disabled', () => {
+      tq.taskAutoComplete = false;
+      const task = tq.createTask('Test', 'auto', null, null);
+      task.status = 'dispatched';
+      task.assignedTo = 6;
+      task.dispatchedAt = Date.now();
+      tq.activeTaskBySession.set(6, task.id);
+
+      tq._handleSessionIdle(6, null, null);
+      expect(task.status).toBe('dispatched');
+    });
+
+    it('never auto-completes manual tasks regardless of setting', () => {
+      tq.taskAutoComplete = true;
+      const task = tq.createTask('Test', 'manual', 6, null);
+      task.status = 'dispatched';
+      task.assignedTo = 6;
+      task.dispatchedAt = Date.now();
+      tq.activeTaskBySession.set(6, task.id);
+
+      tq._handleSessionIdle(6, null, null);
+      expect(task.status).toBe('dispatched');
+    });
+  });
+
   describe('requeueTask', () => {
     it('moves dispatched task back to queued', () => {
       const task = tq.createTask('Test', 'auto', null, null);
