@@ -194,12 +194,16 @@ function createSlackBot(taskQueue, config, router, pmManager) {
             const found = await fleet.findSession(config, router, activeTask.assignedTo);
             if (found) {
               const node = router.getNode(found.nodeId);
-              await relay.tell(config, node, found.name, text, { vimMode: taskQueue.vimMode });
-              await say({
-                text: `:bee: Sent to session ${activeTask.assignedTo}:\n> ${text}`,
-                thread_ts: replyTs,
-              });
-              return;
+              const result = await relay.tell(config, node, found.name, text, { vimMode: taskQueue.vimMode });
+              if (result.success) {
+                await say({
+                  text: `:bee: Sent to session ${activeTask.assignedTo}:\n> ${text}`,
+                  thread_ts: replyTs,
+                });
+                return;
+              }
+              // Relay failed — fall through to create new task
+              console.error(`Slack relay failed for S:${activeTask.assignedTo}: ${result.error}`);
             }
           } catch (err) {
             console.error('Slack follow-up relay error:', err.message);
