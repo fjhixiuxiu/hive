@@ -1736,6 +1736,13 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
           <button id="broadcast-send">Send Broadcast</button>
         </div>
         <div class="more-section">
+          <div class="more-section-title">Task Settings</div>
+          <div class="rule-row">
+            <span class="rule-name">Auto-complete tasks when session goes idle</span>
+            <button class="rule-toggle" id="toggle-task-autocomplete"></button>
+          </div>
+        </div>
+        <div class="more-section">
           <div class="more-section-title">Auto-Pilot Rules</div>
           <div id="rules-list"></div>
         </div>
@@ -2317,6 +2324,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   let previousTab = 'fleet-panel'; // remember which tab was active before session view
   let taskMode = 'auto';
   let vimMode = false;
+  let taskAutoComplete = true;
   let manualTarget = null;
   let activeTaskTab = 'inprogress';
   let taskSearchQuery = '';
@@ -2958,6 +2966,12 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         if (activeTab === 'more-panel') { renderAgentRoots(); renderDesigDefs(); }
         break;
       case 'vim:status': vimMode = msg.enabled; updateVimToggles(); break;
+      case 'taskAutoComplete:status': {
+        taskAutoComplete = msg.enabled;
+        const btn = document.getElementById('toggle-task-autocomplete');
+        if (btn) btn.classList.toggle('on', taskAutoComplete);
+        break;
+      }
       case 'spawn:slots':
         if (msg.slotMin !== undefined) spawnSlotMin = msg.slotMin;
         if (msg.slotMax !== undefined) spawnSlotMax = msg.slotMax;
@@ -3894,6 +3908,9 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     localStorage.setItem('hive_show_fleet_strip', showFleetStrip);
     this.classList.toggle('on', showFleetStrip);
     applyNavPreferences();
+  });
+  document.getElementById('toggle-task-autocomplete').addEventListener('click', function() {
+    if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'taskAutoComplete:toggle' }));
   });
   // Initialize toggle button states
   document.getElementById('toggle-nav-buttons').classList.toggle('on', showNavButtons);

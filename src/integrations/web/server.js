@@ -305,6 +305,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       ws.send(JSON.stringify({ type: 'rules:list', rules: taskQueue.getRules() }));
       ws.send(JSON.stringify({ type: 'designations:status', designations: taskQueue.getDesignations() }));
       ws.send(JSON.stringify({ type: 'vim:status', enabled: taskQueue.vimMode }));
+      ws.send(JSON.stringify({ type: 'taskAutoComplete:status', enabled: taskQueue.taskAutoComplete }));
       ws.send(JSON.stringify({ type: 'designationDefs:list', defs: taskQueue.getDesignationDefs() }));
       ws.send(JSON.stringify({ type: 'agentRoots:list', roots: taskQueue.getAgentRoots() }));
       ws.send(JSON.stringify({ type: 'agentFiles:list', files: taskQueue.agentFilesList }));
@@ -993,6 +994,15 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
         if (!checkPermission(ws, user, 'admin')) break;
         taskQueue.setVimMode(msg.enabled);
         broadcast({ type: 'vim:status', enabled: taskQueue.vimMode });
+        break;
+      }
+
+      case 'taskAutoComplete:toggle': {
+        if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'dispatch')) break;
+        taskQueue.taskAutoComplete = !taskQueue.taskAutoComplete;
+        taskQueue._saveState();
+        broadcast({ type: 'taskAutoComplete:status', enabled: taskQueue.taskAutoComplete });
         break;
       }
 

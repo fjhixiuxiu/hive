@@ -36,6 +36,7 @@ class TaskQueue extends EventEmitter {
     this.spawnSlotMin = 1;
     this.spawnSlotMax = 32;
     this.vimMode = false;
+    this.taskAutoComplete = true; // when false, tasks require manual completion
     this.checklistTemplates = new Map(); // name → { name, items: [string] }
 
     // Designation definitions + agent file scanning
@@ -405,10 +406,10 @@ class TaskQueue extends EventEmitter {
     log.info(`[idle] S:${num} idle — ${taskId ? 'completing task ' + taskId : 'no active task'}`);
     if (taskId) {
       const task = this.tasks.get(taskId);
-      if (!task || task.mode !== 'manual') {
+      if (!task || (task.mode !== 'manual' && this.taskAutoComplete)) {
         this.completeTask(taskId, null, preview || null, paneCols);
       } else {
-        // Manual task still active — don't clear locks or dispatch next
+        // Manual task or auto-complete disabled — don't clear locks or dispatch next
         return;
       }
     }
@@ -1206,6 +1207,7 @@ class TaskQueue extends EventEmitter {
         }
       }
       if (data.vimMode !== undefined) this.vimMode = data.vimMode;
+      if (data.taskAutoComplete !== undefined) this.taskAutoComplete = data.taskAutoComplete;
       if (data.spawnSlotMin !== undefined) this.spawnSlotMin = data.spawnSlotMin;
       if (data.spawnSlotMax !== undefined) this.spawnSlotMax = data.spawnSlotMax;
       // Restore tasks
@@ -1265,6 +1267,7 @@ class TaskQueue extends EventEmitter {
       tasks: tasksArr,
       feed: this.feed,
       vimMode: this.vimMode,
+      taskAutoComplete: this.taskAutoComplete,
       spawnSlotMin: this.spawnSlotMin,
       spawnSlotMax: this.spawnSlotMax,
       checklistTemplates: this.getChecklistTemplates(),
