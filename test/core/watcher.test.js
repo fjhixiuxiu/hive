@@ -66,7 +66,8 @@ describe('Watcher', () => {
       await watcher._seed();
 
       fleetSpy.mockResolvedValue([makeSession(6, 'working')]);
-      await watcher._poll();
+      await watcher._poll(); // 1st working poll
+      await watcher._poll(); // 2nd working poll — seenWorking requires 2 consecutive
 
       fleetSpy.mockResolvedValue([makeSession(6, 'idle')]);
       for (let i = 0; i < 4; i++) {

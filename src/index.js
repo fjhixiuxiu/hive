@@ -57,6 +57,9 @@ const TaskQueue = require('./core/taskqueue');
 const taskQueue = new TaskQueue(config, watcher, router);
 log.info('Task queue initialized');
 
+// Seed watcher with sessions that have dispatched tasks so idle detection works after restart
+watcher.seedWorkingFromTasks([...taskQueue.activeTaskBySession.keys()]);
+
 // Patch config.sessions.repoDir to check spawned agents first
 const originalRepoDir = config.sessions.repoDir;
 config.sessions.repoDir = (n) => {
