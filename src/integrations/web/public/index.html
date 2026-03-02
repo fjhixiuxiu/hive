@@ -1974,6 +1974,10 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       <label class="pm-form-label">Author <span style="color:var(--dim)">(GitHub username, optional)</span></label>
       <input class="pm-form-input" id="pm-form-gh-author" type="text" placeholder="jeffheifetz" autocomplete="off">
     </div>
+    <div class="pm-form-field pm-fields-github-prs full-width" style="display:none">
+      <label class="pm-form-label">Base Branch <span style="color:var(--dim)">(optional, blank = main/master)</span></label>
+      <input class="pm-form-input" id="pm-form-gh-base" type="text" placeholder="releases/4.1.0" autocomplete="off">
+    </div>
     <div class="pm-form-field pm-fields-re-reviews full-width" style="display:none">
       <label class="pm-form-label">Reviewer Username</label>
       <input class="pm-form-input" id="pm-form-gh-reviewer" type="text" placeholder="github-username" autocomplete="off">
@@ -6867,11 +6871,12 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     const type = document.getElementById('pm-form-source').value;
     const isGithub = type === 'github-issues' || type === 'github-prs' || type === 'github-re-reviews';
     const isReReviews = type === 'github-re-reviews';
-    const types = ['jira', 'github', 're-reviews', 'manual', 'command', 'script', 'jenkins', 'zoho', 'slack'];
+    const types = ['jira', 'github', 'github-prs', 're-reviews', 'manual', 'command', 'script', 'jenkins', 'zoho', 'slack'];
     for (const t of types) {
       let show = false;
       if (t === type) show = true;
       else if (t === 'github' && isGithub) show = true;
+      else if (t === 'github-prs' && type === 'github-prs') show = true;
       else if (t === 're-reviews' && isReReviews) show = true;
       const els = document.querySelectorAll(`.pm-fields-${t}`);
       els.forEach(el => el.style.display = show ? '' : 'none');
@@ -6918,6 +6923,9 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         source.excludeLabels = document.getElementById('pm-form-gh-exclude-labels').value.trim();
         source.state = document.getElementById('pm-form-gh-state').value;
         source.author = document.getElementById('pm-form-gh-author').value.trim();
+        if (sourceType === 'github-prs') {
+          source.base = document.getElementById('pm-form-gh-base').value.trim();
+        }
         if (!source.repo) { showToast('Error', 'Repo required', 'error'); return; }
         break;
       case 'github-re-reviews':
@@ -7008,6 +7016,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     document.getElementById('pm-form-gh-exclude-labels').value = src.excludeLabels || '';
     document.getElementById('pm-form-gh-state').value = src.state || 'open';
     document.getElementById('pm-form-gh-author').value = src.author || '';
+    document.getElementById('pm-form-gh-base').value = src.base || '';
     document.getElementById('pm-form-gh-reviewer').value = src.reviewer || '';
     document.getElementById('pm-form-gh-triggers').value = src.triggerPhrases || '';
     document.getElementById('pm-form-command').value = src.command || '';
