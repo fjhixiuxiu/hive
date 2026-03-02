@@ -1299,6 +1299,24 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 }
 .spawn-form-input:focus { border-color: var(--purple); }
 .spawn-form-input::placeholder { color: var(--dim); }
+.spawn-input-wrap { position: relative; }
+.spawn-history-dropdown {
+  display: none; position: absolute; top: 100%; left: 0; right: 0; z-index: 10;
+  background: var(--bg2); border: 1px solid var(--bg3); border-radius: 6px;
+  max-height: 160px; overflow-y: auto; margin-top: 2px;
+}
+.spawn-history-dropdown.visible { display: block; }
+.spawn-history-item {
+  padding: 6px 10px; font-size: 13px; color: var(--fg); cursor: pointer;
+  display: flex; justify-content: space-between; align-items: center;
+}
+.spawn-history-item:hover { background: var(--bg3); }
+.spawn-history-remove {
+  color: var(--dim); font-size: 11px; padding: 2px 6px; border-radius: 4px;
+  cursor: pointer; opacity: 0; transition: opacity 0.15s;
+}
+.spawn-history-item:hover .spawn-history-remove { opacity: 1; }
+.spawn-history-remove:hover { color: var(--red); background: var(--bg); }
 .slot-btn.selected { background: var(--purple); color: var(--bg); }
 .spawn-source-btn { font-size: 12px; padding: 5px 12px; }
 .spawn-source-btn.selected { background: var(--purple); color: var(--bg); border-color: var(--purple); }
@@ -1898,26 +1916,33 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     <div class="spawn-form-field">
       <label class="spawn-form-label">Source</label>
       <div style="display:flex;gap:6px;margin-top:4px;">
-        <button class="dialog-btn spawn-source-btn selected" data-source="empty">Empty</button>
+        <button class="dialog-btn spawn-source-btn selected" data-source="clone">Clone</button>
         <button class="dialog-btn spawn-source-btn" data-source="worktree">Worktree</button>
-        <button class="dialog-btn spawn-source-btn" data-source="clone">Clone</button>
+        <button class="dialog-btn spawn-source-btn" data-source="empty">Empty</button>
       </div>
     </div>
     <div class="spawn-form-field" id="spawn-worktree-fields" style="display:none;">
-      <label class="spawn-form-label">Parent Repo</label>
-      <input class="spawn-form-input" id="spawn-worktree-from" type="text" value="~/Desktop/Viv/webplatform" autocomplete="off">
-      <label class="spawn-form-label" style="margin-top:8px;">Base Branch <span style="color:var(--dim)">(defaults to master)</span></label>
-      <input class="spawn-form-input" id="spawn-base-branch" type="text" placeholder="master" autocomplete="off">
+      <label class="spawn-form-label">Parent Repo <span style="color:var(--dim)">(local path)</span></label>
+      <div class="spawn-input-wrap">
+        <input class="spawn-form-input spawn-history-input" id="spawn-worktree-from" type="text" value="~/Desktop/Viv/webplatform" autocomplete="off" data-history-key="hive:spawn:repoPaths">
+        <div class="spawn-history-dropdown" id="spawn-worktree-from-dropdown"></div>
+      </div>
       <label class="spawn-form-label" style="margin-top:8px;">New Branch <span style="color:var(--dim)">(optional — defaults to hive-slot-N)</span></label>
       <input class="spawn-form-input" id="spawn-branch" type="text" placeholder="e.g. eric/DEV-12345" autocomplete="off">
     </div>
-    <div class="spawn-form-field" id="spawn-clone-fields" style="display:none;">
+    <div class="spawn-form-field" id="spawn-clone-fields">
       <label class="spawn-form-label">Git URL</label>
-      <input class="spawn-form-input" id="spawn-git-url" type="text" placeholder="git@github.com:org/repo.git" autocomplete="off">
+      <div class="spawn-input-wrap">
+        <input class="spawn-form-input spawn-history-input" id="spawn-git-url" type="text" placeholder="git@github.com:org/repo.git" autocomplete="off" data-history-key="hive:spawn:gitUrls">
+        <div class="spawn-history-dropdown" id="spawn-git-url-dropdown"></div>
+      </div>
     </div>
     <div class="spawn-form-field">
       <label class="spawn-form-label">Base Directory</label>
-      <input class="spawn-form-input" id="spawn-base-dir" type="text" value="~/Desktop/Viv" autocomplete="off">
+      <div class="spawn-input-wrap">
+        <input class="spawn-form-input spawn-history-input" id="spawn-base-dir" type="text" value="~/Desktop/Viv" autocomplete="off" data-history-key="hive:spawn:baseDirs">
+        <div class="spawn-history-dropdown" id="spawn-base-dir-dropdown"></div>
+      </div>
     </div>
     <div class="spawn-form-field">
       <label class="spawn-form-label">Slot Range</label>
@@ -6708,21 +6733,93 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   let selectedSpawnSlot = null;
   let spawnToast = null;
 
-  let spawnSource = 'empty';
-  let lastWorktreeFrom = localStorage.getItem('hive:spawn:worktreeFrom') || '~/Desktop/Viv/webplatform';
-  let lastBaseDir = localStorage.getItem('hive:spawn:baseDir') || '~/Desktop/Viv';
+  let spawnSource = 'clone';
+
+  // ── History helpers ──
+  const HISTORY_MAX = 10;
+  function getHistory(key) {
+    try { return JSON.parse(localStorage.getItem(key)) || []; } catch { return []; }
+  }
+  function addHistory(key, value) {
+    if (!value) return;
+    const list = getHistory(key).filter(v => v !== value);
+    list.unshift(value);
+    if (list.length > HISTORY_MAX) list.length = HISTORY_MAX;
+    localStorage.setItem(key, JSON.stringify(list));
+  }
+  function removeHistory(key, value) {
+    const list = getHistory(key).filter(v => v !== value);
+    localStorage.setItem(key, JSON.stringify(list));
+  }
+
+  // Migrate old single-value keys to new array format (one-time)
+  [['hive:spawn:worktreeFrom', 'hive:spawn:repoPaths'], ['hive:spawn:baseDir', 'hive:spawn:baseDirs']].forEach(([oldKey, newKey]) => {
+    const val = localStorage.getItem(oldKey);
+    if (val && !val.startsWith('[')) {
+      addHistory(newKey, val);
+      localStorage.removeItem(oldKey);
+    }
+  });
+
+  function renderHistoryDropdown(input, dropdown) {
+    const key = input.dataset.historyKey;
+    const list = getHistory(key);
+    const filter = input.value.trim().toLowerCase();
+    const filtered = filter ? list.filter(v => v.toLowerCase().includes(filter)) : list;
+    dropdown.innerHTML = '';
+    if (filtered.length === 0) { dropdown.classList.remove('visible'); return; }
+    filtered.forEach(val => {
+      const item = document.createElement('div');
+      item.className = 'spawn-history-item';
+      const label = document.createElement('span');
+      label.textContent = val;
+      const removeBtn = document.createElement('span');
+      removeBtn.className = 'spawn-history-remove';
+      removeBtn.textContent = '×';
+      removeBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        removeHistory(key, val);
+        renderHistoryDropdown(input, dropdown);
+      });
+      item.appendChild(label);
+      item.appendChild(removeBtn);
+      item.addEventListener('click', () => {
+        input.value = val;
+        dropdown.classList.remove('visible');
+      });
+      dropdown.appendChild(item);
+    });
+    dropdown.classList.add('visible');
+  }
+
+  // Wire up all history inputs
+  document.querySelectorAll('.spawn-history-input').forEach(input => {
+    const dropdown = input.parentElement.querySelector('.spawn-history-dropdown');
+    input.addEventListener('focus', () => renderHistoryDropdown(input, dropdown));
+    input.addEventListener('input', () => renderHistoryDropdown(input, dropdown));
+  });
+  // Close dropdowns when clicking outside
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.spawn-input-wrap')) {
+      document.querySelectorAll('.spawn-history-dropdown').forEach(d => d.classList.remove('visible'));
+    }
+  });
+
+  function getLastValue(key, fallback) {
+    const list = getHistory(key);
+    return list.length > 0 ? list[0] : fallback;
+  }
 
   spawnBtn.addEventListener('click', () => {
     if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'spawn:slots' }));
     document.getElementById('spawn-name').value = '';
     document.getElementById('spawn-git-url').value = '';
-    document.getElementById('spawn-worktree-from').value = lastWorktreeFrom;
-    document.getElementById('spawn-base-branch').value = '';
+    document.getElementById('spawn-worktree-from').value = getLastValue('hive:spawn:repoPaths', '~/Desktop/Viv/webplatform');
     document.getElementById('spawn-branch').value = '';
-    document.getElementById('spawn-base-dir').value = lastBaseDir;
+    document.getElementById('spawn-base-dir').value = getLastValue('hive:spawn:baseDirs', '~/Desktop/Viv');
     document.getElementById('spawn-slot-min').value = spawnSlotMin;
     document.getElementById('spawn-slot-max').value = spawnSlotMax;
-    setSpawnSource('empty');
+    setSpawnSource('clone');
     selectedSpawnSlot = null;
     spawnDialog.classList.add('visible');
   });
@@ -6761,10 +6858,8 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     const params = { num: slotNum, baseDir, name };
     if (spawnSource === 'worktree') {
       const worktreeFrom = document.getElementById('spawn-worktree-from').value.trim();
-      if (!worktreeFrom) { showToast('Error', 'Parent repo is required for worktree', 'error'); return null; }
+      if (!worktreeFrom) { showToast('Error', 'Git URL is required for worktree', 'error'); return null; }
       params.worktreeFrom = worktreeFrom;
-      const baseBranch = document.getElementById('spawn-base-branch').value.trim();
-      if (baseBranch) params.baseBranch = baseBranch;
       const branch = document.getElementById('spawn-branch').value.trim();
       if (branch) params.branch = branch;
     } else if (spawnSource === 'clone') {
@@ -6772,10 +6867,9 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       if (gitUrl) params.gitUrl = gitUrl;
     }
     // Cache for next time
-    localStorage.setItem('hive:spawn:baseDir', baseDir);
-    if (params.worktreeFrom) localStorage.setItem('hive:spawn:worktreeFrom', params.worktreeFrom);
-    lastBaseDir = baseDir;
-    if (params.worktreeFrom) lastWorktreeFrom = params.worktreeFrom;
+    addHistory('hive:spawn:baseDirs', baseDir);
+    if (params.worktreeFrom) addHistory('hive:spawn:repoPaths', params.worktreeFrom);
+    if (params.gitUrl) addHistory('hive:spawn:gitUrls', params.gitUrl);
     return params;
   }
 

@@ -829,7 +829,7 @@ class TaskQueue extends EventEmitter {
     return this.config.sessions.repoDir(num);
   }
 
-  async spawnSession({ num, baseDir, name, gitUrl, worktreeFrom, branch, baseBranch } = {}) {
+  async spawnSession({ num, baseDir, name, gitUrl, worktreeFrom, branch } = {}) {
     if (!name) throw new Error('Agent name is required');
     if (!/^[a-zA-Z0-9_-]+$/.test(name)) throw new Error('Agent name must contain only letters, numbers, hyphens, and underscores');
     log.info(`[spawn] starting: name=${name}, num=${num ?? 'auto'}, baseDir=${baseDir || 'default'}, gitUrl=${gitUrl || 'none'}`);
@@ -862,7 +862,12 @@ class TaskQueue extends EventEmitter {
       if (!path.isAbsolute(parentRepo)) throw new Error('Parent repo must be an absolute path');
       if (!fs.existsSync(path.join(parentRepo, '.git'))) throw new Error('Parent repo is not a git repository');
       const branchName = branch || `hive-slot-${num}`;
-      const baseBranchRef = baseBranch || 'master';
+      // Auto-detect default branch: try main, fall back to master
+      let baseBranchRef = 'master';
+      try {
+        execFileSync('git', ['-C', parentRepo, 'rev-parse', '--verify', 'main'], { timeout: 5000, stdio: 'pipe' });
+        baseBranchRef = 'main';
+      } catch { /* master */ }
       try {
         if (fs.existsSync(repoDir)) {
           // Verify it's a valid linked worktree before reusing
