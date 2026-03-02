@@ -625,36 +625,73 @@ class ProjectManager extends EventEmitter {
 
   async _fetchGithubPrs(source) {
     if (!source.repo) throw new Error('GitHub repo not configured');
+
+    const hasLabels = source.labels && source.labels.trim();
+    const hasExcludeLabels = source.excludeLabels && source.excludeLabels.trim();
+
+    // When labels are specified, use the Search API (Pulls API ignores labels param).
+    // Search API supports labels, base, author, and state natively.
+    if (hasLabels || hasExcludeLabels) {
+      return this._fetchGithubPrsViaSearch(source);
+    }
+
+    // No label filters — use the Pulls API (faster, no rate limit concerns)
     const allowedBases = source.base
-      ? [source.base]
+      ? source.base.split(',').map(b => b.trim()).filter(Boolean)
       : ['main', 'master'];
 
     const allPrs = [];
     for (const base of allowedBases) {
       const params = new URLSearchParams({ per_page: '50', base });
       if (source.state) params.set('state', source.state);
-      if (source.labels) params.set('labels', source.labels);
       const urlStr = `https://api.github.com/repos/${source.repo}/pulls?${params}`;
       const data = await this._httpRequest(urlStr, this._githubHeaders());
       if (Array.isArray(data)) allPrs.push(...data);
     }
 
-    // Double-check: filter out any PRs not targeting allowed bases
     const baseSet = new Set(allowedBases);
     const authorFilter = source.author ? source.author.toLowerCase() : null;
-    const excludeSet = source.excludeLabels
-      ? new Set(source.excludeLabels.split(',').map(l => l.trim().toLowerCase()).filter(Boolean))
-      : null;
     return allPrs
       .filter(pr => baseSet.has(pr.base && pr.base.ref) && !pr.draft)
       .filter(pr => !authorFilter || (pr.user && pr.user.login.toLowerCase() === authorFilter))
-      .filter(pr => !excludeSet || !pr.labels.some(l => excludeSet.has(l.name.toLowerCase())))
       .map(pr => ({
         key: `${source.repo}#${pr.number}`,
         summary: pr.title,
         issueType: 'pr',
         storyPoints: null,
       }));
+  }
+
+  async _fetchGithubPrsViaSearch(source) {
+    // Build GitHub Search query: is:pr + repo + state + labels + excludeLabels + base + author
+    const parts = ['is:pr', `repo:${source.repo}`];
+    if (source.state && source.state !== 'all') parts.push(`is:${source.state}`);
+    if (source.labels) {
+      for (const l of source.labels.split(',').map(s => s.trim()).filter(Boolean)) {
+        parts.push(`label:${l}`);
+      }
+    }
+    if (source.excludeLabels) {
+      for (const l of source.excludeLabels.split(',').map(s => s.trim()).filter(Boolean)) {
+        parts.push(`-label:${l}`);
+      }
+    }
+    if (source.base) parts.push(`base:${source.base}`);
+    if (source.author) parts.push(`author:${source.author}`);
+    parts.push('-is:draft');
+
+    const q = parts.join(' ');
+    const params = new URLSearchParams({ q, per_page: '50', sort: 'created', order: 'desc' });
+    const urlStr = `https://api.github.com/search/issues?${params}`;
+    const data = await this._httpRequest(urlStr, this._githubHeaders());
+    const items = data && data.items ? data.items : [];
+
+    return items.map(item => ({
+      key: `${source.repo}#${item.number}`,
+      summary: item.title,
+      issueType: 'pr',
+      storyPoints: null,
+    }));
   }
 
   async _fetchJenkins(source) {
