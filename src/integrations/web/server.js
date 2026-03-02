@@ -798,6 +798,14 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
         break;
       }
 
+      case 'task:requeue': {
+        if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'dispatch')) break;
+        const requeuedTask = taskQueue.requeueTask(msg.taskId);
+        if (requeuedTask) broadcast({ type: 'task:requeued', task: decorateTaskActions(requeuedTask) });
+        break;
+      }
+
       case 'task:cancel': {
         if (!taskQueue) break;
         if (!checkPermission(ws, user, 'cancel')) break;
@@ -1600,6 +1608,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     taskQueue.on('task:completed', (task) => broadcast({ type: 'task:completed', task: decorateTaskActions(task) }));
     taskQueue.on('task:failed', (task) => broadcast({ type: 'task:failed', task: decorateTaskActions(task) }));
     taskQueue.on('task:cancelled', (task) => broadcast({ type: 'task:cancelled', task: decorateTaskActions(task) }));
+    taskQueue.on('task:requeued', (task) => broadcast({ type: 'task:requeued', task: decorateTaskActions(task) }));
     taskQueue.on('task:updated', (task) => broadcast({ type: 'task:updated', task: decorateTaskActions(task) }));
     taskQueue.on('auto:changed', (sessions) => broadcast({ type: 'auto:status', sessions }));
     taskQueue.on('feed:new', (entry) => broadcast({ type: 'feed:new', entry }));

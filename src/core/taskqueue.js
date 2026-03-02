@@ -198,6 +198,24 @@ class TaskQueue extends EventEmitter {
     return task;
   }
 
+  requeueTask(taskId) {
+    const task = this.tasks.get(taskId);
+    if (!task || task.status !== 'dispatched') return null;
+    if (task.assignedTo) {
+      this.activeTaskBySession.delete(task.assignedTo);
+      this.dispatchLock.delete(task.assignedTo);
+    }
+    const prevSession = task.assignedTo;
+    task.status = 'queued';
+    task.assignedTo = null;
+    task.dispatchedAt = null;
+    task.targetSession = null;
+    this.emit('task:requeued', task);
+    this.pushFeed('task', prevSession, `Task returned to queue: "${task.text}"`);
+    this._saveState();
+    return task;
+  }
+
   cancelTask(taskId) {
     const task = this.tasks.get(taskId);
     if (!task || task.status === 'completed' || task.status === 'failed') return null;
