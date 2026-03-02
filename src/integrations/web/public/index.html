@@ -600,6 +600,16 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   font-weight: 600; cursor: pointer; padding: 2px 6px;
 }
 .task-edit-btn:hover { color: var(--purple); }
+.task-requeue-btn {
+  background: none; border: none; color: var(--orange); font-size: 11px;
+  font-weight: 600; cursor: pointer; padding: 2px 6px;
+}
+.task-requeue-btn:hover { color: var(--fg); }
+.task-done-btn {
+  background: none; border: none; color: var(--green); font-size: 11px;
+  font-weight: 600; cursor: pointer; padding: 2px 6px;
+}
+.task-done-btn:hover { color: var(--fg); }
 .task-assign-btn {
   background: none; border: none; color: var(--green); font-size: 11px;
   font-weight: 700; cursor: pointer; padding: 2px 6px;
@@ -634,6 +644,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   font-weight: 600; padding: 5px 10px; border-radius: 4px; cursor: pointer;
 }
 .tasks-bulk-bar .bulk-btn.cancel { color: var(--red); }
+.tasks-bulk-bar .bulk-btn.requeue { color: var(--orange); }
 .tasks-bulk-bar .bulk-btn.done { background: var(--green); color: var(--bg); }
 .tasks-bulk-bar .bulk-btn:active { opacity: 0.7; }
 .tasks-bulk-bar .bulk-btn:disabled { opacity: 0.3; cursor: default; pointer-events: none; }
@@ -672,6 +683,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .ts-nav-btn:hover:not(:disabled) { background: var(--bg4, #565f89); }
 .ts-nav-btn:active { transform: scale(0.95); }
 .ts-nav-btn:disabled { opacity: 0.3; cursor: default; }
+.ts-nav-btn.ts-requeue-btn { color: var(--orange); }
 .ts-nav-btn.ts-done-btn { color: var(--green); }
 .tasks-session-tabs {
   display: flex; gap: 0; background: var(--bg2); border-bottom: 1px solid var(--bg3); flex-shrink: 0;
@@ -1029,6 +1041,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .session-nav-btn:hover:not(:disabled) { background:var(--bg4, #565f89); }
 .session-nav-btn:active { transform:scale(0.95); }
 .session-nav-btn.idle { color:var(--green); }
+.session-nav-btn.desig { color:var(--purple); }
 .session-nav-btn:disabled { opacity:0.3; cursor:default; }
 
 /* Mini fleet strip */
@@ -1058,6 +1071,10 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 #session-branch { font-size: 12px; color: var(--dim); }
 #track-btn { background: var(--bg3); border: none; color: var(--purple); font-size: 11px; font-weight: 700; padding: 5px 10px; border-radius: 4px; cursor: pointer; }
 #track-btn:active { background: var(--purple); color: var(--bg); }
+.session-task-btn { background: var(--bg3); border: none; color: var(--orange); font-size: 11px; font-weight: 700; padding: 5px 10px; border-radius: 4px; cursor: pointer; }
+.session-task-btn.done { color: var(--green); }
+.session-task-btn.cancel { color: var(--red); }
+.session-task-btn:active { opacity: 0.7; }
 #session-activity { font-size: 11px; color: var(--dim); opacity: 0.85; }
 #restart-btn { background: var(--bg3); border: none; color: var(--orange); font-size: 11px; font-weight: 700; padding: 5px 10px; border-radius: 4px; cursor: pointer; }
 #restart-btn:active { background: var(--orange); color: var(--bg); }
@@ -1199,13 +1216,22 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 /* Hide designation badge (lane label shows it) */
 #grid.swimlane .card-designation { display: none; }
 /* ── Color swatch picker ── */
-.desig-color-swatches { display: flex; gap: 8px; padding: 4px 0; }
+.desig-color-picker-row { display: flex; align-items: center; gap: 10px; padding: 4px 0; }
+.desig-color-swatches { display: flex; gap: 8px; }
 .desig-color-swatch {
   width: 24px; height: 24px; border-radius: 50%; cursor: pointer; border: 2px solid transparent;
   transition: border-color 0.15s, transform 0.15s;
 }
 .desig-color-swatch:hover { transform: scale(1.15); }
 .desig-color-swatch.selected { border-color: var(--fg); transform: scale(1.15); }
+#desig-def-color-wheel {
+  width: 28px; height: 28px; padding: 0; border: 2px solid transparent; border-radius: 50%;
+  cursor: pointer; background: none; -webkit-appearance: none; appearance: none;
+}
+#desig-def-color-wheel::-webkit-color-swatch-wrapper { padding: 0; }
+#desig-def-color-wheel::-webkit-color-swatch { border: none; border-radius: 50%; }
+#desig-def-color-wheel::-moz-color-swatch { border: none; border-radius: 50%; }
+#desig-def-color-wheel.selected { border-color: var(--fg); transform: scale(1.15); }
 .desig-def-row .desig-def-files { font-size: 11px; color: var(--dim); flex: 1; }
 .desig-def-row .desig-def-actions { display: flex; gap: 4px; }
 .desig-def-row .desig-def-actions button {
@@ -1549,6 +1575,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
           <div class="tasks-bulk-bar" id="tasks-bulk-bar">
             <span class="bulk-count" id="tasks-bulk-count">0 selected</span>
             <button class="bulk-btn cancel" id="tasks-bulk-cancel">Cancel</button>
+            <button class="bulk-btn requeue" id="tasks-bulk-requeue">Requeue</button>
             <button class="bulk-btn done" id="tasks-bulk-done">Mark Done</button>
           </div>
           <div class="tasks-scroll" id="tasks-scroll"></div>
@@ -1559,6 +1586,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
             <span class="tasks-session-branch" id="tasks-session-branch"></span>
             <button class="ts-nav-btn" id="ts-nav-prev" style="display:none">&larr; Prev</button>
             <button class="ts-nav-btn" id="ts-nav-next" style="display:none">Next &rarr;</button>
+            <button class="ts-nav-btn ts-requeue-btn" id="ts-nav-requeue" style="display:none">Back to Queue</button>
             <button class="ts-nav-btn ts-done-btn" id="ts-nav-done" style="display:none">Mark Done</button>
             <button class="ts-open-btn" id="ts-open-session" style="display:none">Open Full Session</button>
           </div>
@@ -1805,6 +1833,9 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         </div>
         <div id="session-actions">
           <button id="track-btn" title="Attach a tracking task to this session">Track</button>
+          <button id="session-task-requeue" class="session-task-btn" style="display:none" title="Return task to queue">Requeue</button>
+          <button id="session-task-done" class="session-task-btn done" style="display:none" title="Mark task as done">Done</button>
+          <button id="session-task-cancel" class="session-task-btn cancel" style="display:none" title="Cancel task">Cancel</button>
           <button id="restart-btn" title="Restart Claude">Restart</button>
           <button id="kill-btn" title="Kill this tmux session">Close</button>
         </div>
@@ -1814,6 +1845,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         <button id="nav-prev" class="session-nav-btn">&larr; Prev</button>
         <button id="nav-next" class="session-nav-btn">Next &rarr;</button>
         <button id="nav-next-idle" class="session-nav-btn idle">Next Idle</button>
+        <button id="nav-next-desig" class="session-nav-btn desig" title="Next session in same designation">Next Desig</button>
       </div>
       <div class="session-tabs">
         <button class="session-tab active" data-stab="terminal">Terminal</button>
@@ -2158,7 +2190,10 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     </div>
     <div class="task-dialog-field">
       <label class="task-dialog-label">Color</label>
-      <div class="desig-color-swatches" id="desig-def-color-swatches"></div>
+      <div class="desig-color-picker-row">
+        <div class="desig-color-swatches" id="desig-def-color-swatches"></div>
+        <input type="color" id="desig-def-color-wheel" value="#ffb86c" title="Custom color">
+      </div>
     </div>
     <div class="task-dialog-field">
       <label class="task-dialog-label">Agent Files</label>
@@ -2320,8 +2355,12 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   };
   function getDesigColor(desigName) {
     const def = designationDefs.find(d => d.name === desigName);
-    const key = (def && def.color && DESIG_COLORS[def.color]) ? def.color : 'orange';
-    return DESIG_COLORS[key];
+    const colorVal = def && def.color;
+    if (colorVal && DESIG_COLORS[colorVal]) return DESIG_COLORS[colorVal];
+    if (colorVal && colorVal.startsWith('#')) {
+      return { fg: colorVal, bg: colorVal + '26', hex: colorVal };
+    }
+    return DESIG_COLORS['orange'];
   }
   let agentRoots = [];      // array of scan paths
   let agentFilesList = [];  // cached scan results
@@ -2848,18 +2887,23 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       case 'task:created': case 'task:dispatched': case 'task:completed': case 'task:failed': {
         const idx = tasks.findIndex(t => t.id === msg.task.id);
         if (idx >= 0) tasks[idx] = msg.task; else tasks.unshift(msg.task);
-        renderTasks(); updateTasksBadge(); updateChecklistButtons(); updateActionsButton(); updateTsNavButtons(); break;
+        renderTasks(); updateTasksBadge(); updateChecklistButtons(); updateActionsButton(); updateTsNavButtons(); updateSessionTaskButtons(); break;
       }
       case 'task:updated': {
         const idx = tasks.findIndex(t => t.id === msg.task.id);
         if (idx >= 0) tasks[idx] = msg.task; else tasks.unshift(msg.task);
-        renderTasks(); updateTasksBadge(); updateChecklistButtons(); updateActionsButton(); refreshChecklistPopup(); break;
+        renderTasks(); updateTasksBadge(); updateChecklistButtons(); updateActionsButton(); refreshChecklistPopup(); updateSessionTaskButtons(); break;
       }
       case 'task:cancelled': {
         const idx = tasks.findIndex(t => t.id === msg.task.id);
         if (idx >= 0) tasks.splice(idx, 1);
         selectedTaskIds.delete(msg.task.id);
-        renderTasks(); updateTasksBadge(); break;
+        renderTasks(); updateTasksBadge(); updateSessionTaskButtons(); break;
+      }
+      case 'task:requeued': {
+        const idx = tasks.findIndex(t => t.id === msg.task.id);
+        if (idx >= 0) tasks[idx] = msg.task; else tasks.unshift(msg.task);
+        renderTasks(); updateTasksBadge(); updateTsNavButtons(); updateSessionTaskButtons(); break;
       }
       case 'task:snapshot': {
         showTaskSnapshotContent(msg.taskId, msg.content, msg.cols);
@@ -3171,6 +3215,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     const dc = desig ? getDesigColor(desig) : null;
     const desigHtml = desig ? `<span class="card-designation" style="background:${dc.bg};color:${dc.fg}">${esc(desig)}</span>` : '';
     if (dc) card.style.borderTop = `2px solid ${dc.fg}`;
+    card.style.borderBottom = isAuto ? '2px solid var(--cyan)' : '2px solid var(--dim)';
 
     // Git summary row
     let gitRowHtml = '';
@@ -3324,6 +3369,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     updateCommentBadge('session', sessionTask);
     updateChecklistButtons();
     updateActionsButton();
+    updateSessionTaskButtons();
 
     if (!term) {
       term = new Terminal({
@@ -3746,10 +3792,40 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     }
   }
 
+  function navNextDesig() {
+    const curDesig = designations[currentSession] || '';
+    const sorted = getSortedSessionList();
+    if (sorted.length === 0) return;
+    const idx = sorted.findIndex(s => String(s.num) === currentSession);
+    for (let i = 1; i <= sorted.length; i++) {
+      const candidate = sorted[(idx + i) % sorted.length];
+      const candDesig = designations[candidate.num] || '';
+      if (candDesig === curDesig && String(candidate.num) !== currentSession) {
+        navigateToSession(candidate);
+        return;
+      }
+    }
+  }
+
   function updateNavIdleButton() {
     const btn = document.getElementById('nav-next-idle');
     const hasIdle = fleetData.some(s => s.state === 'idle' && String(s.num) !== currentSession);
     btn.disabled = !hasIdle;
+  }
+
+  function updateNavDesigButton() {
+    const btn = document.getElementById('nav-next-desig');
+    const curDesig = designations[currentSession] || '';
+    const label = curDesig || 'Unassigned';
+    btn.textContent = 'Next ' + label;
+    if (curDesig) {
+      const dc = getDesigColor(curDesig);
+      btn.style.color = dc.fg;
+    } else {
+      btn.style.color = '';
+    }
+    const hasSibling = fleetData.some(s => String(s.num) !== currentSession && (designations[s.num] || '') === curDesig);
+    btn.disabled = !hasSibling;
   }
 
   function updateMiniFleetStrip() {
@@ -3766,6 +3842,16 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       else box.classList.add('s-off');
       if (String(s.num) === currentSession) box.classList.add('current');
       box.textContent = s.num;
+      const desig = designations[s.num];
+      if (desig) {
+        const dc = getDesigColor(desig);
+        box.style.borderTopColor = dc.fg;
+        box.style.borderTopWidth = '2px';
+      }
+      if (autoSessions.has(s.num)) {
+        box.style.borderBottomColor = 'var(--cyan)';
+        box.style.borderBottomWidth = '2px';
+      }
       if (s.state !== 'off') {
         box.addEventListener('click', () => navigateToSession(s));
       }
@@ -3781,7 +3867,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     const strip = document.getElementById('mini-fleet-strip');
     if (activeTab === 'session-panel') {
       navBar.style.display = showNavButtons ? 'flex' : 'none';
-      if (showNavButtons) updateNavIdleButton();
+      if (showNavButtons) { updateNavIdleButton(); updateNavDesigButton(); }
       strip.style.display = showFleetStrip ? 'flex' : 'none';
       if (showFleetStrip) updateMiniFleetStrip();
     } else {
@@ -3794,6 +3880,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   document.getElementById('nav-prev').addEventListener('click', navPrev);
   document.getElementById('nav-next').addEventListener('click', navNext);
   document.getElementById('nav-next-idle').addEventListener('click', navNextIdle);
+  document.getElementById('nav-next-desig').addEventListener('click', navNextDesig);
 
   // More tab toggle handlers
   document.getElementById('toggle-nav-buttons').addEventListener('click', function() {
@@ -3950,6 +4037,54 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       updateVimToggles();
       showToast(vimMode ? 'VIM mode ON' : 'VIM mode OFF', '', 'success');
     });
+  });
+
+  function updateSessionTaskButtons() {
+    const trackBtn = document.getElementById('track-btn');
+    const requeueBtn = document.getElementById('session-task-requeue');
+    const doneBtn = document.getElementById('session-task-done');
+    const cancelBtn = document.getElementById('session-task-cancel');
+    if (!currentSession) {
+      trackBtn.style.display = ''; requeueBtn.style.display = 'none';
+      doneBtn.style.display = 'none'; cancelBtn.style.display = 'none';
+      return;
+    }
+    const activeTask = tasks.find(t => t.status === 'dispatched' && String(t.assignedTo) === currentSession);
+    if (activeTask) {
+      trackBtn.style.display = 'none';
+      requeueBtn.style.display = '';
+      doneBtn.style.display = '';
+      cancelBtn.style.display = '';
+    } else {
+      trackBtn.style.display = '';
+      requeueBtn.style.display = 'none';
+      doneBtn.style.display = 'none';
+      cancelBtn.style.display = 'none';
+    }
+  }
+
+  document.getElementById('session-task-requeue').addEventListener('click', () => {
+    if (!currentSession || !ws || ws.readyState !== 1) return;
+    const task = tasks.find(t => t.status === 'dispatched' && String(t.assignedTo) === currentSession);
+    if (!task) return;
+    ws.send(JSON.stringify({ type: 'task:requeue', taskId: task.id }));
+    showToast('Requeued', `"${(task.text || '').slice(0, 50)}" moved back to queue`, 'success');
+  });
+
+  document.getElementById('session-task-done').addEventListener('click', () => {
+    if (!currentSession || !ws || ws.readyState !== 1) return;
+    const task = tasks.find(t => t.status === 'dispatched' && String(t.assignedTo) === currentSession);
+    if (!task) return;
+    ws.send(JSON.stringify({ type: 'task:complete', taskId: task.id }));
+    showToast('Task Done', `Marked as done`, 'success');
+  });
+
+  document.getElementById('session-task-cancel').addEventListener('click', () => {
+    if (!currentSession || !ws || ws.readyState !== 1) return;
+    const task = tasks.find(t => t.status === 'dispatched' && String(t.assignedTo) === currentSession);
+    if (!task) return;
+    ws.send(JSON.stringify({ type: 'task:cancel', taskId: task.id }));
+    showToast('Cancelled', `Task cancelled`, 'success');
   });
 
   $('#track-btn').addEventListener('click', () => {
@@ -4848,14 +4983,17 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     const hasMultiple = navList.length > 1;
     const prevBtn = document.getElementById('ts-nav-prev');
     const nextBtn = document.getElementById('ts-nav-next');
+    const requeueBtn = document.getElementById('ts-nav-requeue');
     const doneBtn = document.getElementById('ts-nav-done');
     // Show buttons only when a task session is open
     const show = !!tasksSelectedTaskId && isDispatched;
     prevBtn.style.display = show ? '' : 'none';
     nextBtn.style.display = show ? '' : 'none';
+    requeueBtn.style.display = show ? '' : 'none';
     doneBtn.style.display = show ? '' : 'none';
     prevBtn.disabled = !hasMultiple;
     nextBtn.disabled = !hasMultiple;
+    requeueBtn.disabled = !isDispatched;
     doneBtn.disabled = !isDispatched;
   }
 
@@ -4873,6 +5011,23 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     const idx = navList.findIndex(t => t.id === tasksSelectedTaskId);
     const next = idx < 0 || idx >= navList.length - 1 ? navList[0] : navList[idx + 1];
     selectTaskById(next.id);
+  }
+
+  function tsNavRequeue() {
+    const cur = tasksSelectedTaskId ? tasks.find(t => t.id === tasksSelectedTaskId) : null;
+    if (!cur || cur.status !== 'dispatched' || !ws || ws.readyState !== 1) return;
+    ws.send(JSON.stringify({ type: 'task:requeue', taskId: cur.id }));
+    showToast('Requeued', `"${(cur.text || cur.id).slice(0, 50)}" moved back to queue`, 'success');
+    // Auto-advance to next dispatched task
+    const navList = getTaskNavList().filter(t => t.id !== cur.id);
+    if (navList.length > 0) {
+      const idx = getTaskNavList().findIndex(t => t.id === cur.id);
+      const next = idx >= navList.length ? navList[0] : navList[Math.max(0, idx)] || navList[0];
+      setTimeout(() => selectTaskById(next.id), 200);
+    } else {
+      tasksSelectedTaskId = null;
+      updateTsNavButtons();
+    }
   }
 
   function tsNavDone() {
@@ -5018,6 +5173,22 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       });
     });
 
+    // Wire requeue buttons (in-progress tab)
+    tasksScroll.querySelectorAll('.task-requeue-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'task:requeue', taskId: btn.dataset.id }));
+      });
+    });
+
+    // Wire done buttons (in-progress tab)
+    tasksScroll.querySelectorAll('.task-done-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'task:complete', taskId: btn.dataset.id }));
+      });
+    });
+
     // Wire edit buttons (queued tab)
     tasksScroll.querySelectorAll('.task-edit-btn').forEach(btn => {
       btn.addEventListener('click', (e) => { e.stopPropagation(); openTaskDialog(btn.dataset.id); });
@@ -5155,10 +5326,11 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     const count = selectedTaskIds.size;
     document.getElementById('tasks-bulk-count').textContent = `${count} selected`;
     const cancelBtn = document.getElementById('tasks-bulk-cancel');
+    const requeueBtn = document.getElementById('tasks-bulk-requeue');
     const doneBtn = document.getElementById('tasks-bulk-done');
     if (count === 0) {
-      cancelBtn.disabled = true; doneBtn.disabled = true;
-      cancelBtn.style.display = ''; doneBtn.style.display = '';
+      cancelBtn.disabled = true; requeueBtn.disabled = true; doneBtn.disabled = true;
+      cancelBtn.style.display = ''; requeueBtn.style.display = ''; doneBtn.style.display = '';
       doneBtn.textContent = 'Mark Done';
     } else {
       const hasQueued = [...selectedTaskIds].some(id => { const t = tasks.find(x => x.id === id); return t && t.status === 'queued'; });
@@ -5166,6 +5338,8 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       const hasCompleted = [...selectedTaskIds].some(id => { const t = tasks.find(x => x.id === id); return t && (t.status === 'completed' || t.status === 'failed'); });
       cancelBtn.style.display = (hasQueued || hasDispatched) ? '' : 'none';
       cancelBtn.disabled = false;
+      requeueBtn.style.display = hasDispatched ? '' : 'none';
+      requeueBtn.disabled = false;
       doneBtn.style.display = (hasDispatched || hasCompleted) ? '' : 'none';
       doneBtn.disabled = false;
       doneBtn.textContent = hasDispatched ? 'Mark Done' : 'Clear';
@@ -5182,6 +5356,21 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       }
     }
     showToast('Bulk Cancel', `Cancelling ${selectedTaskIds.size} task(s)`, 'success');
+    selectedTaskIds.clear();
+    updateTasksBulkBar();
+  });
+
+  document.getElementById('tasks-bulk-requeue').addEventListener('click', () => {
+    if (!ws || ws.readyState !== 1) return;
+    let count = 0;
+    for (const id of selectedTaskIds) {
+      const t = tasks.find(x => x.id === id);
+      if (t && t.status === 'dispatched') {
+        ws.send(JSON.stringify({ type: 'task:requeue', taskId: id }));
+        count++;
+      }
+    }
+    if (count) showToast('Bulk Requeue', `Requeuing ${count} task(s)`, 'success');
     selectedTaskIds.clear();
     updateTasksBulkBar();
   });
@@ -5211,6 +5400,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   // Task nav buttons
   document.getElementById('ts-nav-prev').addEventListener('click', tsNavPrev);
   document.getElementById('ts-nav-next').addEventListener('click', tsNavNext);
+  document.getElementById('ts-nav-requeue').addEventListener('click', tsNavRequeue);
   document.getElementById('ts-nav-done').addEventListener('click', tsNavDone);
 
   function taskCardHtml(t, tabType) {
@@ -5255,8 +5445,11 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         }
       }
       const linkBtn = `<button class="task-link-btn" data-id="${t.id}" title="Copy link">&#128279;</button>`;
+      const requeueBtn = hasPerm('dispatch') ? `<button class="task-requeue-btn" data-id="${t.id}">Requeue</button>` : '';
+      const doneBtn = hasPerm('cancel') ? `<button class="task-done-btn" data-id="${t.id}">Done</button>` : '';
+      const cancelBtn = hasPerm('cancel') ? `<button class="task-cancel" data-id="${t.id}">Cancel</button>` : '';
       const checked = selectedTaskIds.has(t.id) ? ' checked' : '';
-      return `<div class="task-card-row"><input type="checkbox" class="task-checkbox" data-id="${t.id}"${checked}><div class="task-card dispatched${selected}" data-id="${t.id}"><div class="task-text">${esc(t.text)}</div><div class="task-meta"><span>${meta} · ${ago}</span>${waitBadge}${sourceBadge}${desigBadge}${prBadge}${clBadge}${commentBadge}${linkBtn}${sessionBadge}</div></div></div>`;
+      return `<div class="task-card-row"><input type="checkbox" class="task-checkbox" data-id="${t.id}"${checked}><div class="task-card dispatched${selected}" data-id="${t.id}"><div class="task-text">${esc(t.text)}</div><div class="task-meta"><span>${meta} · ${ago}</span>${waitBadge}${sourceBadge}${desigBadge}${prBadge}${clBadge}${commentBadge}${linkBtn}${requeueBtn}${doneBtn}${cancelBtn}${sessionBadge}</div></div></div>`;
     }
     if (tabType === 'queued') {
       const editBtn = hasPerm('create-tasks') ? `<button class="task-edit-btn" data-id="${t.id}">Edit</button>` : '';
@@ -6611,7 +6804,9 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 
   function renderDesigDefColorSwatches() {
     const container = document.getElementById('desig-def-color-swatches');
+    const wheel = document.getElementById('desig-def-color-wheel');
     container.innerHTML = '';
+    const isCustom = desigDefSelectedColor && desigDefSelectedColor.startsWith('#');
     for (const [name, c] of Object.entries(DESIG_COLORS)) {
       const swatch = document.createElement('div');
       swatch.className = 'desig-color-swatch' + (name === desigDefSelectedColor ? ' selected' : '');
@@ -6619,11 +6814,26 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       swatch.title = name;
       swatch.addEventListener('click', () => {
         desigDefSelectedColor = name;
+        wheel.value = c.hex;
+        wheel.classList.remove('selected');
         renderDesigDefColorSwatches();
       });
       container.appendChild(swatch);
     }
+    if (isCustom) {
+      wheel.value = desigDefSelectedColor;
+      wheel.classList.add('selected');
+    } else {
+      wheel.value = DESIG_COLORS[desigDefSelectedColor]?.hex || '#ffb86c';
+      wheel.classList.remove('selected');
+    }
   }
+
+  document.getElementById('desig-def-color-wheel').addEventListener('input', (e) => {
+    desigDefSelectedColor = e.target.value;
+    e.target.classList.add('selected');
+    document.querySelectorAll('#desig-def-color-swatches .desig-color-swatch').forEach(s => s.classList.remove('selected'));
+  });
 
   function closeDesigDefDialog() {
     document.getElementById('desig-def-dialog').classList.remove('visible');

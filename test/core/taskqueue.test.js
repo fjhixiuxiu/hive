@@ -136,6 +136,70 @@ describe('TaskQueue', () => {
     });
   });
 
+  describe('requeueTask', () => {
+    it('moves dispatched task back to queued', () => {
+      const task = tq.createTask('Test', 'auto', null, null);
+      task.status = 'dispatched';
+      task.assignedTo = 6;
+      task.dispatchedAt = Date.now();
+      tq.activeTaskBySession.set(6, task.id);
+      tq.dispatchLock.add(6);
+
+      const result = tq.requeueTask(task.id);
+      expect(result.status).toBe('queued');
+      expect(result.assignedTo).toBeNull();
+      expect(result.dispatchedAt).toBeNull();
+      expect(result.targetSession).toBeNull();
+    });
+
+    it('clears activeTaskBySession and dispatchLock', () => {
+      const task = tq.createTask('Test', 'auto', null, null);
+      task.status = 'dispatched';
+      task.assignedTo = 6;
+      tq.activeTaskBySession.set(6, task.id);
+      tq.dispatchLock.add(6);
+
+      tq.requeueTask(task.id);
+      expect(tq.activeTaskBySession.has(6)).toBe(false);
+      expect(tq.dispatchLock.has(6)).toBe(false);
+    });
+
+    it('emits task:requeued event', () => {
+      const spy = vi.fn();
+      tq.on('task:requeued', spy);
+      const task = tq.createTask('Test', 'auto', null, null);
+      task.status = 'dispatched';
+      task.assignedTo = 6;
+      tq.activeTaskBySession.set(6, task.id);
+
+      tq.requeueTask(task.id);
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(spy).toHaveBeenCalledWith(task);
+    });
+
+    it('returns null for non-dispatched task', () => {
+      const task = tq.createTask('Test', 'auto', null, null);
+      expect(tq.requeueTask(task.id)).toBeNull();
+    });
+
+    it('returns null for non-existent task', () => {
+      expect(tq.requeueTask('999')).toBeNull();
+    });
+
+    it('adds feed entry', () => {
+      const task = tq.createTask('Requeue me', 'auto', null, null);
+      task.status = 'dispatched';
+      task.assignedTo = 6;
+      tq.activeTaskBySession.set(6, task.id);
+      const feedBefore = tq.feed.length;
+
+      tq.requeueTask(task.id);
+      expect(tq.feed.length).toBeGreaterThan(feedBefore);
+      const lastEntry = tq.feed[tq.feed.length - 1];
+      expect(lastEntry.detail).toContain('returned to queue');
+    });
+  });
+
   describe('feed', () => {
     it('adds entries on task operations', () => {
       tq.createTask('Test task', 'auto', null, null);
