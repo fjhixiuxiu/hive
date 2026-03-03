@@ -7,6 +7,9 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="manifest" href="/manifest.json">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <title>hive</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css">
 <style>
@@ -1724,7 +1727,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 <div id="main-view">
   <!-- Left sidebar nav -->
   <div id="sidebar">
-    <div id="sidebar-logo">hive</div>
+    <div id="sidebar-logo"><img src="/icon-192.png" alt="hive" style="width:28px;height:28px;vertical-align:middle;margin-bottom:2px"> hive</div>
     <button class="nav-btn active" data-tab="fleet-panel">
       <span class="nav-icon">&#9638;</span>Fleet
     </button>
@@ -3348,7 +3351,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         if (msg.spawnBaseDir) spawnBaseDir = msg.spawnBaseDir;
         if (msg.hiveName) {
           document.getElementById('sidebar-logo').innerHTML =
-            '<span style="color:var(--green)">' + esc(msg.hiveName) + '</span> hive';
+            '<img src="/icon-192.png" alt="hive" style="width:28px;height:28px;vertical-align:middle;margin-bottom:2px"> <span style="color:var(--green)">' + esc(msg.hiveName) + '</span> hive';
         }
         break;
       case 'commands:list': tsCommands = msg.commands || []; renderCommands(tsCommands); break;
