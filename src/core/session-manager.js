@@ -97,6 +97,11 @@ async function createSession(name, repoDir, layout = {}, size = {}) {
     await tmux.exec(`tmux resize-pane -t "${sessionName}:.1" -x ${absWidth}`);
   }
 
+  // 5. cd into repoDir in all panes (default-command "bash --login" resets cwd to $HOME)
+  for (let p = 1; p <= panes; p++) {
+    await tmux.exec(`tmux send-keys -t "${sessionName}:.${p}" "cd ${repoDir}" Enter`);
+  }
+
   log.info(`[session-manager] created session "${sessionName}" (${cols}x${rows}, ${panes} panes)`);
   return { created: true, skipped: false };
 }
