@@ -919,7 +919,7 @@ class TaskQueue extends EventEmitter {
     log.info(`[spawn] creating session ${sessionName} at ${repoDir}`);
     try {
       await sessionManager.createSession(sessionName, repoDir, { panes: 3, tmuxLayout: 'main-vertical', claudePaneWidth: '50%' }, size);
-      await sessionManager.startClaude(sessionName, this.config.sessions.claudePane);
+      await sessionManager.startClaude(sessionName, this.config.sessions.claudePane, 'claude');
       log.info(`[spawn] session ${sessionName} created`);
     } catch (err) {
       log.error(`[spawn] session creation failed: ${err.message}`);

@@ -1,4 +1,5 @@
 const http = require('http');
+const https = require('https');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -333,6 +334,16 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       id: n.id, type: n.type, connected: n.connected,
     }));
     ws.send(JSON.stringify({ type: 'nodes:list', nodes: workerNodes }));
+    // Integration status (configured or not, without revealing tokens)
+    ws.send(JSON.stringify({
+      type: 'integration:status',
+      integrations: {
+        github: { configured: !!process.env.GITHUB_TOKEN },
+        jenkins: { configured: !!(process.env.JENKINS_URL && process.env.JENKINS_USER && process.env.JENKINS_API_TOKEN) },
+        slack: { configured: !!(process.env.SLACK_BOT_TOKEN && process.env.SLACK_APP_TOKEN) },
+        jira: { configured: !!(process.env.JIRA_BASE_URL && process.env.JIRA_EMAIL && process.env.JIRA_API_TOKEN) },
+      }
+    }));
   }
 
   function handleWsConnection(ws, request) {
@@ -1365,6 +1376,138 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
         break;
       }
 
+      case 'integration:save': {
+        if (!checkPermission(ws, user, 'admin')) break;
+        const intName = msg.integration;
+        const ALLOWED_KEYS = {
+          github: ['GITHUB_TOKEN'],
+          jenkins: ['JENKINS_URL', 'JENKINS_USER', 'JENKINS_API_TOKEN'],
+          slack: ['SLACK_BOT_TOKEN', 'SLACK_APP_TOKEN'],
+          jira: ['JIRA_BASE_URL', 'JIRA_EMAIL', 'JIRA_API_TOKEN'],
+        };
+        const allowed = ALLOWED_KEYS[intName];
+        if (!allowed || !msg.values || typeof msg.values !== 'object') {
+          ws.send(JSON.stringify({ type: 'error', message: 'Invalid integration' }));
+          break;
+        }
+        // Filter to only allowed keys
+        const safeValues = {};
+        for (const k of Object.keys(msg.values)) {
+          if (allowed.includes(k)) safeValues[k] = msg.values[k];
+        }
+        try {
+          const envFile = path.join(__dirname, '..', '..', '..', '.env');
+          let lines = [];
+          if (fs.existsSync(envFile)) {
+            lines = fs.readFileSync(envFile, 'utf8').split('\n');
+          }
+          for (const [key, val] of Object.entries(safeValues)) {
+            const idx = lines.findIndex(l => l.trim().startsWith(key + '='));
+            const line = `${key}=${val}`;
+            if (idx >= 0) { lines[idx] = line; } else { lines.push(line); }
+          }
+          fs.writeFileSync(envFile, lines.join('\n'));
+          ws.send(JSON.stringify({ type: 'integration:saved', integration: intName, restart: true }));
+        } catch (err) {
+          ws.send(JSON.stringify({ type: 'error', message: 'Failed to save: ' + err.message }));
+        }
+        break;
+      }
+
+      case 'integration:test': {
+        const intTestName = msg.integration;
+        const vals = msg.values || {};
+        const sendResult = (ok, detail, error) => {
+          try {
+            ws.send(JSON.stringify({ type: 'integration:test:result', integration: intTestName, ok, detail, error }));
+          } catch (_) {}
+        };
+
+        const httpRequest = (urlStr, headers, postBody) => {
+          return new Promise((resolve, reject) => {
+            const url = new URL(urlStr);
+            const mod = url.protocol === 'https:' ? https : http;
+            const options = { method: postBody ? 'POST' : 'GET', headers: { ...headers }, timeout: 15000 };
+            const req = mod.request(urlStr, options, (res) => {
+              let data = '';
+              res.on('data', (chunk) => data += chunk);
+              res.on('end', () => {
+                if (res.statusCode >= 200 && res.statusCode < 300) {
+                  try { resolve(JSON.parse(data)); } catch (e) { reject(new Error('Invalid JSON')); }
+                } else {
+                  reject(new Error(`HTTP ${res.statusCode}: ${data.slice(0, 200)}`));
+                }
+              });
+            });
+            req.on('error', (err) => reject(new Error(err.message)));
+            req.on('timeout', () => { req.destroy(); reject(new Error('Timed out')); });
+            if (postBody) req.write(postBody);
+            req.end();
+          });
+        };
+
+        try {
+          switch (intTestName) {
+            case 'github': {
+              const token = vals.GITHUB_TOKEN;
+              if (!token) { sendResult(false, null, 'Token required'); break; }
+              const data = await httpRequest('https://api.github.com/user', {
+                'Authorization': `Bearer ${token}`,
+                'Accept': 'application/json',
+                'User-Agent': 'hive-dashboard',
+              });
+              sendResult(true, `Authenticated as ${data.login}`);
+              break;
+            }
+            case 'jenkins': {
+              const jUrl = (vals.JENKINS_URL || '').replace(/\/+$/, '');
+              const jUser = vals.JENKINS_USER;
+              const jToken = vals.JENKINS_API_TOKEN;
+              if (!jUrl || !jUser || !jToken) { sendResult(false, null, 'All fields required'); break; }
+              const auth = Buffer.from(`${jUser}:${jToken}`).toString('base64');
+              const data = await httpRequest(`${jUrl}/api/json`, {
+                'Authorization': `Basic ${auth}`,
+                'Accept': 'application/json',
+              });
+              sendResult(true, data.nodeDescription || 'Connected');
+              break;
+            }
+            case 'slack': {
+              const botToken = vals.SLACK_BOT_TOKEN;
+              if (!botToken) { sendResult(false, null, 'Bot token required'); break; }
+              const data = await httpRequest('https://slack.com/api/auth.test', {
+                'Authorization': `Bearer ${botToken}`,
+                'Content-Type': 'application/json',
+              });
+              if (data.ok) {
+                sendResult(true, data.team || 'Connected');
+              } else {
+                sendResult(false, null, data.error || 'Auth failed');
+              }
+              break;
+            }
+            case 'jira': {
+              const jiraUrl = (vals.JIRA_BASE_URL || '').replace(/\/+$/, '');
+              const jiraEmail = vals.JIRA_EMAIL;
+              const jiraToken = vals.JIRA_API_TOKEN;
+              if (!jiraUrl || !jiraEmail || !jiraToken) { sendResult(false, null, 'All fields required'); break; }
+              const jiraAuth = Buffer.from(`${jiraEmail}:${jiraToken}`).toString('base64');
+              const data = await httpRequest(`${jiraUrl}/rest/api/3/myself`, {
+                'Authorization': `Basic ${jiraAuth}`,
+                'Accept': 'application/json',
+              });
+              sendResult(true, data.displayName || 'Connected');
+              break;
+            }
+            default:
+              sendResult(false, null, 'Unknown integration');
+          }
+        } catch (err) {
+          sendResult(false, null, err.message);
+        }
+        break;
+      }
+
       case 'update:pull': {
         if (!checkPermission(ws, user, 'admin')) break;
         const hiveDir = path.join(__dirname, '..', '..', '..');
@@ -1485,7 +1628,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
             const prefix = config.sessions?.namePrefix || '';
             for (const num of results.created) {
               try {
-                await sessionManager.startClaude(`${prefix}${num}`, claudePane);
+                await sessionManager.startClaude(`${prefix}${num}`, claudePane, 'claude');
               } catch (err) {
                 log.error(`Failed to start Claude in session ${num}: ${err.message}`);
               }
