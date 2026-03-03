@@ -34,9 +34,12 @@ async function readState(cacheConfig, node, num) {
 
 /**
  * Extract session number from session name ("6-DEV-43966-..." -> 6).
+ * When namePrefix is provided, strips it first (e.g. "dev-6-DEV-123" with prefix "dev-" -> 6).
  */
-function sessionNum(name) {
-  const m = name.match(/^(\d+)/);
+function sessionNum(name, namePrefix) {
+  let s = name;
+  if (namePrefix && s.startsWith(namePrefix)) s = s.slice(namePrefix.length);
+  const m = s.match(/^(\d+)/);
   return m ? parseInt(m[1]) : null;
 }
 
@@ -57,7 +60,7 @@ function ticketFromBranch(branch) {
  */
 async function getSession(config, node, sessionName, nodeId) {
   const nc = getNodeConfig(config, nodeId);
-  const num = sessionNum(sessionName);
+  const num = sessionNum(sessionName, nc.sessions.namePrefix);
   const repoDir = num ? nc.sessions.repoDir(num) : null;
   const isRepo = repoDir ? await node.fileExists(path.join(repoDir, '.git')) : false;
 
@@ -105,8 +108,12 @@ async function getFleetStatus(config, router) {
 
   _fleetCache.pending = (async () => {
     const all = await router.listAllSessions();
-    const matching = all.filter(({ name, nodeId }) => {
+    const matching = all.filter(({ name, path, nodeId }) => {
       const nc = getNodeConfig(config, nodeId);
+      if (nc.sessions.repoBase && path) {
+        // Path must match AND session name must yield a valid number
+        return path.startsWith(nc.sessions.repoBase) && sessionNum(name, nc.sessions.namePrefix) !== null;
+      }
       return nc.sessions.pattern.test(name);
     });
     const all_sessions = await Promise.all(matching.map(async ({ name, nodeId, lastActivity }) => {
@@ -158,12 +165,17 @@ async function peekSession(config, node, sessionName) {
  */
 async function findSession(config, router, query) {
   const all = await router.listAllSessions();
-  const sessions = all.filter(({ name }) => config.sessions.pattern.test(name));
+  const sessions = all.filter(({ name, path }) => {
+    if (config.sessions.repoBase && path) {
+      return path.startsWith(config.sessions.repoBase) && sessionNum(name, config.sessions.namePrefix) !== null;
+    }
+    return config.sessions.pattern.test(name);
+  });
 
   // Exact number match
   const num = parseInt(query);
   if (!isNaN(num)) {
-    return sessions.find(({ name }) => sessionNum(name) === num) || null;
+    return sessions.find(({ name }) => sessionNum(name, config.sessions.namePrefix) === num) || null;
   }
   // Substring match
   return sessions.find(({ name }) =>

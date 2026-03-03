@@ -23,9 +23,12 @@ export function createMockNode(id = 'local') {
 export function createMockConfig(overrides = {}) {
   return {
     sessions: {
+      repoBase: '/home/user/dev/session-',
       pattern: /^\d+-/,
       claudePane: 1,
       repoDir: (num) => `/home/user/dev/session-${num}`,
+      hiveName: '',
+      namePrefix: '',
       ...(overrides.sessions || {}),
     },
     relay: {

@@ -16,9 +16,19 @@ async function exec(cmd, opts = {}) {
 }
 
 /**
- * List all tmux sessions, returns array of session name strings.
+ * List all tmux sessions, returns array of { name, lastActivity, path }.
  */
 async function listSessions() {
+  // Get session paths via list-sessions
+  const sessOut = await exec("tmux list-sessions -F '#{session_name}|#{session_path}' 2>/dev/null");
+  const pathMap = new Map();
+  if (sessOut) {
+    for (const line of sessOut.split('\n').filter(Boolean)) {
+      const sep = line.indexOf('|');
+      if (sep > 0) pathMap.set(line.slice(0, sep), line.slice(sep + 1));
+    }
+  }
+
   // Use list-windows to get window_activity (last output time), which is more
   // accurate than session_activity (last input time)
   const out = await exec("tmux list-windows -a -F '#{session_name}|#{window_activity}' 2>/dev/null");
@@ -30,7 +40,7 @@ async function listSessions() {
     const ms = ts ? parseInt(ts) * 1000 : null;
     const prev = map.get(name);
     if (!prev || (ms && (!prev.lastActivity || ms > prev.lastActivity))) {
-      map.set(name, { name, lastActivity: ms });
+      map.set(name, { name, lastActivity: ms, path: pathMap.get(name) || null });
     }
   }
   return Array.from(map.values()).sort((a, b) => {

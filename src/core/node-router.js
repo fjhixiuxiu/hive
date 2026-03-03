@@ -42,9 +42,9 @@ class NodeRouter {
       Array.from(this.nodes.entries()).map(async ([nodeId, node]) => {
         try {
           const sessions = await node.listSessions();
-          for (const {name, lastActivity} of sessions) {
+          for (const {name, lastActivity, path} of sessions) {
             this._sessionCache.set(name, nodeId);
-            all.push({ name, nodeId, lastActivity });
+            all.push({ name, nodeId, lastActivity, path });
           }
         } catch {
           // Node unreachable — skip

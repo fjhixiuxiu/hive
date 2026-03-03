@@ -25,7 +25,7 @@ describe('NodeRouter', () => {
     it('removes node and clears its session cache entries', async () => {
       const node = createMockNode('remote1');
       node.listSessions.mockResolvedValue([
-        { name: '6-DEV-123', lastActivity: 1000 },
+        { name: '6-DEV-123', lastActivity: 1000, path: '/home/user/dev/session-6' },
       ]);
       router.addNode(node);
 
@@ -41,7 +41,7 @@ describe('NodeRouter', () => {
   describe('nodeFor', () => {
     it('returns null before listAllSessions is called', () => {
       const node = createMockNode('local');
-      node.listSessions.mockResolvedValue([{ name: '1-main', lastActivity: 1000 }]);
+      node.listSessions.mockResolvedValue([{ name: '1-main', lastActivity: 1000, path: '/home/user/dev/session-1' }]);
       router.addNode(node);
       expect(router.nodeFor('1-main')).toBeNull();
     });
@@ -49,8 +49,8 @@ describe('NodeRouter', () => {
     it('returns correct node after cache is populated', async () => {
       const node1 = createMockNode('node1');
       const node2 = createMockNode('node2');
-      node1.listSessions.mockResolvedValue([{ name: '1-main', lastActivity: 1000 }]);
-      node2.listSessions.mockResolvedValue([{ name: '2-feat', lastActivity: 2000 }]);
+      node1.listSessions.mockResolvedValue([{ name: '1-main', lastActivity: 1000, path: '/home/user/dev/session-1' }]);
+      node2.listSessions.mockResolvedValue([{ name: '2-feat', lastActivity: 2000, path: '/home/user/dev/session-2' }]);
 
       router.addNode(node1);
       router.addNode(node2);
@@ -65,10 +65,10 @@ describe('NodeRouter', () => {
     it('queries all nodes and returns merged session list', async () => {
       const node1 = createMockNode('node1');
       const node2 = createMockNode('node2');
-      node1.listSessions.mockResolvedValue([{ name: '1-main', lastActivity: 1000 }]);
+      node1.listSessions.mockResolvedValue([{ name: '1-main', lastActivity: 1000, path: '/home/user/dev/session-1' }]);
       node2.listSessions.mockResolvedValue([
-        { name: '2-feat', lastActivity: 2000 },
-        { name: '3-fix', lastActivity: 3000 },
+        { name: '2-feat', lastActivity: 2000, path: '/home/user/dev/session-2' },
+        { name: '3-fix', lastActivity: 3000, path: '/home/user/dev/session-3' },
       ]);
 
       router.addNode(node1);
@@ -80,10 +80,21 @@ describe('NodeRouter', () => {
       expect(sessions.find(s => s.name === '2-feat').nodeId).toBe('node2');
     });
 
+    it('forwards path from node sessions', async () => {
+      const node = createMockNode('local');
+      node.listSessions.mockResolvedValue([
+        { name: '1-main', lastActivity: 1000, path: '/home/user/dev/session-1' },
+      ]);
+      router.addNode(node);
+
+      const sessions = await router.listAllSessions();
+      expect(sessions[0].path).toBe('/home/user/dev/session-1');
+    });
+
     it('handles unreachable nodes gracefully', async () => {
       const good = createMockNode('good');
       const bad = createMockNode('bad');
-      good.listSessions.mockResolvedValue([{ name: '1-ok', lastActivity: 1000 }]);
+      good.listSessions.mockResolvedValue([{ name: '1-ok', lastActivity: 1000, path: '/home/user/dev/session-1' }]);
       bad.listSessions.mockRejectedValue(new Error('Connection refused'));
 
       router.addNode(good);
@@ -96,13 +107,13 @@ describe('NodeRouter', () => {
 
     it('clears old cache before rebuilding', async () => {
       const node = createMockNode('local');
-      node.listSessions.mockResolvedValue([{ name: '1-main', lastActivity: 1000 }]);
+      node.listSessions.mockResolvedValue([{ name: '1-main', lastActivity: 1000, path: '/home/user/dev/session-1' }]);
       router.addNode(node);
 
       await router.listAllSessions();
       expect(router.nodeFor('1-main')).toBe(node);
 
-      node.listSessions.mockResolvedValue([{ name: '2-new', lastActivity: 2000 }]);
+      node.listSessions.mockResolvedValue([{ name: '2-new', lastActivity: 2000, path: '/home/user/dev/session-2' }]);
       await router.listAllSessions();
 
       expect(router.nodeFor('1-main')).toBeNull();

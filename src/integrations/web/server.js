@@ -1,4 +1,5 @@
 const http = require('http');
+const https = require('https');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -15,6 +16,10 @@ const log = require('../../core/log');
 
 // Env for gh CLI — ensure /opt/homebrew/bin is in PATH for hivebot
 const ghExecEnv = { ...process.env, PATH: `/opt/homebrew/bin:${process.env.PATH || ''}` };
+
+// ── Setup wizard detection ─────────────────────────────
+const setupPath = path.join(__dirname, '..', '..', '..', '.hive-setup.json');
+function isSetupComplete() { return fs.existsSync(setupPath); }
 
 // ── Contextual action definitions by source type ─────
 const ACTION_DEFS = {
@@ -287,8 +292,27 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
   }
 
   function sendInitialState(ws) {
+    // If setup wizard hasn't run, send setup:required instead of fleet data
+    if (!isSetupComplete()) {
+      const statePath = path.join(__dirname, '..', '..', '..', '.hive-state.json');
+      let existingState = null;
+      try {
+        if (fs.existsSync(statePath)) {
+          const raw = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+          const tasks = (raw.tasks || []).length;
+          const sessions = (raw.autoSessions || []).length;
+          const designations = Object.keys(raw.designations || {}).length;
+          if (tasks || sessions || designations) {
+            existingState = { tasks, sessions, designations };
+          }
+        }
+      } catch {}
+      ws.send(JSON.stringify({ type: 'setup:required', existingState }));
+      return;
+    }
+
     const user = wsUser.get(ws) || null;
-    ws.send(JSON.stringify({ type: 'config', links: config.links || {}, spawnBaseDir: process.env.HIVE_REPO_DIR || '~/ai-dev' }));
+    ws.send(JSON.stringify({ type: 'config', links: config.links || {}, spawnBaseDir: process.env.HIVE_REPO_DIR || '~/ai-dev', hiveName: config.sessions?.hiveName || '' }));
     ws.send(JSON.stringify({ type: 'commands:list', commands }));
     // Send user permissions
     if (auth.isOAuthEnabled() && user && user.login && taskQueue) {
@@ -323,6 +347,16 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       id: n.id, type: n.type, connected: n.connected,
     }));
     ws.send(JSON.stringify({ type: 'nodes:list', nodes: workerNodes }));
+    // Integration status (configured or not, without revealing tokens)
+    ws.send(JSON.stringify({
+      type: 'integration:status',
+      integrations: {
+        github: { configured: !!process.env.GITHUB_TOKEN },
+        jenkins: { configured: !!(process.env.JENKINS_URL && process.env.JENKINS_USER && process.env.JENKINS_API_TOKEN) },
+        slack: { configured: !!(process.env.SLACK_BOT_TOKEN && process.env.SLACK_APP_TOKEN) },
+        jira: { configured: !!(process.env.JIRA_BASE_URL && process.env.JIRA_EMAIL && process.env.JIRA_API_TOKEN) },
+      }
+    }));
   }
 
   function handleWsConnection(ws, request) {
@@ -694,8 +728,8 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
         }
         const { name, nodeId } = found;
         const node = router.getNode(nodeId);
-        const num = fleet.sessionNum(name);
         const nc = fleet.getNodeConfig(config, nodeId);
+        const num = fleet.sessionNum(name, nc.sessions.namePrefix);
         const repoDir = num ? nc.sessions.repoDir(num) : null;
         if (!repoDir) {
           ws.send(JSON.stringify({ type: 'git:info', session: msg.session, log: [], diffStat: [], stagedStat: [], changedFiles: [], branchDiff: null }));
@@ -720,8 +754,8 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
         }
         const { name, nodeId } = found;
         const node = router.getNode(nodeId);
-        const num = fleet.sessionNum(name);
         const nc = fleet.getNodeConfig(config, nodeId);
+        const num = fleet.sessionNum(name, nc.sessions.namePrefix);
         const repoDir = num ? nc.sessions.repoDir(num) : null;
         let diff = '';
         if (repoDir) {
@@ -743,8 +777,8 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
         }
         const { name, nodeId } = found;
         const node = router.getNode(nodeId);
-        const num = fleet.sessionNum(name);
         const nc = fleet.getNodeConfig(config, nodeId);
+        const num = fleet.sessionNum(name, nc.sessions.namePrefix);
         const repoDir = num ? nc.sessions.repoDir(num) : null;
         const files = repoDir ? await git.getCommitFiles(node, repoDir, msg.hash) : [];
         ws.send(JSON.stringify({ type: 'git:commit', session: msg.session, hash: msg.hash, files }));
@@ -1014,7 +1048,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
           return;
         }
         const { name, nodeId } = found;
-        const num = fleet.sessionNum(name);
+        const num = fleet.sessionNum(name, config.sessions.namePrefix);
         const node = router.getNode(nodeId);
         await node.exec(`tmux kill-session -t "${name}:" 2>/dev/null`);
         if (num) taskQueue.cleanupSession(num);
@@ -1355,6 +1389,138 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
         break;
       }
 
+      case 'integration:save': {
+        if (!checkPermission(ws, user, 'admin')) break;
+        const intName = msg.integration;
+        const ALLOWED_KEYS = {
+          github: ['GITHUB_TOKEN'],
+          jenkins: ['JENKINS_URL', 'JENKINS_USER', 'JENKINS_API_TOKEN'],
+          slack: ['SLACK_BOT_TOKEN', 'SLACK_APP_TOKEN'],
+          jira: ['JIRA_BASE_URL', 'JIRA_EMAIL', 'JIRA_API_TOKEN'],
+        };
+        const allowed = ALLOWED_KEYS[intName];
+        if (!allowed || !msg.values || typeof msg.values !== 'object') {
+          ws.send(JSON.stringify({ type: 'error', message: 'Invalid integration' }));
+          break;
+        }
+        // Filter to only allowed keys
+        const safeValues = {};
+        for (const k of Object.keys(msg.values)) {
+          if (allowed.includes(k)) safeValues[k] = msg.values[k];
+        }
+        try {
+          const envFile = path.join(__dirname, '..', '..', '..', '.env');
+          let lines = [];
+          if (fs.existsSync(envFile)) {
+            lines = fs.readFileSync(envFile, 'utf8').split('\n');
+          }
+          for (const [key, val] of Object.entries(safeValues)) {
+            const idx = lines.findIndex(l => l.trim().startsWith(key + '='));
+            const line = `${key}=${val}`;
+            if (idx >= 0) { lines[idx] = line; } else { lines.push(line); }
+          }
+          fs.writeFileSync(envFile, lines.join('\n'));
+          ws.send(JSON.stringify({ type: 'integration:saved', integration: intName, restart: true }));
+        } catch (err) {
+          ws.send(JSON.stringify({ type: 'error', message: 'Failed to save: ' + err.message }));
+        }
+        break;
+      }
+
+      case 'integration:test': {
+        const intTestName = msg.integration;
+        const vals = msg.values || {};
+        const sendResult = (ok, detail, error) => {
+          try {
+            ws.send(JSON.stringify({ type: 'integration:test:result', integration: intTestName, ok, detail, error }));
+          } catch (_) {}
+        };
+
+        const httpRequest = (urlStr, headers, postBody) => {
+          return new Promise((resolve, reject) => {
+            const url = new URL(urlStr);
+            const mod = url.protocol === 'https:' ? https : http;
+            const options = { method: postBody ? 'POST' : 'GET', headers: { ...headers }, timeout: 15000 };
+            const req = mod.request(urlStr, options, (res) => {
+              let data = '';
+              res.on('data', (chunk) => data += chunk);
+              res.on('end', () => {
+                if (res.statusCode >= 200 && res.statusCode < 300) {
+                  try { resolve(JSON.parse(data)); } catch (e) { reject(new Error('Invalid JSON')); }
+                } else {
+                  reject(new Error(`HTTP ${res.statusCode}: ${data.slice(0, 200)}`));
+                }
+              });
+            });
+            req.on('error', (err) => reject(new Error(err.message)));
+            req.on('timeout', () => { req.destroy(); reject(new Error('Timed out')); });
+            if (postBody) req.write(postBody);
+            req.end();
+          });
+        };
+
+        try {
+          switch (intTestName) {
+            case 'github': {
+              const token = vals.GITHUB_TOKEN;
+              if (!token) { sendResult(false, null, 'Token required'); break; }
+              const data = await httpRequest('https://api.github.com/user', {
+                'Authorization': `Bearer ${token}`,
+                'Accept': 'application/json',
+                'User-Agent': 'hive-dashboard',
+              });
+              sendResult(true, `Authenticated as ${data.login}`);
+              break;
+            }
+            case 'jenkins': {
+              const jUrl = (vals.JENKINS_URL || '').replace(/\/+$/, '');
+              const jUser = vals.JENKINS_USER;
+              const jToken = vals.JENKINS_API_TOKEN;
+              if (!jUrl || !jUser || !jToken) { sendResult(false, null, 'All fields required'); break; }
+              const auth = Buffer.from(`${jUser}:${jToken}`).toString('base64');
+              const data = await httpRequest(`${jUrl}/api/json`, {
+                'Authorization': `Basic ${auth}`,
+                'Accept': 'application/json',
+              });
+              sendResult(true, data.nodeDescription || 'Connected');
+              break;
+            }
+            case 'slack': {
+              const botToken = vals.SLACK_BOT_TOKEN;
+              if (!botToken) { sendResult(false, null, 'Bot token required'); break; }
+              const data = await httpRequest('https://slack.com/api/auth.test', {
+                'Authorization': `Bearer ${botToken}`,
+                'Content-Type': 'application/json',
+              });
+              if (data.ok) {
+                sendResult(true, data.team || 'Connected');
+              } else {
+                sendResult(false, null, data.error || 'Auth failed');
+              }
+              break;
+            }
+            case 'jira': {
+              const jiraUrl = (vals.JIRA_BASE_URL || '').replace(/\/+$/, '');
+              const jiraEmail = vals.JIRA_EMAIL;
+              const jiraToken = vals.JIRA_API_TOKEN;
+              if (!jiraUrl || !jiraEmail || !jiraToken) { sendResult(false, null, 'All fields required'); break; }
+              const jiraAuth = Buffer.from(`${jiraEmail}:${jiraToken}`).toString('base64');
+              const data = await httpRequest(`${jiraUrl}/rest/api/3/myself`, {
+                'Authorization': `Basic ${jiraAuth}`,
+                'Accept': 'application/json',
+              });
+              sendResult(true, data.displayName || 'Connected');
+              break;
+            }
+            default:
+              sendResult(false, null, 'Unknown integration');
+          }
+        } catch (err) {
+          sendResult(false, null, err.message);
+        }
+        break;
+      }
+
       case 'update:pull': {
         if (!checkPermission(ws, user, 'admin')) break;
         const hiveDir = path.join(__dirname, '..', '..', '..');
@@ -1425,6 +1591,91 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
           sendLog('error', err.message);
           ws.send(JSON.stringify({ type: 'update:error', error: err.message }));
         }
+        break;
+      }
+
+      // -- Setup wizard messages ----------------------------------------------
+      case 'setup:validate-path': {
+        const rawPath = (msg.path || '').trim();
+        if (!rawPath) {
+          ws.send(JSON.stringify({ type: 'setup:validate-path:result', valid: false, error: 'Path is required' }));
+          break;
+        }
+        const resolved = rawPath.replace(/^~/, os.homedir());
+        const exists = fs.existsSync(resolved);
+        const hasGit = exists && fs.existsSync(path.join(resolved, '.git'));
+        ws.send(JSON.stringify({ type: 'setup:validate-path:result', valid: exists, hasGit, resolved }));
+        break;
+      }
+
+      case 'setup:launch': {
+        try {
+          const setupData = {
+            hiveName: msg.hiveName || '',
+            repoDir: msg.repoDir,
+            agentCount: msg.agentCount || 4,
+            sharedRepo: !!msg.sharedRepo,
+            roles: msg.roles || {},
+            githubRepo: msg.githubRepo || '',
+            createdAt: new Date().toISOString(),
+          };
+          fs.writeFileSync(setupPath, JSON.stringify(setupData, null, 2));
+
+          // Reload config by clearing require cache
+          const configPath = path.join(__dirname, '..', '..', '..', 'hive.config.js');
+          delete require.cache[require.resolve(configPath)];
+          const newConfig = require(configPath);
+          // Merge new config values into live config
+          Object.assign(config.sessions, newConfig.sessions);
+          config.github = newConfig.github;
+          config.links = newConfig.links;
+
+          // Create sessions and start Claude
+          const sessionManager = require('../../core/session-manager');
+          let sessionsCreated = 0;
+          if (await sessionManager.isTmuxAvailable()) {
+            await sessionManager.applyGlobalOptions(config.tmux || {});
+            const results = await sessionManager.createAllSessions(config);
+            sessionsCreated = results.created.length;
+            const claudePane = config.sessions?.claudePane || 1;
+            const prefix = config.sessions?.namePrefix || '';
+            for (const num of results.created) {
+              try {
+                await sessionManager.startClaude(`${prefix}${num}`, claudePane, 'claude');
+              } catch (err) {
+                log.error(`Failed to start Claude in session ${num}: ${err.message}`);
+              }
+            }
+          }
+
+          // Set designations from wizard role names
+          if (taskQueue && setupData.roles) {
+            for (const [num, name] of Object.entries(setupData.roles)) {
+              if (name && !name.startsWith('Slot ')) {
+                taskQueue.setDesignation(Number(num), name);
+              }
+            }
+          }
+
+          // Invalidate fleet cache and send results
+          fleet.invalidateCache();
+          _previewCache.result = null;
+          _previewCache.ts = 0;
+
+          ws.send(JSON.stringify({ type: 'setup:complete', sessionsCreated }));
+          sendInitialState(ws);
+        } catch (err) {
+          log.error('Setup launch error:', err.message);
+          ws.send(JSON.stringify({ type: 'setup:error', error: err.message }));
+        }
+        break;
+      }
+
+      case 'setup:skip': {
+        const minSetup = { skipped: true, createdAt: new Date().toISOString() };
+        fs.writeFileSync(setupPath, JSON.stringify(minSetup, null, 2));
+        ws.send(JSON.stringify({ type: 'setup:complete', sessionsCreated: 0 }));
+        sendInitialState(ws);
         break;
       }
     }
