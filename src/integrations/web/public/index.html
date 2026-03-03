@@ -1607,6 +1607,8 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .setup-btn.primary:hover:not(:disabled) { opacity: 0.9; }
 .setup-btn.launch { background: var(--green); color: var(--bg); }
 .setup-btn.launch:hover:not(:disabled) { opacity: 0.9; }
+.setup-btn.danger { background: var(--red); color: #fff; }
+.setup-btn.danger:hover:not(:disabled) { opacity: 0.9; }
 .setup-btn.secondary { background: var(--bg3); color: var(--fg); }
 .setup-btn.secondary:hover:not(:disabled) { background: var(--dim); }
 .setup-skip { color: var(--dim); font-size: 12px; text-decoration: underline; cursor: pointer; background: none; border: none; }
@@ -1617,6 +1619,14 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   animation: spin 0.6s linear infinite; vertical-align: middle; margin-right: 8px;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
+.setup-existing-warning {
+  background: rgba(255,184,108,0.1); border: 1px solid var(--orange);
+  border-radius: 8px; padding: 16px; text-align: center;
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+}
+.setup-warning-icon { font-size: 32px; }
+.setup-warning-text { font-size: 14px; color: var(--fg); line-height: 1.5; }
+.setup-warning-text strong { display: block; font-size: 16px; color: var(--orange); margin-bottom: 4px; }
 </style>
 </head>
 <body>
@@ -1631,6 +1641,15 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 <!-- Setup wizard (shown on first run) -->
 <div id="setup-wizard">
   <div class="setup-container">
+    <div class="setup-existing-warning" id="setup-existing-warning" style="display:none">
+      <div class="setup-warning-icon">&#9888;</div>
+      <div class="setup-warning-text">
+        <strong>Existing hive detected</strong>
+        <span id="setup-warning-details"></span>
+      </div>
+      <button class="setup-btn primary" id="setup-use-existing-btn">Use Existing Config</button>
+      <button class="setup-btn danger" id="setup-start-fresh-btn">Start Fresh</button>
+    </div>
     <div class="setup-header">
       <h1><span>hive</span> setup</h1>
       <p>Let's configure your fleet in a few quick steps</p>
@@ -2924,6 +2943,19 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     }
   });
 
+  $('#setup-use-existing-btn').addEventListener('click', () => {
+    if (ws && ws.readyState === 1) {
+      ws.send(JSON.stringify({ type: 'setup:skip' }));
+    }
+    $('#setup-existing-warning').style.display = 'none';
+  });
+
+  $('#setup-start-fresh-btn').addEventListener('click', () => {
+    if (!confirm('This will overwrite your existing hive.config.js and may create duplicate tmux sessions. Are you sure?')) return;
+    $('#setup-existing-warning').style.display = 'none';
+    $$('.setup-steps, .setup-body, .setup-footer').forEach(el => el.style.display = '');
+  });
+
   // ── Auth management ──────────────────────────────
   const TOKEN_KEY = 'hive_token';
   let token = localStorage.getItem(TOKEN_KEY);
@@ -3286,6 +3318,16 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       case 'setup:required':
         authScreen.style.display = 'none'; mainView.style.display = 'none';
         setupWizard.classList.add('visible');
+        if (msg.existingState) {
+          const s = msg.existingState;
+          const parts = [];
+          if (s.sessions) parts.push(`${s.sessions} session(s)`);
+          if (s.tasks) parts.push(`${s.tasks} task(s)`);
+          if (s.designations) parts.push(`${s.designations} designation(s)`);
+          $('#setup-warning-details').textContent = parts.join(', ') + '. Running setup will overwrite your configuration.';
+          $('#setup-existing-warning').style.display = '';
+          $$('.setup-steps, .setup-body, .setup-footer').forEach(el => el.style.display = 'none');
+        }
         break;
       case 'setup:validate-path:result':
         handleSetupPathValidation(msg);

@@ -294,7 +294,20 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
   function sendInitialState(ws) {
     // If setup wizard hasn't run, send setup:required instead of fleet data
     if (!isSetupComplete()) {
-      ws.send(JSON.stringify({ type: 'setup:required' }));
+      const statePath = path.join(__dirname, '..', '..', '..', '.hive-state.json');
+      let existingState = null;
+      try {
+        if (fs.existsSync(statePath)) {
+          const raw = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+          const tasks = (raw.tasks || []).length;
+          const sessions = (raw.autoSessions || []).length;
+          const designations = Object.keys(raw.designations || {}).length;
+          if (tasks || sessions || designations) {
+            existingState = { tasks, sessions, designations };
+          }
+        }
+      } catch {}
+      ws.send(JSON.stringify({ type: 'setup:required', existingState }));
       return;
     }
 
