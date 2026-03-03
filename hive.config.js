@@ -58,13 +58,13 @@ module.exports = {
     repoDir: (n) => {
       if (setup && setup.repoDir) {
         const base = setup.repoDir.replace(/^~/, os.homedir());
-        return setup.sharedRepo ? base : path.join(base, String(n));
+        return setup.sharedRepo ? base : base + String(n);
       }
       const base = (
         process.env.HIVE_REPO_DIR ||
         path.join(os.homedir(), 'ai-dev', 'webplatform')
       ).replace(/^~/, os.homedir());
-      return path.join(base, String(n));
+      return base + String(n);
     },
 
     // Which pane index runs Claude Code (depends on your tmux layout)
