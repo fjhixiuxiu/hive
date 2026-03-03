@@ -111,7 +111,8 @@ async function getFleetStatus(config, router) {
     const matching = all.filter(({ name, path, nodeId }) => {
       const nc = getNodeConfig(config, nodeId);
       if (nc.sessions.repoBase && path) {
-        return path.startsWith(nc.sessions.repoBase);
+        // Path must match AND session name must yield a valid number
+        return path.startsWith(nc.sessions.repoBase) && sessionNum(name, nc.sessions.namePrefix) !== null;
       }
       return nc.sessions.pattern.test(name);
     });
@@ -166,7 +167,7 @@ async function findSession(config, router, query) {
   const all = await router.listAllSessions();
   const sessions = all.filter(({ name, path }) => {
     if (config.sessions.repoBase && path) {
-      return path.startsWith(config.sessions.repoBase);
+      return path.startsWith(config.sessions.repoBase) && sessionNum(name, config.sessions.namePrefix) !== null;
     }
     return config.sessions.pattern.test(name);
   });
