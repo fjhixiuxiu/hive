@@ -1315,8 +1315,13 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .dialog {
   background: var(--bg2); border-radius: 12px; padding: 20px; width: 100%;
   max-width: 360px; border: 1px solid var(--bg3);
+  max-height: calc(100vh - 48px); display: flex; flex-direction: column;
 }
-.dialog-title { font-size: 16px; font-weight: 700; margin-bottom: 16px; }
+.dialog .pm-form-grid,
+.dialog .dialog-scroll {
+  overflow-y: auto; -webkit-overflow-scrolling: touch; min-height: 0;
+}
+.dialog-title { font-size: 16px; font-weight: 700; margin-bottom: 16px; flex-shrink: 0; }
 .slot-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 16px; max-height: 240px; overflow-y: auto; }
 .slot-btn {
   background: var(--bg3); border: none; color: var(--fg); font-size: 16px;
@@ -1324,7 +1329,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 }
 .slot-btn:active { background: var(--purple); color: var(--bg); }
 .slot-btn.occupied { opacity: 0.25; cursor: default; pointer-events: none; }
-.dialog-actions { display: flex; gap: 8px; }
+.dialog-actions { display: flex; gap: 8px; flex-shrink: 0; }
 .dialog-btn {
   flex: 1; background: var(--bg3); border: none; color: var(--fg); font-size: 14px;
   font-weight: 600; padding: 10px; border-radius: 8px; cursor: pointer;
