@@ -121,6 +121,17 @@ function createSlackBot(taskQueue, config, router, pmManager) {
 
   // ── Shared handler for both @mentions and DMs ──────
   async function handleMessage(event, say) {
+    try {
+      await _handleMessage(event, say);
+    } catch (err) {
+      console.error(`[slack] Unhandled error in handleMessage: ${err.message}`, err.stack);
+      try {
+        await say({ text: `:x: Something went wrong processing your message. Error logged.`, thread_ts: event.thread_ts || event.ts });
+      } catch { /* can't even reply */ }
+    }
+  }
+
+  async function _handleMessage(event, say) {
     const text = stripMention(event.text);
     if (!text) {
       await say({ text: 'What do you need? Try: `@hive <task>` or `@hive status`', thread_ts: event.ts });
@@ -256,34 +267,51 @@ function createSlackBot(taskQueue, config, router, pmManager) {
     const targetSession = (slackPm && slackPm.targetSession) || null;
     const designation = (slackPm && slackPm.designation) || null;
 
-    const task = taskQueue.createTask(fullText, mode, targetSession, designation, {
-      source: `slack:${authorName}`,
-      createdBy: authorName,
-    });
+    let task;
+    try {
+      task = taskQueue.createTask(fullText, mode, targetSession, designation, {
+        source: `slack:${authorName}`,
+        createdBy: authorName,
+      });
+
+      // Set Slack fields IMMEDIATELY so they're included in any subsequent save
+      task.slackChannel = event.channel;
+      task.slackThreadTs = threadTs || event.ts;
+      taskQueue._saveState();
+      console.log(`[slack] Task ${task.id} created (${mode}) for thread ${task.slackThreadTs} in ${event.channel}`);
+    } catch (err) {
+      console.error(`[slack] Task creation failed: ${err.message}`, err.stack);
+      await say({ text: `:x: Failed to create task: ${err.message}`, thread_ts: replyTs });
+      return;
+    }
 
     // Seed checklist from PM if configured
-    if (slackPm && slackPm.checklistTemplate && pmManager) {
-      pmManager._seedChecklist(slackPm, task);
-    }
+    try {
+      if (slackPm && slackPm.checklistTemplate && pmManager) {
+        pmManager._seedChecklist(slackPm, task);
+      }
 
-    // Track PM stats
-    if (slackPm) {
-      slackPm.tasksCreated++;
-      slackPm.lastPoll = Date.now();
-      pmManager._save();
-      pmManager.emit('pm:changed');
+      // Track PM stats
+      if (slackPm) {
+        slackPm.tasksCreated++;
+        slackPm.lastPoll = Date.now();
+        pmManager._save();
+        pmManager.emit('pm:changed');
+      }
+    } catch (err) {
+      console.error(`[slack] PM stats/checklist error (task ${task.id} still created): ${err.message}`);
     }
-
-    task.slackChannel = event.channel;
-    task.slackThreadTs = threadTs || event.ts;
-    taskQueue._saveState();
 
     const pos = taskQueue.getQueuePosition(task.id);
     const posText = pos > 0 ? ` (position #${pos} in queue)` : '';
-    await say({
-      text: `:bee: Task created${posText}:\n> ${text}`,
-      thread_ts: replyTs,
-    });
+    try {
+      await say({
+        text: `:bee: Task created${posText}:\n> ${text}`,
+        thread_ts: replyTs,
+      });
+    } catch (err) {
+      console.error(`[slack] Failed to reply for task ${task.id}: ${err.message}`);
+    }
   }
 
   // ── Channel @mentions ──
