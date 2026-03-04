@@ -595,34 +595,23 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .task-text { font-size: 14px; font-weight: 500; margin-bottom: 4px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .task-meta { font-size: 12px; color: var(--dim); display: flex; flex-direction: column; gap: 4px; }
 .task-meta-info { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.task-time { margin-left: auto; white-space: nowrap; }
 .task-meta-actions { display: flex; gap: 8px; align-items: center; }
-.task-cancel {
-  margin-left: auto; background: none; border: none; color: var(--red);
-  font-size: 11px; font-weight: 600; cursor: pointer; padding: 2px 6px;
+.task-meta-actions > button:first-of-type { margin-left: auto; }
+.task-cancel, .task-requeue-btn, .task-done-btn, .task-edit-btn, .task-assign-btn, .task-resume-btn {
+  background: var(--bg3); border: none; border-radius: 4px;
+  padding: 4px 10px; font-size: 11px; font-weight: 600; cursor: pointer;
 }
-.task-edit-btn {
-  background: none; border: none; color: var(--dim); font-size: 11px;
-  font-weight: 600; cursor: pointer; padding: 2px 6px;
-}
-.task-edit-btn:hover { color: var(--purple); }
-.task-requeue-btn {
-  background: none; border: none; color: var(--orange); font-size: 11px;
-  font-weight: 600; cursor: pointer; padding: 2px 6px;
-}
-.task-requeue-btn:hover { color: var(--fg); }
-.task-done-btn {
-  background: none; border: none; color: var(--green); font-size: 11px;
-  font-weight: 600; cursor: pointer; padding: 2px 6px;
-}
-.task-done-btn:hover { color: var(--fg); }
-.task-assign-btn {
-  background: none; border: none; color: var(--green); font-size: 11px;
-  font-weight: 700; cursor: pointer; padding: 2px 6px;
-}
-.task-assign-btn:hover { color: var(--fg); }
+.task-cancel { color: var(--red); }
+.task-requeue-btn { color: var(--orange); }
+.task-done-btn { color: var(--green); }
+.task-edit-btn { color: var(--purple); }
+.task-assign-btn { color: var(--green); }
+.task-cancel:hover, .task-requeue-btn:hover, .task-done-btn:hover,
+.task-edit-btn:hover, .task-assign-btn:hover { opacity: 0.7; }
 .task-session-badge {
   background: rgba(241,250,140,0.15); color: var(--yellow); font-size: 11px;
-  font-weight: 700; padding: 2px 6px; border-radius: 3px; margin-left: auto;
+  font-weight: 700; padding: 2px 6px; border-radius: 3px;
 }
 .task-checkbox {
   -webkit-appearance: none; appearance: none;
@@ -1457,13 +1446,8 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 }
 .comments-toggle-btn:hover { color: var(--fg); }
 .comments-toggle-btn.has-comments { color: var(--cyan); }
-.task-link-btn { background: none; border: none; color: var(--dim); font-size: 11px; cursor: pointer; padding: 0 4px; opacity: 0.5; }
-.task-link-btn:hover { opacity: 1; color: var(--purple); }
-.task-resume-btn {
-  background: none; border: none; color: var(--cyan); font-size: 11px;
-  font-weight: 600; cursor: pointer; padding: 2px 6px;
-}
-.task-resume-btn:hover { color: var(--fg); }
+.task-resume-btn { color: var(--cyan); }
+.task-resume-btn:hover { opacity: 0.7; }
 
 /* ── Admin panel (user permissions) ── */
 .admin-user-row { display: flex; align-items: center; gap: 10px; padding: 10px; background: var(--bg); border-radius: 6px; margin-bottom: 6px; flex-wrap: wrap; }
@@ -5970,17 +5954,6 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       });
       cb.addEventListener('click', (e) => e.stopPropagation());
     });
-    // Wire link buttons
-    tasksScroll.querySelectorAll('.task-link-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const url = `${location.origin}${location.pathname}#/tasks/${btn.dataset.id}`;
-        navigator.clipboard.writeText(url).then(() => {
-          btn.textContent = 'copied!';
-          setTimeout(() => { btn.innerHTML = '&#128279;'; }, 1500);
-        });
-      });
-    });
     updateTasksBulkBar();
   }
 
@@ -6073,7 +6046,8 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     const desigBadge = t.designation ? `<span class="task-designation" style="background:${tdc.bg};color:${tdc.fg}">${esc(t.designation)}</span>` : '';
     const selected = tasksSelectedTaskId === t.id ? ' selected' : '';
     // Origin badges: show source session + PR when available
-    const prBadge = t.sourcePR ? `<span class="task-session-badge" style="background:rgba(139,233,253,0.15);color:var(--cyan)">PR #${t.sourcePR}</span>` : '';
+    const prUrl = (t.sourcePR && linkTemplates.pr) ? linkTemplates.pr.replace('${prNum}', t.sourcePR) : null;
+    const prBadge = t.sourcePR ? (prUrl ? `<a class="task-session-badge" href="${prUrl}" target="_blank" onclick="event.stopPropagation()" style="background:rgba(139,233,253,0.15);color:var(--cyan);text-decoration:none">PR #${t.sourcePR}</a>` : `<span class="task-session-badge" style="background:rgba(139,233,253,0.15);color:var(--cyan)">PR #${t.sourcePR}</span>`) : '';
     const originBadge = t.sourceSession ? `<span class="task-session-badge">S:${t.sourceSession}</span>` : '';
     const sourceLabel = t.source ? t.source.replace(/^pm:/, '') : '';
     const sourceColor = sourceLabel === 'attached' ? 'var(--dim)' : 'var(--orange)';
@@ -6092,7 +6066,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     }
 
     if (tabType === 'inprogress') {
-      if (t.assignedTo) meta += ` · ${timeAgo(t.dispatchedAt || t.createdAt)}`;
+      const dispatchedAgo = timeAgo(t.dispatchedAt || t.createdAt);
       const sessionBadge = t.assignedTo ? `<span class="task-session-badge">S:${t.assignedTo}</span>` : '';
       // Waiting indicator: time since last activity from Claude
       let waitBadge = '';
@@ -6107,20 +6081,18 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
           waitBadge = `<span style="color:${color};font-weight:700;font-size:11px">waiting ${waitStr}</span>`;
         }
       }
-      const linkBtn = `<button class="task-link-btn" data-id="${t.id}" title="Copy link">&#128279;</button>`;
       const requeueBtn = hasPerm('dispatch') ? `<button class="task-requeue-btn" data-id="${t.id}">Requeue</button>` : '';
       const doneBtn = hasPerm('cancel') ? `<button class="task-done-btn" data-id="${t.id}">Done</button>` : '';
       const cancelBtn = hasPerm('cancel') ? `<button class="task-cancel" data-id="${t.id}">Cancel</button>` : '';
       const checked = selectedTaskIds.has(t.id) ? ' checked' : '';
-      return `<div class="task-card-row"><input type="checkbox" class="task-checkbox" data-id="${t.id}"${checked}><div class="task-card dispatched${selected}" data-id="${t.id}"><div class="task-text">${esc(t.text)}</div><div class="task-meta"><div class="task-meta-info"><span>${meta} · ${ago}</span>${waitBadge}${sourceBadge}${desigBadge}${prBadge}${clBadge}${commentBadge}${sessionBadge}</div><div class="task-meta-actions">${linkBtn}${doneBtn}${requeueBtn}${cancelBtn}</div></div></div></div>`;
+      return `<div class="task-card-row"><input type="checkbox" class="task-checkbox" data-id="${t.id}"${checked}><div class="task-card dispatched${selected}" data-id="${t.id}"><div class="task-text">${esc(t.text)}</div><div class="task-meta"><div class="task-meta-info">${sourceBadge}${desigBadge}${clBadge}${commentBadge}${waitBadge}<span class="task-time">${meta} · ${dispatchedAgo}</span></div><div class="task-meta-actions">${sessionBadge}${prBadge}${cancelBtn}${requeueBtn}${doneBtn}</div></div></div></div>`;
     }
     if (tabType === 'queued') {
       const editBtn = hasPerm('create-tasks') ? `<button class="task-edit-btn" data-id="${t.id}">Edit</button>` : '';
       const cancelBtn = hasPerm('cancel') ? `<button class="task-cancel" data-id="${t.id}">Cancel</button>` : '';
       const assignBtn = hasPerm('dispatch') ? `<button class="task-assign-btn" data-id="${t.id}">Assign →</button>` : '';
-      const linkBtn = `<button class="task-link-btn" data-id="${t.id}" title="Copy link">&#128279;</button>`;
       const checked = selectedTaskIds.has(t.id) ? ' checked' : '';
-      return `<div class="task-card-row"><input type="checkbox" class="task-checkbox" data-id="${t.id}"${checked}><div class="task-card queued" data-id="${t.id}"><div class="task-text">${esc(t.text)}</div><div class="task-meta"><div class="task-meta-info"><span>${meta} · ${ago}</span>${sourceBadge}${prBadge}${originBadge}${desigBadge}${clBadge}${commentBadge}</div><div class="task-meta-actions">${linkBtn}${editBtn}${assignBtn}${cancelBtn}</div></div></div></div>`;
+      return `<div class="task-card-row"><input type="checkbox" class="task-checkbox" data-id="${t.id}"${checked}><div class="task-card queued" data-id="${t.id}"><div class="task-text">${esc(t.text)}</div><div class="task-meta"><div class="task-meta-info">${sourceBadge}${originBadge}${desigBadge}${clBadge}${commentBadge}<span class="task-time">${meta} · ${ago}</span></div><div class="task-meta-actions">${prBadge}${editBtn}${assignBtn}${cancelBtn}</div></div></div></div>`;
     }
     // completed
     if (t.dispatchedAt && t.completedAt) {
@@ -6131,9 +6103,8 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     const snippet = t.result ? `<div class="task-text" style="font-size:12px;color:var(--dim);margin-top:2px">${esc(t.result.substring(0, 80))}</div>` : '';
     const sessionBadge = t.assignedTo ? `<span class="task-session-badge">S:${t.assignedTo}</span>` : '';
     const resumeBtn = t.assignedTo ? `<button class="task-resume-btn" data-id="${t.id}" data-session="${t.assignedTo}">Resume</button>` : '';
-    const linkBtn = `<button class="task-link-btn" data-id="${t.id}" title="Copy link">&#128279;</button>`;
     const checked = selectedTaskIds.has(t.id) ? ' checked' : '';
-    return `<div class="task-card-row"><input type="checkbox" class="task-checkbox" data-id="${t.id}"${checked}><div class="task-card ${t.status}${selected}" data-id="${t.id}"><div class="task-text">${esc(t.text)}</div>${snippet}<div class="task-meta"><div class="task-meta-info"><span>${meta} · ${ago}</span>${sourceBadge}${prBadge}${originBadge}${desigBadge}${clBadge}${commentBadge}${sessionBadge}</div><div class="task-meta-actions">${linkBtn}${resumeBtn}</div></div></div></div>`;
+    return `<div class="task-card-row"><input type="checkbox" class="task-checkbox" data-id="${t.id}"${checked}><div class="task-card ${t.status}${selected}" data-id="${t.id}"><div class="task-text">${esc(t.text)}</div>${snippet}<div class="task-meta"><div class="task-meta-info">${sourceBadge}${originBadge}${desigBadge}${clBadge}${commentBadge}<span class="task-time">${meta} · ${ago}</span></div><div class="task-meta-actions">${prBadge}${sessionBadge}${resumeBtn}</div></div></div></div>`;
   }
 
   // ── Comment panel (rendered into tab content divs) ─────
