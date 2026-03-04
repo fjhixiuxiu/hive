@@ -72,6 +72,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   padding: 12px 0 8px; text-align: center;
   font-size: 14px; font-weight: 700; color: var(--green);
   letter-spacing: -0.5px; border-bottom: 1px solid var(--bg3);
+  line-height: 1.3;
 }
 .nav-btn {
   background: none; border: none; color: var(--dim); font-size: 10px;
@@ -128,6 +129,16 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 }
 @media (min-width: 600px) { #grid { grid-template-columns: repeat(4, 1fr); gap: 8px; padding: 8px 12px; } }
 @media (min-width: 900px) { #grid { grid-template-columns: repeat(4, 1fr); gap: 8px; padding: 8px 16px; } }
+
+/* ── Hive loader ───────────────────── */
+.hive-loader {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 40px 0; grid-column: 1 / -1;
+}
+.hive-loader svg { width: 80px; height: 80px; }
+.hive-loader-text {
+  margin-top: 12px; font-size: 13px; color: var(--dim); font-weight: 600;
+}
 
 /* ── Fleet search ───────────────────── */
 .fleet-search-bar {
@@ -1198,6 +1209,10 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .toast.out { animation: slideOut 0.2s ease-in forwards; }
 @keyframes slideOut { to { transform: translateX(100%); opacity: 0; } }
 .toast.spawning { border-left-color: var(--cyan); }
+.card.spawning { border-left-color: var(--cyan); opacity: 0.7; pointer-events: none; }
+.card.spawning .hive-loader { padding: 8px 0; }
+.card.spawning .hive-loader svg { width: 36px; height: 36px; }
+.card.spawning .hive-loader-text { font-size: 11px; margin-top: 6px; }
 .toast.spawning .toast-title::before {
   content: ''; display: inline-block; width: 12px; height: 12px;
   border: 2px solid var(--dim); border-top-color: var(--cyan);
@@ -1343,6 +1358,17 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 }
 #spawn-btn.visible { display: flex; }
 #spawn-btn:active { transform: scale(0.92); }
+#shutdown-all-btn {
+  position: fixed; bottom: 80px; right: 78px; z-index: 50;
+  width: 42px; height: 42px; border-radius: 50%;
+  background: var(--red); border: none; color: var(--bg);
+  font-size: 18px; cursor: pointer;
+  box-shadow: 0 4px 12px rgba(255,85,85,0.3);
+  display: none; align-items: center; justify-content: center;
+  margin-top: 5px;
+}
+#shutdown-all-btn.visible { display: flex; }
+#shutdown-all-btn:active { transform: scale(0.92); }
 .dialog-overlay {
   position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 100;
   display: none; align-items: center; justify-content: center; padding: 24px;
@@ -1624,6 +1650,31 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   animation: spin 0.6s linear infinite; vertical-align: middle; margin-right: 8px;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
+.setup-source-toggle {
+  display: flex; gap: 0; margin-bottom: 12px; border-radius: 6px; overflow: hidden;
+  border: 1px solid var(--bg3);
+}
+.setup-source-toggle label {
+  flex: 1; text-align: center; padding: 8px 12px; font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: background 0.15s, color 0.15s; color: var(--dim);
+  background: var(--bg);
+}
+.setup-source-toggle input[type="radio"] { display: none; }
+.setup-source-toggle input[type="radio"]:checked + span {
+  /* handled via JS class on label */
+}
+.setup-source-toggle label.active {
+  background: var(--purple); color: var(--bg);
+}
+.setup-git-fields { margin-top: 8px; }
+.setup-git-url-small {
+  background: var(--bg); border: 1px solid var(--bg3); color: var(--dim);
+  padding: 5px 8px; border-radius: 4px; font-size: 11px; width: 100%;
+  font-family: 'SF Mono', 'Menlo', monospace; outline: none;
+  transition: border-color 0.15s; margin-top: 4px;
+}
+.setup-git-url-small:focus { border-color: var(--purple); color: var(--fg); }
+.setup-git-url-small::placeholder { color: var(--bg3); }
 .setup-existing-warning {
   background: rgba(255,184,108,0.1); border: 1px solid var(--orange);
   border-radius: 8px; padding: 16px; text-align: center;
@@ -1677,16 +1728,34 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
           <div class="setup-validation" id="setup-name-validation"></div>
         </div>
       </div>
-      <!-- Step 1: Repo path -->
+      <!-- Step 1: Repo path / Git clone -->
       <div class="setup-step" data-step="1">
-        <h2>Repository path</h2>
-        <p>Where is the repo your agents will work in? Each agent gets its own copy (path + number suffix).</p>
-        <div>
+        <h2>Repository source</h2>
+        <div class="setup-source-toggle">
+          <label class="active" id="setup-source-local-label">
+            <input type="radio" name="setup-source" value="local" id="setup-source-local" checked>
+            <span>Local path</span>
+          </label>
+          <label id="setup-source-git-label">
+            <input type="radio" name="setup-source" value="git" id="setup-source-git">
+            <span>Git clone</span>
+          </label>
+        </div>
+        <!-- Local path fields -->
+        <div id="setup-local-fields">
+          <p>Point to a repo you've already cloned. Each agent gets a numbered copy (path + suffix).</p>
           <div class="setup-label">Repo directory</div>
           <input class="setup-input" id="setup-repo-path" type="text" placeholder="~/dev/myproject" autocomplete="off" spellcheck="false">
           <div class="setup-validation" id="setup-path-validation"></div>
         </div>
-        <label class="setup-checkbox-row">
+        <!-- Git clone fields -->
+        <div id="setup-git-fields" class="setup-git-fields" style="display:none">
+          <p>Don't have repos checked out yet? The wizard will clone them for you. Pick a base directory here, then set git URLs per agent in Step 3.</p>
+          <div class="setup-label">Base directory</div>
+          <input class="setup-input" id="setup-git-target" type="text" placeholder="~/dev" autocomplete="off" spellcheck="false">
+          <div class="setup-validation" id="setup-git-target-validation"></div>
+        </div>
+        <label class="setup-checkbox-row" style="margin-top:8px">
           <input type="checkbox" id="setup-shared-repo">
           <span>Shared repo (all agents use the same directory, no number suffix)</span>
         </label>
@@ -2269,8 +2338,23 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   </div>
 </div>
 
-<!-- Spawn button (fleet panel only) -->
+<!-- Spawn + Shutdown buttons (fleet panel only) -->
+<button id="shutdown-all-btn" title="Shutdown All">&#9632;</button>
 <button id="spawn-btn">+</button>
+
+<!-- Shutdown All confirmation dialog -->
+<div class="dialog-overlay" id="shutdown-dialog">
+  <div class="dialog" style="max-width:360px">
+    <div class="dialog-title" style="color:var(--red)">Shutdown All Sessions</div>
+    <p style="color:var(--dim);margin:12px 0;font-size:14px;line-height:1.5">
+      This will kill all fleet tmux sessions. Any running Claude instances will be terminated.
+    </p>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
+      <button class="dialog-btn" id="shutdown-cancel-btn">Cancel</button>
+      <button class="dialog-btn" id="shutdown-confirm-btn" style="background:var(--red);color:var(--bg)">Shutdown All</button>
+    </div>
+  </div>
+</div>
 
 <!-- Spawn dialog -->
 <div class="dialog-overlay" id="spawn-dialog">
@@ -2729,6 +2813,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   let spawnBaseDir = '~/ai-dev';
   let spawnSlotMax = 32;
   let spawnedAgentsList = [];
+  let spawningSessions = new Map(); // num → { name } for in-flight spawns
   let pmList = [];        // PM objects from server
   let editingPmId = null; // PM being edited (null = creating new)
   let activeSessionTab = 'terminal'; // 'terminal', 'git', or 'comments'
@@ -2792,6 +2877,12 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   const setupBackBtn = $('#setup-back-btn');
   const setupNextBtn = $('#setup-next-btn');
   const setupSkipBtn = $('#setup-skip-btn');
+  const setupSourceLocal = $('#setup-source-local');
+  const setupSourceGit = $('#setup-source-git');
+  const setupLocalFields = $('#setup-local-fields');
+  const setupGitFields = $('#setup-git-fields');
+  const setupGitTarget = $('#setup-git-target');
+  const setupGitTargetValidation = $('#setup-git-target-validation');
 
   let setupCurrentStep = 0;
   let setupHiveNameValid = true; // empty is valid (optional)
@@ -2800,6 +2891,9 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   let setupPathHasGit = false;
   let setupLaunching = false;
   let setupValidateTimer = null;
+  let setupSourceMode = 'local'; // 'local' | 'git'
+  let setupGitBaseDirValid = false;
+  let setupGitValidateTimer = null;
 
   function setupUpdateDots() {
     $$('.setup-step-dot').forEach(dot => {
@@ -2827,8 +2921,8 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     }
     // Step 0: hive name (optional — always valid, but validate format if non-empty)
     if (step === 0) setupNextBtn.disabled = !setupHiveNameValid;
-    // Step 1: disable Next until path validates
-    if (step === 1) setupNextBtn.disabled = !setupPathValid;
+    // Step 1: disable Next until path/base-dir validates
+    if (step === 1) setupNextBtn.disabled = setupSourceMode === 'local' ? !setupPathValid : !setupGitBaseDirValid;
     // Step 2/3: always enabled
     if (step === 2 || step === 3) { setupNextBtn.disabled = false; setupBuildNamesGrid(); }
   }
@@ -2836,11 +2930,18 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   function setupBuildNamesGrid() {
     const count = parseInt(setupAgentCount.value);
     setupNamesGrid.innerHTML = '';
+    const showGitUrl = setupSourceMode === 'git';
     for (let i = 1; i <= count; i++) {
       const existing = setupNamesGrid.querySelector(`[data-slot="${i}"]`);
       const val = existing ? existing.value : `Slot ${i}`;
       const div = document.createElement('div');
-      div.innerHTML = `<div class="setup-name-label">Agent ${i}</div><input class="setup-name-input" data-slot="${i}" value="${esc(val)}" maxlength="30">`;
+      let html = `<div class="setup-name-label">Agent ${i}</div><input class="setup-name-input" data-slot="${i}" value="${esc(val)}" maxlength="30">`;
+      if (showGitUrl) {
+        const existingGit = setupNamesGrid.querySelector(`[data-git-slot="${i}"]`);
+        const gitVal = existingGit ? existingGit.value : '';
+        html += `<input class="setup-git-url-small" data-git-slot="${i}" value="${esc(gitVal)}" placeholder="git@github.com:org/repo.git" spellcheck="false" autocomplete="off">`;
+      }
+      div.innerHTML = html;
       setupNamesGrid.appendChild(div);
     }
   }
@@ -2855,13 +2956,27 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     });
     const prefix = hiveName ? hiveName + '-' : '';
     const sessionExample = `${prefix}1, ${prefix}2, ...`;
+    const isGit = setupSourceMode === 'git';
+    const repoPath = isGit ? setupGitTarget.value.trim() : setupRepoPath.value.trim();
+    // Collect per-agent git URLs
+    const agentGitLines = [];
+    if (isGit) {
+      setupNamesGrid.querySelectorAll('.setup-git-url-small').forEach(inp => {
+        const url = inp.value.trim();
+        const slot = inp.dataset.gitSlot;
+        const name = names[parseInt(slot) - 1] || `Slot ${slot}`;
+        if (url) agentGitLines.push(`${name}: ${url}`);
+      });
+    }
     setupReviewTable.innerHTML = `
       ${hiveName ? `<tr><td>Hive name</td><td>${esc(hiveName)}</td></tr>` : ''}
       <tr><td>Sessions</td><td>${esc(sessionExample)}</td></tr>
-      <tr><td>Repo path</td><td>${esc(setupRepoPath.value.trim())}</td></tr>
+      <tr><td>Source</td><td>${isGit ? 'Git clone' : 'Local path'}</td></tr>
+      <tr><td>${isGit ? 'Base dir' : 'Repo path'}</td><td>${esc(repoPath)}</td></tr>
       <tr><td>Mode</td><td>${shared ? 'Shared (single directory)' : 'Numbered (path + N suffix)'}</td></tr>
       <tr><td>Agents</td><td>${count}</td></tr>
       <tr><td>Names</td><td>${names.map(n => esc(n)).join(', ')}</td></tr>
+      ${agentGitLines.length ? `<tr><td>Git repos</td><td>${agentGitLines.map(l => esc(l)).join('<br>')}</td></tr>` : ''}
     `;
   }
 
@@ -2883,7 +2998,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       v.className = 'setup-validation err';
       setupRepoPath.className = 'setup-input invalid';
     }
-    if (setupCurrentStep === 1) setupNextBtn.disabled = !msg.valid;
+    if (setupCurrentStep === 1 && setupSourceMode === 'local') setupNextBtn.disabled = !msg.valid;
   }
 
   // Hive name validation (optional, but must be valid format if non-empty)
@@ -2928,6 +3043,54 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     }, 400);
   });
 
+  // Source mode toggle (Local path / Git clone)
+  function setupSetSourceMode(mode) {
+    setupSourceMode = mode;
+    const isGit = mode === 'git';
+    setupLocalFields.style.display = isGit ? 'none' : '';
+    setupGitFields.style.display = isGit ? '' : 'none';
+    $('#setup-source-local-label').classList.toggle('active', !isGit);
+    $('#setup-source-git-label').classList.toggle('active', isGit);
+    if (setupCurrentStep === 1) {
+      setupNextBtn.disabled = isGit ? !setupGitBaseDirValid : !setupPathValid;
+    }
+  }
+  setupSourceLocal.addEventListener('change', () => setupSetSourceMode('local'));
+  setupSourceGit.addEventListener('change', () => setupSetSourceMode('git'));
+
+  // Git base directory validation (debounced — just checks directory exists)
+  setupGitTarget.addEventListener('input', () => {
+    clearTimeout(setupGitValidateTimer);
+    const val = setupGitTarget.value.trim();
+    if (!val) {
+      setupGitBaseDirValid = false;
+      setupGitTargetValidation.textContent = '';
+      setupGitTargetValidation.className = 'setup-validation';
+      setupGitTarget.className = 'setup-input';
+      if (setupCurrentStep === 1 && setupSourceMode === 'git') setupNextBtn.disabled = true;
+      return;
+    }
+    setupGitValidateTimer = setTimeout(() => {
+      if (ws && ws.readyState === 1) {
+        ws.send(JSON.stringify({ type: 'setup:validate-path', path: val }));
+      }
+    }, 400);
+  });
+
+  function handleSetupGitBaseDirValidation(msg) {
+    setupGitBaseDirValid = msg.valid;
+    if (msg.valid) {
+      setupGitTargetValidation.textContent = 'Directory exists — repos will be cloned here';
+      setupGitTargetValidation.className = 'setup-validation ok';
+      setupGitTarget.className = 'setup-input valid';
+    } else {
+      setupGitTargetValidation.textContent = 'Directory not found';
+      setupGitTargetValidation.className = 'setup-validation err';
+      setupGitTarget.className = 'setup-input invalid';
+    }
+    if (setupCurrentStep === 1 && setupSourceMode === 'git') setupNextBtn.disabled = !msg.valid;
+  }
+
   setupAgentCount.addEventListener('input', () => {
     setupCountDisplay.textContent = setupAgentCount.value;
   });
@@ -2945,14 +3108,25 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       setupNamesGrid.querySelectorAll('.setup-name-input').forEach(inp => {
         roles[parseInt(inp.dataset.slot)] = inp.value.trim() || `Slot ${inp.dataset.slot}`;
       });
-      ws.send(JSON.stringify({
+      const isGit = setupSourceMode === 'git';
+      const payload = {
         type: 'setup:launch',
         hiveName: setupHiveName.value.trim(),
-        repoDir: setupRepoPath.value.trim(),
+        repoDir: isGit ? setupGitTarget.value.trim() : setupRepoPath.value.trim(),
         agentCount: count,
         sharedRepo: setupSharedRepo.checked,
         roles,
-      }));
+      };
+      if (isGit) {
+        // Collect per-agent git URLs
+        const perAgentGitUrls = {};
+        setupNamesGrid.querySelectorAll('.setup-git-url-small').forEach(inp => {
+          const v = inp.value.trim();
+          if (v) perAgentGitUrls[inp.dataset.gitSlot] = v;
+        });
+        payload.perAgentGitUrls = perAgentGitUrls;
+      }
+      ws.send(JSON.stringify(payload));
     }
   });
 
@@ -3214,6 +3388,8 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     if (tab === 'more-panel') { renderDesignationGrid(); renderAgentRoots(); renderDesigDefs(); renderAdminUsers(); renderChecklistTemplates(); }
     const spawnBtn = document.getElementById('spawn-btn');
     if (spawnBtn) spawnBtn.classList.toggle('visible', tab === 'fleet-panel');
+    const shutdownBtn = document.getElementById('shutdown-all-btn');
+    if (shutdownBtn) shutdownBtn.classList.toggle('visible', tab === 'fleet-panel');
     if (tab === 'session-panel' && term && fitAddon && activeSessionTab === 'terminal') {
       requestAnimationFrame(() => fitTerminal());
       // Re-subscribe in case tasks panel took over the subscription (preserve active pane)
@@ -3303,9 +3479,11 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     const broadcastSection = document.getElementById('broadcast-section');
     if (broadcastSection) broadcastSection.classList.toggle('perm-hidden', !hasPerm('send-messages'));
 
-    // Spawn button
+    // Spawn + Shutdown buttons
     const spawnBtn = document.getElementById('spawn-btn');
     if (spawnBtn && !hasPerm('admin')) spawnBtn.classList.add('perm-hidden');
+    const shutdownAllBtn = document.getElementById('shutdown-all-btn');
+    if (shutdownAllBtn && !hasPerm('admin')) shutdownAllBtn.classList.add('perm-hidden');
 
     // Admin users section in More
     const adminSection = document.getElementById('admin-users-section');
@@ -3325,6 +3503,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
           if (msg.user) currentUser = msg.user;
           if (msg.permissions) { myPermissions = msg.permissions; applyPermissionGates(); }
           authScreen.style.display = 'none'; mainView.style.display = 'flex';
+          renderGrid();
           updateUserBadge();
           if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
           applyHash();
@@ -3353,11 +3532,16 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         }
         break;
       case 'setup:validate-path:result':
-        handleSetupPathValidation(msg);
+        if (setupSourceMode === 'git') {
+          handleSetupGitBaseDirValidation(msg);
+        } else {
+          handleSetupPathValidation(msg);
+        }
         break;
       case 'setup:complete':
         setupWizard.classList.remove('visible');
         mainView.style.display = 'flex';
+        renderGrid();
         showToast('Setup complete', msg.sessionsCreated > 0 ? `${msg.sessionsCreated} session(s) created` : 'Ready to go', 'success');
         break;
       case 'setup:error':
@@ -3371,7 +3555,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         if (msg.spawnBaseDir) spawnBaseDir = msg.spawnBaseDir;
         if (msg.hiveName) {
           document.getElementById('sidebar-logo').innerHTML =
-            '<img src="/icon-192.png" alt="hive" style="width:28px;height:28px;vertical-align:middle;margin-bottom:2px"> <span style="color:var(--green)">' + esc(msg.hiveName) + '</span> hive';
+            '<img src="/icon-192.png" alt="hive" style="width:28px;height:28px;vertical-align:middle;margin-bottom:2px"> hive<br><span style="font-size:11px;color:var(--green);font-weight:400">' + esc(msg.hiveName) + '</span>';
         }
         break;
       case 'commands:list': tsCommands = msg.commands || []; renderCommands(tsCommands); break;
@@ -3383,6 +3567,8 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         console.log(`fleet:status received — ${msg.sessions.length} sessions, previews: ${msg.sessions.filter(s => s.preview).length}`);
         console.time('auth→fleet');
         fleetData = msg.sessions;
+        // Clear spawning placeholders for sessions that now exist
+        for (const s of fleetData) spawningSessions.delete(s.num);
         if (activeTab === 'fleet-panel') renderGrid();
         renderAutoGrid();
         updateSidebarSummary();
@@ -3469,6 +3655,9 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       case 'notify': handleNotify(msg); break;
       case 'restart:done': showToast('Restarted', `Session ${msg.session} — claude --resume`, 'success'); break;
       case 'kill:done': closeSession(); showToast('Closed', `Session ${msg.session} killed`, 'success'); break;
+      case 'shutdown:all:done':
+        showToast('Shutdown complete', `${msg.killed} session(s) killed${msg.failed ? `, ${msg.failed} failed` : ''}`, msg.failed ? 'warning' : 'success');
+        break;
       case 'keys:done': break;
       case 'error':
         // Suppress noisy permission toasts — only show for explicit user actions
@@ -3574,8 +3763,12 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         break;
       case 'spawn:done':
         if (spawnToast) { spawnToast.remove(); spawnToast = null; }
+        // Clear spawning placeholder — try exact num first, then 'pending'
+        if (msg.num && spawningSessions.has(msg.num)) spawningSessions.delete(msg.num);
+        else spawningSessions.delete('pending');
         if (msg.success) showToast('Spawned', `Session ${msg.num} at ${msg.repoDir || ''}`, 'success');
         else showToast('Spawn failed', msg.error || 'Unknown error', 'error');
+        if (activeTab === 'fleet-panel') renderGrid();
         closeSpawnDialog();
         break;
       case 'spawnedAgents:list':
@@ -3584,12 +3777,14 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         break;
       case 'respawn:done': {
         if (spawnToast) { spawnToast.remove(); spawnToast = null; }
+        spawningSessions.clear();
         const rCount = (msg.respawned || []).length;
         const sCount = (msg.skipped || []).length;
         const fCount = (msg.failed || []).length;
         if (fCount > 0) showToast('Respawn partial', `${rCount} respawned, ${sCount} skipped, ${fCount} failed`, 'error');
         else if (rCount > 0) showToast('Respawn done', `${rCount} respawned, ${sCount} already running`, 'success');
         else showToast('Respawn', `All ${sCount} sessions already running`, 'success');
+        if (activeTab === 'fleet-panel') renderGrid();
         closeSpawnDialog();
         break;
       }
@@ -3768,10 +3963,53 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     sidebarSummary.innerHTML = `${idle} idle<br>${work} work<br>${off} off`;
   }
 
+  // ── Hive loader SVG ──────────────────────────
+  function hiveLoaderHtml(text) {
+    return `<div class="hive-loader">
+      <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+        <style>
+          .cell { fill: none; stroke: var(--dim); stroke-width: 1.5; opacity: 0.3; }
+          .pulse { fill: none; stroke: var(--purple); stroke-width: 2; opacity: 0;
+            animation: hivePulse 2.4s ease-in-out infinite; }
+          @keyframes hivePulse { 0%,100% { opacity: 0; } 30%,70% { opacity: 0.9; } }
+        </style>
+        <g transform="translate(50,50)">
+          <!-- center hex -->
+          <polygon class="cell" points="0,-12 10.4,-6 10.4,6 0,12 -10.4,6 -10.4,-6"/>
+          <polygon class="pulse" points="0,-12 10.4,-6 10.4,6 0,12 -10.4,6 -10.4,-6" style="animation-delay:0s"/>
+          <!-- top -->
+          <polygon class="cell" points="0,-33 10.4,-27 10.4,-15 0,-9 -10.4,-15 -10.4,-27" />
+          <polygon class="pulse" points="0,-33 10.4,-27 10.4,-15 0,-9 -10.4,-15 -10.4,-27" style="animation-delay:0.3s"/>
+          <!-- top-right -->
+          <polygon class="cell" points="18,-22.5 28.4,-16.5 28.4,-4.5 18,1.5 7.6,-4.5 7.6,-16.5" />
+          <polygon class="pulse" points="18,-22.5 28.4,-16.5 28.4,-4.5 18,1.5 7.6,-4.5 7.6,-16.5" style="animation-delay:0.6s"/>
+          <!-- bottom-right -->
+          <polygon class="cell" points="18,1.5 28.4,7.5 28.4,19.5 18,25.5 7.6,19.5 7.6,7.5" />
+          <polygon class="pulse" points="18,1.5 28.4,7.5 28.4,19.5 18,25.5 7.6,19.5 7.6,7.5" style="animation-delay:0.9s"/>
+          <!-- bottom -->
+          <polygon class="cell" points="0,12 10.4,18 10.4,30 0,36 -10.4,30 -10.4,18" />
+          <polygon class="pulse" points="0,12 10.4,18 10.4,30 0,36 -10.4,30 -10.4,18" style="animation-delay:1.2s"/>
+          <!-- bottom-left -->
+          <polygon class="cell" points="-18,1.5 -7.6,7.5 -7.6,19.5 -18,25.5 -28.4,19.5 -28.4,7.5" />
+          <polygon class="pulse" points="-18,1.5 -7.6,7.5 -7.6,19.5 -18,25.5 -28.4,19.5 -28.4,7.5" style="animation-delay:1.5s"/>
+          <!-- top-left -->
+          <polygon class="cell" points="-18,-22.5 -7.6,-16.5 -7.6,-4.5 -18,1.5 -28.4,-4.5 -28.4,-16.5" />
+          <polygon class="pulse" points="-18,-22.5 -7.6,-16.5 -7.6,-4.5 -18,1.5 -28.4,-4.5 -28.4,-16.5" style="animation-delay:1.8s"/>
+        </g>
+      </svg>
+      <div class="hive-loader-text">${text || 'Loading...'}</div>
+    </div>`;
+  }
+
   // ── Fleet grid rendering ──────────────────────────
   function renderGrid() {
     grid.innerHTML = '';
     grid.classList.toggle('swimlane', fleetViewMode === 'swimlane');
+
+    if (fleetData.length === 0) {
+      grid.innerHTML = hiveLoaderHtml('Loading sessions...');
+      return;
+    }
 
     if (fleetViewMode === 'grid') {
       // Flat grid — all sessions by number, no group headers
@@ -3816,6 +4054,18 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         grid.innerHTML = '';
         for (const s of fleetData) renderFleetCard(s);
       }
+    }
+
+    // Render spawning placeholder cards
+    for (const [key, info] of spawningSessions) {
+      if (key !== 'pending' && fleetData.find(s => s.num === key)) continue;
+      const card = document.createElement('div');
+      card.className = 'card spawning border-dim';
+      const numLabel = key === 'pending' ? '?' : key;
+      card.innerHTML = `<div class="card-top"><span class="card-num">${numLabel}</span><span class="card-state state-off">spawning</span></div>
+        <div class="card-branch">${esc(info.name || '')}</div>
+        ${hiveLoaderHtml('Cloning & starting...')}`;
+      grid.appendChild(card);
     }
 
     if (quickSession) highlightQuickCard();
@@ -7728,6 +7978,10 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     if (!params) return;
     if (ws && ws.readyState === 1) {
       ws.send(JSON.stringify({ type: 'spawn', ...params }));
+      // Track spawning session for grid placeholder
+      const slotKey = params.num || 'pending';
+      spawningSessions.set(slotKey, { name: params.name });
+      if (activeTab === 'fleet-panel') renderGrid();
       if (spawnToast) spawnToast.remove();
       spawnToast = document.createElement('div');
       spawnToast.className = 'toast spawning';
@@ -7738,6 +7992,23 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   });
 
   function closeSpawnDialog() { spawnDialog.classList.remove('visible'); selectedSpawnSlot = null; }
+
+  // ── Shutdown All dialog ───────────────────────────
+  const shutdownDialog = document.getElementById('shutdown-dialog');
+  document.getElementById('shutdown-all-btn').addEventListener('click', () => {
+    shutdownDialog.classList.add('visible');
+  });
+  document.getElementById('shutdown-cancel-btn').addEventListener('click', () => {
+    shutdownDialog.classList.remove('visible');
+  });
+  shutdownDialog.addEventListener('click', (e) => { if (e.target === shutdownDialog) shutdownDialog.classList.remove('visible'); });
+  document.getElementById('shutdown-confirm-btn').addEventListener('click', () => {
+    shutdownDialog.classList.remove('visible');
+    if (ws && ws.readyState === 1) {
+      ws.send(JSON.stringify({ type: 'shutdown:all' }));
+      showToast('Shutting down', 'Killing all fleet sessions...', 'info');
+    }
+  });
 
   function updateRespawnButton() {
     const btn = document.getElementById('respawn-all-btn');
@@ -7752,6 +8023,13 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   document.getElementById('respawn-all-btn').addEventListener('click', () => {
     if (ws && ws.readyState === 1) {
       ws.send(JSON.stringify({ type: 'respawn:all' }));
+      // Track respawning sessions for grid placeholders
+      for (const a of spawnedAgentsList) {
+        if (!fleetData.find(s => s.num === a.num)) {
+          spawningSessions.set(a.num, { name: a.name || '' });
+        }
+      }
+      if (activeTab === 'fleet-panel') renderGrid();
       if (spawnToast) spawnToast.remove();
       spawnToast = document.createElement('div');
       spawnToast.className = 'toast spawning';

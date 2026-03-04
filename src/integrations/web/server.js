@@ -1071,6 +1071,34 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
         break;
       }
 
+      case 'shutdown:all': {
+        if (!checkPermission(ws, user, 'restart')) break;
+        const sessionManager = require('../../core/session-manager');
+        try {
+          const results = await sessionManager.destroyAllSessions(config);
+          // Clean up taskQueue for each killed session
+          if (taskQueue) {
+            for (const name of results.killed) {
+              const num = fleet.sessionNum(name, config.sessions.namePrefix);
+              if (num) taskQueue.cleanupSession(num);
+            }
+          }
+          fleet.invalidateCache();
+          _previewCache.result = null;
+          _previewCache.ts = 0;
+          broadcastFleetStatus().catch(() => {});
+          if (ws.readyState === 1) {
+            ws.send(JSON.stringify({ type: 'shutdown:all:done', killed: results.killed.length, failed: results.failed.length }));
+          }
+        } catch (err) {
+          log.error('Shutdown all error:', err.message);
+          if (ws.readyState === 1) {
+            ws.send(JSON.stringify({ type: 'error', message: `Shutdown failed: ${err.message}` }));
+          }
+        }
+        break;
+      }
+
       // -- Spawn messages ---------------------------------------------------
       case 'spawn:slots': {
         if (!taskQueue) break;
@@ -1624,6 +1652,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
             sharedRepo: !!msg.sharedRepo,
             roles: msg.roles || {},
             githubRepo: msg.githubRepo || '',
+            perAgentGitUrls: msg.perAgentGitUrls || {},
             createdAt: new Date().toISOString(),
           };
           fs.writeFileSync(setupPath, JSON.stringify(setupData, null, 2));
@@ -1632,28 +1661,9 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
           const configPath = path.join(__dirname, '..', '..', '..', 'hive.config.js');
           delete require.cache[require.resolve(configPath)];
           const newConfig = require(configPath);
-          // Merge new config values into live config
           Object.assign(config.sessions, newConfig.sessions);
           config.github = newConfig.github;
           config.links = newConfig.links;
-
-          // Create sessions and start Claude
-          const sessionManager = require('../../core/session-manager');
-          let sessionsCreated = 0;
-          if (await sessionManager.isTmuxAvailable()) {
-            await sessionManager.applyGlobalOptions(config.tmux || {});
-            const results = await sessionManager.createAllSessions(config);
-            sessionsCreated = results.created.length;
-            const claudePane = config.sessions?.claudePane || 1;
-            const prefix = config.sessions?.namePrefix || '';
-            for (const num of results.created) {
-              try {
-                await sessionManager.startClaude(`${prefix}${num}`, claudePane, 'claude');
-              } catch (err) {
-                log.error(`Failed to start Claude in session ${num}: ${err.message}`);
-              }
-            }
-          }
 
           // Set designations from wizard role names
           if (taskQueue && setupData.roles) {
@@ -1664,13 +1674,87 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
             }
           }
 
-          // Invalidate fleet cache and send results
+          // Close wizard immediately — sessions will appear on grid as they're created
           fleet.invalidateCache();
           _previewCache.result = null;
           _previewCache.ts = 0;
-
-          ws.send(JSON.stringify({ type: 'setup:complete', sessionsCreated }));
+          ws.send(JSON.stringify({ type: 'setup:complete', sessionsCreated: 0 }));
           sendInitialState(ws);
+
+          // Background: clone (if git) + create sessions + start Claude
+          const hasGitUrls = Object.values(setupData.perAgentGitUrls).some(u => u);
+          const sessionManager = require('../../core/session-manager');
+
+          (async () => {
+            try {
+              if (!await sessionManager.isTmuxAvailable()) return;
+              await sessionManager.applyGlobalOptions(config.tmux || {});
+              const claudePane = config.sessions?.claudePane || 1;
+              const prefix = config.sessions?.namePrefix || '';
+
+              if (hasGitUrls) {
+                const { cloneOrReuse } = require('../../core/git-utils');
+                const baseDir = setupData.repoDir.replace(/^~/, os.homedir());
+
+                if (setupData.sharedRepo) {
+                  // Shared: clone once, then create all sessions
+                  const gitUrl = Object.values(setupData.perAgentGitUrls).find(u => u);
+                  try {
+                    await cloneOrReuse(gitUrl, baseDir);
+                  } catch (err) {
+                    log.error(`[setup] shared clone failed: ${err.message}`);
+                  }
+                  const results = await sessionManager.createAllSessions(config);
+                  for (const num of results.created) {
+                    try {
+                      await sessionManager.startClaude(`${prefix}${num}`, claudePane, 'claude');
+                    } catch (err) {
+                      log.error(`Failed to start Claude in session ${num}: ${err.message}`);
+                    }
+                    broadcastFleetStatus().catch(() => {});
+                  }
+                } else {
+                  // Per-agent: clone + create + start one by one
+                  for (let i = 1; i <= setupData.agentCount; i++) {
+                    const agentGitUrl = setupData.perAgentGitUrls[String(i)];
+                    const agentDir = `${baseDir}${i}`;
+                    if (agentGitUrl) {
+                      try {
+                        await cloneOrReuse(agentGitUrl, agentDir);
+                      } catch (err) {
+                        log.error(`[setup] agent ${i} clone failed: ${err.message}`);
+                      }
+                    } else {
+                      try { fs.mkdirSync(agentDir, { recursive: true }); } catch (_) {}
+                    }
+                    const name = `${prefix}${i}`;
+                    const repoDir = config.sessions?.repoDir ? config.sessions.repoDir(i) : agentDir;
+                    try {
+                      await sessionManager.createSession(name, repoDir, {}, config.tmux?.defaultSize || {});
+                      await sessionManager.startClaude(name, claudePane, 'claude');
+                    } catch (err) {
+                      log.error(`[setup] agent ${i} session failed: ${err.message}`);
+                    }
+                    broadcastFleetStatus().catch(() => {});
+                  }
+                }
+              } else {
+                // No git — create all sessions at once (fast)
+                const results = await sessionManager.createAllSessions(config);
+                for (const num of results.created) {
+                  try {
+                    await sessionManager.startClaude(`${prefix}${num}`, claudePane, 'claude');
+                  } catch (err) {
+                    log.error(`Failed to start Claude in session ${num}: ${err.message}`);
+                  }
+                }
+                broadcastFleetStatus().catch(() => {});
+              }
+            } catch (err) {
+              log.error('[setup] background session creation failed:', err.message);
+            }
+          })();
+
         } catch (err) {
           log.error('Setup launch error:', err.message);
           ws.send(JSON.stringify({ type: 'setup:error', error: err.message }));
