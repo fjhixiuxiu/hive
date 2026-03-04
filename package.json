@@ -32,6 +32,7 @@
   },
   "homepage": "https://github.com/nukulb/hive#readme",
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.1",
     "@slack/bolt": "^4.6.0",
     "express": "^4.21.0",
     "jsonwebtoken": "^9.0.3",

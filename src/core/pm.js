@@ -5,6 +5,17 @@ const { exec } = require('child_process');
 const cron = require('node-cron');
 const log = require('./log');
 
+const MCP_INSTRUCTIONS = `
+## Hive Integration
+
+You have hive MCP tools available. Use them:
+
+1. **Start**: Call \`hive_get_task\` to see your full assignment before doing anything.
+2. **Progress updates**: Call \`hive_post_update\` at key milestones — when you have a plan, when implementation is done, or if you hit a blocker.
+3. **Coordination**: If your task mentions other sessions or dependencies, call \`hive_get_sessions\` to check their status.
+4. **Finish**: When the task is fully complete (code works, tests pass), call \`hive_complete_task\` with a brief summary. Do NOT mark complete if tests are failing or work is partial.
+`.trim();
+
 let nextPmId = 1;
 
 class ProjectManager extends EventEmitter {
@@ -33,6 +44,7 @@ class ProjectManager extends EventEmitter {
       schedule: cfg.schedule || null,
       taskFormat: cfg.taskFormat || null,
       checklistTemplate: cfg.checklistTemplate || null,
+      mcpEnabled: cfg.mcpEnabled || false,
       completionConditions: cfg.completionConditions || [],
       enabled: false,
       seenKeys: [],
@@ -143,6 +155,7 @@ class ProjectManager extends EventEmitter {
         schedule: data.schedule || null,
         taskFormat: data.taskFormat || null,
         checklistTemplate: data.checklistTemplate || null,
+        mcpEnabled: data.mcpEnabled || false,
         completionConditions: Array.isArray(data.completionConditions) ? data.completionConditions : [],
         enabled: data.enabled || false,
         seenKeys: Array.isArray(data.seenKeys) ? data.seenKeys : [],
@@ -232,7 +245,7 @@ class ProjectManager extends EventEmitter {
     }
 
     // Skip if there's already a queued or dispatched task with the same text
-    const expectedText = pm.instructions ? `${text}\n\nInstructions: ${pm.instructions}` : text;
+    const expectedText = this._buildFullText(pm, text);
     const existing = [...this.taskQueue.tasks.values()].find(
       (t) => t.text === expectedText && (t.status === 'queued' || t.status === 'dispatched'),
     );
@@ -245,7 +258,7 @@ class ProjectManager extends EventEmitter {
     if (pm.taskFormat) {
       taskText = pm.taskFormat.replace('{key}', key).replace('{summary}', text);
     }
-    const fullText = pm.instructions ? `${taskText}\n\nInstructions: ${pm.instructions}` : taskText;
+    const fullText = this._buildFullText(pm, taskText);
     const task = this.taskQueue.createTask(fullText, mode, pm.targetSession || null, pm.designation, { source: `pm:${pm.name}` });
     this._seedChecklist(pm, task);
     pm.tasksCreated++;
@@ -356,8 +369,7 @@ class ProjectManager extends EventEmitter {
         );
         if (!existing) {
           const mode = pm.targetSession ? 'manual' : 'auto';
-          let taskText = output || '(no output)';
-          if (pm.instructions) taskText = `${taskText}\n\nInstructions: ${pm.instructions}`;
+          const taskText = this._buildFullText(pm, output || '(no output)');
           const task = this.taskQueue.createTask(taskText, mode, pm.targetSession || null, pm.designation, { source: `pm:${pm.name}` });
           this._seedChecklist(pm, task);
           pm.tasksCreated++;
@@ -426,7 +438,7 @@ class ProjectManager extends EventEmitter {
         } else {
           text = `[${issue.key}] ${issue.summary}`;
         }
-        const fullText = pm.instructions ? `${text}\n\nInstructions: ${pm.instructions}` : text;
+        const fullText = this._buildFullText(pm, text);
         const meta = { source: `pm:${pm.name}` };
 
         // Attach actionContext for PR-sourced tasks
@@ -933,6 +945,13 @@ class ProjectManager extends EventEmitter {
   }
 
   // ── Helpers ─────────────────────────────────────────
+
+  _buildFullText(pm, text) {
+    let result = text;
+    if (pm.instructions) result += `\n\nInstructions: ${pm.instructions}`;
+    if (pm.mcpEnabled) result += `\n\n${MCP_INSTRUCTIONS}`;
+    return result;
+  }
 
   _exec(script, options) {
     return new Promise((resolve, reject) => {

@@ -191,6 +191,7 @@ async function capturePaneAnsi(node, target) {
  * @returns {{ app, servers, wss, close }}
  */
 function createWebServer(config, watcher, taskQueue, pmManager, router) {
+  const sessionManager = require('../../core/session-manager');
   const port = parseInt(process.env.WEB_PORT) || 3000;
   const token = process.env.WEB_TOKEN;
   const workerSecret = process.env.HIVE_WORKER_SECRET;
@@ -426,6 +427,12 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
           log.info(`Worker "${msg.nodeId}" connected`);
           // Notify dashboard clients about the new node
           broadcast({ type: 'node:connected', nodeId: msg.nodeId });
+        } else if (msg.type === 'auth' && msg.token && msg.token === process.env.WEB_TOKEN) {
+          // MCP service auth — accept WEB_TOKEN even in OAuth mode
+          authenticated = true;
+          if (authTimeout) clearTimeout(authTimeout);
+          clients.add(ws);
+          ws.send(JSON.stringify({ type: 'auth', ok: true }));
         } else {
           ws.send(JSON.stringify({ type: 'auth', ok: false }));
           ws.close();
@@ -1676,6 +1683,77 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
         fs.writeFileSync(setupPath, JSON.stringify(minSetup, null, 2));
         ws.send(JSON.stringify({ type: 'setup:complete', sessionsCreated: 0 }));
         sendInitialState(ws);
+        break;
+      }
+
+      // ── MCP tool handlers (called by mcp-server/index.mjs via WS) ──
+      case 'mcp:get_task': {
+        if (!taskQueue) { ws.send(JSON.stringify({ _reqId: msg._reqId, task: null })); break; }
+        const sessionNum = msg.session;
+        const taskId = taskQueue.activeTaskBySession.get(sessionNum);
+        const task = taskId ? taskQueue.tasks.get(taskId) : null;
+        ws.send(JSON.stringify({ _reqId: msg._reqId, task: task ? { id: task.id, text: task.text, status: task.status, designation: task.designation, checklist: task.checklist || [] } : null }));
+        break;
+      }
+
+      case 'mcp:complete_task': {
+        if (!taskQueue) { ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'No task queue' })); break; }
+        const sessionNum = msg.session;
+        const taskId = taskQueue.activeTaskBySession.get(sessionNum);
+        if (!taskId) { ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'No active task for this session' })); break; }
+        const task = taskQueue.completeTask(taskId, msg.summary || 'Completed via MCP');
+        if (task) {
+          broadcast({ type: 'task:completed', task });
+          ws.send(JSON.stringify({ _reqId: msg._reqId, ok: true }));
+        } else {
+          ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'Could not complete task' }));
+        }
+        break;
+      }
+
+      case 'mcp:post_update': {
+        if (!taskQueue) { ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'No task queue' })); break; }
+        taskQueue.pushFeed('mcp', msg.session, `[Session ${msg.session}] ${msg.message || ''}`);
+        ws.send(JSON.stringify({ _reqId: msg._reqId, ok: true }));
+        break;
+      }
+
+      case 'mcp:get_sessions': {
+        const sessions = await fleet.getFleetStatus(config, router);
+        const summary = sessions.map(s => ({ num: s.num, state: s.state, branch: s.branch || null, designation: s.designation || null }));
+        ws.send(JSON.stringify({ _reqId: msg._reqId, sessions: summary }));
+        break;
+      }
+
+      case 'mcp:deploy': {
+        if (!checkPermission(ws, user, 'admin')) break;
+        const sessions = await fleet.getFleetStatus(config, router);
+        const webToken = process.env.WEB_TOKEN || '';
+        const hiveWsUrl = `ws://127.0.0.1:${process.env.WEB_PORT || 3000}`;
+        let count = 0;
+        for (const sess of sessions) {
+          try {
+            const repoDir = config.sessions.repoDir(sess.num);
+            sessionManager.writeMcpConfig(repoDir, hiveWsUrl, webToken, sess.num, msg.tools);
+            count++;
+          } catch {}
+        }
+        ws.send(JSON.stringify({ type: 'mcp:deployed', count }));
+        break;
+      }
+
+      case 'mcp:remove': {
+        if (!checkPermission(ws, user, 'admin')) break;
+        const sessions = await fleet.getFleetStatus(config, router);
+        let count = 0;
+        for (const sess of sessions) {
+          try {
+            const repoDir = config.sessions.repoDir(sess.num);
+            sessionManager.removeMcpConfig(repoDir);
+            count++;
+          } catch {}
+        }
+        ws.send(JSON.stringify({ type: 'mcp:removed', count }));
         break;
       }
     }

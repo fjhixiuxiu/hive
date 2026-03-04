@@ -1,4 +1,5 @@
 const fs = require('fs');
+const path = require('path');
 const tmux = require('./tmux');
 const log = require('./log');
 
@@ -215,6 +216,60 @@ async function destroyAllSessions(config) {
   return results;
 }
 
+/**
+ * Write .mcp.json to a repo directory, adding/updating the hive MCP server entry.
+ * Merges with any existing .mcp.json content (preserves other MCP servers).
+ *
+ * @param {string} repoDir - repo directory path
+ * @param {string} hiveUrl - hive WS URL
+ * @param {string} token - auth token
+ * @param {string|number} session - session number
+ * @param {string[]} [tools] - optional list of enabled tool names
+ */
+function writeMcpConfig(repoDir, hiveUrl, token, session, tools) {
+  const mcpPath = path.join(repoDir, '.mcp.json');
+  const mcpArgs = [
+    path.join(__dirname, '..', 'mcp-server', 'index.mjs'),
+    '--hive-url', hiveUrl,
+    '--session', String(session),
+    '--token', token,
+  ];
+  if (tools && tools.length > 0) {
+    mcpArgs.push('--tools', tools.join(','));
+  }
+  const hiveEntry = { command: 'node', args: mcpArgs };
+
+  let existing = { mcpServers: {} };
+  try {
+    existing = JSON.parse(fs.readFileSync(mcpPath, 'utf8'));
+    if (!existing.mcpServers) existing.mcpServers = {};
+  } catch {}
+
+  existing.mcpServers.hive = hiveEntry;
+  fs.writeFileSync(mcpPath, JSON.stringify(existing, null, 2) + '\n');
+}
+
+/**
+ * Remove the hive entry from .mcp.json in a repo directory.
+ * Deletes the file entirely if no other MCP servers remain.
+ *
+ * @param {string} repoDir - repo directory path
+ */
+function removeMcpConfig(repoDir) {
+  const mcpPath = path.join(repoDir, '.mcp.json');
+  try {
+    const existing = JSON.parse(fs.readFileSync(mcpPath, 'utf8'));
+    if (existing.mcpServers && existing.mcpServers.hive) {
+      delete existing.mcpServers.hive;
+      if (Object.keys(existing.mcpServers).length === 0) {
+        fs.unlinkSync(mcpPath);
+      } else {
+        fs.writeFileSync(mcpPath, JSON.stringify(existing, null, 2) + '\n');
+      }
+    }
+  } catch {}
+}
+
 module.exports = {
   parseWidth,
   isTmuxAvailable,
@@ -223,4 +278,6 @@ module.exports = {
   startClaude,
   createAllSessions,
   destroyAllSessions,
+  writeMcpConfig,
+  removeMcpConfig,
 };
