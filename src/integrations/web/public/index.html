@@ -601,6 +601,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .task-card.dispatched { border-left-color: var(--yellow); }
 .task-card.completed { border-left-color: var(--green); opacity: 0.7; }
 .task-card.failed { border-left-color: var(--red); opacity: 0.7; }
+.task-card.snoozed { border-left-color: var(--cyan); opacity: 0.8; }
 .task-card.selected { border-left-color: var(--purple); background: rgba(189,147,249,0.12); box-shadow: inset 0 0 0 1px rgba(189,147,249,0.25); opacity: 1; }
 .task-card.selected .task-text { color: var(--fg); }
 .task-text { font-size: 14px; font-weight: 500; margin-bottom: 4px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
@@ -609,7 +610,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .task-time { margin-left: auto; white-space: nowrap; }
 .task-meta-actions { display: flex; gap: 8px; align-items: center; }
 .task-meta-actions > button:first-of-type { margin-left: auto; }
-.task-cancel, .task-requeue-btn, .task-done-btn, .task-edit-btn, .task-assign-btn, .task-resume-btn {
+.task-cancel, .task-requeue-btn, .task-done-btn, .task-edit-btn, .task-assign-btn, .task-resume-btn, .task-snooze-btn, .task-wake-btn {
   background: var(--bg3); border: none; border-radius: 4px;
   padding: 4px 10px; font-size: 11px; font-weight: 600; cursor: pointer;
 }
@@ -618,8 +619,24 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .task-done-btn { color: var(--green); }
 .task-edit-btn { color: var(--purple); }
 .task-assign-btn { color: var(--green); }
+.task-snooze-btn { color: var(--cyan); }
+.task-wake-btn { color: var(--green); }
 .task-cancel:hover, .task-requeue-btn:hover, .task-done-btn:hover,
-.task-edit-btn:hover, .task-assign-btn:hover { opacity: 0.7; }
+.task-edit-btn:hover, .task-assign-btn:hover, .task-snooze-btn:hover, .task-wake-btn:hover { opacity: 0.7; }
+.snooze-presets { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; }
+.snooze-preset-btn {
+  background: var(--bg3); border: 1px solid var(--bg3); color: var(--fg); font-size: 13px;
+  font-weight: 600; padding: 6px 14px; border-radius: 6px; cursor: pointer; transition: all 0.15s;
+}
+.snooze-preset-btn:hover { border-color: var(--cyan); color: var(--cyan); }
+.snooze-preset-btn.selected { background: var(--cyan); color: var(--bg); border-color: var(--cyan); }
+.snooze-custom { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.snooze-custom input {
+  background: var(--bg3); border: 1px solid var(--dim); color: var(--fg); font-size: 14px;
+  padding: 6px 10px; border-radius: 6px; width: 80px; outline: none;
+}
+.snooze-custom input:focus { border-color: var(--cyan); }
+.snooze-custom span { color: var(--dim); font-size: 13px; }
 .task-session-badge {
   background: rgba(241,250,140,0.15); color: var(--yellow); font-size: 11px;
   font-weight: 700; padding: 2px 6px; border-radius: 3px;
@@ -1878,6 +1895,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
               </div>
             </div>
             <button class="tasks-tab" data-tab="queued">Queued</button>
+            <button class="tasks-tab" data-tab="snoozed">Snoozed</button>
             <button class="tasks-tab" data-tab="completed">Completed</button>
             <button class="tasks-create-btn" id="tasks-create-btn">+ Create</button>
           </div>
@@ -2703,6 +2721,33 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     <div class="dialog-actions">
       <button class="dialog-btn primary" id="action-confirm-submit">Confirm</button>
       <button class="dialog-btn" id="action-confirm-cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Task confirm dialog (cancel/requeue/snooze) -->
+<div class="dialog-overlay" id="task-confirm-dialog">
+  <div class="dialog" style="max-width:380px">
+    <div class="dialog-title" id="task-confirm-title">Confirm</div>
+    <div id="task-confirm-body" style="font-size:13px;color:var(--dim);margin-bottom:12px;line-height:1.5"></div>
+    <div id="task-confirm-snooze-picker" style="display:none">
+      <div class="snooze-presets">
+        <button class="snooze-preset-btn" data-ms="900000">15m</button>
+        <button class="snooze-preset-btn" data-ms="1800000">30m</button>
+        <button class="snooze-preset-btn selected" data-ms="3600000">1h</button>
+        <button class="snooze-preset-btn" data-ms="7200000">2h</button>
+        <button class="snooze-preset-btn" data-ms="14400000">4h</button>
+        <button class="snooze-preset-btn" data-ms="86400000">1d</button>
+        <button class="snooze-preset-btn" data-ms="172800000">2d</button>
+      </div>
+      <div class="snooze-custom">
+        <input type="number" id="snooze-custom-minutes" min="1" placeholder="Custom">
+        <span>minutes</span>
+      </div>
+    </div>
+    <div class="dialog-actions">
+      <button class="dialog-btn primary" id="task-confirm-submit">Confirm</button>
+      <button class="dialog-btn" id="task-confirm-cancel">Cancel</button>
     </div>
   </div>
 </div>
@@ -3691,6 +3736,16 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         const idx = tasks.findIndex(t => t.id === msg.task.id);
         if (idx >= 0) tasks[idx] = msg.task; else tasks.unshift(msg.task);
         renderTasks(); updateTasksBadge(); updateTsNavButtons(); updateSessionTaskButtons(); break;
+      }
+      case 'task:snoozed': {
+        const idx = tasks.findIndex(t => t.id === msg.task.id);
+        if (idx >= 0) tasks[idx] = msg.task; else tasks.unshift(msg.task);
+        renderTasks(); updateTasksBadge(); updateSessionTaskButtons(); break;
+      }
+      case 'task:unsnoozed': {
+        const idx = tasks.findIndex(t => t.id === msg.task.id);
+        if (idx >= 0) tasks[idx] = msg.task; else tasks.unshift(msg.task);
+        renderTasks(); updateTasksBadge(); updateSessionTaskButtons(); break;
       }
       case 'task:snapshot': {
         showTaskSnapshotContent(msg.taskId, msg.content, msg.cols);
@@ -4991,8 +5046,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     if (!currentSession || !ws || ws.readyState !== 1) return;
     const task = tasks.find(t => t.status === 'dispatched' && String(t.assignedTo) === currentSession);
     if (!task) return;
-    ws.send(JSON.stringify({ type: 'task:requeue', taskId: task.id }));
-    showToast('Requeued', `"${(task.text || '').slice(0, 50)}" moved back to queue`, 'success');
+    openTaskConfirmDialog('requeue', task.id);
   });
 
   document.getElementById('session-task-done').addEventListener('click', () => {
@@ -5007,8 +5061,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     if (!currentSession || !ws || ws.readyState !== 1) return;
     const task = tasks.find(t => t.status === 'dispatched' && String(t.assignedTo) === currentSession);
     if (!task) return;
-    ws.send(JSON.stringify({ type: 'task:cancel', taskId: task.id }));
-    showToast('Cancelled', `Task cancelled`, 'success');
+    openTaskConfirmDialog('cancel', task.id);
   });
 
   $('#track-btn').addEventListener('click', () => {
@@ -5246,10 +5299,13 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       document.querySelectorAll('.ip-status-option').forEach(b => b.classList.toggle('active', b.dataset.status === ''));
       document.getElementById('ip-status-dropdown').classList.remove('open');
       $$('.tasks-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === activeTaskTab));
-      // Close live session when switching to queued tab
+      // Close live session when switching to queued/snoozed tab
       if (activeTaskTab === 'queued') {
         closeTaskSession();
         showTasksEmptyState('Select an in-progress task to view its session');
+      } else if (activeTaskTab === 'snoozed') {
+        closeTaskSession();
+        showTasksEmptyState('Snoozed tasks will return to queue when their timer expires');
       } else if (activeTaskTab === 'completed') {
         closeTaskSession();
         showTasksEmptyState('Click a completed task to view its snapshot');
@@ -5940,18 +5996,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   function tsNavRequeue() {
     const cur = tasksSelectedTaskId ? tasks.find(t => t.id === tasksSelectedTaskId) : null;
     if (!cur || cur.status !== 'dispatched' || !ws || ws.readyState !== 1) return;
-    ws.send(JSON.stringify({ type: 'task:requeue', taskId: cur.id }));
-    showToast('Requeued', `"${(cur.text || cur.id).slice(0, 50)}" moved back to queue`, 'success');
-    // Auto-advance to next dispatched task
-    const navList = getTaskNavList().filter(t => t.id !== cur.id);
-    if (navList.length > 0) {
-      const idx = getTaskNavList().findIndex(t => t.id === cur.id);
-      const next = idx >= navList.length ? navList[0] : navList[Math.max(0, idx)] || navList[0];
-      setTimeout(() => selectTaskById(next.id), 200);
-    } else {
-      tasksSelectedTaskId = null;
-      updateTsNavButtons();
-    }
+    openTaskConfirmDialog('requeue', cur.id);
   }
 
   function tsNavDone() {
@@ -6049,6 +6094,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     const allDispatched = tasks.filter(t => t.status === 'dispatched' && matchesSearch(t) && matchesFilter(t));
     const dispatched = allDispatched.filter(matchesStatus);
     const queued = tasks.filter(t => t.status === 'queued' && matchesSearch(t) && matchesFilter(t));
+    const snoozed = tasks.filter(t => t.status === 'snoozed' && matchesSearch(t) && matchesFilter(t));
     const completed = tasks.filter(t => (t.status === 'completed' || t.status === 'failed') && matchesSearch(t) && matchesFilter(t));
 
     // Update dropdown option counts
@@ -6079,6 +6125,13 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         html = '<div class="feed-empty">No queued tasks.</div>';
       }
       visibleTasks = queued;
+    } else if (activeTaskTab === 'snoozed') {
+      if (snoozed.length) {
+        for (const t of snoozed) html += taskCardHtml(t, 'snoozed');
+      } else {
+        html = '<div class="feed-empty">No snoozed tasks.</div>';
+      }
+      visibleTasks = snoozed;
     } else {
       if (completed.length) {
         for (const t of completed) html += taskCardHtml(t, 'completed');
@@ -6089,37 +6142,36 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     }
     tasksScroll.innerHTML = html;
 
-    // Wire cancel buttons (with confirmation)
+    // Wire cancel buttons (via confirm dialog)
     tasksScroll.querySelectorAll('.task-cancel').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
-        if (btn.dataset.confirm) {
-          if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'task:cancel', taskId: btn.dataset.id }));
-          delete btn.dataset.confirm;
-        } else {
-          btn.dataset.confirm = '1';
-          btn._origText = btn._origText || btn.textContent;
-          btn.textContent = 'Sure?';
-          clearTimeout(btn._confirmTimer);
-          btn._confirmTimer = setTimeout(() => { delete btn.dataset.confirm; btn.textContent = btn._origText; }, 2000);
-        }
+        openTaskConfirmDialog('cancel', btn.dataset.id);
       });
     });
 
-    // Wire requeue buttons (with confirmation)
+    // Wire requeue buttons (via confirm dialog)
     tasksScroll.querySelectorAll('.task-requeue-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
-        if (btn.dataset.confirm) {
-          if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'task:requeue', taskId: btn.dataset.id }));
-          delete btn.dataset.confirm;
-        } else {
-          btn.dataset.confirm = '1';
-          btn._origText = btn._origText || btn.textContent;
-          btn.textContent = 'Sure?';
-          clearTimeout(btn._confirmTimer);
-          btn._confirmTimer = setTimeout(() => { delete btn.dataset.confirm; btn.textContent = btn._origText; }, 2000);
-        }
+        openTaskConfirmDialog('requeue', btn.dataset.id);
+      });
+    });
+
+    // Wire snooze buttons (via confirm dialog with duration picker)
+    tasksScroll.querySelectorAll('.task-snooze-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openTaskConfirmDialog('snooze', btn.dataset.id);
+      });
+    });
+
+    // Wire wake buttons (snoozed tab — immediate unsnooze)
+    tasksScroll.querySelectorAll('.task-wake-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'task:unsnooze', taskId: btn.dataset.id }));
+        showToast('Woke up', 'Task returned to queue', 'success');
       });
     });
 
@@ -6266,8 +6318,9 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     } else {
       const hasQueued = [...selectedTaskIds].some(id => { const t = tasks.find(x => x.id === id); return t && t.status === 'queued'; });
       const hasDispatched = [...selectedTaskIds].some(id => { const t = tasks.find(x => x.id === id); return t && t.status === 'dispatched'; });
+      const hasSnoozed = [...selectedTaskIds].some(id => { const t = tasks.find(x => x.id === id); return t && t.status === 'snoozed'; });
       const hasCompleted = [...selectedTaskIds].some(id => { const t = tasks.find(x => x.id === id); return t && (t.status === 'completed' || t.status === 'failed'); });
-      cancelBtn.style.display = (hasQueued || hasDispatched) ? '' : 'none';
+      cancelBtn.style.display = (hasQueued || hasDispatched || hasSnoozed) ? '' : 'none';
       cancelBtn.disabled = false;
       requeueBtn.style.display = hasDispatched ? '' : 'none';
       requeueBtn.disabled = false;
@@ -6282,7 +6335,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     if (!ws || ws.readyState !== 1) return;
     for (const id of selectedTaskIds) {
       const t = tasks.find(x => x.id === id);
-      if (t && (t.status === 'queued' || t.status === 'dispatched')) {
+      if (t && (t.status === 'queued' || t.status === 'dispatched' || t.status === 'snoozed')) {
         ws.send(JSON.stringify({ type: 'task:cancel', taskId: id }));
       }
     }
@@ -6377,17 +6430,27 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         }
       }
       const requeueBtn = hasPerm('dispatch') ? `<button class="task-requeue-btn" data-id="${t.id}">Requeue</button>` : '';
+      const snoozeBtn = hasPerm('dispatch') ? `<button class="task-snooze-btn" data-id="${t.id}">Snooze</button>` : '';
       const doneBtn = hasPerm('cancel') ? `<button class="task-done-btn" data-id="${t.id}">Done</button>` : '';
       const cancelBtn = hasPerm('cancel') ? `<button class="task-cancel" data-id="${t.id}">Cancel</button>` : '';
       const checked = selectedTaskIds.has(t.id) ? ' checked' : '';
-      return `<div class="task-card-row"><input type="checkbox" class="task-checkbox" data-id="${t.id}"${checked}><div class="task-card dispatched${selected}" data-id="${t.id}"><div class="task-text">${esc(t.text)}</div><div class="task-meta"><div class="task-meta-info">${sourceBadge}${desigBadge}${clBadge}${commentBadge}${waitBadge}<span class="task-time">${meta} · ${dispatchedAgo}</span></div><div class="task-meta-actions">${sessionBadge}${prBadge}${cancelBtn}${requeueBtn}${doneBtn}</div></div></div></div>`;
+      return `<div class="task-card-row"><input type="checkbox" class="task-checkbox" data-id="${t.id}"${checked}><div class="task-card dispatched${selected}" data-id="${t.id}"><div class="task-text">${esc(t.text)}</div><div class="task-meta"><div class="task-meta-info">${sourceBadge}${desigBadge}${clBadge}${commentBadge}${waitBadge}<span class="task-time">${meta} · ${dispatchedAgo}</span></div><div class="task-meta-actions">${sessionBadge}${prBadge}${cancelBtn}${snoozeBtn}${requeueBtn}${doneBtn}</div></div></div></div>`;
     }
     if (tabType === 'queued') {
       const editBtn = hasPerm('create-tasks') ? `<button class="task-edit-btn" data-id="${t.id}">Edit</button>` : '';
+      const snoozeBtn = hasPerm('dispatch') ? `<button class="task-snooze-btn" data-id="${t.id}">Snooze</button>` : '';
       const cancelBtn = hasPerm('cancel') ? `<button class="task-cancel" data-id="${t.id}">Cancel</button>` : '';
       const assignBtn = hasPerm('dispatch') ? `<button class="task-assign-btn" data-id="${t.id}">Assign →</button>` : '';
       const checked = selectedTaskIds.has(t.id) ? ' checked' : '';
-      return `<div class="task-card-row"><input type="checkbox" class="task-checkbox" data-id="${t.id}"${checked}><div class="task-card queued" data-id="${t.id}"><div class="task-text">${esc(t.text)}</div><div class="task-meta"><div class="task-meta-info">${sourceBadge}${originBadge}${desigBadge}${clBadge}${commentBadge}<span class="task-time">${meta} · ${ago}</span></div><div class="task-meta-actions">${prBadge}${editBtn}${assignBtn}${cancelBtn}</div></div></div></div>`;
+      return `<div class="task-card-row"><input type="checkbox" class="task-checkbox" data-id="${t.id}"${checked}><div class="task-card queued" data-id="${t.id}"><div class="task-text">${esc(t.text)}</div><div class="task-meta"><div class="task-meta-info">${sourceBadge}${originBadge}${desigBadge}${clBadge}${commentBadge}<span class="task-time">${meta} · ${ago}</span></div><div class="task-meta-actions">${prBadge}${editBtn}${assignBtn}${snoozeBtn}${cancelBtn}</div></div></div></div>`;
+    }
+    if (tabType === 'snoozed') {
+      const wakeTime = t.snoozedUntil ? new Date(t.snoozedUntil).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+      const wakeDate = t.snoozedUntil && (t.snoozedUntil - Date.now() > 12 * 3600000) ? new Date(t.snoozedUntil).toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' : '';
+      const wakeBtn = hasPerm('dispatch') ? `<button class="task-wake-btn" data-id="${t.id}">Wake</button>` : '';
+      const cancelBtn = hasPerm('cancel') ? `<button class="task-cancel" data-id="${t.id}">Cancel</button>` : '';
+      const checked = selectedTaskIds.has(t.id) ? ' checked' : '';
+      return `<div class="task-card-row"><input type="checkbox" class="task-checkbox" data-id="${t.id}"${checked}><div class="task-card snoozed" data-id="${t.id}"><div class="task-text">${esc(t.text)}</div><div class="task-meta"><div class="task-meta-info">${sourceBadge}${desigBadge}${clBadge}${commentBadge}<span class="task-time" style="color:var(--cyan)">wakes ${wakeDate}${wakeTime}</span></div><div class="task-meta-actions">${prBadge}${cancelBtn}${wakeBtn}</div></div></div></div>`;
     }
     // completed
     if (t.dispatchedAt && t.completedAt) {
@@ -6745,6 +6808,86 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   let actionsPopupTaskId = null;
   let actionConfirmTaskId = null;
   let actionConfirmActionId = null;
+
+  // Task confirm dialog state (cancel/requeue/snooze)
+  let _confirmAction = null; // { type: 'cancel'|'requeue'|'snooze', taskId, durationMs? }
+
+  function openTaskConfirmDialog(type, taskId) {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+    const titleEl = document.getElementById('task-confirm-title');
+    const bodyEl = document.getElementById('task-confirm-body');
+    const submitEl = document.getElementById('task-confirm-submit');
+    const picker = document.getElementById('task-confirm-snooze-picker');
+    const snippet = (task.text || '').slice(0, 80);
+    _confirmAction = { type, taskId };
+    if (type === 'cancel') {
+      titleEl.textContent = 'Cancel Task';
+      bodyEl.textContent = `Cancel "${snippet}"?`;
+      submitEl.textContent = 'Cancel Task';
+      submitEl.style.background = 'var(--red)';
+      picker.style.display = 'none';
+    } else if (type === 'requeue') {
+      titleEl.textContent = 'Requeue Task';
+      bodyEl.textContent = `Return "${snippet}" to the queue?`;
+      submitEl.textContent = 'Requeue';
+      submitEl.style.background = 'var(--orange)';
+      picker.style.display = 'none';
+    } else if (type === 'snooze') {
+      titleEl.textContent = 'Snooze Task';
+      bodyEl.textContent = `Snooze "${snippet}" for:`;
+      submitEl.textContent = 'Snooze';
+      submitEl.style.background = 'var(--cyan)';
+      picker.style.display = '';
+      _confirmAction.durationMs = 3600000; // default 1h
+      // Reset preset selection
+      picker.querySelectorAll('.snooze-preset-btn').forEach(b => b.classList.toggle('selected', b.dataset.ms === '3600000'));
+      document.getElementById('snooze-custom-minutes').value = '';
+    }
+    document.getElementById('task-confirm-dialog').classList.add('visible');
+  }
+
+  function closeTaskConfirmDialog() {
+    document.getElementById('task-confirm-dialog').classList.remove('visible');
+    _confirmAction = null;
+  }
+
+  // Snooze preset buttons
+  document.querySelectorAll('#task-confirm-snooze-picker .snooze-preset-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#task-confirm-snooze-picker .snooze-preset-btn').forEach(b => b.classList.remove('selected'));
+      btn.classList.add('selected');
+      document.getElementById('snooze-custom-minutes').value = '';
+      if (_confirmAction) _confirmAction.durationMs = Number(btn.dataset.ms);
+    });
+  });
+
+  document.getElementById('snooze-custom-minutes').addEventListener('input', (e) => {
+    const val = parseInt(e.target.value, 10);
+    if (val > 0 && _confirmAction) {
+      _confirmAction.durationMs = val * 60000;
+      document.querySelectorAll('#task-confirm-snooze-picker .snooze-preset-btn').forEach(b => b.classList.remove('selected'));
+    }
+  });
+
+  document.getElementById('task-confirm-submit').addEventListener('click', () => {
+    if (!_confirmAction || !ws || ws.readyState !== 1) return;
+    const { type, taskId, durationMs } = _confirmAction;
+    if (type === 'cancel') {
+      ws.send(JSON.stringify({ type: 'task:cancel', taskId }));
+      showToast('Cancelled', 'Task cancelled', 'success');
+    } else if (type === 'requeue') {
+      ws.send(JSON.stringify({ type: 'task:requeue', taskId }));
+      showToast('Requeued', 'Task moved back to queue', 'success');
+    } else if (type === 'snooze') {
+      ws.send(JSON.stringify({ type: 'task:snooze', taskId, durationMs }));
+      const label = durationMs >= 86400000 ? `${Math.round(durationMs / 86400000)}d` : durationMs >= 3600000 ? `${Math.round(durationMs / 3600000)}h` : `${Math.round(durationMs / 60000)}m`;
+      showToast('Snoozed', `Task snoozed for ${label}`, 'success');
+    }
+    closeTaskConfirmDialog();
+  });
+
+  document.getElementById('task-confirm-cancel').addEventListener('click', closeTaskConfirmDialog);
 
   function getActiveTaskForActions(ctx) {
     if (ctx === 'tasks') {
