@@ -39,6 +39,7 @@ class TaskQueue extends EventEmitter {
     this.spawnSlotMax = 32;
     this.vimMode = false;
     this.taskAutoComplete = true; // when false, tasks require manual completion
+    this._snoozeTimers = new Map(); // taskId → setTimeout handle
     this.checklistTemplates = new Map(); // name → { name, items: [string] }
 
     // Designation definitions + agent file scanning
@@ -178,7 +179,7 @@ class TaskQueue extends EventEmitter {
 
   updateTask(taskId, updates) {
     const task = this.tasks.get(taskId);
-    if (!task || task.status !== 'queued') return null;
+    if (!task || (task.status !== 'queued' && task.status !== 'snoozed')) return null;
 
     const allowed = ['text', 'mode', 'targetSession', 'designation', 'actionContext'];
     for (const key of allowed) {
@@ -223,6 +224,12 @@ class TaskQueue extends EventEmitter {
     const task = this.tasks.get(taskId);
     if (!task || task.status === 'completed' || task.status === 'failed') return null;
 
+    // Clear snooze timer if task was snoozed
+    if (this._snoozeTimers.has(taskId)) {
+      clearTimeout(this._snoozeTimers.get(taskId));
+      this._snoozeTimers.delete(taskId);
+    }
+
     if (task.status === 'dispatched' && task.assignedTo) {
       this.activeTaskBySession.delete(task.assignedTo);
     }
@@ -230,6 +237,63 @@ class TaskQueue extends EventEmitter {
     this.emit('task:cancelled', task);
     this.pushFeed('task', task.assignedTo, `Task cancelled: "${task.text}"`);
     return task;
+  }
+
+  snoozeTask(taskId, durationMs) {
+    const task = this.tasks.get(taskId);
+    if (!task) return null;
+    // If dispatched, requeue first
+    if (task.status === 'dispatched') {
+      this.requeueTask(taskId);
+    }
+    if (task.status !== 'queued') return null;
+    task.status = 'snoozed';
+    task.snoozedUntil = Date.now() + durationMs;
+    this._armSnoozeTimer(task);
+    this.emit('task:snoozed', task);
+    this.pushFeed('task', null, `Task snoozed: "${task.text}"`);
+    this._saveState();
+    return task;
+  }
+
+  unsnoozeTask(taskId) {
+    const task = this.tasks.get(taskId);
+    if (!task || task.status !== 'snoozed') return null;
+    if (this._snoozeTimers.has(taskId)) {
+      clearTimeout(this._snoozeTimers.get(taskId));
+      this._snoozeTimers.delete(taskId);
+    }
+    task.status = 'queued';
+    task.snoozedUntil = null;
+    this.emit('task:unsnoozed', task);
+    this.pushFeed('task', null, `Task unsnoozed: "${task.text}"`);
+    this._saveState();
+    this._tryAutoDispatch().catch(err =>
+      log.error('Auto-dispatch error:', err.message));
+    return task;
+  }
+
+  _armSnoozeTimer(task) {
+    const remaining = task.snoozedUntil - Date.now();
+    if (remaining <= 0) {
+      this._wakeTask(task.id);
+    } else {
+      const timer = setTimeout(() => this._wakeTask(task.id), remaining);
+      this._snoozeTimers.set(task.id, timer);
+    }
+  }
+
+  _wakeTask(taskId) {
+    this._snoozeTimers.delete(taskId);
+    const task = this.tasks.get(taskId);
+    if (!task || task.status !== 'snoozed') return;
+    task.status = 'queued';
+    task.snoozedUntil = null;
+    this.emit('task:unsnoozed', task);
+    this.pushFeed('task', null, `Snoozed task woke up: "${task.text}"`);
+    this._saveState();
+    this._tryAutoDispatch().catch(err =>
+      log.error('Auto-dispatch error:', err.message));
   }
 
   /**
@@ -1190,6 +1254,10 @@ class TaskQueue extends EventEmitter {
           if (t.status === 'dispatched' && t.assignedTo) {
             this.activeTaskBySession.set(t.assignedTo, t.id);
             this.dispatchLock.add(t.assignedTo);
+          }
+          // Re-arm snooze timers for persisted snoozed tasks
+          if (t.status === 'snoozed' && t.snoozedUntil) {
+            this._armSnoozeTimer(t);
           }
           this.tasks.set(t.id, t);
           if (Number(t.id) >= nextTaskId) nextTaskId = Number(t.id) + 1;

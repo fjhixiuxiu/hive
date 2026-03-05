@@ -856,6 +856,22 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
         break;
       }
 
+      case 'task:snooze': {
+        if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'dispatch')) break;
+        const snoozedTask = taskQueue.snoozeTask(msg.taskId, msg.durationMs);
+        if (snoozedTask) broadcast({ type: 'task:snoozed', task: decorateTaskActions(snoozedTask) });
+        break;
+      }
+
+      case 'task:unsnooze': {
+        if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'dispatch')) break;
+        const unsnoozedTask = taskQueue.unsnoozeTask(msg.taskId);
+        if (unsnoozedTask) broadcast({ type: 'task:unsnoozed', task: decorateTaskActions(unsnoozedTask) });
+        break;
+      }
+
       case 'task:complete': {
         if (!taskQueue) break;
         if (!checkPermission(ws, user, 'cancel')) break;
@@ -2032,6 +2048,8 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     taskQueue.on('task:failed', (task) => broadcast({ type: 'task:failed', task: decorateTaskActions(task) }));
     taskQueue.on('task:cancelled', (task) => broadcast({ type: 'task:cancelled', task: decorateTaskActions(task) }));
     taskQueue.on('task:requeued', (task) => broadcast({ type: 'task:requeued', task: decorateTaskActions(task) }));
+    taskQueue.on('task:snoozed', (task) => broadcast({ type: 'task:snoozed', task: decorateTaskActions(task) }));
+    taskQueue.on('task:unsnoozed', (task) => broadcast({ type: 'task:unsnoozed', task: decorateTaskActions(task) }));
     taskQueue.on('task:updated', (task) => broadcast({ type: 'task:updated', task: decorateTaskActions(task) }));
     taskQueue.on('auto:changed', (sessions) => broadcast({ type: 'auto:status', sessions }));
     taskQueue.on('feed:new', (entry) => broadcast({ type: 'feed:new', entry }));
