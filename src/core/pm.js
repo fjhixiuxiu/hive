@@ -730,10 +730,45 @@ class ProjectManager extends EventEmitter {
       }));
   }
 
+  async _refreshZohoToken() {
+    const clientId = process.env.ZOHO_DESK_CLIENT_ID;
+    const clientSecret = process.env.ZOHO_DESK_CLIENT_SECRET;
+    const refreshToken = process.env.ZOHO_DESK_REFRESH_TOKEN;
+    if (!clientId || !clientSecret || !refreshToken) {
+      throw new Error('Zoho OAuth refresh credentials not configured (ZOHO_DESK_CLIENT_ID, ZOHO_DESK_CLIENT_SECRET, ZOHO_DESK_REFRESH_TOKEN)');
+    }
+    const res = await fetch('https://accounts.zoho.com/oauth/v2/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        refresh_token: refreshToken,
+        client_id: clientId,
+        client_secret: clientSecret,
+        grant_type: 'refresh_token',
+      }),
+    });
+    if (!res.ok) throw new Error(`Zoho token refresh failed: ${res.status}`);
+    const data = await res.json();
+    if (!data.access_token) throw new Error('Zoho token refresh returned no access_token');
+    this._zohoAccessToken = data.access_token;
+    this._zohoTokenExpiry = Date.now() + (data.expires_in || 3600) * 1000 - 60000; // refresh 1 min early
+    return this._zohoAccessToken;
+  }
+
+  async _getZohoToken() {
+    // Return cached token if still valid
+    if (this._zohoAccessToken && this._zohoTokenExpiry && Date.now() < this._zohoTokenExpiry) {
+      return this._zohoAccessToken;
+    }
+    // Fall back to static token if set
+    if (process.env.ZOHO_DESK_API_TOKEN) return process.env.ZOHO_DESK_API_TOKEN;
+    return this._refreshZohoToken();
+  }
+
   async _fetchZoho(source) {
     const orgId = process.env.ZOHO_DESK_ORG_ID;
-    const token = process.env.ZOHO_DESK_API_TOKEN;
-    if (!orgId || !token) throw new Error('Zoho Desk credentials not configured (ZOHO_DESK_ORG_ID, ZOHO_DESK_API_TOKEN)');
+    if (!orgId) throw new Error('ZOHO_DESK_ORG_ID not configured');
+    const token = await this._getZohoToken();
 
     let urlStr;
     if (source.query) {
@@ -754,12 +789,19 @@ class ProjectManager extends EventEmitter {
       'Accept': 'application/json',
     });
     const tickets = data.data || data || [];
-    return (Array.isArray(tickets) ? tickets : []).map(t => ({
-      key: `zoho-${t.ticketNumber || t.id}`,
-      summary: t.subject || t.description || '',
-      issueType: 'ticket',
-      storyPoints: null,
-    }));
+    const since = source.since ? new Date(source.since).getTime() : 0;
+    return (Array.isArray(tickets) ? tickets : [])
+      .filter(t => {
+        if (!since) return true;
+        const created = new Date(t.createdTime).getTime();
+        return created >= since;
+      })
+      .map(t => ({
+        key: `zoho-${t.ticketNumber || t.id}`,
+        summary: t.subject || t.description || '',
+        issueType: 'ticket',
+        storyPoints: null,
+      }));
   }
 
   async _fetchReReviews(source, pmId) {

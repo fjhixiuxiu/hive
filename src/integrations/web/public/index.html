@@ -6826,6 +6826,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     document.getElementById('action-confirm-title').textContent = `Confirm: ${title}`;
     document.getElementById('action-confirm-body').textContent = detail ? `This will ${title.toLowerCase()} for ${detail}` : `This will ${title.toLowerCase()} this task`;
     document.getElementById('action-confirm-submit').style.background = action ? action.color : 'var(--red)';
+    document.getElementById('action-confirm-close-task').checked = true;
     document.getElementById('action-confirm-dialog').classList.add('visible');
   }
 
@@ -8240,6 +8241,8 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         source.department = document.getElementById('pm-form-zoho-dept').value.trim();
         source.status = document.getElementById('pm-form-zoho-status').value.trim();
         source.query = document.getElementById('pm-form-zoho-query').value.trim();
+        // Auto-set "since" to now on new PMs so only new tickets are picked up
+        if (!editingPmId) source.since = new Date().toISOString();
         break;
     }
     const targetSessionVal = document.getElementById('pm-form-target-session').value;

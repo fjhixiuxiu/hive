@@ -30,7 +30,6 @@ const ACTION_DEFS = {
     { id: 'merge-commit', label: 'Merge (Merge Commit)', color: 'var(--purple)', confirm: true },
     { id: 'admin-merge', label: 'Admin Merge (Override)', color: 'var(--orange)', confirm: true },
     { id: 'close-pr', label: 'Close PR', color: 'var(--red)', confirm: true },
-    { id: 'approve-close', label: 'Approve & Close Task', color: 'var(--cyan)', confirm: true },
   ],
 };
 
@@ -72,6 +71,7 @@ async function executeGithubPrAction(ctx, actionId, pmManager) {
       return { message: `Closed PR #${prNumber}`, closeTask: false };
     }
     case 'approve-close': {
+      // Legacy: kept for backwards compat with any in-flight tasks
       await pmManager._httpMethod('POST', `https://api.github.com/repos/${repo}/pulls/${prNumber}/reviews`, headers, { event: 'APPROVE' });
       return { message: `Approved PR #${prNumber}`, closeTask: true };
     }
