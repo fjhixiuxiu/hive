@@ -5,6 +5,9 @@ const { exec } = require('child_process');
 const cron = require('node-cron');
 const log = require('./log');
 
+const MAX_MEMORY = 100;
+const MAX_LEARNING_LENGTH = 500;
+
 const MCP_INSTRUCTIONS = `
 ## Hive Integration
 
@@ -14,6 +17,7 @@ You have hive MCP tools available. Use them:
 2. **Progress updates**: Call \`hive_post_update\` at key milestones — when you have a plan, when implementation is done, or if you hit a blocker.
 3. **Coordination**: If your task mentions other sessions or dependencies, call \`hive_get_sessions\` to check their status.
 4. **Finish**: When the task is fully complete (code works, tests pass), call \`hive_complete_task\` with a brief summary. Do NOT mark complete if tests are failing or work is partial.
+5. **Learnings**: If learning mode is active, call \`hive_report_learnings\` with insights you discovered — patterns, root causes, or tips for similar tasks.
 `.trim();
 
 let nextPmId = 1;
@@ -45,6 +49,9 @@ class ProjectManager extends EventEmitter {
       taskFormat: cfg.taskFormat || null,
       checklistTemplate: cfg.checklistTemplate || null,
       mcpEnabled: cfg.mcpEnabled || false,
+      learningEnabled: cfg.learningEnabled || false,
+      learningPrompt: cfg.learningPrompt || '',
+      memory: [],
       completionConditions: cfg.completionConditions || [],
       enabled: false,
       seenKeys: [],
@@ -63,7 +70,7 @@ class ProjectManager extends EventEmitter {
     if (!pm) return null;
     const wasEnabled = pm.enabled;
     for (const [k, v] of Object.entries(updates)) {
-      if (k === 'id' || k === 'seenKeys' || k === 'tasksCreated' || k === 'lastPoll' || k === 'lastError') continue;
+      if (k === 'id' || k === 'seenKeys' || k === 'tasksCreated' || k === 'lastPoll' || k === 'lastError' || k === 'memory') continue;
       pm[k] = v;
     }
     // Restart polling if interval changed or was re-enabled
@@ -129,12 +136,38 @@ class ProjectManager extends EventEmitter {
     return this.pms.get(id) || null;
   }
 
+  addLearnings(id, learnings) {
+    const pm = this.pms.get(id);
+    if (!pm || !Array.isArray(learnings)) return 0;
+    if (!pm.memory) pm.memory = [];
+    const existing = new Set(pm.memory);
+    let added = 0;
+    for (const learning of learnings) {
+      if (typeof learning !== 'string' || !learning.trim()) continue;
+      const text = learning.trim().slice(0, MAX_LEARNING_LENGTH);
+      if (existing.has(text)) continue;
+      pm.memory.push(text);
+      existing.add(text);
+      added++;
+    }
+    // Cap entries (FIFO)
+    if (pm.memory.length > MAX_MEMORY) {
+      pm.memory = pm.memory.slice(-MAX_MEMORY);
+    }
+    if (added > 0) {
+      this._save();
+      this.emit('pm:changed');
+    }
+    return added;
+  }
+
   // ── Serialization ───────────────────────────────────
 
   serialize() {
     return this.getAll().map(pm => ({
       ...pm,
       seenKeys: pm.seenKeys.slice(-5000),
+      memory: (pm.memory || []).slice(-MAX_MEMORY),
     }));
   }
 
@@ -156,6 +189,9 @@ class ProjectManager extends EventEmitter {
         taskFormat: data.taskFormat || null,
         checklistTemplate: data.checklistTemplate || null,
         mcpEnabled: data.mcpEnabled || false,
+        learningEnabled: data.learningEnabled || false,
+        learningPrompt: data.learningPrompt || '',
+        memory: Array.isArray(data.memory) ? data.memory.filter(m => typeof m === 'string' && m.trim()).slice(-MAX_MEMORY) : [],
         completionConditions: Array.isArray(data.completionConditions) ? data.completionConditions : [],
         enabled: data.enabled || false,
         seenKeys: Array.isArray(data.seenKeys) ? data.seenKeys : [],
@@ -992,6 +1028,16 @@ class ProjectManager extends EventEmitter {
     let result = text;
     if (pm.instructions) result += `\n\nInstructions: ${pm.instructions}`;
     if (pm.mcpEnabled) result += `\n\n${MCP_INSTRUCTIONS}`;
+    if (pm.learningEnabled && pm.learningPrompt) {
+      result += '\n\n## Learning\n\n';
+      result += 'After completing this task, call `hive_report_learnings` with what you discovered.\n\n';
+      result += 'Focus on: ' + pm.learningPrompt + '\n';
+      const mem = pm.memory ? pm.memory.slice() : [];
+      if (mem.length > 0) {
+        result += "\nAlready known (don't repeat these):\n";
+        result += mem.map(m => `- ${m}`).join('\n');
+      }
+    }
     return result;
   }
 

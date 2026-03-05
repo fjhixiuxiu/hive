@@ -136,6 +136,23 @@ if (!enabledTools || enabledTools.includes('hive_get_sessions')) {
   );
 }
 
+// Tool: hive_report_learnings
+if (!enabledTools || enabledTools.includes('hive_report_learnings')) {
+  server.tool(
+    'hive_report_learnings',
+    'Report learnings/insights discovered during this task',
+    { learnings: z.array(z.string()).describe('Array of insights or patterns discovered') },
+    async ({ learnings }) => {
+      try {
+        const resp = await sendRequest('mcp:report_learnings', { learnings });
+        return { content: [{ type: 'text', text: resp.ok ? 'Learnings recorded' : (resp.error || 'Failed') }] };
+      } catch (err) {
+        return { content: [{ type: 'text', text: `Error: ${err.message}` }], isError: true };
+      }
+    }
+  );
+}
+
 // ── Start ─────────────────────────────────────────────
 const transport = new StdioServerTransport();
 await server.connect(transport);

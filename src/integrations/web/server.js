@@ -726,6 +726,50 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
         break;
       }
 
+      case 'restart:all': {
+        if (!checkPermission(ws, user, 'restart')) break;
+        const sessions = await fleet.getFleetStatus(config, router);
+        let restarted = 0;
+        let failed = 0;
+        for (const sess of sessions) {
+          try {
+            const found = await fleet.findSession(config, router, sess.num);
+            if (!found) { failed++; continue; }
+            const { name, nodeId } = found;
+            const node = router.getNode(nodeId);
+            const paneTarget = `${name}:.${config.sessions.claudePane}`;
+            await node.exec(`tmux send-keys -t "${paneTarget}" Escape`);
+            // Stagger restarts: each session gets a delayed /exit + claude --continue
+            const delay = restarted * 4000; // 4s apart to avoid overwhelming tmux
+            setTimeout(async () => {
+              try {
+                await node.exec(`tmux send-keys -t "${paneTarget}" -l '/exit'`);
+                await node.exec(`tmux send-keys -t "${paneTarget}" Enter`);
+                setTimeout(async () => {
+                  try {
+                    await node.exec(`tmux send-keys -t "${paneTarget}" -l 'claude --continue'`);
+                    await node.exec(`tmux send-keys -t "${paneTarget}" Enter`);
+                  } catch (err) {
+                    log.error(`[restart:all] Failed to resume session ${sess.num}: ${err.message}`);
+                  }
+                }, 3000);
+              } catch (err) {
+                log.error(`[restart:all] Failed to exit session ${sess.num}: ${err.message}`);
+              }
+            }, delay);
+            restarted++;
+          } catch (err) {
+            log.error(`[restart:all] Session ${sess.num} error: ${err.message}`);
+            failed++;
+          }
+        }
+        if (ws.readyState === 1) {
+          ws.send(JSON.stringify({ type: 'restart:all:done', restarted, failed }));
+        }
+        taskQueue.pushFeed('system', null, `Restarting all ${restarted} session(s) — /exit + claude --continue`);
+        break;
+      }
+
       // -- Git info messages -----------------------------------------------
       case 'git:info': {
         const found = await fleet.findSession(config, router, msg.session);
@@ -1815,6 +1859,30 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
         if (!taskQueue) { ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'No task queue' })); break; }
         taskQueue.pushFeed('mcp', msg.session, `[Session ${msg.session}] ${msg.message || ''}`);
         ws.send(JSON.stringify({ _reqId: msg._reqId, ok: true }));
+        break;
+      }
+
+      case 'mcp:report_learnings': {
+        if (!taskQueue || !pmManager) { ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'No task queue or PM manager' })); break; }
+        const sessionNum = msg.session;
+        const taskId = taskQueue.activeTaskBySession.get(sessionNum);
+        const task = taskId ? taskQueue.tasks.get(taskId) : null;
+        const source = task && task.meta && task.meta.source;
+        if (!source || !source.startsWith('pm:')) {
+          ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'No PM-sourced task for this session' }));
+          break;
+        }
+        const pmName = source.slice(3); // strip 'pm:' prefix
+        const pm = pmManager.getAll().find(p => p.name === pmName);
+        if (!pm) {
+          ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: `PM "${pmName}" not found` }));
+          break;
+        }
+        const added = pmManager.addLearnings(pm.id, msg.learnings || []);
+        if (added > 0) {
+          taskQueue.pushFeed('task', null, `PM "${pm.name}" learned ${added} new insight${added > 1 ? 's' : ''}`);
+        }
+        ws.send(JSON.stringify({ _reqId: msg._reqId, ok: true, added }));
         break;
       }
 
