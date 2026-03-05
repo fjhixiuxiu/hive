@@ -361,6 +361,44 @@ function createSlackBot(taskQueue, config, router, pmManager) {
     });
   }
 
+  // ── Connection health monitoring ──
+  // SocketModeReceiver exposes lifecycle events; log them so silent deaths are visible
+  if (app.receiver && app.receiver.client) {
+    const smClient = app.receiver.client;
+    smClient.on('connected', () => {
+      console.log('[slack] Socket Mode connected');
+    });
+    smClient.on('disconnected', () => {
+      console.warn('[slack] Socket Mode disconnected — will auto-reconnect');
+    });
+    smClient.on('reconnecting', () => {
+      console.log('[slack] Socket Mode reconnecting...');
+    });
+    smClient.on('error', (err) => {
+      console.error(`[slack] Socket Mode error: ${err.message}`);
+    });
+    smClient.on('close', (code, reason) => {
+      console.warn(`[slack] Socket Mode closed (code=${code}, reason=${reason || 'none'})`);
+    });
+  }
+
+  // Health check: periodically verify the connection is alive via auth.test
+  const HEALTH_INTERVAL = 5 * 60 * 1000; // 5 min
+  setInterval(async () => {
+    try {
+      await app.client.auth.test();
+    } catch (err) {
+      console.error(`[slack] Health check failed: ${err.message} — restarting socket`);
+      try {
+        await app.stop();
+        await app.start();
+        console.log('[slack] Bot restarted after health check failure');
+      } catch (restartErr) {
+        console.error(`[slack] Restart failed: ${restartErr.message}`);
+      }
+    }
+  }, HEALTH_INTERVAL);
+
   // Start the bot
   app.start().then(() => {
     console.log('Slack bot started (Socket Mode)');

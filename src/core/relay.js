@@ -48,6 +48,10 @@ async function ask(config, node, sessionName, message, callbacks = {}) {
     await new Promise(r => setTimeout(r, 100));
   }
 
+  // Clear any existing input before pasting (Ctrl-U = kill line, Ctrl-A = home first)
+  await node.exec(`tmux send-keys -t "${paneTarget}" C-a`);
+  await node.exec(`tmux send-keys -t "${paneTarget}" C-k`);
+
   // Send the message
   try {
     await node.sendKeys(paneTarget, message, true);
@@ -151,6 +155,10 @@ async function tell(config, node, sessionName, message, { vimMode } = {}) {
     await node.exec(`tmux send-keys -t "${paneTarget}" i`);
     await new Promise(r => setTimeout(r, 300));
   }
+
+  // Clear any existing input before pasting (Ctrl-A = home, Ctrl-K = kill to end)
+  await node.exec(`tmux send-keys -t "${paneTarget}" C-a`);
+  await node.exec(`tmux send-keys -t "${paneTarget}" C-k`);
 
   try {
     await node.sendKeys(paneTarget, message, false);
