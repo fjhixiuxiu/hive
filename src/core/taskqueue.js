@@ -411,13 +411,11 @@ class TaskQueue extends EventEmitter {
     this._saveState();
 
     // Fire-and-forget: send the task text to Claude
-    // For auto-dispatched tasks, clear context first so the agent starts fresh
+    // Clear context first so the agent starts fresh
     const sendTask = async () => {
-      if (task.mode === 'auto') {
-        const clearResult = await relay.tell(this.config, node, sessionName, '/clear', { vimMode: this.vimMode });
-        if (clearResult.success) {
-          await new Promise(r => setTimeout(r, 2500));
-        }
+      const clearResult = await relay.tell(this.config, node, sessionName, '/clear', { vimMode: this.vimMode });
+      if (clearResult.success) {
+        await new Promise(r => setTimeout(r, 2500));
       }
       // Build message with agent file preamble if designation has agent files
       let fullMessage = task.text;
