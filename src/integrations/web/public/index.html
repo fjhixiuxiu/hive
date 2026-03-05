@@ -630,7 +630,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 }
 .snooze-preset-btn:hover { border-color: var(--cyan); color: var(--cyan); }
 .snooze-preset-btn.selected { background: var(--cyan); color: var(--bg); border-color: var(--cyan); }
-.snooze-custom { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.snooze-custom { display: flex; align-items: center; gap: 8px; }
 .snooze-custom input {
   background: var(--bg3); border: 1px solid var(--dim); color: var(--fg); font-size: 14px;
   padding: 6px 10px; border-radius: 6px; width: 80px; outline: none;
@@ -2739,10 +2739,10 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         <button class="snooze-preset-btn" data-ms="14400000">4h</button>
         <button class="snooze-preset-btn" data-ms="86400000">1d</button>
         <button class="snooze-preset-btn" data-ms="172800000">2d</button>
-      </div>
-      <div class="snooze-custom">
-        <input type="number" id="snooze-custom-minutes" min="1" placeholder="Custom">
-        <span>minutes</span>
+        <div class="snooze-custom" style="margin-top:0">
+          <input type="number" id="snooze-custom-minutes" min="1" placeholder="Custom">
+          <span>minutes</span>
+        </div>
       </div>
     </div>
     <div class="dialog-actions">
