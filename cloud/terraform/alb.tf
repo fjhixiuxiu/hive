@@ -59,6 +59,21 @@ resource "aws_lb_listener" "hive_https" {
   }
 }
 
+resource "aws_lb_listener" "hive_http_redirect" {
+  load_balancer_arn = aws_lb.hive.arn
+  port              = 80
+  protocol          = "HTTP"
+
+  default_action {
+    type = "redirect"
+    redirect {
+      port        = "443"
+      protocol    = "HTTPS"
+      status_code = "HTTP_301"
+    }
+  }
+}
+
 # Register EC2 instance with target group
 resource "aws_lb_target_group_attachment" "hive" {
   target_group_arn = aws_lb_target_group.hive.arn

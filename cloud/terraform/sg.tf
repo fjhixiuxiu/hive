@@ -24,6 +24,17 @@ resource "aws_vpc_security_group_ingress_rule" "alb_https" {
   cidr_ipv4         = each.value
 }
 
+resource "aws_vpc_security_group_ingress_rule" "alb_http" {
+  for_each = toset(var.office_cidrs)
+
+  security_group_id = aws_security_group.hive_alb.id
+  description       = "HTTP from office (redirects to HTTPS)"
+  from_port         = 80
+  to_port           = 80
+  ip_protocol       = "tcp"
+  cidr_ipv4         = each.value
+}
+
 resource "aws_vpc_security_group_egress_rule" "alb_to_ec2" {
   security_group_id            = aws_security_group.hive_alb.id
   description                  = "To EC2 on port 3000"
