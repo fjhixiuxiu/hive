@@ -76,14 +76,19 @@ class TaskQueue extends EventEmitter {
         let staleCount = 0;
         for (const [num, taskId] of this.activeTaskBySession) {
           const s = sessions.find(s => s.num === num);
-          if (s && s.state === 'idle') {
+          const task = this.tasks.get(taskId);
+          if (s && s.state === 'idle' && (!task || task.status !== 'dispatched')) {
             staleCount++;
-            const task = this.tasks.get(taskId);
-            log.info(`[reconcile] S:${num} is idle with dispatched task: "${(task?.text || '').slice(0, 60)}"`);
+            log.info(`[reconcile] S:${num} is idle with stale task mapping (status=${task?.status}), clearing lock`);
+            this.dispatchLock.delete(num);
+            this.activeTaskBySession.delete(num);
+          } else if (s && task?.status === 'dispatched') {
+            // Session has an in-progress dispatched task — keep lock held regardless of apparent state
+            log.info(`[reconcile] S:${num} has dispatched task "${(task.text || '').slice(0, 60)}" — keeping lock`);
           }
         }
         if (staleCount > 0) {
-          log.info(`[reconcile] ${staleCount} dispatched task(s) on idle sessions — watcher will handle transitions`);
+          log.info(`[reconcile] Cleared locks on ${staleCount} idle session(s) with dispatched tasks`);
         }
       } catch (err) {
         log.error('Startup reconcile error:', err.message);
@@ -388,9 +393,11 @@ class TaskQueue extends EventEmitter {
     const node = this.router.getNode(nodeId);
 
     // Double-check session is actually idle right now (fresh read)
+    // A session with a dispatched task is never considered idle for dispatch purposes
     const sessions = await fleet.getFleetStatus(this.config, this.router);
     const session = sessions.find(s => s.num === sessionNum);
-    if (!session || session.state !== 'idle') {
+    const existingActive = this.activeTaskBySession.get(sessionNum);
+    if (!session || session.state !== 'idle' || (existingActive && existingActive !== task.id)) {
       this.dispatchLock.delete(sessionNum);
       return false; // silently skip -- don't fail the task, just don't dispatch yet
     }
