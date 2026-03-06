@@ -2050,7 +2050,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         <button class="more-tab" data-more-tab="more-agents">Agents</button>
         <button class="more-tab" data-more-tab="more-mcp">MCP</button>
         <button class="more-tab" data-more-tab="more-integrations">Integrations</button>
-        <button class="more-tab perm-hidden" data-more-tab="more-admin">Admin</button>
+        <button class="more-tab perm-hidden" data-more-tab="more-users">Users</button>
       </div>
       <div class="more-tab-panel active" id="more-sessions">
         <div class="more-section">
@@ -2222,7 +2222,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
           </div>
         </div>
       </div>
-      <div class="more-tab-panel perm-hidden" id="more-admin">
+      <div class="more-tab-panel perm-hidden" id="more-users">
         <div class="more-section" id="admin-users-section">
           <div class="more-section-title">User Permissions</div>
           <div id="admin-users-list"></div>
@@ -3480,7 +3480,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     if (tab === 'fleet-panel') renderGrid();
     if (tab === 'ideas-panel' && ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'idea:list' }));
     if (tab === 'update-panel' && ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'update:status' }));
-    if (tab === 'more-panel') { renderDesignationGrid(); renderAgentRoots(); renderDesigDefs(); renderAdminUsers(); renderChecklistTemplates(); }
+    if (tab === 'more-panel') { renderDesignationGrid(); renderAgentRoots(); renderDesigDefs(); renderUsers(); renderChecklistTemplates(); }
     const spawnBtn = document.getElementById('spawn-btn');
     if (spawnBtn) spawnBtn.classList.toggle('visible', tab === 'fleet-panel');
     // shutdown + restart buttons are inside fleet-panel, no toggle needed
@@ -3581,9 +3581,11 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     const restartAllBtn = document.getElementById('restart-all-btn');
     if (restartAllBtn && !hasPerm('restart')) restartAllBtn.classList.add('perm-hidden');
 
-    // Admin users section in More
-    const adminSection = document.getElementById('admin-users-section');
-    if (adminSection) adminSection.classList.toggle('perm-hidden', !hasPerm('admin'));
+    // Users tab + panel in More (tab controls panel visibility)
+    const usersTab = document.querySelector('[data-more-tab="more-users"]');
+    if (usersTab) usersTab.classList.toggle('perm-hidden', !hasPerm('admin'));
+    const usersPanel = document.getElementById('more-users');
+    if (usersPanel) usersPanel.classList.toggle('perm-hidden', !hasPerm('admin'));
 
     // Cmd bar (slash commands)
     const cmdBar = document.getElementById('cmd-bar');
@@ -3904,12 +3906,12 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         break;
       case 'users:list':
         allUsers = msg.users || [];
-        if (activeTab === 'more-panel') renderAdminUsers();
+        if (activeTab === 'more-panel') renderUsers();
         break;
       case 'users:updated': {
         const idx = allUsers.findIndex(u => u.login === msg.user.login);
         if (idx >= 0) allUsers[idx] = msg.user; else allUsers.push(msg.user);
-        if (activeTab === 'more-panel') renderAdminUsers();
+        if (activeTab === 'more-panel') renderUsers();
         break;
       }
       case 'integration:status': {
@@ -6674,7 +6676,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     'dispatch': 'Dispatch', 'admin': 'Admin',
   };
 
-  function renderAdminUsers() {
+  function renderUsers() {
     const section = document.getElementById('admin-users-section');
     const list = document.getElementById('admin-users-list');
     if (!section || !list) return;
@@ -6687,11 +6689,13 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       const isSelf = currentUser && currentUser.login && u.login.toLowerCase() === currentUser.login.toLowerCase();
       const removeBtnHtml = isSelf ? '' : `<button class="admin-remove-user-btn" data-login="${esc(u.login)}" title="Remove user" style="background:none;border:none;color:#ff5555;cursor:pointer;font-size:16px;padding:2px 6px;line-height:1">&times;</button>`;
       let permsHtml = '';
-      const allPerms = ['view', 'comment', 'create-tasks', 'send-messages', 'cancel', 'restart', 'dispatch', 'admin'];
+      const isUserAdmin = u.permissions.includes('admin');
+      const allPerms = ['admin', 'view', 'comment', 'create-tasks', 'send-messages', 'cancel', 'restart', 'dispatch'];
       for (const p of allPerms) {
         const active = u.permissions.includes(p);
         const cls = active ? (p === 'admin' ? 'active admin-perm' : 'active') : '';
-        permsHtml += `<span class="admin-perm-chip ${cls}" data-login="${esc(u.login)}" data-perm="${p}">${PERM_LABELS[p]}</span>`;
+        const hidden = p !== 'admin' && isUserAdmin ? ' style="display:none"' : '';
+        permsHtml += `<span class="admin-perm-chip ${cls}" data-login="${esc(u.login)}" data-perm="${p}"${hidden}>${PERM_LABELS[p]}</span>`;
       }
       html += `<div class="admin-user-row">
         ${avatarHtml}

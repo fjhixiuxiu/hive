@@ -470,20 +470,35 @@ describe('TaskQueue', () => {
     });
 
     it('first user gets admin permissions', () => {
-      // Ensure no existing users
       expect(tq.users.size).toBe(0);
-      const user = tq.ensureUser('admin', 'Admin', '');
+      const user = tq.ensureUser('someone', 'Someone', '');
       expect(user.permissions).toContain('admin');
     });
 
+    it('HIVE_ADMIN_USER gets admin permissions', () => {
+      process.env.HIVE_ADMIN_USER = 'boss';
+      tq.ensureUser('first', 'First', ''); // take the first-user slot
+      const user = tq.ensureUser('boss', 'Boss', '');
+      expect(user.permissions).toContain('admin');
+      delete process.env.HIVE_ADMIN_USER;
+    });
+
     it('subsequent users get viewer permissions', () => {
-      tq.ensureUser('admin', 'Admin', '');
+      tq.ensureUser('admin', 'Admin', ''); // first user = admin
       const user = tq.ensureUser('viewer', 'Viewer', '');
       expect(user.permissions).toEqual(['view', 'comment']);
     });
 
+    it('HIVE_ADMIN_USER match is case-insensitive', () => {
+      process.env.HIVE_ADMIN_USER = 'MyAdmin';
+      tq.ensureUser('first', 'First', '');
+      const user = tq.ensureUser('myadmin', 'My Admin', '');
+      expect(user.permissions).toContain('admin');
+      delete process.env.HIVE_ADMIN_USER;
+    });
+
     it('hasPermission checks permission list', () => {
-      tq.ensureUser('admin', 'Admin', '');
+      tq.ensureUser('admin', 'Admin', ''); // first user = admin
       expect(tq.hasPermission('admin', 'create-tasks')).toBe(true);
       expect(tq.hasPermission('nobody', 'view')).toBe(false);
     });

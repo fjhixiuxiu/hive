@@ -91,6 +91,32 @@ describe('auth', () => {
       const auth = await loadAuth();
       expect(auth.COOKIE_NAME).toBe('hive_session');
     });
+
+    it('STATE_COOKIE is exported as hive_oauth_state', async () => {
+      const auth = await loadAuth();
+      expect(auth.STATE_COOKIE).toBe('hive_oauth_state');
+    });
+  });
+
+  describe('parseCookie with custom name', () => {
+    it('extracts a named cookie', async () => {
+      const auth = await loadAuth();
+      expect(auth.parseCookie('hive_oauth_state=abc123; hive_session=xyz', 'hive_oauth_state')).toBe('abc123');
+    });
+
+    it('defaults to session cookie when no name given', async () => {
+      const auth = await loadAuth();
+      expect(auth.parseCookie('hive_session=mytoken')).toBe('mytoken');
+    });
+  });
+
+  describe('checkOrgMembership', () => {
+    it('returns true when GITHUB_ORG is not set', async () => {
+      delete process.env.GITHUB_ORG;
+      const auth = await loadAuth();
+      const result = await auth.checkOrgMembership('fake-token');
+      expect(result).toBe(true);
+    });
   });
 
   describe('authenticateWebSocket', () => {

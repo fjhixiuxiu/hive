@@ -336,8 +336,8 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       ws.send(JSON.stringify({ type: 'agentFiles:list', files: taskQueue.agentFilesList }));
       ws.send(JSON.stringify({ type: 'checklistTemplates:list', templates: taskQueue.getChecklistTemplates() }));
       ws.send(JSON.stringify({ type: 'spawnedAgents:list', agents: taskQueue.getSpawnedAgentsList() }));
-      // Send users list to admins
-      if (user && user.login && taskQueue.hasPermission(user.login, 'admin')) {
+      // Send users list to admins (legacy token mode = no user, send to all)
+      if (!user || (user.login && taskQueue.hasPermission(user.login, 'admin'))) {
         ws.send(JSON.stringify({ type: 'users:list', users: taskQueue.getUsersList() }));
       }
     }
@@ -2177,10 +2177,12 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     taskQueue.on('task:comment:deleted', (data) => broadcast({ type: 'task:comment:deleted', taskId: data.taskId, commentId: data.commentId }));
     taskQueue.on('checklistTemplates:changed', (templates) => broadcast({ type: 'checklistTemplates:list', templates }));
     taskQueue.on('users:changed', (users) => {
-      // Only send full users list to admins
+      // Send full users list to admins (legacy token mode = no user, send to all)
       for (const client of clients) {
         const clientUser = wsUser.get(client);
-        if (clientUser && clientUser.login && taskQueue.hasPermission(clientUser.login, 'admin') && client.readyState === 1) {
+        const isLegacy = !clientUser;
+        const isAdmin = clientUser && clientUser.login && taskQueue.hasPermission(clientUser.login, 'admin');
+        if ((isLegacy || isAdmin) && client.readyState === 1) {
           client.send(JSON.stringify({ type: 'users:list', users }));
         }
       }
