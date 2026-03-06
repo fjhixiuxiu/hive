@@ -292,7 +292,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     return false;
   }
 
-  function sendInitialState(ws) {
+  async function sendInitialState(ws) {
     // If setup wizard hasn't run, send setup:required instead of fleet data
     if (!isSetupComplete()) {
       const statePath = path.join(__dirname, '..', '..', '..', '.hive-state.json');
@@ -320,7 +320,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       const u = taskQueue.getUser(user.login);
       ws.send(JSON.stringify({ type: 'user:permissions', permissions: u ? u.permissions : ['view', 'comment'] }));
     }
-    sendFleetStatus(ws);
+    await sendFleetStatus(ws);
     if (taskQueue) {
       ws.send(JSON.stringify({ type: 'tasks:list', tasks: taskQueue.getTasksList().map(decorateTaskActions) }));
       ws.send(JSON.stringify({ type: 'auto:status', sessions: taskQueue.getAutoSessions() }));
