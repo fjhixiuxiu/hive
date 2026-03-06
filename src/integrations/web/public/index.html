@@ -223,6 +223,19 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   padding: 5px 14px; font-size: 12px; font-weight: 700; cursor: pointer;
 }
 .card-off-overlay .start-btn:active { opacity: 0.7; }
+.session-off-banner {
+  display: none; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+  padding: 40px 20px; text-align: center;
+}
+.session-off-banner.visible { display: flex; }
+.session-off-banner img { width: 48px; height: 48px; filter: grayscale(1) brightness(0.7) sepia(1) hue-rotate(-30deg) saturate(5); }
+.session-off-banner .off-label { color: var(--red); font-weight: 700; font-size: 14px; }
+.session-off-banner .off-start-btn {
+  background: var(--red); color: #fff; border: none; border-radius: 8px;
+  padding: 10px 24px; font-size: 14px; font-weight: 700; cursor: pointer;
+}
+.session-off-banner .off-start-btn:active { opacity: 0.7; }
+.session-off-banner .off-start-btn:disabled { opacity: 0.5; cursor: default; }
 
 .card-top { display: flex; align-items: baseline; gap: 8px; margin-bottom: 3px; }
 .card-num {
@@ -1959,6 +1972,11 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
                 <button class="git-files-toggle" id="ts-git-files-toggle" title="Toggle changed files">&#128193;</button>
                 <div class="pane-tabs" id="ts-pane-tabs" style="display:none"></div>
               </div>
+              <div id="ts-off-banner" class="session-off-banner">
+                <img src="/icon-192.png" alt="off">
+                <span class="off-label">Claude is not running</span>
+                <button class="off-start-btn" id="ts-off-start">Start Claude</button>
+              </div>
               <div class="tasks-session-terminal" id="tasks-session-terminal"></div>
               <div class="sidebar-diff-pane" id="ts-sidebar-diff-pane">
                 <div class="diff-file-header" id="ts-sidebar-diff-filename"></div>
@@ -2329,6 +2347,11 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
           <div class="pane-tabs-row" id="pane-tabs-row">
             <button class="git-files-toggle" id="git-files-toggle" title="Toggle changed files">&#128193;</button>
             <div class="pane-tabs" id="pane-tabs" style="display:none"></div>
+          </div>
+          <div id="session-off-banner" class="session-off-banner">
+            <img src="/icon-192.png" alt="off">
+            <span class="off-label">Claude is not running</span>
+            <button class="off-start-btn" id="session-off-start">Start Claude</button>
           </div>
           <div id="terminal-wrap"></div>
           <div class="sidebar-diff-pane" id="sidebar-diff-pane">
@@ -3672,6 +3695,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         updateSidebarSummary();
         if (activeTab === 'session-panel') updateSessionStatusLine();
         if (activeTab === 'tasks-panel') updateTasksStatusLine();
+        updateOffBanners();
         // Update session header activity timestamp
         if (currentSession) {
           const cs = fleetData.find(x => String(x.num) === currentSession);
@@ -3751,7 +3775,13 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         }
         break;
       case 'notify': handleNotify(msg); break;
-      case 'restart:done': showToast('Restarted', `Session ${msg.session} — claude --resume`, 'success'); break;
+      case 'restart:done':
+        showToast('Restarted', `Session ${msg.session}`, 'success');
+        fleet.invalidateCache && fleet.invalidateCache();
+        // Reset start buttons
+        document.querySelectorAll('.off-start-btn').forEach(b => { b.disabled = false; b.textContent = 'Start Claude'; });
+        // Banner will hide on next fleet:status update
+        break;
       case 'kill:done': closeSession(); showToast('Closed', `Session ${msg.session} killed`, 'success'); break;
       case 'shutdown:all:done':
         showToast('Shutdown complete', `${msg.killed} session(s) killed${msg.failed ? `, ${msg.failed} failed` : ''}`, msg.failed ? 'warning' : 'success');
@@ -4387,6 +4417,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     updateChecklistButtons();
     updateActionsButton();
     updateSessionTaskButtons();
+    updateOffBanners();
 
     if (!term) {
       term = new Terminal({
@@ -4639,6 +4670,27 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     const bar = document.getElementById('ts-status-line');
     if (!bar) return;
     bar.innerHTML = tasksSessionNum ? renderStatusChips(tasksSessionNum) : '';
+  }
+
+  function updateOffBanners() {
+    // Session panel
+    const sBanner = document.getElementById('session-off-banner');
+    const termWrapEl = document.getElementById('terminal-wrap');
+    if (sBanner && currentSession) {
+      const s = fleetData.find(x => String(x.num) === currentSession);
+      const isOff = s && s.state === 'off';
+      sBanner.classList.toggle('visible', isOff);
+      if (termWrapEl) termWrapEl.style.display = isOff ? 'none' : '';
+    }
+    // Tasks panel
+    const tBanner = document.getElementById('ts-off-banner');
+    const tsTermEl = document.getElementById('tasks-session-terminal');
+    if (tBanner && tasksSessionNum) {
+      const s = fleetData.find(x => String(x.num) === String(tasksSessionNum));
+      const isOff = s && s.state === 'off';
+      tBanner.classList.toggle('visible', isOff);
+      if (tsTermEl) tsTermEl.style.display = isOff ? 'none' : '';
+    }
   }
 
   // ── Status chip click handlers (delegated) ─────
@@ -5153,6 +5205,20 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     if (!confirm(`Restart Claude in session ${currentSession}?`)) return;
     ws.send(JSON.stringify({ type: 'restart', session: currentSession }));
     showToast('Restarting', `Session ${currentSession}`, 'success');
+  });
+
+  function handleStartClaude(btn, sessionNum) {
+    if (!ws || ws.readyState !== 1) return;
+    btn.disabled = true;
+    btn.textContent = 'Starting...';
+    ws.send(JSON.stringify({ type: 'restart', session: String(sessionNum) }));
+    showToast('Starting Claude', `Session ${sessionNum}`, 'success');
+  }
+  document.getElementById('session-off-start').addEventListener('click', () => {
+    handleStartClaude(document.getElementById('session-off-start'), currentSession);
+  });
+  document.getElementById('ts-off-start').addEventListener('click', () => {
+    handleStartClaude(document.getElementById('ts-off-start'), tasksSessionNum);
   });
 
   $('#kill-btn').addEventListener('click', () => {
@@ -5758,6 +5824,8 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     document.getElementById('tasks-session-title').textContent = `Session ${sessionNum}`;
     document.getElementById('tasks-session-branch').textContent = session ? `— ${shortBranch(session.branch)}` : '';
 
+    updateOffBanners();
+
     // Wire open button
     document.getElementById('ts-open-session').onclick = () => {
       const s = fleetData.find(x => x.num === sessionNum);
@@ -6324,10 +6392,13 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         const task = tasks.find(t => t.id === taskId);
         if (!task) return;
 
-        // Validate session state
+        // Validate session state — offer to start Claude if off
         const session = fleetData.find(s => s.num === sessionNum);
         if (!session || session.state === 'off') {
-          showToast('Cannot resume', 'Session is not running', 'error');
+          if (confirm(`Claude is not running in session ${sessionNum}. Start it now?`)) {
+            ws.send(JSON.stringify({ type: 'restart', session: String(sessionNum) }));
+            showToast('Starting Claude', `Session ${sessionNum} — try resuming after it starts`, 'success');
+          }
           return;
         }
 
