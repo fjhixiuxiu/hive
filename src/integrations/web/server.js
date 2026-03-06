@@ -704,12 +704,40 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
         if (!checkPermission(ws, user, 'restart')) break;
         const found = await fleet.findSession(config, router, msg.session);
         if (!found) {
-          ws.send(JSON.stringify({ type: 'error', message: `No session matching "${msg.session}"` }));
-          return;
+          // Session not in fleet — try sending claude --continue to tmux directly
+          const sessionName = String(msg.session);
+          const paneTarget = `${sessionName}:.${config.sessions.claudePane}`;
+          try {
+            const localNode = router.getNode('local');
+            if (!localNode) throw new Error('No local node');
+            await localNode.exec(`tmux send-keys -t "${paneTarget}" -l 'claude --continue'`);
+            await localNode.exec(`tmux send-keys -t "${paneTarget}" Enter`);
+            fleet.invalidateCache();
+            if (ws.readyState === 1) {
+              ws.send(JSON.stringify({ type: 'restart:done', session: msg.session }));
+            }
+          } catch (err) {
+            ws.send(JSON.stringify({ type: 'error', message: `No session matching "${msg.session}"` }));
+          }
+          break;
         }
         const { name, nodeId } = found;
         const node = router.getNode(nodeId);
         const paneTarget = `${name}:.${config.sessions.claudePane}`;
+
+        // Check if Claude is actually running — if off, just start it
+        const content = await node.capturePane(paneTarget, { lines: 3 });
+        const currentState = tmux.detectState(content, config);
+        if (currentState === 'off') {
+          await node.exec(`tmux send-keys -t "${paneTarget}" -l 'claude --continue'`);
+          await node.exec(`tmux send-keys -t "${paneTarget}" Enter`);
+          fleet.invalidateCache();
+          if (ws.readyState === 1) {
+            ws.send(JSON.stringify({ type: 'restart:done', session: msg.session }));
+          }
+          break;
+        }
+
         // Send Escape, then /exit, wait, then claude --resume
         await node.exec(`tmux send-keys -t "${paneTarget}" Escape`);
         setTimeout(async () => {
