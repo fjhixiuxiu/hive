@@ -16,7 +16,7 @@ You have hive MCP tools available. Use them:
 1. **Start**: Call \`hive_get_task\` to see your full assignment before doing anything.
 2. **Progress updates**: Call \`hive_post_update\` at key milestones — when you have a plan, when implementation is done, or if you hit a blocker.
 3. **Coordination**: If your task mentions other sessions or dependencies, call \`hive_get_sessions\` to check their status.
-4. **Finish**: When the task is fully complete (code works, tests pass), call \`hive_complete_task\` with a brief summary. Do NOT mark complete if tests are failing or work is partial.
+4. **Finish**: Do NOT call \`hive_complete_task\` unless the task instructions explicitly tell you to. The task owner will close it manually or it will close when you go idle.
 5. **Learnings**: If learning mode is active, call \`hive_report_learnings\` with insights you discovered — patterns, root causes, or tips for similar tasks.
 `.trim();
 
@@ -53,6 +53,8 @@ class ProjectManager extends EventEmitter {
       learningPrompt: cfg.learningPrompt || '',
       memory: [],
       completionConditions: cfg.completionConditions || [],
+      continueConditions: cfg.continueConditions || [],
+      continueWindow: cfg.continueWindow || 24,
       enabled: false,
       seenKeys: [],
       tasksCreated: 0,
@@ -193,6 +195,8 @@ class ProjectManager extends EventEmitter {
         learningPrompt: data.learningPrompt || '',
         memory: Array.isArray(data.memory) ? data.memory.filter(m => typeof m === 'string' && m.trim()).slice(-MAX_MEMORY) : [],
         completionConditions: Array.isArray(data.completionConditions) ? data.completionConditions : [],
+        continueConditions: Array.isArray(data.continueConditions) ? data.continueConditions : [],
+        continueWindow: data.continueWindow || 24,
         enabled: data.enabled || false,
         seenKeys: Array.isArray(data.seenKeys) ? data.seenKeys : [],
         tasksCreated: data.tasksCreated || 0,
@@ -228,13 +232,13 @@ class ProjectManager extends EventEmitter {
     // Determine the callback based on source type
     let callback;
     if (pm.source.type === 'manual') {
-      callback = async () => { await this._createManualTask(id); await this._checkCompletions(id); };
+      callback = async () => { await this._createManualTask(id); await this._checkCompletions(id); await this._checkContinueConditions(id); };
     } else if (pm.source.type === 'command') {
-      callback = async () => { await this._createCommandTask(id); await this._checkCompletions(id); };
+      callback = async () => { await this._createCommandTask(id); await this._checkCompletions(id); await this._checkContinueConditions(id); };
     } else if (pm.source.type === 'script') {
-      callback = async () => { await this._runScript(id); await this._checkCompletions(id); };
+      callback = async () => { await this._runScript(id); await this._checkCompletions(id); await this._checkContinueConditions(id); };
     } else {
-      callback = async () => { await this._poll(id); await this._checkCompletions(id); };
+      callback = async () => { await this._poll(id); await this._checkCompletions(id); await this._checkContinueConditions(id); };
     }
 
     // Run immediately (skip for manual+schedule — those should only fire on cron)
@@ -592,6 +596,103 @@ class ProjectManager extends EventEmitter {
         }
       } catch (err) {
         log.error(`[pm] Completion eval error (${cond.type}) for ${task.sourceKey}:`, err.message);
+      }
+    }
+    return null;
+  }
+
+  async _checkContinueConditions(id) {
+    const pm = this.pms.get(id);
+    if (!pm || !pm.enabled || !pm.continueConditions?.length) return;
+
+    const prefix = `pm:${pm.name}`;
+    const windowMs = (pm.continueWindow || 24) * 60 * 60 * 1000;
+    const now = Date.now();
+
+    // Find recently completed/failed tasks from this PM
+    const recentTasks = [...this.taskQueue.tasks.values()]
+      .filter(t => (t.status === 'completed' || t.status === 'failed')
+        && t.meta?.source === prefix
+        && t.sourceKey
+        && t.completedAt
+        && (now - t.completedAt) < windowMs);
+
+    if (!this._lastContinueCheck) this._lastContinueCheck = new Map();
+
+    for (const task of recentTasks) {
+      // Skip if there's already an active task for this sourceKey
+      const hasActive = [...this.taskQueue.tasks.values()].some(
+        t => t.sourceKey === task.sourceKey
+          && (t.status === 'queued' || t.status === 'dispatched')
+          && t.meta?.source === prefix
+      );
+      if (hasActive) continue;
+
+      // Debounce: skip if checked within last 5 minutes
+      const lastCheck = this._lastContinueCheck.get(task.sourceKey);
+      if (lastCheck && (now - lastCheck) < 5 * 60 * 1000) continue;
+      this._lastContinueCheck.set(task.sourceKey, now);
+
+      try {
+        const reason = await this._evaluateContinue(pm, task);
+        if (reason) {
+          // Remove sourceKey from seenKeys so next poll creates a new task
+          const idx = pm.seenKeys.indexOf(task.sourceKey);
+          if (idx !== -1) pm.seenKeys.splice(idx, 1);
+          this.taskQueue.pushFeed('task', null,
+            `PM "${pm.name}" continue condition met for ${task.sourceKey}: ${reason}`);
+          this._save();
+          this.emit('pm:changed');
+        }
+      } catch (err) {
+        log.error(`[pm] Continue check error for task ${task.id}:`, err.message);
+      }
+    }
+  }
+
+  async _evaluateContinue(pm, task) {
+    for (const cond of pm.continueConditions) {
+      try {
+        if (cond.type === 'github-pr-changes') {
+          const prInfo = this._parsePRFromKey(task.sourceKey);
+          if (!prInfo) continue;
+          const since = new Date(task.completedAt).toISOString();
+          // Check for new commits since completion
+          const commitsUrl = `https://api.github.com/repos/${prInfo.repo}/pulls/${prInfo.prNumber}/commits?per_page=100`;
+          const commits = await this._httpRequest(commitsUrl, this._githubHeaders());
+          const newCommits = Array.isArray(commits)
+            ? commits.filter(c => c.commit?.committer?.date && new Date(c.commit.committer.date) > new Date(task.completedAt))
+            : [];
+          if (newCommits.length) {
+            return `${newCommits.length} new commit(s) on PR #${prInfo.prNumber}`;
+          }
+          // Check for new review comments since completion
+          const reviewsUrl = `https://api.github.com/repos/${prInfo.repo}/pulls/${prInfo.prNumber}/comments?since=${since}&per_page=100`;
+          const comments = await this._httpRequest(reviewsUrl, this._githubHeaders());
+          const newComments = Array.isArray(comments)
+            ? comments.filter(c => new Date(c.created_at) > new Date(task.completedAt))
+            : [];
+          if (newComments.length) {
+            return `${newComments.length} new review comment(s) on PR #${prInfo.prNumber}`;
+          }
+        } else if (cond.type === 'jira-status') {
+          const baseUrl = process.env.JIRA_BASE_URL;
+          const email = process.env.JIRA_EMAIL;
+          const apiToken = process.env.JIRA_API_TOKEN;
+          if (!baseUrl || !email || !apiToken) continue;
+          const auth = Buffer.from(`${email}:${apiToken}`).toString('base64');
+          const url = `${baseUrl}/rest/api/3/issue/${task.sourceKey}?fields=status`;
+          const issue = await this._httpRequest(url, {
+            'Authorization': `Basic ${auth}`,
+            'Accept': 'application/json',
+          });
+          const statusName = issue.fields?.status?.name;
+          if (statusName && cond.statuses.some(s => s.toLowerCase() === statusName.toLowerCase())) {
+            return `${task.sourceKey} returned to status: ${statusName}`;
+          }
+        }
+      } catch (err) {
+        log.error(`[pm] Continue eval error (${cond.type}) for ${task.sourceKey}:`, err.message);
       }
     }
     return null;
