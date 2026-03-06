@@ -1689,6 +1689,21 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
         break;
       }
 
+      case 'hive:restart': {
+        if (!checkPermission(ws, user, 'admin')) break;
+        const hiveDir = path.join(__dirname, '..', '..', '..');
+        try {
+          ws.send(JSON.stringify({ type: 'update:restarting' }));
+          const pid = process.pid;
+          const restartScript = `sleep 1 && kill ${pid} && cd "${hiveDir}" && node src/index.js > /tmp/hive.log 2>&1`;
+          const child = spawn('bash', ['-c', restartScript], { detached: true, stdio: 'ignore' });
+          child.unref();
+        } catch (err) {
+          ws.send(JSON.stringify({ type: 'update:error', error: err.message }));
+        }
+        break;
+      }
+
       // -- Setup wizard messages ----------------------------------------------
       case 'setup:validate-path': {
         const rawPath = (msg.path || '').trim();
