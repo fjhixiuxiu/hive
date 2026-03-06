@@ -9,6 +9,7 @@ const { WebSocketServer } = require('ws');
 const fleet = require('../../core/fleet');
 const relay = require('../../core/relay');
 const git = require('../../core/git');
+const tmux = require('../../core/tmux');
 const RemoteNode = require('../../core/remote-node');
 const auth = require('../../core/auth');
 const prStatus = require('../../core/pr-status');
