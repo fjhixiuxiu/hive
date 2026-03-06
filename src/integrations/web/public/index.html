@@ -2567,7 +2567,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     </div>
     <div class="pm-form-field full-width" id="pm-form-mcp-field">
       <label style="font-size:13px;color:var(--fg);cursor:pointer;display:flex;align-items:center;gap:6px">
-        <input type="checkbox" id="pm-form-mcp-enabled"> Append MCP instructions (hive_get_task, hive_complete_task, hive_post_update, hive_get_sessions)
+        <input type="checkbox" id="pm-form-mcp-enabled"> Append MCP instructions (hive_get_task, hive_complete_task, hive_post_update, hive_get_sessions, hive_report_learnings)
       </label>
     </div>
     <div class="pm-form-field full-width">
@@ -7824,6 +7824,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     { name: 'hive_complete_task', desc: 'Mark your current task as complete' },
     { name: 'hive_post_update', desc: 'Post a status update to the hive activity feed' },
     { name: 'hive_get_sessions', desc: 'Get the status of all active sessions' },
+    { name: 'hive_report_learnings', desc: 'Report learnings/insights discovered during this task' },
   ];
 
   function renderMcpTools(enabledTools) {
