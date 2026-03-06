@@ -212,6 +212,17 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .card.border-red { border-left-color: var(--red); }
 .card.border-dim { border-left-color: var(--dim); }
 .card.off { opacity: 0.45; }
+.card-off-overlay {
+  position: absolute; inset: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 8px;
+  background: rgba(20,20,30,0.85); border-radius: 8px; z-index: 2;
+}
+.card-off-overlay img { width: 32px; height: 32px; filter: grayscale(1) brightness(0.7) sepia(1) hue-rotate(-30deg) saturate(5); }
+.card-off-overlay .start-btn {
+  background: var(--red); color: #fff; border: none; border-radius: 6px;
+  padding: 5px 14px; font-size: 12px; font-weight: 700; cursor: pointer;
+}
+.card-off-overlay .start-btn:active { opacity: 0.7; }
 
 .card-top { display: flex; align-items: baseline; gap: 8px; margin-bottom: 3px; }
 .card-num {
@@ -4222,12 +4233,23 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     }
 
     const activityHtml = s.lastActivity ? `<span class="card-activity">${timeAgo(s.lastActivity)}</span>` : '';
-    card.innerHTML = `${modeHtml}${desigHtml}
+    const offOverlay = s.state === 'off' ? `<div class="card-off-overlay"><img src="/icon-192.png" alt="off"><button class="start-btn" data-session="${s.num}">Start Claude</button></div>` : '';
+    card.innerHTML = `${offOverlay}${modeHtml}${desigHtml}
       <div class="card-top"><span class="card-num">${s.num}</span><span class="card-state ${stateCls}">${s.state}</span>${activityHtml}${prHtml}${badgesHtml ? `<span class="card-badges">${badgesHtml}</span>` : ''}</div>
       <div class="card-branch">${esc(branch)}</div>
       ${gitRowHtml}
       <div class="card-preview">${esc(s.preview || '')}</div>
       <button class="card-preview-toggle" data-session="${s.num}">expand</button>`;
+    if (s.state === 'off') {
+      const startBtn = card.querySelector('.start-btn');
+      if (startBtn) startBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (!ws || ws.readyState !== 1) return;
+        startBtn.disabled = true;
+        startBtn.textContent = 'Starting...';
+        ws.send(JSON.stringify({ type: 'restart', session: String(s.num) }));
+      });
+    }
     card.querySelector('.card-num').addEventListener('click', (e) => { e.stopPropagation(); selectQuickSession(s.num); });
     card.querySelector('.card-preview-toggle').addEventListener('click', (e) => {
       e.stopPropagation();
