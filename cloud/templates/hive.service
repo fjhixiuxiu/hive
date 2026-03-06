@@ -1,0 +1,16 @@
+[Unit]
+Description=Hive Fleet Manager
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/home/ubuntu/hive
+ExecStart=/bin/bash /home/ubuntu/hive/cloud/scripts/boot.sh
+StandardOutput=journal
+StandardError=journal
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target

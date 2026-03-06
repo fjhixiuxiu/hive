@@ -8,3 +8,8 @@ backups/
 .claude/
 coverage/
 .playwright-mcp/
+
+# Terraform
+cloud/terraform/.terraform/
+cloud/terraform/*.tfstate*
+cloud/terraform/.terraform.lock.hcl
