@@ -41,6 +41,7 @@ class TaskQueue extends EventEmitter {
     this.taskAutoComplete = true; // when false, tasks require manual completion
     this._snoozeTimers = new Map(); // taskId → setTimeout handle
     this.checklistTemplates = new Map(); // name → { name, items: [string] }
+    this.sessionContext = new Map();    // session num -> { plan: '/path', pr: 'url', jira: 'KEY', ... }
 
     // Designation definitions + agent file scanning
     this.designationDefs = new Map(); // name → { name, agentFiles: [], description: '' }
@@ -744,6 +745,49 @@ class TaskQueue extends EventEmitter {
     return true;
   }
 
+  // -- Session Context -----------------------------------------------
+
+  getSessionContext(sessionNum) {
+    return this.sessionContext.get(Number(sessionNum)) || {};
+  }
+
+  getAllSessionContexts() {
+    const obj = {};
+    for (const [num, ctx] of this.sessionContext) obj[num] = ctx;
+    return obj;
+  }
+
+  setSessionContext(sessionNum, updates) {
+    const num = Number(sessionNum);
+    const existing = this.sessionContext.get(num) || {};
+    const merged = { ...existing };
+    for (const [k, v] of Object.entries(updates)) {
+      if (v === null || v === undefined) {
+        delete merged[k];
+      } else {
+        merged[k] = v;
+      }
+    }
+    // plan and planText are mutually exclusive — last one set wins
+    if (updates.plan && updates.plan !== null) delete merged.planText;
+    if (updates.planText && updates.planText !== null) delete merged.plan;
+    if (Object.keys(merged).length === 0) {
+      this.sessionContext.delete(num);
+    } else {
+      this.sessionContext.set(num, merged);
+    }
+    this.emit('context:changed', { session: num, context: merged });
+    this._saveState();
+    return merged;
+  }
+
+  clearSessionContext(sessionNum) {
+    const num = Number(sessionNum);
+    this.sessionContext.delete(num);
+    this.emit('context:changed', { session: num, context: {} });
+    this._saveState();
+  }
+
   // -- Task Checklist -----------------------------------------------
 
   toggleChecklistItem(taskId, itemId) {
@@ -1251,6 +1295,11 @@ class TaskQueue extends EventEmitter {
       if (data.taskAutoComplete !== undefined) this.taskAutoComplete = data.taskAutoComplete;
       if (data.spawnSlotMin !== undefined) this.spawnSlotMin = data.spawnSlotMin;
       if (data.spawnSlotMax !== undefined) this.spawnSlotMax = data.spawnSlotMax;
+      if (data.sessionContext && typeof data.sessionContext === 'object') {
+        for (const [num, ctx] of Object.entries(data.sessionContext)) {
+          this.sessionContext.set(Number(num), ctx);
+        }
+      }
       // Restore tasks
       if (Array.isArray(data.tasks)) {
         for (const t of data.tasks) {
@@ -1316,6 +1365,7 @@ class TaskQueue extends EventEmitter {
       spawnSlotMin: this.spawnSlotMin,
       spawnSlotMax: this.spawnSlotMax,
       checklistTemplates: this.getChecklistTemplates(),
+      sessionContext: this.getAllSessionContexts(),
     };
     // Merge PM data if pmManager is attached
     if (this._pmManager) {

@@ -153,6 +153,40 @@ if (!enabledTools || enabledTools.includes('hive_report_learnings')) {
   );
 }
 
+// Tool: hive_get_context
+if (!enabledTools || enabledTools.includes('hive_get_context')) {
+  server.tool(
+    'hive_get_context',
+    'Get shared context for this session (plan file, PR, JIRA, etc.)',
+    {},
+    async () => {
+      try {
+        const resp = await sendRequest('mcp:get_context');
+        return { content: [{ type: 'text', text: JSON.stringify(resp.context || {}, null, 2) }] };
+      } catch (err) {
+        return { content: [{ type: 'text', text: `Error: ${err.message}` }], isError: true };
+      }
+    }
+  );
+}
+
+// Tool: hive_set_context
+if (!enabledTools || enabledTools.includes('hive_set_context')) {
+  server.tool(
+    'hive_set_context',
+    'Share context with hive (plan file path, PR URL, JIRA key, etc.). Set a value to null to remove it.',
+    { updates: z.record(z.string(), z.union([z.string(), z.null()])).describe('Key-value pairs to set (e.g. { "plan": "/path/to/plan.md", "pr": "https://github.com/..." })') },
+    async ({ updates }) => {
+      try {
+        const resp = await sendRequest('mcp:set_context', { updates });
+        return { content: [{ type: 'text', text: resp.ok ? `Context updated: ${JSON.stringify(resp.context)}` : (resp.error || 'Failed') }] };
+      } catch (err) {
+        return { content: [{ type: 'text', text: `Error: ${err.message}` }], isError: true };
+      }
+    }
+  );
+}
+
 // ── Start ─────────────────────────────────────────────
 const transport = new StdioServerTransport();
 await server.connect(transport);

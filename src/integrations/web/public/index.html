@@ -477,6 +477,94 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .git-files-toggle:hover { color: var(--fg); background: var(--bg3); }
 .git-files-toggle.active { color: var(--purple); }
 
+/* ── Plan sidebar (right side, mirrors git sidebar on left) ── */
+.plan-sidebar {
+  width: 320px; min-width: 160px; max-width: 60%;
+  border-left: 1px solid var(--bg3); overflow-y: auto;
+  background: var(--bg); flex-shrink: 0; font-size: 13px;
+  position: relative; display: flex; flex-direction: column;
+}
+.plan-sidebar-resize {
+  position: absolute; top: 0; left: -3px; bottom: 0; width: 6px;
+  cursor: col-resize; z-index: 5;
+}
+.plan-sidebar-resize:hover, .plan-sidebar-resize.dragging {
+  background: var(--purple); opacity: 0.4;
+}
+.plan-sidebar-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 10px; font-weight: 700; font-size: 12px;
+  border-bottom: 1px solid var(--bg3); color: var(--dim); flex-shrink: 0;
+}
+.plan-sidebar-close {
+  background: none; border: none; color: var(--dim); font-size: 16px;
+  cursor: pointer; padding: 0 2px; line-height: 1;
+}
+.plan-sidebar-close:hover { color: var(--fg); }
+.plan-sidebar-path {
+  font-size: 10px; color: var(--dim); padding: 4px 10px;
+  border-bottom: 1px solid var(--bg3); word-break: break-all;
+  flex-shrink: 0; opacity: 0.7;
+}
+.plan-sidebar-context {
+  display: flex; gap: 6px; padding: 6px 10px; flex-wrap: wrap;
+  border-bottom: 1px solid var(--bg3); flex-shrink: 0;
+}
+.plan-sidebar-context:empty { display: none; }
+.plan-sidebar-context a {
+  font-size: 11px; font-weight: 600; color: var(--cyan); text-decoration: none;
+  background: var(--bg2); padding: 2px 8px; border-radius: 10px;
+  white-space: nowrap;
+}
+.plan-sidebar-context a:hover { background: var(--bg3); text-decoration: none; }
+.plan-sidebar-body {
+  flex: 1; overflow-y: auto; padding: 10px; -webkit-overflow-scrolling: touch;
+}
+.plan-sidebar-body h1 { font-size: 18px; margin: 12px 0 6px; color: var(--fg); }
+.plan-sidebar-body h2 { font-size: 15px; margin: 10px 0 4px; color: var(--fg); }
+.plan-sidebar-body h3 { font-size: 13px; margin: 8px 0 4px; color: var(--fg); }
+.plan-sidebar-body p { margin: 4px 0; line-height: 1.5; }
+.plan-sidebar-body ul, .plan-sidebar-body ol { padding-left: 20px; margin: 4px 0; }
+.plan-sidebar-body li { margin: 2px 0; line-height: 1.4; }
+.plan-sidebar-body code {
+  background: var(--bg2); padding: 1px 4px; border-radius: 3px;
+  font-size: 12px; font-family: 'SF Mono', 'Fira Code', monospace;
+}
+.plan-sidebar-body pre {
+  background: var(--bg2); padding: 8px; border-radius: 4px;
+  overflow-x: auto; margin: 6px 0; font-size: 11px;
+}
+.plan-sidebar-body pre code { background: none; padding: 0; }
+.plan-sidebar-body blockquote {
+  border-left: 3px solid var(--purple); padding-left: 10px;
+  color: var(--dim); margin: 6px 0;
+}
+.plan-sidebar-body a { color: var(--cyan); text-decoration: none; }
+.plan-sidebar-body a:hover { text-decoration: underline; }
+.plan-sidebar-body hr { border: none; border-top: 1px solid var(--bg3); margin: 8px 0; }
+.plan-sidebar-body input[type="checkbox"] { margin-right: 6px; }
+.plan-sidebar-tabs {
+  display: flex; gap: 0; border-bottom: 1px solid var(--bg3); flex-shrink: 0;
+}
+.plan-sidebar-tabs:empty { display: none; }
+.plan-sidebar-tab {
+  background: none; border: none; border-bottom: 2px solid transparent;
+  color: var(--dim); font-size: 11px; font-weight: 600; padding: 6px 12px;
+  cursor: pointer; white-space: nowrap;
+}
+.plan-sidebar-tab:hover { color: var(--fg); }
+.plan-sidebar-tab.active { color: var(--purple); border-bottom-color: var(--purple); }
+.plan-sidebar-empty {
+  color: var(--dim); font-size: 12px; text-align: center; padding: 24px 10px;
+}
+.plan-toggle {
+  background: none; border: none; border-left: 1px solid var(--bg3);
+  color: var(--dim); font-size: 14px;
+  cursor: pointer; padding: 4px 10px; flex-shrink: 0; margin-left: auto;
+}
+.plan-toggle:hover { color: var(--fg); background: var(--bg3); }
+.plan-toggle.active { color: var(--purple); }
+
 /* ── Sidebar diff pane (shown as pane tab) ── */
 .sidebar-diff-pane {
   flex: 1; display: none; flex-direction: column; overflow: hidden;
@@ -1982,6 +2070,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
               <div class="pane-tabs-row" id="ts-pane-tabs-row">
                 <button class="git-files-toggle" id="ts-git-files-toggle" title="Toggle changed files">&#128193;</button>
                 <div class="pane-tabs" id="ts-pane-tabs" style="display:none"></div>
+                <button class="plan-toggle" id="ts-plan-toggle" title="Toggle context">&#128203;</button>
               </div>
               <div id="ts-off-banner" class="session-off-banner">
                 <img src="/icon-192.png" alt="off">
@@ -1993,6 +2082,19 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
                 <div class="diff-file-header" id="ts-sidebar-diff-filename"></div>
                 <div class="diff-body" id="ts-sidebar-diff-content"></div>
               </div>
+            </div>
+            <div id="ts-plan-sidebar" class="plan-sidebar" style="display:none">
+              <div class="plan-sidebar-header">
+                <span>Context</span>
+                <button class="plan-sidebar-close" data-target="ts">&times;</button>
+              </div>
+              <div class="plan-sidebar-path" id="ts-plan-sidebar-path"></div>
+              <div class="plan-sidebar-context" id="ts-plan-sidebar-context"></div>
+              <div class="plan-sidebar-tabs" id="ts-plan-sidebar-tabs"></div>
+              <div class="plan-sidebar-body" id="ts-plan-sidebar-body">
+                <div class="plan-sidebar-empty">No context set.<br>Agent will populate this when work begins.</div>
+              </div>
+              <div class="plan-sidebar-resize" data-target="ts"></div>
             </div>
           </div>
           <div class="session-tab-content" id="ts-git-content" style="display:none">
@@ -2358,6 +2460,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
           <div class="pane-tabs-row" id="pane-tabs-row">
             <button class="git-files-toggle" id="git-files-toggle" title="Toggle changed files">&#128193;</button>
             <div class="pane-tabs" id="pane-tabs" style="display:none"></div>
+            <button class="plan-toggle" id="plan-toggle" title="Toggle context">&#128203;</button>
           </div>
           <div id="session-off-banner" class="session-off-banner">
             <img src="/icon-192.png" alt="off">
@@ -2369,6 +2472,19 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
             <div class="diff-file-header" id="sidebar-diff-filename"></div>
             <div class="diff-body" id="sidebar-diff-content"></div>
           </div>
+        </div>
+        <div id="plan-sidebar" class="plan-sidebar" style="display:none">
+          <div class="plan-sidebar-header">
+            <span>Context</span>
+            <button class="plan-sidebar-close" data-target="session">&times;</button>
+          </div>
+          <div class="plan-sidebar-path" id="plan-sidebar-path"></div>
+          <div class="plan-sidebar-context" id="plan-sidebar-context"></div>
+          <div class="plan-sidebar-tabs" id="plan-sidebar-tabs"></div>
+          <div class="plan-sidebar-body" id="plan-sidebar-body">
+            <div class="plan-sidebar-empty">No context set.<br>Agent will populate this when work begins.</div>
+          </div>
+          <div class="plan-sidebar-resize" data-target="session"></div>
         </div>
       </div>
       <div class="session-tab-content" id="session-git-content">
@@ -2872,6 +2988,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 <!-- Toasts -->
 <div id="toasts"></div>
 
+<script src="https://cdn.jsdelivr.net/npm/marked@15.0.7/marked.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-web-links@0.11.0/lib/addon-web-links.min.js"></script>
@@ -2932,6 +3049,10 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   let tasksSessionNum = null;
   let taskStatusFilter = null; // null = show all, 'waiting', 'working'
   let gitFilesSidebarOpen = localStorage.getItem('gitFilesSidebarOpen') === 'true';
+  let planSidebarOpen = false;
+  let contextActiveTab = null; // null = auto-select first, or 'plan'/'output'
+  let planPollTimer = null;          // interval for polling plan file
+  let sessionContexts = {};          // session num -> { plan: path, pr: url, ... }
   let tasksSessionTerm = null;
   let tasksSessionFit = null;
   let tasksSessionMode = 'ask';
@@ -3546,6 +3667,9 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         ws.send(JSON.stringify({ type: 'terminal:unsubscribe' }));
       }
     }
+    // Stop plan polling when leaving session/tasks panels
+    if (tab !== 'session-panel' && tab !== 'tasks-panel') stopPlanPolling();
+    if (tab === 'session-panel' && planSidebarOpen) startPlanPolling();
     if (tab === 'fleet-panel') renderGrid();
     if (tab === 'ideas-panel' && ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'idea:list' }));
     if (tab === 'update-panel' && ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'update:status' }));
@@ -4000,6 +4124,26 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       case 'pm:list': pmList = msg.pms || []; renderPMs(); break;
       case 'pm:created': showToast('PM Created', msg.pm.name, 'success'); break;
       case 'pm:error': showToast('PM Error', `${msg.id}: ${msg.error}`, 'error'); break;
+      case 'context:all':
+        sessionContexts = msg.contexts || {};
+        updatePlanSidebar();
+        break;
+      case 'context:updated':
+        if (msg.session != null) {
+          if (Object.keys(msg.context).length === 0) delete sessionContexts[msg.session];
+          else sessionContexts[msg.session] = msg.context;
+          updatePlanSidebar();
+        }
+        break;
+      case 'context:data':
+        if (msg.session != null) {
+          sessionContexts[msg.session] = msg.context || {};
+          updatePlanSidebar();
+        }
+        break;
+      case 'plan:file':
+        renderPlanContent(msg);
+        break;
       case 'user:permissions':
         myPermissions = msg.permissions || [];
         applyPermissionGates();
@@ -4481,6 +4625,9 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     document.getElementById('session-terminal-content').classList.add('active');
     document.getElementById('session-git-content').classList.remove('active');
     closeAllCommentsDrawers();
+    // Update plan sidebar for this session
+    updatePlanSidebar();
+    if (planSidebarOpen) startPlanPolling();
     // Render comments for the tracked task and update badge
     const sessionTask = tasks.find(t => t.assignedTo === s.num);
     if (sessionTask) renderCommentPanel(sessionTask.id, 'session');
@@ -5141,6 +5288,215 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     const savedW = localStorage.getItem('tasksListPaneWidth');
     if (savedW) listPane.style.width = savedW;
   })();
+
+  // ── Plan sidebar toggle ─────────────────────────
+  document.getElementById('plan-toggle').addEventListener('click', () => togglePlanSidebar('session'));
+  document.getElementById('ts-plan-toggle').addEventListener('click', () => togglePlanSidebar('ts'));
+  document.querySelectorAll('.plan-sidebar-close').forEach(btn => {
+    btn.addEventListener('click', () => closePlanSidebar(btn.dataset.target));
+  });
+
+  function togglePlanSidebar(target) {
+    planSidebarOpen = !planSidebarOpen;
+    // Mutual exclusion: close git sidebar when opening plan
+    if (planSidebarOpen && gitFilesSidebarOpen) {
+      gitFilesSidebarOpen = false;
+      localStorage.setItem('gitFilesSidebarOpen', false);
+      applyGitFilesSidebarState(target);
+      closeSidebarDiff(target);
+    }
+    applyPlanSidebarState(target);
+    if (planSidebarOpen) {
+      startPlanPolling();
+    } else {
+      stopPlanPolling();
+    }
+    // Refit terminal
+    if (target === 'session') { if (term && fitAddon) requestAnimationFrame(() => fitTerminal()); }
+    else { requestAnimationFrame(() => fitTasksTerminal()); }
+  }
+
+  function closePlanSidebar(target) {
+    planSidebarOpen = false;
+    applyPlanSidebarState(target);
+    stopPlanPolling();
+    // Refit terminal
+    if (target === 'session') { if (term && fitAddon) requestAnimationFrame(() => fitTerminal()); }
+    else { requestAnimationFrame(() => fitTasksTerminal()); }
+  }
+
+  function applyPlanSidebarState(target) {
+    if (target === 'session' || target === 'both') {
+      const sb = document.getElementById('plan-sidebar');
+      const btn = document.getElementById('plan-toggle');
+      if (sb) sb.style.display = planSidebarOpen ? '' : 'none';
+      if (btn) btn.classList.toggle('active', planSidebarOpen);
+    }
+    if (target === 'ts' || target === 'both') {
+      const sb = document.getElementById('ts-plan-sidebar');
+      const btn = document.getElementById('ts-plan-toggle');
+      if (sb) sb.style.display = planSidebarOpen ? '' : 'none';
+      if (btn) btn.classList.toggle('active', planSidebarOpen);
+    }
+  }
+
+  function getPlanPathForSession(sessionNum) {
+    const ctx = sessionContexts[sessionNum];
+    return ctx?.plan || null;
+  }
+
+  function updatePlanSidebar() {
+    const num = currentSession || tasksSessionNum;
+    const ctx = num ? (sessionContexts[num] || {}) : {};
+    const planPath = ctx.plan || null;
+    const planText = ctx.planText || null;
+    const output = ctx.output || null;
+    const hasPlan = planPath || planText;
+    // Path line
+    const pathEl = document.getElementById('plan-sidebar-path');
+    const tsPathEl = document.getElementById('ts-plan-sidebar-path');
+    if (pathEl) pathEl.textContent = planPath || '';
+    if (tsPathEl) tsPathEl.textContent = planPath || '';
+    // Context links
+    const contextHtml = buildContextLinks(ctx);
+    const ctxEl = document.getElementById('plan-sidebar-context');
+    const tsCtxEl = document.getElementById('ts-plan-sidebar-context');
+    if (ctxEl) ctxEl.innerHTML = contextHtml;
+    if (tsCtxEl) tsCtxEl.innerHTML = contextHtml;
+    // Build tabs
+    const tabs = [];
+    if (hasPlan) tabs.push('plan');
+    if (output) tabs.push('output');
+    // Render tab bar (only if multiple tabs)
+    const tabsHtml = tabs.length > 1
+      ? tabs.map(t => {
+          const active = (contextActiveTab === t || (!contextActiveTab && t === tabs[0])) ? ' active' : '';
+          const label = t === 'plan' ? 'Plan' : 'Output';
+          return `<button class="plan-sidebar-tab${active}" data-ctx-tab="${t}">${label}</button>`;
+        }).join('')
+      : '';
+    const tabsEl = document.getElementById('plan-sidebar-tabs');
+    const tsTabsEl = document.getElementById('ts-plan-sidebar-tabs');
+    if (tabsEl) tabsEl.innerHTML = tabsHtml;
+    if (tsTabsEl) tsTabsEl.innerHTML = tabsHtml;
+    // Wire tab clicks
+    document.querySelectorAll('.plan-sidebar-tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        contextActiveTab = btn.dataset.ctxTab;
+        updatePlanSidebar();
+      });
+    });
+    if (!planSidebarOpen) return;
+    // Determine which tab to show
+    const activeTab = contextActiveTab && tabs.includes(contextActiveTab) ? contextActiveTab : tabs[0];
+    if (!activeTab) {
+      setBodyHtml('<div class="plan-sidebar-empty">No context set.<br>Agent will populate this when work begins.</div>');
+      return;
+    }
+    if (activeTab === 'plan') {
+      if (planPath) {
+        requestPlanFile();
+      } else if (planText) {
+        setBodyHtml(renderMarkdown(planText));
+      }
+    } else if (activeTab === 'output') {
+      setBodyHtml(renderMarkdown(output));
+    }
+  }
+
+  function renderMarkdown(text) {
+    return typeof marked !== 'undefined' && marked.parse
+      ? marked.parse(text)
+      : text.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
+  }
+
+  function setBodyHtml(html) {
+    const body = document.getElementById('plan-sidebar-body');
+    const tsBody = document.getElementById('ts-plan-sidebar-body');
+    if (body) body.innerHTML = html;
+    if (tsBody) tsBody.innerHTML = html;
+  }
+
+  function buildContextLinks(ctx) {
+    const links = [];
+    if (ctx.pr) {
+      const prMatch = ctx.pr.match(/\/pull\/(\d+)/);
+      const label = prMatch ? `PR #${prMatch[1]}` : 'PR';
+      links.push(`<a href="${esc(ctx.pr)}" target="_blank">${label}</a>`);
+    }
+    if (ctx.jira) {
+      const jiraBase = 'https://mavencare.atlassian.net/browse/';
+      const href = ctx.jira.startsWith('http') ? ctx.jira : jiraBase + ctx.jira;
+      links.push(`<a href="${esc(href)}" target="_blank">${esc(ctx.jira)}</a>`);
+    }
+    if (ctx.branch) {
+      links.push(`<a href="#" onclick="return false" style="color:var(--dim);cursor:default">${esc(ctx.branch)}</a>`);
+    }
+    return links.join('');
+  }
+
+  function requestPlanFile() {
+    const num = currentSession || tasksSessionNum;
+    const planPath = getPlanPathForSession(num);
+    if (!planPath || !ws || ws.readyState !== 1) return;
+    ws.send(JSON.stringify({ type: 'plan:read', session: num, path: planPath }));
+  }
+
+  function renderPlanContent(msg) {
+    if (!msg.path) return;
+    if (msg.error || msg.content == null) {
+      setBodyHtml(`<div class="plan-sidebar-empty">Could not read plan file.<br><code>${msg.error || 'File not found'}</code></div>`);
+      return;
+    }
+    setBodyHtml(renderMarkdown(msg.content));
+  }
+
+  function startPlanPolling() {
+    stopPlanPolling();
+    requestPlanFile();
+    planPollTimer = setInterval(requestPlanFile, 3000);
+  }
+
+  function stopPlanPolling() {
+    if (planPollTimer) { clearInterval(planPollTimer); planPollTimer = null; }
+  }
+
+  // Plan sidebar resize drag
+  document.querySelectorAll('.plan-sidebar-resize').forEach(handle => {
+    handle.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      const target = handle.dataset.target;
+      const sidebarId = target === 'ts' ? 'ts-plan-sidebar' : 'plan-sidebar';
+      const sidebar = document.getElementById(sidebarId);
+      if (!sidebar) return;
+      handle.classList.add('dragging');
+      const startX = e.clientX;
+      const startW = sidebar.offsetWidth;
+      function onMove(ev) {
+        // Plan sidebar is on the right — dragging left increases width
+        const newW = Math.max(160, startW - (ev.clientX - startX));
+        sidebar.style.width = newW + 'px';
+      }
+      function onUp() {
+        handle.classList.remove('dragging');
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        localStorage.setItem('planSidebarWidth', sidebar.style.width);
+        if (target === 'session') { if (term && fitAddon) requestAnimationFrame(() => fitTerminal()); }
+        else { requestAnimationFrame(() => fitTasksTerminal()); }
+      }
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+  });
+  // Restore saved plan sidebar width
+  const savedPlanW = localStorage.getItem('planSidebarWidth');
+  if (savedPlanW) {
+    const psb1 = document.getElementById('plan-sidebar');
+    const psb2 = document.getElementById('ts-plan-sidebar');
+    if (psb1) psb1.style.width = savedPlanW;
+    if (psb2) psb2.style.width = savedPlanW;
+  }
 
   // ── Comments drawer toggle ─────────────────────
   function closeAllCommentsDrawers() {
@@ -5928,6 +6284,8 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     msgHistoryIdx = -1; msgHistoryDraft = '';
     updateTasksStatusLine();
     applyGitFilesSidebarState('ts');
+    updatePlanSidebar();
+    if (planSidebarOpen) startPlanPolling();
     requestAnimationFrame(() => fitTasksTerminal());
     setTimeout(() => { const el = document.getElementById('tasks-session-terminal'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'end' }); }, 100);
   }
@@ -5989,6 +6347,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       ws.send(JSON.stringify({ type: 'terminal:unsubscribe' }));
     }
     tasksSessionNum = null;
+    updatePlanSidebar();
     requestAnimationFrame(() => fitTasksTerminal());
   }
 
@@ -7989,6 +8348,8 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     { name: 'hive_post_update', desc: 'Post a status update to the hive activity feed' },
     { name: 'hive_get_sessions', desc: 'Get the status of all active sessions' },
     { name: 'hive_report_learnings', desc: 'Report learnings/insights discovered during this task' },
+    { name: 'hive_get_context', desc: 'Get shared context for this session (plan file, PR, JIRA, etc.)' },
+    { name: 'hive_set_context', desc: 'Share context with hive (plan file path, PR URL, JIRA key, etc.)' },
   ];
 
   function renderMcpTools(enabledTools) {
@@ -8983,6 +9344,10 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   function toggleGitFilesSidebar(target) {
     gitFilesSidebarOpen = !gitFilesSidebarOpen;
     localStorage.setItem('gitFilesSidebarOpen', gitFilesSidebarOpen);
+    // Mutual exclusion: close plan sidebar when opening git
+    if (gitFilesSidebarOpen && planSidebarOpen) {
+      closePlanSidebar(target);
+    }
     applyGitFilesSidebarState(target);
     // Close diff overlay when hiding sidebar
     if (!gitFilesSidebarOpen) closeSidebarDiff(target);

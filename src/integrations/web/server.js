@@ -262,6 +262,39 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     } catch {}
   }, 10 * 60 * 1000);
 
+  // -- REST API for session context (MCP tool integration) -------------------
+  app.use('/api/context', express.json());
+
+  app.get('/api/context/:session', (req, res) => {
+    if (!taskQueue) return res.status(503).json({ error: 'Not ready' });
+    const ctx = taskQueue.getSessionContext(req.params.session);
+    res.json({ session: Number(req.params.session), context: ctx });
+  });
+
+  app.put('/api/context/:session', (req, res) => {
+    if (!taskQueue) return res.status(503).json({ error: 'Not ready' });
+    const updates = req.body;
+    if (!updates || typeof updates !== 'object') {
+      return res.status(400).json({ error: 'Body must be a JSON object of key-value pairs' });
+    }
+    const num = Number(req.params.session);
+    const updated = taskQueue.setSessionContext(num, updates);
+    broadcast({ type: 'context:updated', session: num, context: updated });
+    res.json({ session: num, context: updated });
+  });
+
+  app.delete('/api/context/:session', (req, res) => {
+    if (!taskQueue) return res.status(503).json({ error: 'Not ready' });
+    const num = Number(req.params.session);
+    taskQueue.clearSessionContext(num);
+    broadcast({ type: 'context:updated', session: num, context: {} });
+    res.json({ session: num, context: {} });
+  });
+
+  // -- Plan file reading (for session plan pane) ----------------------------
+  // WS handler reads plan file from the session's node; exposed as a message type
+  // so the dashboard can poll it. No REST needed — file is on the tmux host.
+
   const wss = new WebSocketServer({ noServer: true });
 
   // Discover available slash commands
@@ -337,6 +370,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       ws.send(JSON.stringify({ type: 'agentFiles:list', files: taskQueue.agentFilesList }));
       ws.send(JSON.stringify({ type: 'checklistTemplates:list', templates: taskQueue.getChecklistTemplates() }));
       ws.send(JSON.stringify({ type: 'spawnedAgents:list', agents: taskQueue.getSpawnedAgentsList() }));
+      ws.send(JSON.stringify({ type: 'context:all', contexts: taskQueue.getAllSessionContexts() }));
       // Send users list to admins (legacy token mode = no user, send to all)
       if (!user || (user.login && taskQueue.hasPermission(user.login, 'admin'))) {
         ws.send(JSON.stringify({ type: 'users:list', users: taskQueue.getUsersList() }));
@@ -1457,6 +1491,59 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
         break;
       }
 
+      // -- Plan file reading --------------------------------------------------
+      case 'plan:read': {
+        // Read a file from the session's node (used by plan pane to poll plan file)
+        if (!msg.session || !msg.path) {
+          ws.send(JSON.stringify({ type: 'plan:file', session: msg.session, content: null, error: 'Missing session or path' }));
+          break;
+        }
+        const planFound = await fleet.findSession(config, router, msg.session);
+        if (!planFound) {
+          ws.send(JSON.stringify({ type: 'plan:file', session: msg.session, content: null, error: 'Session not found' }));
+          break;
+        }
+        const planNode = router.getNode(planFound.nodeId);
+        try {
+          const content = await planNode.readFile(msg.path);
+          ws.send(JSON.stringify({ type: 'plan:file', session: msg.session, path: msg.path, content }));
+        } catch (err) {
+          ws.send(JSON.stringify({ type: 'plan:file', session: msg.session, path: msg.path, content: null, error: err.message }));
+        }
+        break;
+      }
+
+      // -- Session Context ---------------------------------------------------
+      case 'context:get': {
+        if (!taskQueue) break;
+        const ctx = msg.session != null
+          ? taskQueue.getSessionContext(msg.session)
+          : taskQueue.getAllSessionContexts();
+        ws.send(JSON.stringify({ type: 'context:data', session: msg.session ?? null, context: ctx }));
+        break;
+      }
+
+      case 'context:set': {
+        if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'send-messages')) break;
+        if (msg.session == null || !msg.updates || typeof msg.updates !== 'object') {
+          ws.send(JSON.stringify({ type: 'error', message: 'context:set requires session and updates' }));
+          break;
+        }
+        const updated = taskQueue.setSessionContext(msg.session, msg.updates);
+        broadcast({ type: 'context:updated', session: Number(msg.session), context: updated });
+        break;
+      }
+
+      case 'context:clear': {
+        if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'send-messages')) break;
+        if (msg.session == null) break;
+        taskQueue.clearSessionContext(msg.session);
+        broadcast({ type: 'context:updated', session: Number(msg.session), context: {} });
+        break;
+      }
+
       // -- Ideas (GitHub issues) -----------------------------------------------
       case 'idea:create': {
         const title = (msg.title || '').trim();
@@ -1927,6 +2014,26 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
           taskQueue.pushFeed('task', null, `PM "${pm.name}" learned ${added} new insight${added > 1 ? 's' : ''}`);
         }
         ws.send(JSON.stringify({ _reqId: msg._reqId, ok: true, added }));
+        break;
+      }
+
+      case 'mcp:get_context': {
+        if (!taskQueue) { ws.send(JSON.stringify({ _reqId: msg._reqId, context: {} })); break; }
+        const ctx = taskQueue.getSessionContext(msg.session);
+        ws.send(JSON.stringify({ _reqId: msg._reqId, context: ctx }));
+        break;
+      }
+
+      case 'mcp:set_context': {
+        if (!taskQueue) { ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'No task queue' })); break; }
+        const updates = msg.updates;
+        if (!updates || typeof updates !== 'object') {
+          ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'updates must be an object' }));
+          break;
+        }
+        const updated = taskQueue.setSessionContext(msg.session, updates);
+        broadcast({ type: 'context:updated', session: Number(msg.session), context: updated });
+        ws.send(JSON.stringify({ _reqId: msg._reqId, ok: true, context: updated }));
         break;
       }
 

@@ -15,9 +15,10 @@ You have hive MCP tools available. Use them:
 
 1. **Start**: Call \`hive_get_task\` to see your full assignment before doing anything.
 2. **Progress updates**: Call \`hive_post_update\` at key milestones — when you have a plan, when implementation is done, or if you hit a blocker.
-3. **Coordination**: If your task mentions other sessions or dependencies, call \`hive_get_sessions\` to check their status.
-4. **Finish**: Do NOT call \`hive_complete_task\` unless the task instructions explicitly tell you to. The task owner will close it manually or it will close when you go idle.
-5. **Learnings**: If learning mode is active, call \`hive_report_learnings\` with insights you discovered — patterns, root causes, or tips for similar tasks.
+3. **Plan sharing**: When you create or update a plan file, call \`hive_set_context\` with \`{ "plan": "/absolute/path/to/plan.md" }\` so the dashboard can display it. Also set \`"pr"\` or \`"jira"\` keys if relevant.
+4. **Coordination**: If your task mentions other sessions or dependencies, call \`hive_get_sessions\` to check their status.
+5. **Finish**: Do NOT call \`hive_complete_task\` unless the task instructions explicitly tell you to. The task owner will close it manually or it will close when you go idle.
+6. **Learnings**: If learning mode is active, call \`hive_report_learnings\` with insights you discovered — patterns, root causes, or tips for similar tasks.
 `.trim();
 
 let nextPmId = 1;
