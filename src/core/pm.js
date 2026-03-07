@@ -401,7 +401,7 @@ class ProjectManager extends EventEmitter {
         // Skip if there's already a queued or active task from this PM/script
         const existing = [...this.taskQueue.tasks.values()].find(
           (t) =>
-            t.meta && t.meta.source === `pm:${pm.name}` &&
+            t.source === `pm:${pm.name}` &&
             (t.status === 'queued' ||
               t.status === 'dispatched' ||
               t.status === 'in-progress'),

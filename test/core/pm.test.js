@@ -568,7 +568,7 @@ describe('ProjectManager', () => {
       pm.get(created.id).enabled = true;
       taskQueue.tasks.set('existing', {
         id: 'existing', text: 'hello', status: 'queued',
-        meta: { source: 'pm:Dedup Script' },
+        source: 'pm:Dedup Script',
       });
       await pm._runScript(created.id);
       expect(taskQueue.createTask).not.toHaveBeenCalled();
