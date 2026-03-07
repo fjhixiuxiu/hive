@@ -2021,7 +2021,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
         const sessionNum = msg.session;
         const taskId = taskQueue.activeTaskBySession.get(sessionNum);
         const task = taskId ? taskQueue.tasks.get(taskId) : null;
-        const source = task && task.meta && task.meta.source;
+        const source = task && task.source;
         if (!source || !source.startsWith('pm:')) {
           ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'No PM-sourced task for this session' }));
           break;
