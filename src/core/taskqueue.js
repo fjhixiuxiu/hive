@@ -426,7 +426,7 @@ class TaskQueue extends EventEmitter {
         await new Promise(r => setTimeout(r, 2500));
       }
       // Build message with agent file preamble if designation has agent files
-      let fullMessage = task.text;
+      let fullMessage = this._pmManager ? this._pmManager.enrichTaskText(task) : task.text;
       const desigName = task.designation || this.designations.get(sessionNum);
       const desigDef = desigName ? this.designationDefs.get(desigName) : null;
       if (desigDef && desigDef.agentFiles && desigDef.agentFiles.length > 0) {

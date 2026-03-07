@@ -286,9 +286,8 @@ class ProjectManager extends EventEmitter {
     }
 
     // Skip if there's already a queued or dispatched task with the same text
-    const expectedText = this._buildFullText(pm, text);
     const existing = [...this.taskQueue.tasks.values()].find(
-      (t) => t.text === expectedText && (t.status === 'queued' || t.status === 'dispatched'),
+      (t) => t.source === `pm:${pm.name}` && (t.status === 'queued' || t.status === 'dispatched'),
     );
     if (existing) return;
 
@@ -299,8 +298,7 @@ class ProjectManager extends EventEmitter {
     if (pm.taskFormat) {
       taskText = pm.taskFormat.replace('{key}', key).replace('{summary}', text);
     }
-    const fullText = this._buildFullText(pm, taskText);
-    const task = this.taskQueue.createTask(fullText, mode, pm.targetSession || null, pm.designation, { source: `pm:${pm.name}` });
+    const task = this.taskQueue.createTask(taskText, mode, pm.targetSession || null, pm.designation, { source: `pm:${pm.name}` });
     this._seedChecklist(pm, task);
     pm.tasksCreated++;
     pm.lastPoll = Date.now();
@@ -410,7 +408,7 @@ class ProjectManager extends EventEmitter {
         );
         if (!existing) {
           const mode = pm.targetSession ? 'manual' : 'auto';
-          const taskText = this._buildFullText(pm, output || '(no output)');
+          const taskText = output || '(no output)';
           const task = this.taskQueue.createTask(taskText, mode, pm.targetSession || null, pm.designation, { source: `pm:${pm.name}` });
           this._seedChecklist(pm, task);
           pm.tasksCreated++;
@@ -479,7 +477,6 @@ class ProjectManager extends EventEmitter {
         } else {
           text = `[${issue.key}] ${issue.summary}`;
         }
-        const fullText = this._buildFullText(pm, text);
         const meta = { source: `pm:${pm.name}` };
 
         // Attach actionContext for PR-sourced tasks
@@ -491,7 +488,7 @@ class ProjectManager extends EventEmitter {
           }
         }
 
-        const task = this.taskQueue.createTask(fullText, mode, pm.targetSession || null, pm.designation, meta);
+        const task = this.taskQueue.createTask(text, mode, pm.targetSession || null, pm.designation, meta);
         task.sourceKey = issue.key;
         this._seedChecklist(pm, task);
 
@@ -1183,6 +1180,18 @@ class ProjectManager extends EventEmitter {
   }
 
   // ── Helpers ─────────────────────────────────────────
+
+  /**
+   * Enrich task text with PM instructions, MCP, and learnings at dispatch time.
+   * Called by taskqueue._dispatchTask.
+   */
+  enrichTaskText(task) {
+    if (!task.source || !task.source.startsWith('pm:')) return task.text;
+    const pmName = task.source.replace('pm:', '');
+    const pm = [...this.pms.values()].find(p => p.name === pmName);
+    if (!pm) return task.text;
+    return this._buildFullText(pm, task.text);
+  }
 
   _buildFullText(pm, text) {
     let result = text;

@@ -586,7 +586,12 @@ describe('ProjectManager', () => {
       expect(taskQueue.createTask).toHaveBeenCalled();
       const callArgs = taskQueue.createTask.mock.calls[0];
       expect(callArgs[0]).toContain('output');
-      expect(callArgs[0]).toContain('Instructions: Review carefully');
+      // Instructions are now added at dispatch time via enrichTaskText, not at creation
+      expect(callArgs[0]).not.toContain('Instructions: Review carefully');
+      // Verify enrichTaskText adds instructions
+      const task = { text: callArgs[0], source: 'pm:Instr Script' };
+      const enriched = pm.enrichTaskText(task);
+      expect(enriched).toContain('Instructions: Review carefully');
     });
 
     it('_runScript respects targetSession and designation', async () => {
