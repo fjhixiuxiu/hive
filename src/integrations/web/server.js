@@ -18,6 +18,10 @@ const log = require('../../core/log');
 // Env for gh CLI — ensure /opt/homebrew/bin is in PATH for hivebot
 const ghExecEnv = { ...process.env, PATH: `/opt/homebrew/bin:${process.env.PATH || ''}` };
 
+// ── Session 0 (hive console) ───────────────────────────
+const HIVE_CONSOLE_SESSION = 'hive-console';
+const HIVE_CONSOLE_DIR = path.join(__dirname, '..', '..', '..');
+
 // ── Setup wizard detection ─────────────────────────────
 const setupPath = path.join(__dirname, '..', '..', '..', '.hive-setup.json');
 function isSetupComplete() { return fs.existsSync(setupPath); }
@@ -304,6 +308,8 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
   const clients = new Set();
   // Per-client terminal subscriptions: ws -> { interval, session }
   const termSubs = new Map();
+  // Per-client console (session 0) subscriptions: ws -> { interval, cancelled }
+  const consoleSubs = new Map();
   // Track worker connections: ws -> RemoteNode
   const workers = new Map();
 
@@ -383,6 +389,10 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       id: n.id, type: n.type, connected: n.connected,
     }));
     ws.send(JSON.stringify({ type: 'nodes:list', nodes: workerNodes }));
+    // Session 0 (hive console) status
+    tmux.hasSession(HIVE_CONSOLE_SESSION).then(exists => {
+      if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'console:status', available: exists }));
+    }).catch(() => {});
     // Integration status (configured or not, without revealing tokens)
     ws.send(JSON.stringify({
       type: 'integration:status',
@@ -499,6 +509,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       authenticated = false;
       clients.delete(ws);
       clearTermSub(ws);
+      clearConsoleSub(ws);
       clearTimeout(authTimeout);
       // Clean up worker
       const node = workers.get(ws);
@@ -514,6 +525,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     ws.on('error', () => {
       clients.delete(ws);
       clearTermSub(ws);
+      clearConsoleSub(ws);
       const node = workers.get(ws);
       if (node) {
         node.disconnect();
@@ -538,7 +550,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
         break;
 
       case 'peek': {
-        const found = await fleet.findSession(config, router, msg.session);
+        const found = await resolveSession(msg);
         if (!found) {
           ws.send(JSON.stringify({ type: 'error', message: `No session matching "${msg.session}"` }));
           return;
@@ -579,7 +591,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       }
 
       case 'terminal:panes': {
-        const found = await fleet.findSession(config, router, msg.session);
+        const found = await resolveSession(msg);
         if (!found) {
           ws.send(JSON.stringify({ type: 'error', message: `No session matching "${msg.session}"` }));
           return;
@@ -603,16 +615,21 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       }
 
       case 'terminal:subscribe': {
-        // Unsubscribe from any previous session
-        clearTermSub(ws);
-        const found = await fleet.findSession(config, router, msg.session);
+        const isConsole = String(msg.session) === 'hive-console';
+        // Console uses separate subscription so it doesn't conflict with main terminal
+        if (isConsole) {
+          clearConsoleSub(ws);
+        } else {
+          clearTermSub(ws);
+        }
+        const found = await resolveSession(msg);
         if (!found) {
           ws.send(JSON.stringify({ type: 'error', message: `No session matching "${msg.session}"` }));
           return;
         }
         const { name, nodeId } = found;
         const node = router.getNode(nodeId);
-        const subPaneIdx = (typeof msg.pane === 'number') ? msg.pane : config.sessions.claudePane;
+        const subPaneIdx = isConsole ? 1 : ((typeof msg.pane === 'number') ? msg.pane : config.sessions.claudePane);
         const paneTarget = `${name}:.${subPaneIdx}`;
         // Send immediately
         const { content: subContent, cols: subCols } = await capturePaneAnsi(node, paneTarget);
@@ -620,7 +637,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
         // Poll every 2s (guard against stale callbacks after clearInterval)
         const sub = { interval: null, session: msg.session, name, node, pane: subPaneIdx, cancelled: false };
         sub.interval = setInterval(async () => {
-          if (sub.cancelled || ws.readyState !== 1) { clearTermSub(ws); return; }
+          if (sub.cancelled || ws.readyState !== 1) { isConsole ? clearConsoleSub(ws) : clearTermSub(ws); return; }
           try {
             const { content: pollContent, cols: pollCols } = await capturePaneAnsi(node, paneTarget);
             if (sub.cancelled) return; // check again after async
@@ -629,26 +646,32 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
             // Node may have disconnected
           }
         }, 2000);
-        termSubs.set(ws, sub);
+        if (isConsole) {
+          consoleSubs.set(ws, sub);
+        } else {
+          termSubs.set(ws, sub);
+        }
         break;
       }
 
       case 'terminal:resize': {
-        const sub = termSubs.get(ws);
+        const isConsoleResize = String(msg.session) === 'hive-console';
+        const sub = isConsoleResize ? consoleSubs.get(ws) : termSubs.get(ws);
         if (!sub || !msg.cols || !msg.rows) break;
-        console.log(`[resize] resize: session ${sub.name} → ${msg.cols}x${msg.rows}`);
-        const resizeTarget = `${sub.name}:.${config.sessions.claudePane}`;
+        const resizePane = isConsoleResize ? 1 : config.sessions.claudePane;
+        const resizeTarget = `${sub.name}:.${resizePane}`;
         await sub.node.exec(`tmux resize-pane -t "${resizeTarget}" -x ${msg.cols} -y ${msg.rows} 2>/dev/null`);
         break;
       }
 
       case 'terminal:unsubscribe':
-        clearTermSub(ws);
+        if (String(msg.session) === 'hive-console') clearConsoleSub(ws);
+        else clearTermSub(ws);
         break;
 
       case 'ask': {
         if (!checkPermission(ws, user, 'send-messages')) break;
-        const found = await fleet.findSession(config, router, msg.session);
+        const found = await resolveSession(msg);
         if (!found) {
           ws.send(JSON.stringify({ type: 'error', message: `No session matching "${msg.session}"` }));
           return;
@@ -678,7 +701,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
 
       case 'tell': {
         if (!checkPermission(ws, user, 'send-messages')) break;
-        const found = await fleet.findSession(config, router, msg.session);
+        const found = await resolveSession(msg);
         if (!found) {
           ws.send(JSON.stringify({ type: 'error', message: `No session matching "${msg.session}"` }));
           return;
@@ -717,7 +740,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       case 'keys': {
         if (!checkPermission(ws, user, 'send-messages')) break;
         // Send raw tmux keys (Enter, Up, Down, Escape, Tab, etc.)
-        const found = await fleet.findSession(config, router, msg.session);
+        const found = await resolveSession(msg);
         if (!found) {
           ws.send(JSON.stringify({ type: 'error', message: `No session matching "${msg.session}"` }));
           return;
@@ -2078,12 +2101,31 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     }
   }
 
+  // ── Session 0 helper: resolve session (fleet or hive-console) ──
+  async function resolveSession(msg) {
+    if (String(msg.session) === 'hive-console') {
+      const exists = await tmux.hasSession(HIVE_CONSOLE_SESSION);
+      if (!exists) return null;
+      return { name: HIVE_CONSOLE_SESSION, nodeId: 'local' };
+    }
+    return fleet.findSession(config, router, msg.session);
+  }
+
   function clearTermSub(ws) {
     const sub = termSubs.get(ws);
     if (sub) {
       sub.cancelled = true;
       clearInterval(sub.interval);
       termSubs.delete(ws);
+    }
+  }
+
+  function clearConsoleSub(ws) {
+    const sub = consoleSubs.get(ws);
+    if (sub) {
+      sub.cancelled = true;
+      clearInterval(sub.interval);
+      consoleSubs.delete(ws);
     }
   }
 
@@ -2330,6 +2372,24 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     log.info(`Scanned ${taskQueue.agentFilesList.length} agent files from ${taskQueue.agentRoots.length} root(s)`);
   }
 
+  // ── Session 0: auto-create hive console tmux session ──
+  if (isSetupComplete()) {
+    (async () => {
+      try {
+        if (!await sessionManager.isTmuxAvailable()) return;
+        const result = await sessionManager.createSession(HIVE_CONSOLE_SESSION, HIVE_CONSOLE_DIR, { panes: 1 }, { cols: 80, rows: 50 });
+        if (result.created) {
+          await sessionManager.startClaude(HIVE_CONSOLE_SESSION, 1, 'claude --continue');
+          log.info('[session-0] Created hive console session');
+        } else {
+          log.info('[session-0] Hive console session already exists');
+        }
+      } catch (err) {
+        log.error(`[session-0] Failed to create console session: ${err.message}`);
+      }
+    })();
+  }
+
   const tsIP = getTailscaleIP();
   if (tsIP) {
     log.info(`Tailscale access enabled (${tsIP})`);
@@ -2343,6 +2403,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     clearInterval(uploadTtlInterval);
     for (const ws of clients) {
       clearTermSub(ws);
+      clearConsoleSub(ws);
       ws.close();
     }
     clients.clear();

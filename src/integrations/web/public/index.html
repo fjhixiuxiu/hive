@@ -111,6 +111,82 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 }
 #user-logout:hover { opacity: 1; color: var(--red); }
 
+/* ── Console button (sidebar) ────────── */
+#console-btn {
+  background: none; border: none; color: var(--dim); font-size: 10px;
+  font-weight: 600; padding: 10px 0 8px; cursor: pointer; text-align: center;
+  display: none; flex-direction: column; align-items: center; gap: 3px;
+  transition: color 0.15s, background 0.15s;
+  border-top: 1px solid var(--bg3);
+}
+#console-btn:hover { background: var(--bg3); color: var(--fg); }
+#console-btn.active { color: var(--green); }
+#console-btn .nav-icon { font-size: 18px; }
+
+/* ── Console slide-out panel ─────────── */
+#console-panel {
+  position: fixed; top: 0; right: 0; bottom: 0;
+  width: min(680px, calc(100vw - 80px));
+  background: rgba(15, 15, 35, 0.92);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  border-left: 1px solid var(--bg3);
+  z-index: 90;
+  display: flex; flex-direction: column;
+  transform: translateX(100%);
+  transition: transform 0.25s ease;
+}
+#console-panel.open { transform: translateX(0); }
+#console-header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 14px; border-bottom: 1px solid var(--bg3); flex-shrink: 0;
+}
+#console-header-title {
+  font-size: 13px; font-weight: 700; color: var(--green); flex: 1;
+}
+#console-close {
+  background: none; border: none; color: var(--dim); font-size: 18px;
+  cursor: pointer; padding: 2px 6px; border-radius: 4px;
+}
+#console-close:hover { color: var(--fg); background: var(--bg3); }
+#console-terminal { flex: 1; overflow: hidden; }
+#console-terminal .xterm { height: 100%; }
+#console-terminal .xterm-viewport { overflow-y: auto !important; }
+#console-keys-bar {
+  display: flex; gap: 4px; padding: 6px 10px; background: rgba(15, 15, 35, 0.95);
+  border-top: 1px solid var(--bg3); flex-shrink: 0; overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+#console-attachment-strip { padding: 0; }
+#console-attachment-strip.has-items { padding: 6px 10px; }
+#console-input-bar {
+  display: flex; gap: 8px; padding: 8px 12px; align-items: flex-end;
+  border-top: 1px solid var(--bg3); flex-shrink: 0;
+  background: rgba(15, 15, 35, 0.95);
+}
+#console-input {
+  flex: 1; background: var(--bg); border: 1px solid var(--bg3); color: var(--fg);
+  padding: 10px 14px; border-radius: 6px; font-size: 14px; outline: none;
+  resize: none; font-family: inherit; line-height: 1.4;
+  min-height: 4em; max-height: 30vh; overflow-y: auto;
+}
+#console-input:focus { border-color: var(--purple); }
+#console-input::placeholder { color: var(--dim); }
+#console-input:disabled { opacity: 0.5; }
+#console-input.drag-over { border-color: var(--green); background: rgba(80,250,123,0.05); }
+#console-send {
+  background: var(--purple); color: var(--bg); border: none;
+  padding: 8px 16px; border-radius: 6px; font-size: 14px; font-weight: 700;
+  cursor: pointer; white-space: nowrap;
+}
+#console-send:active { opacity: 0.8; }
+#console-send:disabled { opacity: 0.4; cursor: default; }
+#console-overlay {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.3); z-index: 89;
+  display: none;
+}
+#console-overlay.open { display: block; }
+
 /* ── Content area ────────────────────── */
 #content-area {
   flex: 1; display: flex; flex-direction: column; overflow: hidden;
@@ -1827,6 +1903,54 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .setup-warning-icon { font-size: 32px; }
 .setup-warning-text { font-size: 14px; color: var(--fg); line-height: 1.5; }
 .setup-warning-text strong { display: block; font-size: 16px; color: var(--orange); margin-bottom: 4px; }
+
+/* ── Loading screen ──────────────────────────── */
+#loading-screen {
+  display: none; position: fixed; inset: 0; z-index: 200;
+  background: var(--bg);
+  flex-direction: column; align-items: center; justify-content: center; gap: 32px;
+}
+#loading-screen.visible { display: flex; }
+#loading-screen .loading-brand {
+  font-size: 18px; letter-spacing: 8px; text-transform: uppercase; color: #666; margin-top: -4px;
+}
+#loading-screen .hive-logo-svg { width: 200px; height: 200px; }
+#loading-screen .hive-logo-svg .cell {
+  fill: none; stroke: #333; stroke-width: 1.5;
+  transition: stroke 0.5s ease, stroke-width 0.3s ease, filter 0.5s ease;
+}
+#loading-screen .hive-logo-svg .cell.on {
+  stroke: var(--green); stroke-width: 2;
+  filter: drop-shadow(0 0 4px rgba(74, 222, 128, 0.4));
+}
+#loading-screen .hive-logo-svg .pulse {
+  fill: none; stroke: var(--purple); stroke-width: 2; opacity: 0;
+  animation: loadPulse 2.4s ease-in-out infinite;
+}
+#loading-screen .hive-logo-svg.done .pulse { stroke: var(--green); }
+@keyframes loadPulse { 0%,100% { opacity: 0; } 30%,70% { opacity: 0.7; } }
+#loading-screen .loading-steps { display: flex; flex-direction: column; gap: 14px; min-width: 320px; }
+#loading-screen .loading-step {
+  display: flex; align-items: center; gap: 14px;
+  font-size: 15px; color: #333; transition: color 0.4s;
+}
+#loading-screen .loading-step.active { color: var(--green); }
+#loading-screen .loading-step.done { color: #555; }
+#loading-screen .loading-step-icon {
+  width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+#loading-screen .loading-spinner {
+  width: 16px; height: 16px; border: 2px solid #222; border-top-color: var(--green);
+  border-radius: 50%; animation: loadSpin 0.8s linear infinite;
+}
+@keyframes loadSpin { to { transform: rotate(360deg); } }
+#loading-screen .loading-check { color: var(--green); font-size: 17px; }
+#loading-screen .loading-dot { width: 6px; height: 6px; border-radius: 50%; background: #222; margin: 0 5px; }
+#loading-screen .loading-step-count { color: #444; font-size: 13px; margin-left: auto; }
+#loading-screen .loading-step.done .loading-step-count { color: #555; }
+#loading-screen .loading-step.active .loading-step-count { color: var(--green); opacity: 0.7; }
+#loading-screen.fade-out { animation: loadFadeOut 0.3s ease forwards; }
+@keyframes loadFadeOut { to { opacity: 0; } }
 </style>
 </head>
 <body>
@@ -1938,6 +2062,37 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 <!-- Connection status bar -->
 <div id="conn-bar" class="disconnected"></div>
 
+
+<!-- Loading screen -->
+<div id="loading-screen">
+  <svg class="hive-logo-svg" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+    <g transform="translate(50,50)">
+      <polygon class="cell" data-hex="0" points="0,-12 10.4,-6 10.4,6 0,12 -10.4,6 -10.4,-6"/>
+      <polygon class="pulse" points="0,-12 10.4,-6 10.4,6 0,12 -10.4,6 -10.4,-6" style="animation-delay:0s"/>
+      <polygon class="cell" data-hex="1" points="0,-33 10.4,-27 10.4,-15 0,-9 -10.4,-15 -10.4,-27"/>
+      <polygon class="pulse" points="0,-33 10.4,-27 10.4,-15 0,-9 -10.4,-15 -10.4,-27" style="animation-delay:0.3s"/>
+      <polygon class="cell" data-hex="2" points="18,-22.5 28.4,-16.5 28.4,-4.5 18,1.5 7.6,-4.5 7.6,-16.5"/>
+      <polygon class="pulse" points="18,-22.5 28.4,-16.5 28.4,-4.5 18,1.5 7.6,-4.5 7.6,-16.5" style="animation-delay:0.6s"/>
+      <polygon class="cell" data-hex="3" points="18,1.5 28.4,7.5 28.4,19.5 18,25.5 7.6,19.5 7.6,7.5"/>
+      <polygon class="pulse" points="18,1.5 28.4,7.5 28.4,19.5 18,25.5 7.6,19.5 7.6,7.5" style="animation-delay:0.9s"/>
+      <polygon class="cell" data-hex="4" points="0,12 10.4,18 10.4,30 0,36 -10.4,30 -10.4,18"/>
+      <polygon class="pulse" points="0,12 10.4,18 10.4,30 0,36 -10.4,30 -10.4,18" style="animation-delay:1.2s"/>
+      <polygon class="cell" data-hex="5" points="-18,1.5 -7.6,7.5 -7.6,19.5 -18,25.5 -28.4,19.5 -28.4,7.5"/>
+      <polygon class="pulse" points="-18,1.5 -7.6,7.5 -7.6,19.5 -18,25.5 -28.4,19.5 -28.4,7.5" style="animation-delay:1.5s"/>
+      <polygon class="cell" data-hex="6" points="-18,-22.5 -7.6,-16.5 -7.6,-4.5 -18,1.5 -28.4,-4.5 -28.4,-16.5"/>
+      <polygon class="pulse" points="-18,-22.5 -7.6,-16.5 -7.6,-4.5 -18,1.5 -28.4,-4.5 -28.4,-16.5" style="animation-delay:1.8s"/>
+    </g>
+  </svg>
+  <div class="loading-brand">hive</div>
+  <div class="loading-steps">
+    <div class="loading-step" data-stage="connecting"><span class="loading-step-icon"><span class="loading-dot"></span></span> Connecting<span class="loading-step-count"></span></div>
+    <div class="loading-step" data-stage="fleet"><span class="loading-step-icon"><span class="loading-dot"></span></span> Fleet<span class="loading-step-count"></span></div>
+    <div class="loading-step" data-stage="tasks"><span class="loading-step-icon"><span class="loading-dot"></span></span> Tasks<span class="loading-step-count"></span></div>
+    <div class="loading-step" data-stage="automations"><span class="loading-step-icon"><span class="loading-dot"></span></span> Automations<span class="loading-step-count"></span></div>
+    <div class="loading-step" data-stage="pms"><span class="loading-step-icon"><span class="loading-dot"></span></span> Project managers<span class="loading-step-count"></span></div>
+  </div>
+</div>
+
 <!-- Main view: sidebar + content -->
 <div id="main-view">
   <!-- Left sidebar nav -->
@@ -1965,6 +2120,9 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     </button>
     <button class="nav-btn" data-tab="more-panel">
       <span class="nav-icon">&#8943;</span>More
+    </button>
+    <button id="console-btn" title="Talk to Hive (Session 0)">
+      <span class="nav-icon">&#9655;</span>Hive
     </button>
     <div id="sidebar-summary"></div>
     <div id="user-badge" style="display:none">
@@ -2985,6 +3143,32 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   </div>
 </div>
 
+<!-- Console (Session 0) slide-out -->
+<div id="console-overlay"></div>
+<div id="console-panel">
+  <div id="console-header">
+    <span id="console-header-title">Talk to Hive</span>
+    <button id="console-close">&times;</button>
+  </div>
+  <div id="console-terminal"></div>
+  <div id="console-keys-bar">
+    <button class="key-btn" data-console-key="Enter">Enter</button>
+    <button class="key-btn" data-console-key="Escape">Esc</button>
+    <button class="key-btn" data-console-key="C-c">Ctrl-C</button>
+    <button class="key-btn" data-console-key="Up">Up</button>
+    <button class="key-btn" data-console-key="Down">Down</button>
+    <button class="key-btn" data-console-key="Tab">Tab</button>
+    <button class="key-btn" data-console-key="BTab">S-Tab</button>
+    <button class="key-btn" data-console-key="y">y</button>
+    <button class="key-btn" data-console-key="n">n</button>
+  </div>
+  <div id="console-attachment-strip" class="attachment-strip"></div>
+  <div id="console-input-bar">
+    <textarea id="console-input" rows="3" placeholder="Ask hive anything..." autocomplete="off"></textarea>
+    <button id="console-send">Send</button>
+  </div>
+</div>
+
 <!-- Toasts -->
 <div id="toasts"></div>
 
@@ -3010,6 +3194,72 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   // ── State ─────────────────────────────────────────
   let ws = null;
   let authenticated = false;
+
+  // ── Loading screen controller ──────────────────
+  const loadingScreen = document.getElementById("loading-screen");
+  const loadingSvg = loadingScreen.querySelector(".hive-logo-svg");
+  const loadingStages = ["connecting", "fleet", "tasks", "automations", "pms"];
+  const loadingHexMap = { connecting: [0], fleet: [1, 2], tasks: [3], automations: [4], pms: [5, 6] };
+  const loadingDone = new Set();
+  let loadingActive = false;
+  let initialLoadComplete = false;
+
+  function showLoadingScreen() {
+    loadingActive = true;
+    loadingDone.clear();
+    loadingSvg.classList.remove("done");
+    loadingSvg.querySelectorAll(".cell").forEach(c => c.classList.remove("on"));
+    loadingScreen.querySelectorAll(".loading-step").forEach(s => {
+      s.className = "loading-step";
+      s.querySelector(".loading-step-icon").innerHTML = '<span class="loading-dot"></span>';
+      s.querySelector(".loading-step-count").textContent = "";
+    });
+    loadingScreen.classList.remove("fade-out");
+    loadingScreen.classList.add("visible");
+    // Mark connecting as active immediately
+    completeLoadingStage("connecting", "");
+  }
+
+  function completeLoadingStage(stage, count) {
+    if (!loadingActive || loadingDone.has(stage)) return;
+    loadingDone.add(stage);
+    const step = loadingScreen.querySelector('.loading-step[data-stage="' + stage + '"]');
+    if (step) {
+      step.className = "loading-step done";
+      step.querySelector(".loading-step-icon").innerHTML = '<span class="loading-check">&#10003;</span>';
+      if (count) step.querySelector(".loading-step-count").textContent = count;
+    }
+    // Light up hexes
+    const hexes = loadingHexMap[stage] || [];
+    hexes.forEach(h => {
+      const cell = loadingSvg.querySelector('.cell[data-hex="' + h + '"]');
+      if (cell) cell.classList.add("on");
+    });
+    // Activate next pending stage
+    const nextStage = loadingStages.find(s => !loadingDone.has(s));
+    if (nextStage) {
+      const nextStep = loadingScreen.querySelector('.loading-step[data-stage="' + nextStage + '"]');
+      if (nextStep) {
+        nextStep.className = "loading-step active";
+        nextStep.querySelector(".loading-step-icon").innerHTML = '<span class="loading-spinner"></span>';
+      }
+    }
+    // All done?
+    if (loadingStages.every(s => loadingDone.has(s))) {
+      loadingSvg.classList.add("done");
+      setTimeout(hideLoadingScreen, 400);
+    }
+  }
+
+  function hideLoadingScreen() {
+    loadingActive = false;
+    initialLoadComplete = true;
+    loadingScreen.classList.add("fade-out");
+    setTimeout(() => {
+      loadingScreen.classList.remove("visible", "fade-out");
+    }, 300);
+  }
+
   let currentSession = null;
   let mode = 'ask';
   let askPending = false;
@@ -3070,6 +3320,11 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   let tsPaneCols = 0;  // last known tmux pane cols for tasks session terminal
   let designations = {};  // { num: string }
   let designationDefs = []; // [{ name, agentFiles, description, color }]
+  let consoleAvailable = false;
+  let consoleOpen = false;
+  let consoleTerm = null;
+  let consoleFit = null;
+  let consoleLastContent = '';
 
   // Color map: name → { css var, rgba bg }
   const DESIG_COLORS = {
@@ -3794,6 +4049,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
           if (msg.user) currentUser = msg.user;
           if (msg.permissions) { myPermissions = msg.permissions; applyPermissionGates(); }
           authScreen.style.display = 'none'; mainView.style.display = 'flex';
+          if (!initialLoadComplete) showLoadingScreen();
           renderGrid();
           updateUserBadge();
           if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
@@ -3858,6 +4114,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         console.log(`fleet:status received — ${msg.sessions.length} sessions, previews: ${msg.sessions.filter(s => s.preview).length}`);
         console.time('auth→fleet');
         fleetData = msg.sessions;
+        if (loadingActive) completeLoadingStage('fleet', msg.sessions.length + ' sessions');
         // Clear spawning placeholders for sessions that now exist
         for (const s of fleetData) spawningSessions.delete(s.num);
         if (activeTab === 'fleet-panel') renderGrid();
@@ -3923,9 +4180,22 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
           if (tsUserScrolledUp) { tsPendingContent = msg.content; }
           else { writeTasksSessionContent(msg.content); }
         }
+        // Console (Session 0) terminal data
+        if (consoleTerm && consoleOpen && String(msg.session) === 'hive-console') {
+          if (msg.content !== consoleLastContent) {
+            consoleLastContent = msg.content;
+            consoleTerm.reset();
+            consoleTerm.write(msg.content);
+            requestAnimationFrame(() => consoleTerm.scrollToBottom());
+          }
+        }
         break;
       case 'ask:stream': break;
       case 'ask:done':
+        if (String(msg.session) === 'hive-console') {
+          if (!msg.success) showToast('Console', msg.error || 'Failed', 'error');
+          break;
+        }
         askPending = false; msgInput.disabled = false; sendBtn.disabled = false; msgInput.focus();
         if (tsPendingSession && String(msg.session) === tsPendingSession) {
           tsPendingSession = null;
@@ -3936,6 +4206,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         }
         break;
       case 'tell:done':
+        if (String(msg.session) === 'hive-console') break;
         if (tsPendingSession && String(msg.session) === tsPendingSession) {
           tsPendingSession = null;
           if (!msg.success) { showToast('Failed', msg.error || 'Tell failed', 'error'); tsMsgInput.value = tsLastSentMessage; }
@@ -3943,6 +4214,10 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
           if (msg.success) showToast('Sent', `Message sent to session ${msg.session}`, 'success');
           else { showToast('Error', msg.error || 'Tell failed', 'error'); msgInput.value = lastSentMessage; }
         }
+        break;
+      case 'console:status':
+        consoleAvailable = !!msg.available;
+        document.getElementById('console-btn').style.display = consoleAvailable ? 'flex' : 'none';
         break;
       case 'notify': handleNotify(msg); break;
       case 'restart:done':
@@ -3967,6 +4242,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         break;
       case 'tasks:list':
         tasks = msg.tasks || []; renderTasks(); updateTasksBadge();
+        if (loadingActive) { const _q = msg.tasks ? msg.tasks.filter(t => t.status === 'queued').length : 0, _a = msg.tasks ? msg.tasks.filter(t => t.status === 'dispatched').length : 0; completeLoadingStage('tasks', _q + ' queued, ' + _a + ' active'); }
         if (pendingRouteTask) { selectTaskById(pendingRouteTask); pendingRouteTask = null; }
         break;
       case 'task:created': case 'task:dispatched': case 'task:completed': case 'task:failed': {
@@ -4061,6 +4337,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         break;
       case 'designations:status':
         designations = msg.designations || {};
+        if (loadingActive) completeLoadingStage('automations', '');
         renderDesignationGrid(); updateDesignationSelector(); updatePmDesignationSelector();
         if (activeTab === 'fleet-panel') renderGrid();
         break;
@@ -4121,7 +4398,9 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         closeSpawnDialog();
         break;
       }
-      case 'pm:list': pmList = msg.pms || []; renderPMs(); break;
+      case 'pm:list': pmList = msg.pms || []; renderPMs();
+        if (loadingActive) completeLoadingStage('pms', (msg.pms || []).length + ' active');
+        break;
       case 'pm:created': showToast('PM Created', msg.pm.name, 'success'); break;
       case 'pm:error': showToast('PM Error', `${msg.id}: ${msg.error}`, 'error'); break;
       case 'context:all':
@@ -5018,6 +5297,118 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     if (tsPaneCols > 0 && tsPaneCols > tasksSessionTerm.cols) tasksSessionTerm.resize(tsPaneCols, tasksSessionTerm.rows);
   }
 
+  // ── Console (Session 0) ───────────────────────────────
+  function openConsole() {
+    consoleOpen = true;
+    document.getElementById('console-panel').classList.add('open');
+    document.getElementById('console-overlay').classList.add('open');
+    document.getElementById('console-btn').classList.add('active');
+    if (!consoleTerm) {
+      consoleTerm = new Terminal({
+        theme: { background: 'transparent', foreground: '#e2e2f0', cursor: '#e2e2f0', black: '#282a36', red: '#ff5555', green: '#50fa7b', yellow: '#f1fa8c', blue: '#bd93f9', magenta: '#ff79c6', cyan: '#8be9fd', white: '#f8f8f2', brightBlack: '#6272a4', brightRed: '#ff6e6e', brightGreen: '#69ff94', brightYellow: '#ffffa5', brightBlue: '#d6acff', brightMagenta: '#ff92df', brightCyan: '#a4ffff', brightWhite: '#ffffff' },
+        fontSize: 12, fontFamily: "'SF Mono', 'Menlo', 'Monaco', 'Courier New', monospace",
+        disableStdin: true, scrollback: 5000, convertEol: true, allowProposedApi: true,
+      });
+      consoleFit = new FitAddon.FitAddon();
+      consoleTerm.loadAddon(consoleFit);
+      consoleTerm.loadAddon(new WebLinksAddon.WebLinksAddon((e, uri) => window.open(uri, '_blank')));
+      enableTerminalCopy(consoleTerm);
+      consoleTerm.open(document.getElementById('console-terminal'));
+    }
+    requestAnimationFrame(() => {
+      consoleFit.fit();
+      consoleTerm.clear();
+      consoleLastContent = '';
+      if (ws && ws.readyState === 1) {
+        ws.send(JSON.stringify({ type: 'terminal:subscribe', session: 'hive-console', cols: consoleTerm.cols, rows: consoleTerm.rows }));
+        // Resize tmux pane to match xterm cols
+        ws.send(JSON.stringify({ type: 'terminal:resize', session: 'hive-console', cols: consoleTerm.cols, rows: consoleTerm.rows }));
+      }
+    });
+    document.getElementById('console-input').focus();
+  }
+
+  function closeConsole() {
+    consoleOpen = false;
+    document.getElementById('console-panel').classList.remove('open');
+    document.getElementById('console-overlay').classList.remove('open');
+    document.getElementById('console-btn').classList.remove('active');
+    if (ws && ws.readyState === 1) {
+      ws.send(JSON.stringify({ type: 'terminal:unsubscribe', session: 'hive-console' }));
+    }
+  }
+
+  function toggleConsole() {
+    if (consoleOpen) closeConsole();
+    else openConsole();
+  }
+
+  const consoleAttachedImages = [];
+  const consoleAttachmentStrip = document.getElementById('console-attachment-strip');
+
+  function sendConsoleMessage() {
+    const input = document.getElementById('console-input');
+    const text = input.value.trim();
+    const hasImages = consoleAttachedImages.length > 0;
+    if (!text && !hasImages) return;
+    if (!ws || ws.readyState !== 1) return;
+    let message = text;
+    if (hasImages) {
+      const paths = consoleAttachedImages.map(i => i.path).join(', ');
+      const prefix = `[Attached images: ${paths}]`;
+      message = text ? `${prefix}\n\n${text}` : `${prefix}\n\nLook at the attached screenshot.`;
+      clearAttachments(consoleAttachedImages, consoleAttachmentStrip);
+    }
+    ws.send(JSON.stringify({ type: 'ask', session: 'hive-console', message }));
+    pushMsgHistory('hive-console', text);
+    consoleHistoryIdx = -1;
+    consoleHistoryDraft = '';
+    input.value = '';
+  }
+
+  let consoleHistoryIdx = -1;
+  let consoleHistoryDraft = '';
+
+  // Console event listeners
+  document.getElementById('console-btn').addEventListener('click', toggleConsole);
+  document.getElementById('console-close').addEventListener('click', closeConsole);
+  document.getElementById('console-overlay').addEventListener('click', closeConsole);
+  document.getElementById('console-send').addEventListener('click', sendConsoleMessage);
+  document.getElementById('console-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendConsoleMessage(); return; }
+    const input = document.getElementById('console-input');
+    const h = msgHistory['hive-console'] || [];
+    if (e.key === 'ArrowUp') {
+      if (input.value.lastIndexOf('\n', input.selectionStart - 1) !== -1) return;
+      if (!h.length) return;
+      e.preventDefault();
+      if (consoleHistoryIdx === -1) consoleHistoryDraft = input.value;
+      if (consoleHistoryIdx < h.length - 1) consoleHistoryIdx++;
+      input.value = h[h.length - 1 - consoleHistoryIdx];
+    } else if (e.key === 'ArrowDown') {
+      if (input.value.indexOf('\n', input.selectionStart) !== -1) return;
+      if (consoleHistoryIdx <= -1) return;
+      e.preventDefault();
+      consoleHistoryIdx--;
+      input.value = consoleHistoryIdx === -1 ? consoleHistoryDraft : h[h.length - 1 - consoleHistoryIdx];
+    }
+  });
+  // Keyboard shortcut: Escape to close (only when input not focused)
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && consoleOpen) { e.preventDefault(); closeConsole(); }
+  });
+
+  // Console keys bar — send raw tmux keys
+  document.querySelectorAll('[data-console-key]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (!ws || ws.readyState !== 1) return;
+      ws.send(JSON.stringify({ type: 'keys', session: 'hive-console', keys: [btn.dataset.consoleKey], pane: 1 }));
+    });
+  });
+
+  // Console image drag-drop / paste
+  setupDragDrop(document.getElementById('console-input'), consoleAttachedImages, consoleAttachmentStrip);
+
   function scrollIndicator(show) {
     let el = document.getElementById('scroll-pause');
     if (show && !el) {
@@ -5548,6 +5939,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   // ── Key buttons + restart ───────────────────────
   $$('.key-btn').forEach(btn => {
     if (btn.classList.contains('vim-toggle')) return; // handled separately
+    if (btn.dataset.consoleKey) return; // handled by console keys bar
     btn.addEventListener('click', () => {
       if (!currentSession || !ws || ws.readyState !== 1) return;
       const keysMsg = { type: 'keys', session: currentSession, keys: [btn.dataset.key] };
@@ -5685,6 +6077,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     }
     if (feedPreviewFit && activeTab === 'feed-panel') feedPreviewFit.fit();
     if (tasksSessionFit && activeTab === 'tasks-panel') fitTasksTerminal();
+    if (consoleFit && consoleOpen) consoleFit.fit();
   });
 
   // ── Input bar ─────────────────────────────────────

@@ -31,6 +31,8 @@ class ProjectManager extends EventEmitter {
     this.timers = new Map(); // id → interval handle
     // Let taskQueue know about us so _saveState() includes PM data
     taskQueue._pmManager = this;
+    this._githubLogin = null;
+    this._resolveGithubLogin();
   }
 
   // ── CRUD ────────────────────────────────────────────
@@ -612,7 +614,7 @@ class ProjectManager extends EventEmitter {
     // Find dispatched tasks from this PM that have a sourceKey
     const activeTasks = [...this.taskQueue.tasks.values()]
       .filter(t => t.status === 'dispatched'
-        && t.meta?.source === prefix
+        && t.source === prefix
         && t.sourceKey
         && t.assignedTo);
 
@@ -696,6 +698,7 @@ class ProjectManager extends EventEmitter {
             if (c.body && c.body.startsWith('🐝')) return false;
             const login = (c.user && c.user.login) || '';
             if (login.endsWith('[bot]') || c.user?.type === 'Bot') return false;
+            if (this._githubLogin && login === this._githubLogin) return false;
             return true;
           });
           if (newCommits.length || newComments.length) {
@@ -790,6 +793,18 @@ class ProjectManager extends EventEmitter {
     const token = process.env.GITHUB_TOKEN;
     if (!token) throw new Error('GITHUB_TOKEN not configured');
     return { 'Authorization': `Bearer ${token}`, 'Accept': 'application/vnd.github+json', 'User-Agent': 'hive-pm' };
+  }
+
+  async _resolveGithubLogin() {
+    try {
+      const data = await this._httpRequest('https://api.github.com/user', this._githubHeaders());
+      if (data && data.login) {
+        this._githubLogin = data.login;
+        log.info(`[pm] GitHub token belongs to @${data.login}`);
+      }
+    } catch (err) {
+      log.error('[pm] Could not resolve GitHub login:', err.message);
+    }
   }
 
   async _fetchGithubIssues(source) {
