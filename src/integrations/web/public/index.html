@@ -1495,9 +1495,20 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   background: var(--bg3); border: none; color: var(--fg); font-size: 13px;
   padding: 8px 10px; border-radius: 6px; width: 100%; outline: none;
 }
-.pm-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+#pm-dialog .dialog { height: min(580px, calc(100vh - 48px)); }
+.pm-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; flex: 1; align-content: start; }
 .pm-form-grid .pm-form-field.full-width { grid-column: 1 / -1; }
 @media (max-width: 599px) { .pm-form-grid { grid-template-columns: 1fr; } }
+.pm-tab-bar { display: flex; gap: 4px; margin-bottom: 12px; flex-shrink: 0; }
+.pm-tab {
+  background: var(--bg3); border: none; color: var(--dim); font-size: 12px;
+  font-weight: 700; padding: 6px 12px; border-radius: 16px; cursor: pointer;
+  white-space: nowrap;
+}
+.pm-tab:hover { color: var(--fg); }
+.pm-tab.active { background: var(--purple); color: var(--bg); }
+.pm-tab-content { display: none; }
+.pm-tab-content.active { display: contents; }
 
 /* ── Task comments ─────────────────── */
 .comment-panel { padding: 8px 12px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; }
@@ -2475,7 +2486,15 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 <div class="dialog-overlay" id="pm-dialog">
   <div class="dialog" style="max-width:640px">
     <div class="dialog-title" id="pm-dialog-title">New Project Manager</div>
+    <div class="pm-tab-bar">
+      <button type="button" class="pm-tab active" data-pm-tab="source">Source</button>
+      <button type="button" class="pm-tab" data-pm-tab="dispatch">Dispatch</button>
+      <button type="button" class="pm-tab" data-pm-tab="instructions">Instructions</button>
+      <button type="button" class="pm-tab" data-pm-tab="advanced">Advanced</button>
+    </div>
     <div class="pm-form-grid">
+    <!-- ── Source tab ── -->
+    <div class="pm-tab-content active" data-pm-tab="source">
     <div class="pm-form-field">
       <label class="pm-form-label">Name</label>
       <input class="pm-form-input" id="pm-form-name" type="text" placeholder="e.g. Frontend Bugs" autocomplete="off">
@@ -2582,6 +2601,9 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       <label class="pm-form-label">Since <span style="color:var(--dim)">(only tickets after this date)</span></label>
       <input class="pm-form-input" id="pm-form-zoho-since" type="date" autocomplete="off">
     </div>
+    </div><!-- /source tab -->
+    <!-- ── Dispatch tab ── -->
+    <div class="pm-tab-content" data-pm-tab="dispatch">
     <div class="pm-form-field">
       <label class="pm-form-label">Designation</label>
       <select class="pm-form-select" id="pm-form-designation">
@@ -2598,6 +2620,13 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       <label class="pm-form-label">Task Format <span style="color:var(--dim)">(use {key} and {summary} as placeholders)</span></label>
       <input class="pm-form-input" id="pm-form-taskformat" type="text" placeholder="e.g. /start-task {key}" autocomplete="off">
     </div>
+    <div class="pm-form-field">
+      <label class="pm-form-label">Auto Threshold (story points)</label>
+      <input class="pm-form-input" id="pm-form-threshold" type="number" value="3" min="0" max="100">
+    </div>
+    </div><!-- /dispatch tab -->
+    <!-- ── Instructions tab ── -->
+    <div class="pm-tab-content" data-pm-tab="instructions">
     <div class="pm-form-field full-width">
       <label class="pm-form-label">Instructions <span style="color:var(--dim)">(included with each task)</span></label>
       <textarea class="pm-form-input" id="pm-form-instructions" rows="3" placeholder="e.g. Post a review comment on the PR — DO NOT approve" style="resize:vertical;font-family:inherit"></textarea>
@@ -2621,10 +2650,9 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         <option value="">None</option>
       </select>
     </div>
-    <div class="pm-form-field">
-      <label class="pm-form-label">Auto Threshold (story points)</label>
-      <input class="pm-form-input" id="pm-form-threshold" type="number" value="3" min="0" max="100">
-    </div>
+    </div><!-- /instructions tab -->
+    <!-- ── Advanced tab ── -->
+    <div class="pm-tab-content" data-pm-tab="advanced">
     <div class="pm-form-field" id="pm-form-schedule-field">
       <label class="pm-form-label">Schedule</label>
       <div style="display:flex;gap:4px;margin-bottom:6px">
@@ -2659,6 +2687,23 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
         <span style="font-size:11px;color:var(--dim);margin-top:4px;display:block;">Comma-separated JIRA statuses that auto-complete the task</span>
       </div>
     </div>
+    <div class="pm-form-field pm-fields-continue" style="display:none">
+      <label class="pm-form-label">Continue Conditions <span style="color:var(--dim)">(nudge idle sessions with new activity)</span></label>
+      <div id="pm-form-cont-github" style="display:none">
+        <label style="font-size:13px;color:var(--fg);cursor:pointer;display:flex;align-items:center;gap:6px;margin-bottom:4px">
+          <input type="checkbox" id="pm-form-cont-pr-changes"> Resume when PR has new commits or comments
+        </label>
+      </div>
+      <div id="pm-form-cont-jira" style="display:none">
+        <input class="pm-form-input" id="pm-form-cont-jira-statuses" type="text"
+          placeholder="In Progress, Code Review" autocomplete="off">
+        <span style="font-size:11px;color:var(--dim);margin-top:4px;display:block;">
+          Resume when JIRA issue moves to these statuses</span>
+      </div>
+      <span style="font-size:11px;color:var(--dim);margin-top:4px;display:block;">
+        While a task is active and its session is idle, checks for source changes and sends a follow-up message</span>
+    </div>
+    </div><!-- /advanced tab -->
     </div><!-- /pm-form-grid -->
     <div class="dialog-actions">
       <button class="dialog-btn primary" id="pm-form-save">Save</button>
@@ -2933,6 +2978,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   let spawningSessions = new Map(); // num → { name } for in-flight spawns
   let pmList = [];        // PM objects from server
   let editingPmId = null; // PM being edited (null = creating new)
+  let activePmTab = 'source';
   let activeSessionTab = 'terminal'; // 'terminal', 'git', or 'comments'
   let activePane = null;       // current pane index (null = claudePane default)
   let sessionPanes = [];       // discovered panes from terminal:panes response
@@ -3802,7 +3848,32 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       case 'task:created': case 'task:dispatched': case 'task:completed': case 'task:failed': {
         const idx = tasks.findIndex(t => t.id === msg.task.id);
         if (idx >= 0) tasks[idx] = msg.task; else tasks.unshift(msg.task);
-        renderTasks(); updateTasksBadge(); updateChecklistButtons(); updateActionsButton(); updateTsNavButtons(); updateSessionTaskButtons(); break;
+        renderTasks(); updateTasksBadge(); updateChecklistButtons(); updateActionsButton(); updateTsNavButtons(); updateSessionTaskButtons();
+        // Auto-advance when a viewed task is completed/failed
+        if (msg.type === 'task:completed' || msg.type === 'task:failed') {
+          const doneId = msg.task.id;
+          const doneSession = msg.task.assignedTo ? String(msg.task.assignedTo) : null;
+          // Task sheet: if this task was selected, advance to next dispatched task
+          if (tasksSelectedTaskId === doneId) {
+            const navList = tasks.filter(t => t.status === 'dispatched' && t.id !== doneId);
+            if (navList.length > 0) {
+              setTimeout(() => selectTaskById(navList[0].id), 200);
+            } else {
+              tasksSelectedTaskId = null;
+              updateTsNavButtons();
+            }
+          }
+          // Session view: if viewing the session that just freed up, show next task or refresh
+          if (doneSession && currentSession === doneSession) {
+            const nextTask = tasks.find(t => t.status === 'dispatched' && String(t.assignedTo) === doneSession);
+            if (nextTask) {
+              // A new task was auto-dispatched to this session
+              openTaskSession(doneSession);
+            }
+            // Otherwise updateSessionTaskButtons already hid the done/requeue buttons
+          }
+        }
+        break;
       }
       case 'task:updated': {
         const idx = tasks.findIndex(t => t.id === msg.task.id);
@@ -6191,16 +6262,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     if (!cur || cur.status !== 'dispatched' || !ws || ws.readyState !== 1) return;
     ws.send(JSON.stringify({ type: 'task:complete', taskId: cur.id }));
     showToast('Task Done', `Marked "${cur.title || cur.id}" as done`, 'success');
-    // Auto-advance to next dispatched task
-    const navList = getTaskNavList().filter(t => t.id !== cur.id);
-    if (navList.length > 0) {
-      const idx = getTaskNavList().findIndex(t => t.id === cur.id);
-      const next = idx >= navList.length ? navList[0] : navList[Math.max(0, idx)] || navList[0];
-      setTimeout(() => selectTaskById(next.id), 200);
-    } else {
-      tasksSelectedTaskId = null;
-      updateTsNavButtons();
-    }
+    // Auto-advance handled centrally by task:completed WS handler
   }
 
   // ── Source filter dropdown ───────────────────────────
@@ -8508,6 +8570,17 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     });
   });
 
+  // PM dialog tab switching
+  document.querySelectorAll('.pm-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      activePmTab = tab.dataset.pmTab;
+      document.querySelectorAll('.pm-tab').forEach(t =>
+        t.classList.toggle('active', t.dataset.pmTab === activePmTab));
+      document.querySelectorAll('.pm-tab-content').forEach(c =>
+        c.classList.toggle('active', c.dataset.pmTab === activePmTab));
+    });
+  });
+
   function togglePmSourceFields() {
     const type = document.getElementById('pm-form-source').value;
     const isGithub = type === 'github-issues' || type === 'github-prs' || type === 'github-re-reviews';
@@ -8548,6 +8621,17 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       ccField.style.display = (isGhType || isJiraType) ? '' : 'none';
       if (ccGithub) ccGithub.style.display = isGhType ? '' : 'none';
       if (ccJira) ccJira.style.display = isJiraType ? '' : 'none';
+    }
+    // Continue conditions: same source types as completion
+    const contField = document.querySelector('.pm-fields-continue');
+    const contGithub = document.getElementById('pm-form-cont-github');
+    const contJira = document.getElementById('pm-form-cont-jira');
+    if (contField) {
+      const isGhType = type === 'github-prs' || type === 'github-re-reviews' || type === 'github-issues';
+      const isJiraType = type === 'jira';
+      contField.style.display = (isGhType || isJiraType) ? '' : 'none';
+      if (contGithub) contGithub.style.display = isGhType ? '' : 'none';
+      if (contJira) contJira.style.display = isJiraType ? '' : 'none';
     }
   }
 
@@ -8640,6 +8724,19 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
       }
     }
     cfg.completionConditions = completionConditions;
+    // Collect continue conditions
+    const continueConditions = [];
+    if (isGhType && document.getElementById('pm-form-cont-pr-changes').checked) {
+      continueConditions.push({ type: 'github-pr-changes', since: 'completion' });
+    }
+    if (sourceType === 'jira') {
+      const rawCont = document.getElementById('pm-form-cont-jira-statuses').value.trim();
+      if (rawCont) {
+        const contStatuses = rawCont.split(',').map(s => s.trim()).filter(Boolean);
+        if (contStatuses.length) continueConditions.push({ type: 'jira-status', statuses: contStatuses });
+      }
+    }
+    cfg.continueConditions = continueConditions;
     if (!cfg.name) { showToast('Error', 'Name required', 'error'); return; }
     if (ws && ws.readyState === 1) {
       if (editingPmId) {
@@ -8708,6 +8805,17 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     document.getElementById('pm-form-cc-closed').checked = ghCond ? ghCond.states.includes('closed') : false;
     const jiraCond = cc.find(c => c.type === 'jira-status');
     document.getElementById('pm-form-cc-jira-statuses').value = jiraCond ? jiraCond.statuses.join(', ') : '';
+    // Populate continue conditions
+    const contConds = pm?.continueConditions || [];
+    document.getElementById('pm-form-cont-pr-changes').checked = !!contConds.find(c => c.type === 'github-pr-changes');
+    const jiraContCond = contConds.find(c => c.type === 'jira-status');
+    document.getElementById('pm-form-cont-jira-statuses').value = jiraContCond ? jiraContCond.statuses.join(', ') : '';
+    // Reset to first tab
+    activePmTab = 'source';
+    document.querySelectorAll('.pm-tab').forEach(t =>
+      t.classList.toggle('active', t.dataset.pmTab === 'source'));
+    document.querySelectorAll('.pm-tab-content').forEach(c =>
+      c.classList.toggle('active', c.dataset.pmTab === 'source'));
     togglePmSourceFields();
     pmDialog.classList.add('visible');
   }

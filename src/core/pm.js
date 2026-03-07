@@ -54,7 +54,6 @@ class ProjectManager extends EventEmitter {
       memory: [],
       completionConditions: cfg.completionConditions || [],
       continueConditions: cfg.continueConditions || [],
-      continueWindow: cfg.continueWindow || 24,
       enabled: false,
       seenKeys: [],
       tasksCreated: 0,
@@ -196,7 +195,6 @@ class ProjectManager extends EventEmitter {
         memory: Array.isArray(data.memory) ? data.memory.filter(m => typeof m === 'string' && m.trim()).slice(-MAX_MEMORY) : [],
         completionConditions: Array.isArray(data.completionConditions) ? data.completionConditions : [],
         continueConditions: Array.isArray(data.continueConditions) ? data.continueConditions : [],
-        continueWindow: data.continueWindow || 24,
         enabled: data.enabled || false,
         seenKeys: Array.isArray(data.seenKeys) ? data.seenKeys : [],
         tasksCreated: data.tasksCreated || 0,
@@ -605,42 +603,56 @@ class ProjectManager extends EventEmitter {
     const pm = this.pms.get(id);
     if (!pm || !pm.enabled || !pm.continueConditions?.length) return;
 
+    const fleet = require('./fleet');
+    const relay = require('./relay');
     const prefix = `pm:${pm.name}`;
-    const windowMs = (pm.continueWindow || 24) * 60 * 60 * 1000;
     const now = Date.now();
 
-    // Find recently completed/failed tasks from this PM
-    const recentTasks = [...this.taskQueue.tasks.values()]
-      .filter(t => (t.status === 'completed' || t.status === 'failed')
+    // Find dispatched tasks from this PM that have a sourceKey
+    const activeTasks = [...this.taskQueue.tasks.values()]
+      .filter(t => t.status === 'dispatched'
         && t.meta?.source === prefix
         && t.sourceKey
-        && t.completedAt
-        && (now - t.completedAt) < windowMs);
+        && t.assignedTo);
 
+    if (!activeTasks.length) return;
     if (!this._lastContinueCheck) this._lastContinueCheck = new Map();
 
-    for (const task of recentTasks) {
-      // Skip if there's already an active task for this sourceKey
-      const hasActive = [...this.taskQueue.tasks.values()].some(
-        t => t.sourceKey === task.sourceKey
-          && (t.status === 'queued' || t.status === 'dispatched')
-          && t.meta?.source === prefix
-      );
-      if (hasActive) continue;
+    // Get fleet status once for all tasks
+    const sessions = await fleet.getFleetStatus(this.taskQueue.config, this.taskQueue.router);
+    const idleSet = new Set(sessions.filter(s => s.state === 'idle').map(s => s.num));
+
+    for (const task of activeTasks) {
+      // Only nudge idle sessions — don't interrupt active work
+      if (!idleSet.has(task.assignedTo)) continue;
 
       // Debounce: skip if checked within last 5 minutes
       const lastCheck = this._lastContinueCheck.get(task.sourceKey);
       if (lastCheck && (now - lastCheck) < 5 * 60 * 1000) continue;
       this._lastContinueCheck.set(task.sourceKey, now);
 
+      // Check since last continue nudge, or since dispatch
+      const checkSince = task._lastContinueAt || task.dispatchedAt || task.createdAt;
+
       try {
-        const reason = await this._evaluateContinue(pm, task);
+        const reason = await this._evaluateContinue(pm, task, checkSince);
         if (reason) {
-          // Remove sourceKey from seenKeys so next poll creates a new task
-          const idx = pm.seenKeys.indexOf(task.sourceKey);
-          if (idx !== -1) pm.seenKeys.splice(idx, 1);
-          this.taskQueue.pushFeed('task', null,
-            `PM "${pm.name}" continue condition met for ${task.sourceKey}: ${reason}`);
+          // Send follow-up message to the session
+          const found = await fleet.findSession(this.taskQueue.config, this.taskQueue.router, task.assignedTo);
+          if (found) {
+            const node = this.taskQueue.router.getNode(found.nodeId);
+            const message = `New activity on ${task.sourceKey}:\n\n${reason}\n\nReview these changes and continue your work.`;
+            const result = await relay.tell(this.taskQueue.config, node, found.name, message, { vimMode: this.taskQueue.vimMode });
+            if (result.success) {
+              task._lastContinueAt = now;
+              task.lastActivityAt = now;
+              this.taskQueue.pushFeed('task', task.assignedTo,
+                `PM "${pm.name}" nudged S:${task.assignedTo}: ${reason}`);
+              log.info(`[pm] Continue nudge sent to S:${task.assignedTo} for ${task.sourceKey}: ${reason}`);
+            } else {
+              log.error(`[pm] Continue nudge failed for S:${task.assignedTo}: ${result.error}`);
+            }
+          }
           this._save();
           this.emit('pm:changed');
         }
@@ -650,30 +662,61 @@ class ProjectManager extends EventEmitter {
     }
   }
 
-  async _evaluateContinue(pm, task) {
+  async _evaluateContinue(pm, task, since) {
+    const sinceDate = new Date(since);
+    const sinceISO = sinceDate.toISOString();
+
     for (const cond of pm.continueConditions) {
       try {
         if (cond.type === 'github-pr-changes') {
           const prInfo = this._parsePRFromKey(task.sourceKey);
           if (!prInfo) continue;
-          const since = new Date(task.completedAt).toISOString();
-          // Check for new commits since completion
+          // Check for new commits since last check
           const commitsUrl = `https://api.github.com/repos/${prInfo.repo}/pulls/${prInfo.prNumber}/commits?per_page=100`;
           const commits = await this._httpRequest(commitsUrl, this._githubHeaders());
           const newCommits = Array.isArray(commits)
-            ? commits.filter(c => c.commit?.committer?.date && new Date(c.commit.committer.date) > new Date(task.completedAt))
+            ? commits.filter(c => c.commit?.committer?.date && new Date(c.commit.committer.date) > sinceDate)
             : [];
-          if (newCommits.length) {
-            return `${newCommits.length} new commit(s) on PR #${prInfo.prNumber}`;
-          }
-          // Check for new review comments since completion
-          const reviewsUrl = `https://api.github.com/repos/${prInfo.repo}/pulls/${prInfo.prNumber}/comments?since=${since}&per_page=100`;
-          const comments = await this._httpRequest(reviewsUrl, this._githubHeaders());
-          const newComments = Array.isArray(comments)
-            ? comments.filter(c => new Date(c.created_at) > new Date(task.completedAt))
-            : [];
-          if (newComments.length) {
-            return `${newComments.length} new review comment(s) on PR #${prInfo.prNumber}`;
+          // Check for new comments (inline review + issue comments)
+          const reviewsUrl = `https://api.github.com/repos/${prInfo.repo}/pulls/${prInfo.prNumber}/comments?since=${sinceISO}&per_page=100`;
+          const issueCommentsUrl = `https://api.github.com/repos/${prInfo.repo}/issues/${prInfo.prNumber}/comments?since=${sinceISO}&per_page=100`;
+          const [reviewComments, issueComments] = await Promise.all([
+            this._httpRequest(reviewsUrl, this._githubHeaders()),
+            this._httpRequest(issueCommentsUrl, this._githubHeaders()),
+          ]);
+          const allComments = [
+            ...(Array.isArray(reviewComments) ? reviewComments : []),
+            ...(Array.isArray(issueComments) ? issueComments : []),
+          ];
+          const newComments = allComments.filter(c => {
+            const created = new Date(c.created_at || c.updated_at);
+            if (created <= sinceDate) return false;
+            // Ignore hive's own comments and bot users
+            if (c.body && c.body.startsWith('🐝')) return false;
+            const login = (c.user && c.user.login) || '';
+            if (login.endsWith('[bot]') || c.user?.type === 'Bot') return false;
+            return true;
+          });
+          if (newCommits.length || newComments.length) {
+            const parts = [];
+            if (newCommits.length) {
+              parts.push(`${newCommits.length} new commit(s):`);
+              for (const c of newCommits.slice(0, 5)) {
+                const sha = (c.sha || '').slice(0, 7);
+                const msg = c.commit?.message?.split('\n')[0] || '';
+                parts.push(`  ${sha} ${msg}`);
+              }
+            }
+            if (newComments.length) {
+              parts.push(`${newComments.length} new comment(s):`);
+              for (const c of newComments.slice(0, 5)) {
+                const author = c.user?.login || 'unknown';
+                const body = (c.body || '').slice(0, 200);
+                const file = c.path ? ` on ${c.path}` : '';
+                parts.push(`  @${author}${file}: ${body}`);
+              }
+            }
+            return parts.join('\n');
           }
         } else if (cond.type === 'jira-status') {
           const baseUrl = process.env.JIRA_BASE_URL;
@@ -688,7 +731,7 @@ class ProjectManager extends EventEmitter {
           });
           const statusName = issue.fields?.status?.name;
           if (statusName && cond.statuses.some(s => s.toLowerCase() === statusName.toLowerCase())) {
-            return `${task.sourceKey} returned to status: ${statusName}`;
+            return `${task.sourceKey} status changed to: ${statusName}`;
           }
         }
       } catch (err) {
