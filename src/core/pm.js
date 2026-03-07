@@ -873,12 +873,12 @@ class ProjectManager extends EventEmitter {
     if (source.state && source.state !== 'all') parts.push(`is:${source.state}`);
     if (source.labels) {
       for (const l of source.labels.split(',').map(s => s.trim()).filter(Boolean)) {
-        parts.push(`label:${l}`);
+        parts.push(l.includes(' ') ? `label:"${l}"` : `label:${l}`);
       }
     }
     if (source.excludeLabels) {
       for (const l of source.excludeLabels.split(',').map(s => s.trim()).filter(Boolean)) {
-        parts.push(`-label:${l}`);
+        parts.push(l.includes(' ') ? `-label:"${l}"` : `-label:${l}`);
       }
     }
     if (source.base) parts.push(`base:${source.base}`);
@@ -1007,10 +1007,17 @@ class ProjectManager extends EventEmitter {
 
     const headers = this._githubHeaders();
 
-    // 1. Fetch open PRs (100 max — GitHub API limit per page)
-    const prsUrl = `https://api.github.com/repos/${source.repo}/pulls?state=open&per_page=100`;
-    const prs = await this._httpRequest(prsUrl, headers);
-    if (!Array.isArray(prs)) return [];
+    // 1. Fetch all open PRs (paginate — repos can have >100 open PRs)
+    let prs = [];
+    let page = 1;
+    while (true) {
+      const prsUrl = `https://api.github.com/repos/${source.repo}/pulls?state=open&per_page=100&page=${page}`;
+      const batch = await this._httpRequest(prsUrl, headers);
+      if (!Array.isArray(batch) || batch.length === 0) break;
+      prs.push(...batch);
+      if (batch.length < 100) break;
+      page++;
+    }
 
     const results = [];
     const reviewer = source.reviewer.toLowerCase();

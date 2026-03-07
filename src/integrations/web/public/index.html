@@ -6938,6 +6938,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     else if (task.status === 'queued') activeTaskTab = 'queued';
     else activeTaskTab = 'completed';
     tasksSelectedTaskId = task.id;
+    $$('.tasks-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === activeTaskTab));
     renderTasks();
     // Load session/snapshot + comments
     if (task.status === 'dispatched' && task.assignedTo) {
