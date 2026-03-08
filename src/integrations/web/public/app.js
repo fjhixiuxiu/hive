@@ -105,6 +105,8 @@
   let taskAutoComplete = true;
   let manualTarget = null;
   let activeTaskTab = 'inprogress';
+  let tasksViewMode = 'list'; // 'list' or 'board'
+  let boardPrevStatuses = new Map(); // taskId → previous status for FLIP animation
   let taskSearchQuery = '';
   let taskSourceFilter = new Set(); // empty = show all; non-empty = show only matching sources
   let selectedTaskIds = new Set();
@@ -972,6 +974,16 @@
           if (msg.content === tsLastContent) break;
           if (tsUserScrolledUp) { tsPendingContent = msg.content; }
           else { writeTasksSessionContent(msg.content); }
+        }
+        // Task detail slide-out terminal
+        if (taskDetailTerm && taskDetailSession && String(msg.session) === taskDetailSession) {
+          if (msg.content !== taskDetailLastContent) {
+            taskDetailLastContent = msg.content;
+            if (msg.cols && msg.cols > 0 && msg.cols !== taskDetailTerm.cols) taskDetailTerm.resize(msg.cols, taskDetailTerm.rows);
+            taskDetailTerm.reset();
+            taskDetailTerm.write(msg.content);
+            requestAnimationFrame(() => taskDetailTerm.scrollToBottom());
+          }
         }
         // Console (Session 0) terminal data
         if (consoleTerm && consoleOpen && String(msg.session) === 'hive-console') {
@@ -3975,6 +3987,8 @@
 
   // ── Render tasks ───────────────────────────────────
   function renderTasks() {
+    // If in board mode, render board instead
+    if (tasksViewMode === 'board') { renderTaskBoard(); return; }
     // Clean up selectedTaskIds for tasks that no longer exist
     const taskIds = new Set(tasks.map(t => t.id));
     for (const id of selectedTaskIds) { if (!taskIds.has(id)) selectedTaskIds.delete(id); }
@@ -4282,6 +4296,346 @@
     updateTasksBulkBar();
     renderTasks();
     updateTasksBadge();
+  });
+
+  // ── Tasks view toggle (List / Board) ────────────────
+  document.querySelectorAll('.tasks-view-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const mode = btn.dataset.tasksView;
+      if (mode === tasksViewMode) return;
+      tasksViewMode = mode;
+      document.querySelectorAll('.tasks-view-btn').forEach(b => b.classList.toggle('active', b.dataset.tasksView === mode));
+      const panes = document.getElementById('tasks-panes');
+      const board = document.getElementById('tasks-board');
+      const createBoardBtn = document.getElementById('tasks-create-btn-board');
+      if (mode === 'board') {
+        panes.style.display = 'none';
+        board.style.display = '';
+        createBoardBtn.style.display = '';
+        renderTaskBoard();
+      } else {
+        board.style.display = 'none';
+        panes.style.display = '';
+        createBoardBtn.style.display = 'none';
+        renderTasks();
+      }
+    });
+  });
+
+  document.getElementById('tasks-create-btn-board').addEventListener('click', () => openTaskDialog(null));
+
+  // ── Tasks kanban board renderer ────────────────────
+  function renderTaskBoard() {
+    const q = taskSearchQuery.toLowerCase();
+    const matchesSearch = (t) => !q || t.text.toLowerCase().includes(q) || (t.source || '').toLowerCase().includes(q) || (t.designation || '').toLowerCase().includes(q) || String(t.assignedTo || '').includes(q);
+
+    const queued = tasks.filter(t => t.status === 'queued' && matchesSearch(t));
+    const snoozed = tasks.filter(t => t.status === 'snoozed' && matchesSearch(t));
+    const dispatched = tasks.filter(t => t.status === 'dispatched' && matchesSearch(t));
+    const completed = tasks.filter(t => (t.status === 'completed' || t.status === 'failed') && matchesSearch(t));
+
+    // Build new status map for animation diffing
+    const newStatuses = new Map();
+    for (const t of tasks) newStatuses.set(t.id, t.status);
+
+    // Snapshot existing card positions for FLIP
+    const oldRects = new Map();
+    document.querySelectorAll('.board-card').forEach(el => {
+      oldRects.set(el.dataset.id, el.getBoundingClientRect());
+    });
+
+    // Detect movers (status changed since last render)
+    const movers = new Set();
+    for (const [id, status] of newStatuses) {
+      const prev = boardPrevStatuses.get(id);
+      if (prev && prev !== status) movers.add(id);
+    }
+
+    // Render columns
+    renderBoardCol('queued', queued);
+    renderBoardCol('snoozed', snoozed);
+    renderBoardCol('inprogress', dispatched);
+    renderBoardCol('completed', completed);
+
+    // FLIP animate movers
+    document.querySelectorAll('.board-card').forEach(el => {
+      const id = el.dataset.id;
+      const oldRect = oldRects.get(id);
+      if (movers.has(id) && oldRect) {
+        const newRect = el.getBoundingClientRect();
+        const dx = oldRect.left - newRect.left;
+        const dy = oldRect.top - newRect.top;
+        if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
+          el.style.transform = `translate(${dx}px, ${dy}px)`;
+          el.style.transition = 'none';
+          requestAnimationFrame(() => {
+            el.style.transition = 'transform 0.35s ease';
+            el.style.transform = '';
+            el.addEventListener('transitionend', () => {
+              el.style.transition = '';
+            }, { once: true });
+          });
+        }
+      } else if (movers.has(id)) {
+        // New to this column — enter animation
+        el.classList.add('board-card-enter');
+        el.addEventListener('animationend', () => el.classList.remove('board-card-enter'), { once: true });
+      }
+    });
+
+    // Save statuses for next diff
+    boardPrevStatuses = newStatuses;
+  }
+
+  function renderBoardCol(colId, taskList) {
+    const container = document.getElementById(`board-cards-${colId}`);
+    const countEl = document.getElementById(`board-count-${colId}`);
+    countEl.textContent = taskList.length;
+
+    container.innerHTML = '';
+    if (!taskList.length) {
+      container.innerHTML = '<div class="board-card-empty">No tasks</div>';
+      return;
+    }
+    for (const t of taskList) {
+      const el = document.createElement('div');
+      el.className = `board-card${tasksSelectedTaskId === t.id ? ' selected' : ''}`;
+      el.dataset.id = t.id;
+      el.dataset.status = t.status;
+
+      const sourceLabel = t.source ? t.source.replace(/^pm:/, '') : '';
+      const pmdc = t.designation ? getDesigColor(t.designation) : null;
+      const desigBadge = t.designation ? `<span class="task-designation" style="background:${pmdc.bg};color:${pmdc.fg}">${esc(t.designation)}</span>` : '';
+      const sourceBadge = sourceLabel ? `<span class="task-source-badge">${esc(sourceLabel)}</span>` : '';
+      const sessionBadge = t.assignedTo ? `<span class="task-session-badge">S:${t.assignedTo}</span>` : '';
+      const timeStr = colId === 'inprogress' ? timeAgo(t.dispatchedAt || t.createdAt) : timeAgo(t.createdAt);
+
+      el.innerHTML = `
+        <div class="board-card-title">${esc(t.text)}</div>
+        <div class="board-card-meta">${desigBadge}${sourceBadge}${sessionBadge}<span>${timeStr}</span></div>
+      `;
+
+      el.addEventListener('click', () => openTaskDetail(t.id));
+      container.appendChild(el);
+    }
+  }
+
+  // ── Task detail slide-out (board view) ───────────
+  let taskDetailTaskId = null;
+  let taskDetailTerm = null;
+  let taskDetailFitAddon = null;
+  let taskDetailSession = null;
+  let taskDetailLastContent = '';
+
+  function openTaskDetail(taskId) {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+    taskDetailTaskId = taskId;
+    tasksSelectedTaskId = taskId;
+
+    // Highlight on board
+    document.querySelectorAll('.board-card').forEach(c => c.classList.toggle('selected', c.dataset.id === taskId));
+
+    // Header: title + meta
+    document.getElementById('task-detail-title').textContent = task.text;
+    const sourceLabel = task.source ? task.source.replace(/^pm:/, '') : '';
+    const pmdc = task.designation ? getDesigColor(task.designation) : null;
+    const desigHtml = task.designation ? `<span class="task-designation" style="background:${pmdc.bg};color:${pmdc.fg}">${esc(task.designation)}</span>` : '';
+    const sourceHtml = sourceLabel ? `<span class="task-source-badge">${esc(sourceLabel)}</span>` : '';
+    const sessionHtml = task.assignedTo ? `<span class="task-session-badge">S:${task.assignedTo}</span>` : '';
+    const timeHtml = `<span>${timeAgo(task.createdAt)}</span>`;
+    document.getElementById('task-detail-meta').innerHTML = [desigHtml, sourceHtml, sessionHtml, timeHtml].filter(Boolean).join('');
+
+    // Toolbar: actions
+    let actionsHtml = '';
+    if (task.status === 'dispatched') {
+      actionsHtml = `
+        <button class="task-detail-action primary" data-action="done">Done</button>
+        <button class="task-detail-action" data-action="requeue">Requeue</button>
+        <button class="task-detail-action" data-action="snooze">Snooze</button>
+        <button class="task-detail-action danger" data-action="cancel">Cancel</button>
+      `;
+    } else if (task.status === 'queued') {
+      actionsHtml = `
+        <button class="task-detail-action primary" data-action="assign">Assign</button>
+        <button class="task-detail-action" data-action="edit">Edit</button>
+        <button class="task-detail-action" data-action="snooze">Snooze</button>
+        <button class="task-detail-action danger" data-action="cancel">Cancel</button>
+      `;
+    } else if (task.status === 'snoozed') {
+      const wakeTime = task.snoozedUntil ? new Date(task.snoozedUntil).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+      actionsHtml = `
+        ${wakeTime ? `<span style="font-size:11px;color:var(--yellow)">Wakes ${wakeTime}</span>` : ''}
+        <button class="task-detail-action primary" data-action="wake">Wake Now</button>
+        <button class="task-detail-action danger" data-action="cancel">Cancel</button>
+      `;
+    } else {
+      actionsHtml = task.assignedTo ? `<button class="task-detail-action" data-action="resume">Resume</button>` : '';
+    }
+    const actionsEl = document.getElementById('task-detail-actions');
+    actionsEl.innerHTML = actionsHtml;
+    actionsEl.querySelectorAll('.task-detail-action').forEach(btn => {
+      btn.addEventListener('click', () => handleTaskDetailAction(btn.dataset.action, task));
+    });
+
+    // Toolbar: checklist progress
+    const checklistEl = document.getElementById('task-detail-checklist');
+    if (task.checklist && task.checklist.length) {
+      const done = task.checklist.filter(c => c.done).length;
+      checklistEl.textContent = `Checklist ${done}/${task.checklist.length}`;
+      checklistEl.style.color = done === task.checklist.length ? 'var(--green)' : 'var(--dim)';
+    } else {
+      checklistEl.textContent = '';
+    }
+
+    // Toolbar: open session button
+    const openBtn = document.getElementById('task-detail-open-session');
+    const isDispatched = task.status === 'dispatched' && task.assignedTo;
+    openBtn.style.display = isDispatched ? '' : 'none';
+    openBtn.onclick = isDispatched ? () => {
+      closeTaskDetail();
+      const s = fleetData.find(x => x.num === task.assignedTo);
+      if (s) openSession(s);
+    } : null;
+
+    // Terminal + input: show for dispatched tasks
+    const termContainer = document.getElementById('task-detail-terminal');
+    const keysBar = document.getElementById('task-detail-keys');
+    const inputBar = document.getElementById('task-detail-input-bar');
+
+    if (isDispatched) {
+      termContainer.style.display = '';
+      keysBar.style.display = '';
+      inputBar.style.display = '';
+      termContainer.innerHTML = '';
+      if (!taskDetailTerm) {
+        taskDetailTerm = new Terminal({
+          fontSize: 12, fontFamily: "'SF Mono', Menlo, Monaco, monospace",
+          theme: { background: '#0f0f23', foreground: '#e2e2f0', cursor: '#e2e2f0' },
+          scrollback: 5000, convertEol: true, cursorBlink: false, disableStdin: true,
+        });
+        taskDetailFitAddon = new FitAddon.FitAddon();
+        taskDetailTerm.loadAddon(taskDetailFitAddon);
+      }
+      taskDetailTerm.open(termContainer);
+      taskDetailTerm.clear();
+      taskDetailLastContent = '';
+      taskDetailSession = String(task.assignedTo);
+      document.getElementById('task-detail-input').value = '';
+      requestAnimationFrame(() => {
+        taskDetailFitAddon.fit();
+        if (ws && ws.readyState === 1) {
+          ws.send(JSON.stringify({ type: 'terminal:subscribe', session: task.assignedTo }));
+        }
+      });
+    } else {
+      termContainer.style.display = 'none';
+      keysBar.style.display = 'none';
+      inputBar.style.display = 'none';
+      taskDetailSession = null;
+    }
+
+    // Nav buttons
+    updateTaskDetailNav();
+
+    // Show panel
+    document.getElementById('task-detail-panel').classList.add('open');
+    document.getElementById('task-detail-overlay').classList.add('open');
+  }
+
+  function closeTaskDetail() {
+    document.getElementById('task-detail-panel').classList.remove('open');
+    document.getElementById('task-detail-overlay').classList.remove('open');
+    if (taskDetailSession && ws && ws.readyState === 1) {
+      ws.send(JSON.stringify({ type: 'terminal:unsubscribe' }));
+    }
+    taskDetailSession = null;
+    taskDetailTaskId = null;
+  }
+
+  function updateTaskDetailNav() {
+    const allTasks = tasks.filter(t => t.status !== 'completed' && t.status !== 'failed');
+    const idx = allTasks.findIndex(t => t.id === taskDetailTaskId);
+    document.getElementById('task-detail-prev').disabled = idx <= 0;
+    document.getElementById('task-detail-next').disabled = idx < 0 || idx >= allTasks.length - 1;
+  }
+
+  function handleTaskDetailAction(action, task) {
+    if (!ws || ws.readyState !== 1) return;
+    switch (action) {
+      case 'done':
+        ws.send(JSON.stringify({ type: 'task:complete', taskId: task.id }));
+        navigateTaskDetail(1); // auto-advance to next
+        break;
+      case 'requeue':
+        openTaskConfirmDialog('requeue', task.id);
+        break;
+      case 'snooze':
+        openTaskConfirmDialog('snooze', task.id);
+        break;
+      case 'cancel':
+        openTaskConfirmDialog('cancel', task.id);
+        break;
+      case 'wake':
+        ws.send(JSON.stringify({ type: 'task:unsnooze', taskId: task.id }));
+        showToast('Woke up', 'Task returned to queue', 'success');
+        break;
+      case 'assign':
+        openAssignDialog(task.id);
+        break;
+      case 'edit':
+        openTaskDialog(task.id);
+        break;
+      case 'resume':
+        if (task.assignedTo) {
+          ws.send(JSON.stringify({ type: 'task:resume', taskId: task.id, sendResume: false }));
+          showToast('Resuming', `Task resumed on session ${task.assignedTo}`, 'success');
+        }
+        break;
+    }
+  }
+
+  function navigateTaskDetail(dir) {
+    const allTasks = tasks.filter(t => t.status !== 'completed' && t.status !== 'failed');
+    const idx = allTasks.findIndex(t => t.id === taskDetailTaskId);
+    const next = allTasks[idx + dir];
+    if (next) {
+      openTaskDetail(next.id);
+    } else {
+      closeTaskDetail();
+    }
+  }
+
+  document.getElementById('task-detail-close').addEventListener('click', closeTaskDetail);
+  document.getElementById('task-detail-overlay').addEventListener('click', closeTaskDetail);
+  document.getElementById('task-detail-prev').addEventListener('click', () => navigateTaskDetail(-1));
+  document.getElementById('task-detail-next').addEventListener('click', () => navigateTaskDetail(1));
+
+  // Task detail: send message to session
+  function sendTaskDetailMessage() {
+    const input = document.getElementById('task-detail-input');
+    const text = input.value.trim();
+    if (!text || !taskDetailSession || !ws || ws.readyState !== 1) return;
+    ws.send(JSON.stringify({ type: 'tell', session: taskDetailSession, message: text }));
+    input.value = '';
+  }
+  document.getElementById('task-detail-send').addEventListener('click', sendTaskDetailMessage);
+  document.getElementById('task-detail-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendTaskDetailMessage(); }
+    if (e.key === 'Escape') closeTaskDetail();
+  });
+
+  // Task detail: key buttons
+  document.querySelectorAll('[data-td-key]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (!taskDetailSession || !ws || ws.readyState !== 1) return;
+      const key = btn.dataset.tdKey;
+      if (key === 'c-c') {
+        ws.send(JSON.stringify({ type: 'keys', session: taskDetailSession, keys: ['C-c'] }));
+      } else {
+        ws.send(JSON.stringify({ type: 'keys', session: taskDetailSession, keys: [key] }));
+      }
+    });
   });
 
   // Task nav buttons
