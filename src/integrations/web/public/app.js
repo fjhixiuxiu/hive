@@ -4532,18 +4532,21 @@
       termContainer.style.display = '';
       keysBar.style.display = '';
       inputBar.style.display = '';
-      termContainer.innerHTML = '';
-      if (!taskDetailTerm) {
-        taskDetailTerm = new Terminal({
-          fontSize: 12, fontFamily: "'SF Mono', Menlo, Monaco, monospace",
-          theme: { background: '#0f0f23', foreground: '#e2e2f0', cursor: '#e2e2f0' },
-          scrollback: 5000, convertEol: true, cursorBlink: false, disableStdin: true,
-        });
-        taskDetailFitAddon = new FitAddon.FitAddon();
-        taskDetailTerm.loadAddon(taskDetailFitAddon);
+      // Dispose old terminal and create fresh — xterm open() can only be called once
+      if (taskDetailTerm) {
+        taskDetailTerm.dispose();
+        taskDetailTerm = null;
+        taskDetailFitAddon = null;
       }
+      termContainer.innerHTML = '';
+      taskDetailTerm = new Terminal({
+        fontSize: 12, fontFamily: "'SF Mono', Menlo, Monaco, monospace",
+        theme: { background: '#0f0f23', foreground: '#e2e2f0', cursor: '#e2e2f0' },
+        scrollback: 5000, convertEol: true, cursorBlink: false, disableStdin: true,
+      });
+      taskDetailFitAddon = new FitAddon.FitAddon();
+      taskDetailTerm.loadAddon(taskDetailFitAddon);
       taskDetailTerm.open(termContainer);
-      taskDetailTerm.clear();
       taskDetailLastContent = '';
       taskDetailSession = String(task.assignedTo);
       document.getElementById('task-detail-input').value = '';
@@ -4551,10 +4554,11 @@
       if (ws && ws.readyState === 1) {
         ws.send(JSON.stringify({ type: 'terminal:subscribe', session: task.assignedTo }));
       }
-      // Delay fit until after slide-out transition completes (250ms)
+      // Delay fit until panel is fully visible
+      const panelOpen = document.getElementById('task-detail-panel').classList.contains('open');
       setTimeout(() => {
         try { taskDetailFitAddon.fit(); } catch(_) {}
-      }, 300);
+      }, panelOpen ? 50 : 300);
     } else {
       termContainer.style.display = 'none';
       keysBar.style.display = 'none';
@@ -4576,8 +4580,14 @@
     if (taskDetailSession && ws && ws.readyState === 1) {
       ws.send(JSON.stringify({ type: 'terminal:unsubscribe', session: taskDetailSession }));
     }
+    if (taskDetailTerm) {
+      taskDetailTerm.dispose();
+      taskDetailTerm = null;
+      taskDetailFitAddon = null;
+    }
     taskDetailSession = null;
     taskDetailTaskId = null;
+    taskDetailLastContent = '';
   }
 
   function updateTaskDetailNav() {
