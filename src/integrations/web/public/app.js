@@ -960,20 +960,27 @@
         }
         break;
       case 'terminal:data':
-        // Ignore data from stale pane subscriptions (race between clearInterval and in-flight poll)
+        // Route data to each terminal independently — never use break inside these blocks
+        // (break would exit the entire switch, starving downstream terminals)
         if (term && currentSession === String(msg.session)) {
-          if (typeof msg.pane === 'number' && activePane !== null && msg.pane !== activePane) break;
-          if (msg.cols && msg.cols > 0) { paneCols = msg.cols; if (msg.cols !== term.cols) term.resize(msg.cols, term.rows); }
-          if (msg.content === lastContent) break;
-          if (userScrolledUp) { pendingContent = msg.content; }
-          else { writeTerminalContent(msg.content); }
+          const paneOk = !(typeof msg.pane === 'number' && activePane !== null && msg.pane !== activePane);
+          if (paneOk) {
+            if (msg.cols && msg.cols > 0) { paneCols = msg.cols; if (msg.cols !== term.cols) term.resize(msg.cols, term.rows); }
+            if (msg.content !== lastContent) {
+              if (userScrolledUp) { pendingContent = msg.content; }
+              else { writeTerminalContent(msg.content); }
+            }
+          }
         }
         if (tasksSessionTerm && tasksSessionNum === String(msg.session) && activeTab === 'tasks-panel') {
-          if (typeof msg.pane === 'number' && tsActivePane !== null && msg.pane !== tsActivePane) break;
-          if (msg.cols && msg.cols > 0) { tsPaneCols = msg.cols; if (msg.cols !== tasksSessionTerm.cols) tasksSessionTerm.resize(msg.cols, tasksSessionTerm.rows); }
-          if (msg.content === tsLastContent) break;
-          if (tsUserScrolledUp) { tsPendingContent = msg.content; }
-          else { writeTasksSessionContent(msg.content); }
+          const paneOk = !(typeof msg.pane === 'number' && tsActivePane !== null && msg.pane !== tsActivePane);
+          if (paneOk) {
+            if (msg.cols && msg.cols > 0) { tsPaneCols = msg.cols; if (msg.cols !== tasksSessionTerm.cols) tasksSessionTerm.resize(msg.cols, tasksSessionTerm.rows); }
+            if (msg.content !== tsLastContent) {
+              if (tsUserScrolledUp) { tsPendingContent = msg.content; }
+              else { writeTasksSessionContent(msg.content); }
+            }
+          }
         }
         // Task detail slide-out terminal
         if (taskDetailTerm && taskDetailSession && String(msg.session) === taskDetailSession) {
@@ -1060,6 +1067,10 @@
         if (msg.type === 'task:completed' || msg.type === 'task:failed') {
           const doneId = msg.task.id;
           const doneSession = msg.task.assignedTo ? String(msg.task.assignedTo) : null;
+          // Task detail slide-out: auto-advance to next task
+          if (taskDetailTaskId === doneId) {
+            setTimeout(() => navigateTaskDetail(1), 300);
+          }
           // Task sheet: if this task was selected, advance to next dispatched task
           if (tasksSelectedTaskId === doneId) {
             const navList = tasks.filter(t => t.status === 'dispatched' && t.id !== doneId);
@@ -1079,6 +1090,10 @@
             }
             // Otherwise updateSessionTaskButtons already hid the done/requeue buttons
           }
+        }
+        // Task detail slide-out: refresh toolbar if the viewed task was updated
+        if (taskDetailTaskId === msg.task.id) {
+          openTaskDetail(msg.task.id); // re-render with updated data
         }
         break;
       }
@@ -4430,6 +4445,16 @@
   function openTaskDetail(taskId) {
     const task = tasks.find(t => t.id === taskId);
     if (!task) return;
+
+    // Clean up previous session subscription if switching tasks
+    if (taskDetailSession && taskDetailSession !== String(task.assignedTo || '')) {
+      if (ws && ws.readyState === 1) {
+        ws.send(JSON.stringify({ type: 'terminal:unsubscribe', session: taskDetailSession }));
+      }
+      taskDetailSession = null;
+      taskDetailLastContent = '';
+    }
+
     taskDetailTaskId = taskId;
     tasksSelectedTaskId = taskId;
 
@@ -4522,12 +4547,14 @@
       taskDetailLastContent = '';
       taskDetailSession = String(task.assignedTo);
       document.getElementById('task-detail-input').value = '';
-      requestAnimationFrame(() => {
-        taskDetailFitAddon.fit();
-        if (ws && ws.readyState === 1) {
-          ws.send(JSON.stringify({ type: 'terminal:subscribe', session: task.assignedTo }));
-        }
-      });
+      // Subscribe immediately so data starts flowing
+      if (ws && ws.readyState === 1) {
+        ws.send(JSON.stringify({ type: 'terminal:subscribe', session: task.assignedTo }));
+      }
+      // Delay fit until after slide-out transition completes (250ms)
+      setTimeout(() => {
+        try { taskDetailFitAddon.fit(); } catch(_) {}
+      }, 300);
     } else {
       termContainer.style.display = 'none';
       keysBar.style.display = 'none';
@@ -4547,7 +4574,7 @@
     document.getElementById('task-detail-panel').classList.remove('open');
     document.getElementById('task-detail-overlay').classList.remove('open');
     if (taskDetailSession && ws && ws.readyState === 1) {
-      ws.send(JSON.stringify({ type: 'terminal:unsubscribe' }));
+      ws.send(JSON.stringify({ type: 'terminal:unsubscribe', session: taskDetailSession }));
     }
     taskDetailSession = null;
     taskDetailTaskId = null;
