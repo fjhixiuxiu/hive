@@ -143,6 +143,7 @@
   let designationDefs = []; // [{ name, agentFiles, description, color }]
   let consoleAvailable = false;
   let consoleOpen = false;
+  let consoleSessionWorking = false;
   let consoleTerm = null;
   let consoleFit = null;
   let consoleLastContent = '';
@@ -967,6 +968,7 @@
           const cbs = onReconnectCallbacks.splice(0);
           cbs.forEach(cb => { try { cb(); } catch(_) {} });
         }
+        updateConsoleBtnLogo();
         break;
       case 'terminal:panes':
         if (currentSession === String(msg.session)) {
@@ -1014,6 +1016,8 @@
       case 'ask:stream': break;
       case 'ask:done':
         if (String(msg.session) === 'hive-console') {
+          consoleSessionWorking = false;
+          updateConsoleBtnLogo();
           if (!msg.success) showToast('Console', msg.error || 'Failed', 'error');
           break;
         }
@@ -2124,6 +2128,7 @@
     document.getElementById('console-panel').classList.add('open');
     document.getElementById('console-overlay').classList.add('open');
     document.getElementById('console-btn').classList.add('active');
+    updateConsoleBtnLogo();
     if (!consoleTerm) {
       consoleTerm = new Terminal({
         theme: { background: 'transparent', foreground: '#e2e2f0', cursor: '#e2e2f0', black: '#282a36', red: '#ff5555', green: '#50fa7b', yellow: '#f1fa8c', blue: '#bd93f9', magenta: '#ff79c6', cyan: '#8be9fd', white: '#f8f8f2', brightBlack: '#6272a4', brightRed: '#ff6e6e', brightGreen: '#69ff94', brightYellow: '#ffffa5', brightBlue: '#d6acff', brightMagenta: '#ff92df', brightCyan: '#a4ffff', brightWhite: '#ffffff' },
@@ -2154,6 +2159,7 @@
     document.getElementById('console-panel').classList.remove('open');
     document.getElementById('console-overlay').classList.remove('open');
     document.getElementById('console-btn').classList.remove('active');
+    updateConsoleBtnLogo();
     if (ws && ws.readyState === 1) {
       ws.send(JSON.stringify({ type: 'terminal:unsubscribe', session: 'hive-console' }));
     }
@@ -2162,6 +2168,19 @@
   function toggleConsole() {
     if (consoleOpen) closeConsole();
     else openConsole();
+  }
+
+  function updateConsoleBtnLogo() {
+    const logo = document.querySelector('#console-btn .hive-logo');
+    if (!logo) return;
+    logo.classList.remove('logo-purple', 'logo-green', 'logo-animated');
+    if (consoleOpen) {
+      logo.classList.add('logo-green');
+    } else if (consoleSessionWorking) {
+      logo.classList.add('logo-animated');
+    } else {
+      logo.classList.add('logo-purple');
+    }
   }
 
   const consoleAttachedImages = [];
@@ -2181,6 +2200,8 @@
       clearAttachments(consoleAttachedImages, consoleAttachmentStrip);
     }
     ws.send(JSON.stringify({ type: 'ask', session: 'hive-console', message }));
+    consoleSessionWorking = true;
+    updateConsoleBtnLogo();
     pushMsgHistory('hive-console', text);
     consoleHistoryIdx = -1;
     consoleHistoryDraft = '';
@@ -3483,18 +3504,21 @@
     updateChecklistButtons();
     updateActionsButton();
 
-    // Subscribe (always — ensures fresh subscription even after tab switches)
-    const subscribeTasks = () => {
-      if (!ws || ws.readyState !== 1 || !tasksSessionNum) return;
-      const subMsg = { type: 'terminal:subscribe', session: tasksSessionNum };
-      if (sameSession && tsActivePane !== null) subMsg.pane = tsActivePane;
-      ws.send(JSON.stringify(subMsg));
-      ws.send(JSON.stringify({ type: 'terminal:panes', session: tasksSessionNum }));
-      ws.send(JSON.stringify({ type: 'git:info', session: tasksSessionNum }));
-    };
-    if (isAlive(subscribeTasks)) {
-      subscribeTasks();
-    }
+    // Subscribe after fit so content arrives into a properly-sized terminal
+    requestAnimationFrame(() => {
+      fitTasksTerminal();
+      const subscribeTasks = () => {
+        if (!ws || ws.readyState !== 1 || !tasksSessionNum) return;
+        const subMsg = { type: 'terminal:subscribe', session: tasksSessionNum };
+        if (sameSession && tsActivePane !== null) subMsg.pane = tsActivePane;
+        ws.send(JSON.stringify(subMsg));
+        ws.send(JSON.stringify({ type: 'terminal:panes', session: tasksSessionNum }));
+        ws.send(JSON.stringify({ type: 'git:info', session: tasksSessionNum }));
+      };
+      if (isAlive(subscribeTasks)) {
+        subscribeTasks();
+      }
+    });
     msgHistoryIdx = -1; msgHistoryDraft = '';
     updateTasksStatusLine();
     applyGitFilesSidebarState('ts');
