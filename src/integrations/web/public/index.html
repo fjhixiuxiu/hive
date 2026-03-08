@@ -158,37 +158,35 @@
 <div id="main-view">
   <!-- Left sidebar nav -->
   <div id="sidebar">
-    <div id="sidebar-logo"><svg class="hive-logo logo-purple" width="28" height="28" viewBox="0 0 100 100"><g transform="translate(50,50)" fill="none" stroke-width="2"><polygon points="0,-12 10.4,-6 10.4,6 0,12 -10.4,6 -10.4,-6"/><polygon points="0,-33 10.4,-27 10.4,-15 0,-9 -10.4,-15 -10.4,-27"/><polygon points="18,-22.5 28.4,-16.5 28.4,-4.5 18,1.5 7.6,-4.5 7.6,-16.5"/><polygon points="18,1.5 28.4,7.5 28.4,19.5 18,25.5 7.6,19.5 7.6,7.5"/><polygon points="0,12 10.4,18 10.4,30 0,36 -10.4,30 -10.4,18"/><polygon points="-18,1.5 -7.6,7.5 -7.6,19.5 -18,25.5 -28.4,19.5 -28.4,7.5"/><polygon points="-18,-22.5 -7.6,-16.5 -7.6,-4.5 -18,1.5 -28.4,-4.5 -28.4,-16.5"/></g></svg><span>hive</span></div>
+    <div id="sidebar-logo"><svg class="hive-logo logo-purple" width="24" height="24" viewBox="0 0 100 100"><g transform="translate(50,50)" fill="none" stroke-width="2"><polygon points="0,-12 10.4,-6 10.4,6 0,12 -10.4,6 -10.4,-6"/><polygon points="0,-33 10.4,-27 10.4,-15 0,-9 -10.4,-15 -10.4,-27"/><polygon points="18,-22.5 28.4,-16.5 28.4,-4.5 18,1.5 7.6,-4.5 7.6,-16.5"/><polygon points="18,1.5 28.4,7.5 28.4,19.5 18,25.5 7.6,19.5 7.6,7.5"/><polygon points="0,12 10.4,18 10.4,30 0,36 -10.4,30 -10.4,18"/><polygon points="-18,1.5 -7.6,7.5 -7.6,19.5 -18,25.5 -28.4,19.5 -28.4,7.5"/><polygon points="-18,-22.5 -7.6,-16.5 -7.6,-4.5 -18,1.5 -28.4,-4.5 -28.4,-16.5"/></g></svg></div>
+    <!-- Primary nav -->
     <button class="nav-btn active" data-tab="fleet-panel">
-      <span class="nav-icon">&#9638;</span>Fleet
+      <span class="nav-icon">&#9638;</span>Home
+      <span class="nav-badge" id="fleet-badge"></span>
     </button>
     <button class="nav-btn" data-tab="tasks-panel">
       <span class="nav-icon">&#9776;</span>Tasks
       <span class="nav-badge" id="tasks-badge"></span>
     </button>
     <button class="nav-btn" data-tab="feed-panel">
-      <span class="nav-icon">&#9679;</span>Feed
+      <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></span>Notifs
       <span class="nav-badge" id="feed-badge"></span>
     </button>
-    <button class="nav-btn" data-tab="pm-panel">
-      <span class="nav-icon">&#9881;</span>PMs
-    </button>
+    <!-- Secondary nav -->
+    <div class="nav-divider"></div>
     <button class="nav-btn" data-tab="ideas-panel">
-      <span class="nav-icon">&#128161;</span>Ideas
-    </button>
-    <button class="nav-btn" data-tab="update-panel">
-      <span class="nav-icon">&#8635;</span>Update
+      <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg></span>Ideas
     </button>
     <button class="nav-btn" data-tab="more-panel">
-      <span class="nav-icon">&#8943;</span>More
+      <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>Admin
     </button>
     <button id="console-btn" title="Talk to Hive (Session 0)">
-      <span class="nav-icon"><svg class="hive-logo logo-purple" width="22" height="22" viewBox="0 0 100 100"><g transform="translate(50,50)" fill="none" stroke-width="2"><polygon points="0,-12 10.4,-6 10.4,6 0,12 -10.4,6 -10.4,-6"/><polygon points="0,-33 10.4,-27 10.4,-15 0,-9 -10.4,-15 -10.4,-27"/><polygon points="18,-22.5 28.4,-16.5 28.4,-4.5 18,1.5 7.6,-4.5 7.6,-16.5"/><polygon points="18,1.5 28.4,7.5 28.4,19.5 18,25.5 7.6,19.5 7.6,7.5"/><polygon points="0,12 10.4,18 10.4,30 0,36 -10.4,30 -10.4,18"/><polygon points="-18,1.5 -7.6,7.5 -7.6,19.5 -18,25.5 -28.4,19.5 -28.4,7.5"/><polygon points="-18,-22.5 -7.6,-16.5 -7.6,-4.5 -18,1.5 -28.4,-4.5 -28.4,-16.5"/></g></svg></span>Ask
+      <span class="nav-icon"><svg class="hive-logo logo-purple" width="20" height="20" viewBox="0 0 100 100"><g transform="translate(50,50)" fill="none" stroke-width="2"><polygon points="0,-12 10.4,-6 10.4,6 0,12 -10.4,6 -10.4,-6"/><polygon points="0,-33 10.4,-27 10.4,-15 0,-9 -10.4,-15 -10.4,-27"/><polygon points="18,-22.5 28.4,-16.5 28.4,-4.5 18,1.5 7.6,-4.5 7.6,-16.5"/><polygon points="18,1.5 28.4,7.5 28.4,19.5 18,25.5 7.6,19.5 7.6,7.5"/><polygon points="0,12 10.4,18 10.4,30 0,36 -10.4,30 -10.4,18"/><polygon points="-18,1.5 -7.6,7.5 -7.6,19.5 -18,25.5 -28.4,19.5 -28.4,7.5"/><polygon points="-18,-22.5 -7.6,-16.5 -7.6,-4.5 -18,1.5 -28.4,-4.5 -28.4,-16.5"/></g></svg></span>Ask
     </button>
-    <div id="sidebar-summary"></div>
+    <!-- Bottom nav -->
+    <div class="nav-spacer"></div>
     <div id="user-badge" style="display:none">
       <img id="user-avatar" src="" alt="">
-      <span id="user-name"></span>
       <a id="user-logout" href="/auth/logout" title="Logout">&#x2716;</a>
     </div>
   </div>
@@ -206,7 +204,9 @@
       <div id="fleet-search-results" class="fleet-search-results" style="display:none"></div>
       <div class="fleet-view-toggle" id="fleet-view-toggle">
         <button class="fleet-view-btn active" data-view="grid" title="Grid view">&#9638; Grid</button>
-        <button class="fleet-view-btn" data-view="swimlane" title="Swimlane view">&#9776; Swimlane</button>
+        <button class="fleet-view-btn" data-view="list" title="List view">&#9776; List</button>
+        <button class="fleet-view-btn" data-view="swimlane" title="Swimlane (horizontal)">&#8801; Swim</button>
+        <button class="fleet-view-btn" data-view="columns" title="Swimlane (vertical)">&#9707; Cols</button>
       </div>
       <div id="grid"></div>
       <div id="quick-bar">
@@ -356,40 +356,13 @@
       </div>
     </div>
 
-    <!-- Feed panel -->
+    <!-- Notifications panel -->
     <div id="feed-panel" class="panel">
-      <div class="feed-panes">
-        <div class="feed-list-pane">
-          <div class="feed-header">
-            <div class="feed-tabs">
-              <button class="feed-tab active" data-feed-tab="new">New</button>
-              <button class="feed-tab" data-feed-tab="cleared">Cleared</button>
-            </div>
-            <button class="tasks-select-all" id="feed-select-all" style="display:none">Select All</button>
-            <button class="feed-clear-btn" id="feed-clear-btn">Clear All</button>
-          </div>
-          <div class="tasks-bulk-bar" id="feed-bulk-bar" style="display:none">
-            <span class="bulk-count" id="feed-bulk-count">0 selected</span>
-            <button class="bulk-btn cancel" id="feed-bulk-clear">Clear Selected</button>
-          </div>
-          <div class="feed-scroll" id="feed-scroll"></div>
-        </div>
-        <div class="feed-preview-pane" id="feed-preview-pane">
-          <div class="feed-preview-header" id="feed-preview-header">
-            <span id="feed-preview-title">Select an entry</span>
-            <span id="feed-preview-branch"></span>
-            <button class="feed-action open" id="feed-preview-open" style="display:none">Open Full Session</button>
-          </div>
-          <div class="feed-preview-actions" id="feed-preview-actions"></div>
-          <div class="feed-preview-terminal" id="feed-preview-terminal">
-            <span class="feed-preview-empty">Click a feed entry to preview its session</span>
-          </div>
-          <div class="feed-preview-input-row" id="feed-preview-input-row" style="display:none">
-            <input class="feed-preview-input" id="feed-preview-input" type="text" placeholder="Send message..." autocomplete="off">
-            <button class="feed-preview-send" id="feed-preview-send">Send</button>
-          </div>
-        </div>
+      <div class="notif-header">
+        <span class="notif-title">Notifications</span>
+        <button class="notif-clear-btn" id="feed-clear-btn">Clear All</button>
       </div>
+      <div class="feed-scroll" id="feed-scroll"></div>
     </div>
 
     <!-- More panel -->
@@ -400,7 +373,9 @@
         <button class="more-tab" data-more-tab="more-agents">Agents</button>
         <button class="more-tab" data-more-tab="more-mcp">MCP</button>
         <button class="more-tab" data-more-tab="more-integrations">Integrations</button>
+
         <button class="more-tab perm-hidden" data-more-tab="more-users">Users</button>
+        <button class="more-tab" data-more-tab="more-update">Update</button>
       </div>
       <div class="more-tab-panel active" id="more-sessions">
         <div class="more-section">
@@ -441,6 +416,10 @@
         </div>
       </div>
       <div class="more-tab-panel" id="more-automation">
+        <div class="more-section">
+          <div class="more-section-title">Project Managers</div>
+          <div class="pm-grid" id="pm-scroll"></div>
+        </div>
         <div class="more-section">
           <div class="more-section-title">Task Settings</div>
           <div class="rule-row">
@@ -582,16 +561,39 @@
           </div>
         </div>
       </div>
-    </div>
-
-    <!-- PMs panel -->
-    <div id="pm-panel" class="panel">
-      <div class="pm-scroll" id="pm-scroll"></div>
-      <div id="pm-bar">
-        <button id="pm-create-btn">+ New PM</button>
+      <div class="more-tab-panel" id="more-update">
+        <div class="more-section">
+          <div class="more-section-title">Update Hive</div>
+          <div id="update-status-card" style="background:var(--card);border-radius:8px;padding:12px;margin-bottom:12px">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+              <span style="font-weight:600">Branch:</span>
+              <span id="update-branch" style="color:var(--cyan);font-family:monospace">—</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+              <span style="font-weight:600">Commit:</span>
+              <span id="update-commit" style="color:var(--fg-dim);font-family:monospace">—</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <span style="font-weight:600">Updated:</span>
+              <span id="update-time" style="color:var(--fg-dim)">—</span>
+            </div>
+          </div>
+          <div style="margin-bottom:12px">
+            <label style="font-weight:600;display:block;margin-bottom:4px">Target Branch</label>
+            <select id="update-branch-select" style="width:100%;padding:8px;border-radius:6px;border:1px solid var(--border);background:var(--card);color:var(--fg);font-family:monospace;font-size:14px"></select>
+          </div>
+          <div style="display:flex;gap:8px;margin-bottom:12px">
+            <button id="update-restart-btn" style="padding:10px 18px;border:none;border-radius:8px;background:var(--orange);color:#fff;font-size:14px;font-weight:700;cursor:pointer">Restart</button>
+            <button id="update-pull-btn" style="padding:10px 18px;border:none;border-radius:8px;background:var(--green);color:#fff;font-size:14px;font-weight:700;cursor:pointer">Pull &amp; Restart</button>
+          </div>
+          <div style="background:var(--card);border-radius:8px;padding:8px;min-height:120px;max-height:300px;overflow-y:auto" id="update-log-wrap">
+            <pre id="update-log" style="margin:0;font-family:monospace;font-size:12px;white-space:pre-wrap;color:var(--fg-dim)"></pre>
+          </div>
+        </div>
       </div>
     </div>
 
+    <!-- PMs panel -->
     <!-- Ideas panel -->
     <div id="ideas-panel" class="panel">
       <div style="display:flex;align-items:center;padding:10px 12px 6px;gap:8px">
@@ -601,39 +603,6 @@
       <div id="ideas-list" style="flex:1;overflow-y:auto;padding:8px 12px;-webkit-overflow-scrolling:touch"></div>
     </div>
 
-    <!-- Update panel -->
-    <div id="update-panel" class="panel">
-      <div style="display:flex;align-items:center;padding:10px 12px 6px;gap:8px">
-        <span style="font-size:16px;font-weight:700;flex:1">Update Hive</span>
-      </div>
-      <div style="flex:1;overflow-y:auto;padding:8px 12px;-webkit-overflow-scrolling:touch">
-        <div id="update-status-card" style="background:var(--card);border-radius:8px;padding:12px;margin-bottom:12px">
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-            <span style="font-weight:600">Branch:</span>
-            <span id="update-branch" style="color:var(--cyan);font-family:monospace">—</span>
-          </div>
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-            <span style="font-weight:600">Commit:</span>
-            <span id="update-commit" style="color:var(--fg-dim);font-family:monospace">—</span>
-          </div>
-          <div style="display:flex;align-items:center;gap:8px">
-            <span style="font-weight:600">Updated:</span>
-            <span id="update-time" style="color:var(--fg-dim)">—</span>
-          </div>
-        </div>
-        <div style="margin-bottom:12px">
-          <label style="font-weight:600;display:block;margin-bottom:4px">Target Branch</label>
-          <select id="update-branch-select" style="width:100%;padding:8px;border-radius:6px;border:1px solid var(--border);background:var(--card);color:var(--fg);font-family:monospace;font-size:14px"></select>
-        </div>
-        <div style="display:flex;gap:8px;margin-bottom:12px">
-          <button id="update-restart-btn" style="padding:10px 18px;border:none;border-radius:8px;background:var(--orange);color:#fff;font-size:14px;font-weight:700;cursor:pointer">Restart</button>
-          <button id="update-pull-btn" style="padding:10px 18px;border:none;border-radius:8px;background:var(--green);color:#fff;font-size:14px;font-weight:700;cursor:pointer">Pull &amp; Restart</button>
-        </div>
-        <div style="background:var(--card);border-radius:8px;padding:8px;min-height:120px;max-height:300px;overflow-y:auto" id="update-log-wrap">
-          <pre id="update-log" style="margin:0;font-family:monospace;font-size:12px;white-space:pre-wrap;color:var(--fg-dim)"></pre>
-        </div>
-      </div>
-    </div>
 
     <!-- Session detail panel (replaces content, not an overlay) -->
     <div id="session-panel" class="panel">
@@ -1043,6 +1012,10 @@
     <div class="dialog-actions">
       <button class="dialog-btn primary" id="pm-form-save">Save</button>
       <button class="dialog-btn" id="pm-form-cancel">Cancel</button>
+      <span style="flex:1"></span>
+      <button class="dialog-btn" id="pm-form-rescan" style="display:none">Scan Now</button>
+      <button class="dialog-btn" id="pm-form-reset" style="display:none;color:var(--orange)">Reset</button>
+      <button class="dialog-btn" id="pm-form-delete" style="display:none;color:var(--red)">Delete</button>
     </div>
   </div>
 </div>

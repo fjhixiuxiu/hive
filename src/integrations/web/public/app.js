@@ -92,16 +92,7 @@
   let autoSessions = new Set();
   let feedEntries = [];
   let feedHasMore = false;
-  let dismissedFeedIds = new Set();
-  let clearedFeedEntries = []; // in-memory only, lost on reload
-  let activeFeedTab = 'new';
   let lastSeenFeedId = null;
-  let feedSelectedId = null;
-  let selectedFeedIds = new Set();
-  let feedPreviewSession = null;
-  let feedPreviewTimer = null;
-  let feedPreviewTerm = null;
-  let feedPreviewFit = null;
   let pendingApprovals = [];
   let rules = [];
   let checklistTemplates = [];
@@ -216,7 +207,7 @@
   const quickAllBtn = $('#quick-all');
   const tasksScroll = $('#tasks-scroll');
   const feedScroll = $('#feed-scroll');
-  const sidebarSummary = $('#sidebar-summary');
+  const fleetBadge = $('#fleet-badge');
   let quickSessions = new Set(); // multi-select session numbers (strings)
   let quickSendMode = 'tell';
   const msgHistory = {};
@@ -641,7 +632,7 @@
   // ── URL routing ─────────────────────────────────
   const TAB_TO_HASH = {
     'fleet-panel': '/fleet', 'tasks-panel': '/tasks', 'feed-panel': '/feed',
-    'pm-panel': '/pm', 'ideas-panel': '/ideas', 'update-panel': '/update', 'more-panel': '/more', 'session-panel': '/session',
+    'ideas-panel': '/ideas', 'more-panel': '/admin', 'session-panel': '/session',
   };
   const HASH_TO_TAB = {};
   for (const [tab, hash] of Object.entries(TAB_TO_HASH)) HASH_TO_TAB[hash] = tab;
@@ -707,23 +698,8 @@
       }
     });
     if (tab === 'feed-panel') {
-      // Mark current newest as seen before rendering
-      const visible = feedEntries.filter(e => !dismissedFeedIds.has(e.id));
-      if (visible.length) lastSeenFeedId = visible[visible.length - 1].id;
+      if (feedEntries.length) lastSeenFeedId = feedEntries[feedEntries.length - 1].id;
       unreadFeedCount = 0; updateFeedBadge();
-      // Restart feed preview timer if a session was selected
-      if (feedPreviewSession && !feedPreviewTimer) {
-        feedPreviewTimer = setInterval(() => {
-          if (ws && ws.readyState === 1 && feedPreviewSession) {
-            ws.send(JSON.stringify({ type: 'peek', session: feedPreviewSession }));
-          }
-        }, 3000);
-      }
-      // Fit preview terminal
-      if (feedPreviewFit) requestAnimationFrame(() => feedPreviewFit.fit());
-    } else {
-      // Stop peek timer when leaving feed tab
-      if (feedPreviewTimer) { clearInterval(feedPreviewTimer); feedPreviewTimer = null; }
     }
     if (tab === 'tasks-panel') {
       // Re-subscribe if we had a session open (preserve active pane)
@@ -749,8 +725,7 @@
     if (tab === 'session-panel' && planSidebarOpen) startPlanPolling();
     if (tab === 'fleet-panel') renderGrid();
     if (tab === 'ideas-panel' && ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'idea:list' }));
-    if (tab === 'update-panel' && ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'update:status' }));
-    if (tab === 'more-panel') { renderDesignationGrid(); renderAgentRoots(); renderDesigDefs(); renderUsers(); renderChecklistTemplates(); }
+    if (tab === 'more-panel') { renderDesignationGrid(); renderAgentRoots(); renderDesigDefs(); renderPMs(); renderUsers(); renderChecklistTemplates(); }
     const spawnBtn = document.getElementById('spawn-btn');
     if (spawnBtn) spawnBtn.classList.toggle('visible', tab === 'fleet-panel');
     // shutdown + restart buttons are inside fleet-panel, no toggle needed
@@ -788,10 +763,8 @@
     if (!currentUser) { badge.style.display = 'none'; return; }
     badge.style.display = 'flex';
     const avatar = $('#user-avatar');
-    const name = $('#user-name');
     if (currentUser.avatar) { avatar.src = currentUser.avatar; avatar.style.display = 'block'; }
     else { avatar.style.display = 'none'; }
-    name.textContent = currentUser.name || currentUser.login || '';
   }
 
   // ── Permission helpers ───────────────────────────
@@ -943,7 +916,7 @@
         renderAutoGrid();
         updateSidebarSummary();
         if (activeTab === 'session-panel') updateSessionStatusLine();
-        if (activeTab === 'tasks-panel') updateTasksStatusLine();
+        if (activeTab === 'tasks-panel') { updateTasksStatusLine(); updateTaskHexIcons(); }
         updateOffBanners();
         // Update session header activity timestamp
         if (currentSession) {
@@ -992,9 +965,6 @@
           if (msg.content === lastContent) break;
           if (userScrolledUp) { pendingContent = msg.content; }
           else { writeTerminalContent(msg.content); }
-        }
-        if (feedPreviewSession === String(msg.session)) {
-          writeFeedPreviewContent(msg.content);
         }
         if (tasksSessionTerm && tasksSessionNum === String(msg.session) && activeTab === 'tasks-panel') {
           if (typeof msg.pane === 'number' && tsActivePane !== null && msg.pane !== tsActivePane) break;
@@ -1143,15 +1113,14 @@
       case 'feed:entries': feedEntries = msg.entries || []; feedHasMore = msg.hasMore || false; renderFeed(); break;
       case 'feed:new':
         feedEntries.push(msg.entry); if (feedEntries.length > 200) feedEntries.shift();
-        if (activeTab === 'feed-panel' && activeFeedTab === 'new') {
-          renderFeedEntry(msg.entry, true, false);
-          updateFeedTabCounts();
-        } else if (activeTab !== 'feed-panel') {
+        if (activeTab === 'feed-panel') {
+          renderFeedEntry(msg.entry, true);
+        } else {
           unreadFeedCount++; updateFeedBadge();
         }
         break;
-      case 'approval:new': pendingApprovals.push(msg.approval); renderFeed(); nativeNotify('Approval Required', `Session ${msg.approval.session}: ${msg.approval.prompt}`); break;
-      case 'approval:resolved': { const ai = pendingApprovals.findIndex(a => a.id === msg.approval.id); if (ai >= 0) pendingApprovals.splice(ai, 1); renderFeed(); break; }
+      case 'approval:new': pendingApprovals.push(msg.approval); break;
+      case 'approval:resolved': { const ai = pendingApprovals.findIndex(a => a.id === msg.approval.id); if (ai >= 0) pendingApprovals.splice(ai, 1); break; }
       case 'approvals:list': pendingApprovals = msg.approvals || []; break;
       case 'broadcast:done': showToast('Broadcast', `${msg.sent} sent, ${msg.failed} failed`, msg.failed ? 'error' : 'success'); break;
       case 'rules:list': rules = msg.rules || []; renderRules(); break;
@@ -1423,9 +1392,17 @@
   }
 
   function updateSidebarSummary() {
-    let idle = 0, work = 0, off = 0;
-    for (const s of fleetData) { if (s.state === 'idle') idle++; else if (s.state === 'working') work++; else off++; }
-    sidebarSummary.innerHTML = `${idle} idle<br>${work} work<br>${off} off`;
+    const total = fleetData.length;
+    const work = fleetData.filter(s => s.state === 'working').length;
+    if (fleetBadge) {
+      if (total > 0) {
+        fleetBadge.textContent = work > 0 ? `${work}/${total}` : String(total);
+        fleetBadge.className = 'fleet-badge';
+        fleetBadge.style.display = '';
+      } else {
+        fleetBadge.style.display = 'none';
+      }
+    }
   }
 
   // ── Hive loader SVG ──────────────────────────
@@ -1469,7 +1446,8 @@
   // ── Fleet grid rendering ──────────────────────────
   function renderGrid() {
     grid.innerHTML = '';
-    grid.classList.toggle('swimlane', fleetViewMode === 'swimlane');
+    grid.className = '';
+    grid.classList.add(fleetViewMode); // 'grid', 'list', 'swimlane', or 'columns'
 
     if (fleetData.length === 0) {
       grid.innerHTML = hiveLoaderHtml('Loading sessions...');
@@ -1477,11 +1455,11 @@
     }
 
     if (fleetViewMode === 'grid') {
-      // Flat grid — all sessions by number, no group headers
-      // Cards still show their designation badge
       for (const s of fleetData) renderFleetCard(s);
+    } else if (fleetViewMode === 'list') {
+      renderFleetList();
     } else {
-      // Swimlane — group by designation, horizontal lanes
+      // Swimlane / Columns — group by designation
       const groups = {};
       const unassigned = [];
       const hasAnyDesig = Object.keys(designations).length > 0;
@@ -1493,31 +1471,56 @@
       const groupOrder = Object.keys(groups);
       if (hasAnyDesig && unassigned.length) groupOrder.push(null);
 
-      for (const gName of groupOrder) {
-        const sessions = gName ? groups[gName] : unassigned;
-        // Swimlane row: label cell + cards
-        const lane = document.createElement('div');
-        lane.className = 'fleet-swimlane';
-        // Label cell
-        const label = document.createElement('div');
-        label.className = 'fleet-lane-label';
-        if (gName) {
-          const gc = getDesigColor(gName);
-          label.style.color = gc.fg;
-          label.style.background = gc.bg;
-          label.textContent = gName;
-        } else {
-          label.style.color = 'var(--dim)';
-          label.textContent = 'Unassigned';
-        }
-        lane.appendChild(label);
-        for (const s of sessions) renderFleetCard(s, lane);
-        grid.appendChild(lane);
-      }
-      // If no designations at all, render flat (no headers)
       if (!hasAnyDesig) {
+        // No designations — fall back to flat grid
         grid.innerHTML = '';
+        grid.className = 'grid';
         for (const s of fleetData) renderFleetCard(s);
+      } else if (fleetViewMode === 'columns') {
+        // Vertical columns
+        for (const gName of groupOrder) {
+          const sessions = gName ? groups[gName] : unassigned;
+          const col = document.createElement('div');
+          col.className = 'fleet-column';
+          const label = document.createElement('div');
+          label.className = 'fleet-col-label';
+          if (gName) {
+            const gc = getDesigColor(gName);
+            label.style.color = gc.fg;
+            label.style.background = gc.bg;
+            label.textContent = gName;
+          } else {
+            label.style.color = 'var(--dim)';
+            label.textContent = 'Unassigned';
+          }
+          col.appendChild(label);
+          const cards = document.createElement('div');
+          cards.className = 'fleet-col-cards';
+          for (const s of sessions) renderFleetCard(s, cards);
+          col.appendChild(cards);
+          grid.appendChild(col);
+        }
+      } else {
+        // Horizontal swimlanes
+        for (const gName of groupOrder) {
+          const sessions = gName ? groups[gName] : unassigned;
+          const lane = document.createElement('div');
+          lane.className = 'fleet-swimlane';
+          const label = document.createElement('div');
+          label.className = 'fleet-lane-label';
+          if (gName) {
+            const gc = getDesigColor(gName);
+            label.style.color = gc.fg;
+            label.style.background = gc.bg;
+            label.textContent = gName;
+          } else {
+            label.style.color = 'var(--dim)';
+            label.textContent = 'Unassigned';
+          }
+          lane.appendChild(label);
+          for (const s of sessions) renderFleetCard(s, lane);
+          grid.appendChild(lane);
+        }
       }
     }
 
@@ -1525,10 +1528,9 @@
     for (const [key, info] of spawningSessions) {
       if (key !== 'pending' && fleetData.find(s => s.num === key)) continue;
       const card = document.createElement('div');
-      card.className = 'card spawning border-dim';
+      card.className = 'card spawning';
       const numLabel = key === 'pending' ? '?' : key;
-      card.innerHTML = `<div class="card-top"><span class="card-num">${numLabel}</span><span class="card-state state-off">spawning</span></div>
-        <div class="card-branch">${esc(info.name || '')}</div>
+      card.innerHTML = `<div class="card-top"><span class="card-num">${numLabel}</span><span class="card-branch">spawning...</span></div>
         ${hiveLoaderHtml('Cloning & starting...')}`;
       grid.appendChild(card);
     }
@@ -1536,63 +1538,124 @@
     if (quickSessions.size) highlightQuickCard();
   }
 
-  function renderFleetCard(s, container) {
-    let borderCls = 'border-dim';
-    if (s.pr && s.pr.ciResult === 'FAILURE') borderCls = 'border-red';
-    else if (s.pr && s.pr.ciResult === 'SUCCESS') borderCls = 'border-green';
-    else if (s.pr && s.pr.ciResult === 'RUNNING') borderCls = 'border-yellow';
-    else if (s.state === 'working') borderCls = 'border-yellow';
-    else if (s.state === 'idle') borderCls = 'border-green';
+  function fleetHexSvg(state, size) {
+    const sz = size || 20;
+    const cls = state === 'working' ? 'logo-animated' : state === 'idle' ? 'logo-green' : 'logo-purple';
+    return `<svg class="hive-logo ${cls}" width="${sz}" height="${sz}" viewBox="0 0 100 100"><g transform="translate(50,50)" fill="none" stroke-width="2"><polygon points="0,-12 10.4,-6 10.4,6 0,12 -10.4,6 -10.4,-6"/><polygon points="0,-33 10.4,-27 10.4,-15 0,-9 -10.4,-15 -10.4,-27"/><polygon points="18,-22.5 28.4,-16.5 28.4,-4.5 18,1.5 7.6,-4.5 7.6,-16.5"/><polygon points="18,1.5 28.4,7.5 28.4,19.5 18,25.5 7.6,19.5 7.6,7.5"/><polygon points="0,12 10.4,18 10.4,30 0,36 -10.4,30 -10.4,18"/><polygon points="-18,1.5 -7.6,7.5 -7.6,19.5 -18,25.5 -28.4,19.5 -28.4,7.5"/><polygon points="-18,-22.5 -7.6,-16.5 -7.6,-4.5 -18,1.5 -28.4,-4.5 -28.4,-16.5"/></g></svg>`;
+  }
 
+  // ── Shared card helpers ──────────────────────────
+  function cardGitHtml(git) {
+    if (!git) return '';
+    const parts = [];
+    if (git.staged) parts.push(`<span style="color:var(--green)">+${git.staged}</span>`);
+    if (git.modified) parts.push(`<span style="color:var(--orange)">~${git.modified}</span>`);
+    if (git.untracked) parts.push(`<span style="color:var(--red)">?${git.untracked}</span>`);
+    return parts.length ? parts.join(' ') : '';
+  }
+
+  function cardPrHtml(pr) {
+    if (!pr || !pr.prNum) return { pr: '', ci: '', review: '' };
+    const prStr = `#${pr.prNum}`;
+    let ciStr = '';
+    if (pr.ciResult === 'success') ciStr = '<span class="card-ci pass">CI ✓</span>';
+    else if (pr.ciResult === 'failure') ciStr = '<span class="card-ci fail">CI ✗</span>';
+    else if (pr.ciResult) ciStr = '<span class="card-ci pending">CI …</span>';
+    let revStr = '';
+    if (pr.review === 'approved') revStr = '<span class="card-review approved">✓ Approved</span>';
+    else if (pr.review === 'changes_requested') revStr = '<span class="card-review changes">! Changes</span>';
+    return { pr: prStr, ci: ciStr, review: revStr };
+  }
+
+  // ── Grid card (compact tile) ──────────────────────
+  function renderFleetCard(s, container) {
     const card = document.createElement('div');
-    card.className = `card ${s.state === 'off' ? 'off' : ''} ${borderCls}`;
+    card.className = `card ${s.state === 'off' ? 'off' : ''}`;
     card.dataset.session = s.num;
     const branch = shortBranch(s.branch);
-    const stateCls = s.state === 'idle' ? 'state-idle' : s.state === 'working' ? 'state-working' : 'state-off';
-
-    let prHtml = '', badgesHtml = '';
-    if (s.pr) {
-      const prUrl = linkTemplates.pr ? linkTemplates.pr.replace('${prNum}', s.pr.prNum) : null;
-      prHtml = prUrl ? `<a class="card-pr" href="${prUrl}" target="_blank" onclick="event.stopPropagation()">#${s.pr.prNum}</a>` : `<span class="card-pr">#${s.pr.prNum}</span>`;
-      const ciUrl = (linkTemplates.ci && s.pr.ciBuild) ? linkTemplates.ci.replace('${prNum}', s.pr.prNum).replace('${ciBuild}', s.pr.ciBuild) : null;
-      const ciTag = ciUrl ? 'a' : 'span';
-      const ciAttrs = ciUrl ? `href="${ciUrl}" target="_blank" onclick="event.stopPropagation()"` : '';
-      if (s.pr.ciResult === 'SUCCESS') badgesHtml += `<${ciTag} class="card-ci pass" ${ciAttrs}>CI</${ciTag}>`;
-      else if (s.pr.ciResult === 'FAILURE') badgesHtml += `<${ciTag} class="card-ci fail" ${ciAttrs}>FAIL</${ciTag}>`;
-      else if (s.pr.ciResult === 'RUNNING') badgesHtml += `<${ciTag} class="card-ci run" ${ciAttrs}>CI</${ciTag}>`;
-      if (s.pr.review === 'APPROVED') badgesHtml += '<span class="card-review">OK</span>';
-      else if (s.pr.review === 'CHANGES_REQUESTED') badgesHtml += '<span class="card-review">CHG</span>';
-    }
-
-    const isAuto = autoSessions.has(s.num);
-    const modeHtml = `<span class="card-mode ${isAuto ? 'auto' : 'manual'}">${isAuto ? 'Auto' : 'Manual'}</span>`;
+    const activityHtml = s.lastActivity ? `<span class="card-activity">${timeAgo(s.lastActivity)}</span>` : '';
     const desig = designations[s.num];
     const dc = desig ? getDesigColor(desig) : null;
-    const desigHtml = desig ? `<span class="card-designation" style="background:${dc.bg};color:${dc.fg}">${esc(desig)}</span>` : '';
-    if (dc) card.style.borderTop = `2px solid ${dc.fg}`;
-    card.style.borderBottom = isAuto ? '2px solid var(--cyan)' : '2px solid var(--dim)';
+    if (dc) card.style.borderLeft = `3px solid ${dc.fg}`;
 
-    // Git summary row
-    let gitRowHtml = '';
-    if (s.gitSummary && s.gitSummary.lastCommit) {
-      const gs = s.gitSummary;
-      const diffParts = [];
-      if (s.git && s.git.staged) diffParts.push(`<span class="card-diff-add">+${s.git.staged}</span>`);
-      if (s.git && s.git.modified) diffParts.push(`<span class="card-diff-del">~${s.git.modified}</span>`);
-      const changesHtml = gs.totalChanges > 0 ? `<span class="card-changes-badge">${gs.totalChanges} files</span>` : '';
-      gitRowHtml = `<div class="card-git-row"><span class="card-commit">${esc(gs.lastCommit)}</span>${diffParts.length ? `<span class="card-diff-stat">${diffParts.join('')}</span>` : ''}${changesHtml}</div>`;
+    const git = s.git || {};
+    const gitStr = cardGitHtml(git);
+    const { pr: prStr, ci: ciStr, review: revStr } = cardPrHtml(s.pr);
+
+    // Build meta row: git stats, PR#, CI, review, activity
+    let metaParts = '';
+    if (gitStr) metaParts += `<span class="card-git">${gitStr}</span>`;
+    if (prStr) metaParts += `<span class="card-pr">${prStr}</span>`;
+    if (ciStr) metaParts += ciStr;
+    if (revStr) metaParts += revStr;
+    metaParts += activityHtml;
+
+    const previewHtml = s.preview ? `<div class="card-preview">${esc(s.preview)}</div>` : '';
+    const offOverlay = s.state === 'off' ? `<div class="card-off-overlay"><button class="start-btn" data-session="${s.num}">Start</button></div>` : '';
+
+    card.innerHTML = `${offOverlay}
+      <div class="card-top">
+        <span class="card-hex">${fleetHexSvg(s.state)}</span>
+        <span class="card-num">${s.num}</span>
+        <span class="card-branch">${esc(branch)}</span>
+      </div>
+      ${previewHtml}
+      <div class="card-meta">${metaParts}</div>`;
+
+    wireFleetCard(card, s);
+    (container || grid).appendChild(card);
+  }
+
+  // ── List table ───────────────────────────────────
+  function renderFleetList() {
+    const table = document.createElement('table');
+    table.className = 'fleet-table';
+    table.innerHTML = `<thead><tr>
+      <th></th><th>#</th><th>Branch</th><th>Status</th><th>Git</th><th>PR</th><th>CI</th><th>Review</th><th>Preview</th><th>Active</th><th></th>
+    </tr></thead>`;
+    const tbody = document.createElement('tbody');
+
+    for (const s of fleetData) {
+      const tr = document.createElement('tr');
+      tr.className = `fleet-row ${s.state === 'off' ? 'off' : ''}`;
+      tr.dataset.session = s.num;
+      const desig = designations[s.num];
+      const dc = desig ? getDesigColor(desig) : null;
+      if (dc) tr.style.borderLeft = `3px solid ${dc.fg}`;
+
+      const branch = shortBranch(s.branch);
+      const stateColor = s.state === 'working' ? 'var(--green)' : s.state === 'idle' ? 'var(--purple)' : 'var(--dim)';
+      const gitStr = cardGitHtml(s.git);
+      const { pr: prStr, ci: ciStr, review: revStr } = cardPrHtml(s.pr);
+      const preview = s.preview ? esc(s.preview.substring(0, 50)) : '';
+      const activity = s.lastActivity ? timeAgo(s.lastActivity) : '';
+      const actionHtml = s.state === 'off' ? `<button class="start-btn" data-session="${s.num}">Start</button>` : '';
+
+      tr.innerHTML = `
+        <td class="col-hex">${fleetHexSvg(s.state, 16)}</td>
+        <td class="col-num">${s.num}</td>
+        <td class="col-branch">${esc(branch)}</td>
+        <td class="col-state" style="color:${stateColor}">${s.state}</td>
+        <td class="col-git">${gitStr}</td>
+        <td class="col-pr">${prStr}</td>
+        <td class="col-ci">${ciStr}</td>
+        <td class="col-review">${revStr}</td>
+        <td class="col-preview">${preview}</td>
+        <td class="col-activity">${activity}</td>
+        <td class="col-action">${actionHtml}</td>`;
+
+      wireFleetCard(tr, s);
+      tbody.appendChild(tr);
     }
 
-    const activityHtml = s.lastActivity ? `<span class="card-activity">${timeAgo(s.lastActivity)}</span>` : '';
-    const offOverlay = s.state === 'off' ? `<div class="card-off-overlay"><img src="/icon-192.png" alt="off"><button class="start-btn" data-session="${s.num}">Start Claude</button></div>` : '';
-    card.innerHTML = `${offOverlay}${modeHtml}${desigHtml}
-      <div class="card-top"><span class="card-num">${s.num}</span><span class="card-state ${stateCls}">${s.state}</span>${activityHtml}${prHtml}${badgesHtml ? `<span class="card-badges">${badgesHtml}</span>` : ''}</div>
-      <div class="card-branch">${esc(branch)}</div>
-      ${gitRowHtml}
-      <div class="card-preview">${esc(s.preview || '')}</div>
-      <button class="card-preview-toggle" data-session="${s.num}">expand</button>`;
+    table.appendChild(tbody);
+    grid.appendChild(table);
+  }
+
+  // ── Shared event wiring for fleet cards/rows ──────
+  function wireFleetCard(el, s) {
     if (s.state === 'off') {
-      const startBtn = card.querySelector('.start-btn');
+      const startBtn = el.querySelector('.start-btn');
       if (startBtn) startBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         if (!ws || ws.readyState !== 1) return;
@@ -1601,18 +1664,9 @@
         ws.send(JSON.stringify({ type: 'restart', session: String(s.num) }));
       });
     }
-    card.querySelector('.card-num').addEventListener('click', (e) => { e.stopPropagation(); selectQuickSession(s.num); });
-    card.querySelector('.card-preview-toggle').addEventListener('click', (e) => {
-      e.stopPropagation();
-      const preview = card.querySelector('.card-preview');
-      const isExpanded = preview.classList.toggle('expanded');
-      e.target.textContent = isExpanded ? 'collapse' : 'expand';
-      if (isExpanded && ws && ws.readyState === 1) {
-        ws.send(JSON.stringify({ type: 'peek', session: String(s.num) }));
-      }
-    });
-    card.addEventListener('click', () => openSession(s));
-    (container || grid).appendChild(card);
+    const numEl = el.querySelector('.card-num') || el.querySelector('.row-num');
+    if (numEl) numEl.addEventListener('click', (e) => { e.stopPropagation(); selectQuickSession(s.num); });
+    el.addEventListener('click', () => openSession(s));
   }
 
   // ── Fleet search ────────────────────────────────
@@ -2917,7 +2971,6 @@
         }
       }, 300);
     }
-    if (feedPreviewFit && activeTab === 'feed-panel') feedPreviewFit.fit();
     if (tasksSessionFit && activeTab === 'tasks-panel') fitTasksTerminal();
     if (consoleFit && consoleOpen) consoleFit.fit();
   });
@@ -3015,9 +3068,9 @@
   }
 
   function highlightQuickCard() {
-    grid.querySelectorAll('.card').forEach(c => c.style.outline = '');
+    grid.querySelectorAll('.card, .fleet-row').forEach(c => c.style.outline = '');
     for (const num of quickSessions) {
-      const sel = grid.querySelector(`.card[data-session="${num}"]`);
+      const sel = grid.querySelector(`[data-session="${num}"]`);
       if (sel) sel.style.outline = '2px solid var(--purple)';
     }
   }
@@ -3026,7 +3079,7 @@
     quickSessions.clear();
     updateQuickBar();
     quickInput.value = '';
-    grid.querySelectorAll('.card').forEach(c => c.style.outline = '');
+    grid.querySelectorAll('.card, .fleet-row').forEach(c => c.style.outline = '');
   });
 
   quickAllBtn.addEventListener('click', () => {
@@ -4237,82 +4290,90 @@
   document.getElementById('ts-nav-requeue').addEventListener('click', tsNavRequeue);
   document.getElementById('ts-nav-done').addEventListener('click', tsNavDone);
 
+  function taskHexSvg(t) {
+    // Convention: purple=default, animated=working, green=selected (via CSS)
+    if (t.status === 'dispatched') {
+      const s = fleetData.find(x => x.num === t.assignedTo);
+      return fleetHexSvg(s && s.state === 'working' ? 'working' : 'off');
+    }
+    return fleetHexSvg('off'); // purple for queued/snoozed/completed/failed
+  }
+
+  // Update task hex icons in-place when fleet state changes (without full re-render)
+  function updateTaskHexIcons() {
+    if (activeTab !== 'tasks-panel') return;
+    tasksScroll.querySelectorAll('.task-card').forEach(card => {
+      const t = tasks.find(x => x.id === card.dataset.id);
+      if (!t || t.status !== 'dispatched') return;
+      const hexEl = card.querySelector('.task-hex');
+      if (hexEl) hexEl.innerHTML = taskHexSvg(t);
+    });
+  }
+
   function taskCardHtml(t, tabType) {
     const ago = timeAgo(t.createdAt);
-    let meta = `${t.mode}`;
-    const tdc = t.designation ? getDesigColor(t.designation) : null;
-    const desigBadge = t.designation ? `<span class="task-designation" style="background:${tdc.bg};color:${tdc.fg}">${esc(t.designation)}</span>` : '';
     const selected = tasksSelectedTaskId === t.id ? ' selected' : '';
-    // Origin badges: show source session + PR when available
-    const prUrl = (t.sourcePR && linkTemplates.pr) ? linkTemplates.pr.replace('${prNum}', t.sourcePR) : null;
-    const prBadge = t.sourcePR ? (prUrl ? `<a class="task-session-badge" href="${prUrl}" target="_blank" onclick="event.stopPropagation()" style="background:rgba(139,233,253,0.15);color:var(--cyan);text-decoration:none">PR #${t.sourcePR}</a>` : `<span class="task-session-badge" style="background:rgba(139,233,253,0.15);color:var(--cyan)">PR #${t.sourcePR}</span>`) : '';
-    const originBadge = t.sourceSession ? `<span class="task-session-badge">S:${t.sourceSession}</span>` : '';
     const sourceLabel = t.source ? t.source.replace(/^pm:/, '') : '';
-    const sourceColor = sourceLabel === 'attached' ? 'var(--dim)' : 'var(--orange)';
-    const sourceBg = sourceLabel === 'attached' ? 'rgba(255,255,255,0.05)' : 'rgba(255,184,108,0.15)';
-    const sourceBadge = sourceLabel ? `<span class="task-designation" style="background:${sourceBg};color:${sourceColor}">${esc(sourceLabel)}</span>` : '';
-    // Comment count badge
-    const commentCount = (t.comments && t.comments.length) || 0;
-    const commentBadge = commentCount > 0 ? `<span class="comment-count" title="${commentCount} comment(s)">&#128172; ${commentCount}</span>` : '';
-    // Checklist badge
-    let clBadge = '';
-    if (t.checklist && t.checklist.length > 0) {
-      const clDone = t.checklist.filter(i => i.checked).length;
-      const clTotal = t.checklist.length;
-      const clClass = clDone === clTotal ? 'done' : '';
-      clBadge = `<span class="checklist-badge ${clClass}" title="Checklist">\u2611 ${clDone}/${clTotal}</span>`;
+    const sourceBadge = sourceLabel ? `<span class="task-source-badge">${esc(sourceLabel)}</span>` : '';
+    const checked = selectedTaskIds.has(t.id) ? ' checked' : '';
+    const hex = taskHexSvg(t);
+
+    // Waiting indicator for dispatched tasks
+    let waitBadge = '';
+    if (tabType === 'inprogress' && t.lastActivityAt) {
+      const waitMs = Date.now() - t.lastActivityAt;
+      const waitMin = Math.round(waitMs / 60000);
+      const s = fleetData.find(x => x.num === t.assignedTo);
+      const isIdle = s && s.state !== 'working';
+      if (isIdle && waitMin >= 1) {
+        const waitStr = waitMin >= 60 ? `${Math.round(waitMin / 60)}h` : `${waitMin}m`;
+        const color = waitMin >= 15 ? 'var(--red)' : waitMin >= 5 ? 'var(--yellow)' : 'var(--dim)';
+        waitBadge = `<span class="task-wait" style="color:${color}">waiting ${waitStr}</span>`;
+      }
     }
 
+    // Build actions (hidden by default, shown on hover/select)
+    let actions = '';
     if (tabType === 'inprogress') {
-      const dispatchedAgo = timeAgo(t.dispatchedAt || t.createdAt);
       const sessionBadge = t.assignedTo ? `<span class="task-session-badge">S:${t.assignedTo}</span>` : '';
-      // Waiting indicator: time since last activity from Claude
-      let waitBadge = '';
-      if (t.lastActivityAt) {
-        const waitMs = Date.now() - t.lastActivityAt;
-        const waitMin = Math.round(waitMs / 60000);
-        const s = fleetData.find(x => x.num === t.assignedTo);
-        const isIdle = s && s.state !== 'working';
-        if (isIdle && waitMin >= 1) {
-          const waitStr = waitMin >= 60 ? `${Math.round(waitMin / 60)}h` : `${waitMin}m`;
-          const color = waitMin >= 15 ? 'var(--red)' : waitMin >= 5 ? 'var(--yellow)' : 'var(--dim)';
-          waitBadge = `<span style="color:${color};font-weight:700;font-size:11px">waiting ${waitStr}</span>`;
-        }
-      }
-      const requeueBtn = hasPerm('dispatch') ? `<button class="task-requeue-btn" data-id="${t.id}">Requeue</button>` : '';
-      const snoozeBtn = hasPerm('dispatch') ? `<button class="task-snooze-btn" data-id="${t.id}">Snooze</button>` : '';
-      const doneBtn = hasPerm('cancel') ? `<button class="task-done-btn" data-id="${t.id}">Done</button>` : '';
-      const cancelBtn = hasPerm('cancel') ? `<button class="task-cancel" data-id="${t.id}">Cancel</button>` : '';
-      const checked = selectedTaskIds.has(t.id) ? ' checked' : '';
-      return `<div class="task-card-row"><input type="checkbox" class="task-checkbox" data-id="${t.id}"${checked}><div class="task-card dispatched${selected}" data-id="${t.id}"><div class="task-text">${esc(t.text)}</div><div class="task-meta"><div class="task-meta-info">${sourceBadge}${desigBadge}${clBadge}${commentBadge}${waitBadge}<span class="task-time">${meta} · ${dispatchedAgo}</span></div><div class="task-meta-actions">${sessionBadge}${prBadge}${cancelBtn}${snoozeBtn}${requeueBtn}${doneBtn}</div></div></div></div>`;
-    }
-    if (tabType === 'queued') {
-      const editBtn = hasPerm('create-tasks') ? `<button class="task-edit-btn" data-id="${t.id}">Edit</button>` : '';
-      const snoozeBtn = hasPerm('dispatch') ? `<button class="task-snooze-btn" data-id="${t.id}">Snooze</button>` : '';
-      const cancelBtn = hasPerm('cancel') ? `<button class="task-cancel" data-id="${t.id}">Cancel</button>` : '';
-      const assignBtn = hasPerm('dispatch') ? `<button class="task-assign-btn" data-id="${t.id}">Assign →</button>` : '';
-      const checked = selectedTaskIds.has(t.id) ? ' checked' : '';
-      return `<div class="task-card-row"><input type="checkbox" class="task-checkbox" data-id="${t.id}"${checked}><div class="task-card queued" data-id="${t.id}"><div class="task-text">${esc(t.text)}</div><div class="task-meta"><div class="task-meta-info">${sourceBadge}${originBadge}${desigBadge}${clBadge}${commentBadge}<span class="task-time">${meta} · ${ago}</span></div><div class="task-meta-actions">${prBadge}${editBtn}${assignBtn}${snoozeBtn}${cancelBtn}</div></div></div></div>`;
-    }
-    if (tabType === 'snoozed') {
+      const btns = [
+        hasPerm('dispatch') ? `<button class="task-snooze-btn" data-id="${t.id}">Snooze</button>` : '',
+        hasPerm('dispatch') ? `<button class="task-requeue-btn" data-id="${t.id}">Requeue</button>` : '',
+        hasPerm('cancel') ? `<button class="task-done-btn" data-id="${t.id}">Done</button>` : '',
+        hasPerm('cancel') ? `<button class="task-cancel" data-id="${t.id}">Cancel</button>` : '',
+      ].filter(Boolean).join('');
+      actions = `<div class="task-actions">${sessionBadge}${btns}</div>`;
+    } else if (tabType === 'queued') {
+      const btns = [
+        hasPerm('create-tasks') ? `<button class="task-edit-btn" data-id="${t.id}">Edit</button>` : '',
+        hasPerm('dispatch') ? `<button class="task-assign-btn" data-id="${t.id}">Assign</button>` : '',
+        hasPerm('dispatch') ? `<button class="task-snooze-btn" data-id="${t.id}">Snooze</button>` : '',
+        hasPerm('cancel') ? `<button class="task-cancel" data-id="${t.id}">Cancel</button>` : '',
+      ].filter(Boolean).join('');
+      actions = `<div class="task-actions">${btns}</div>`;
+    } else if (tabType === 'snoozed') {
       const wakeTime = t.snoozedUntil ? new Date(t.snoozedUntil).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
       const wakeDate = t.snoozedUntil && (t.snoozedUntil - Date.now() > 12 * 3600000) ? new Date(t.snoozedUntil).toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' : '';
-      const wakeBtn = hasPerm('dispatch') ? `<button class="task-wake-btn" data-id="${t.id}">Wake</button>` : '';
-      const cancelBtn = hasPerm('cancel') ? `<button class="task-cancel" data-id="${t.id}">Cancel</button>` : '';
-      const checked = selectedTaskIds.has(t.id) ? ' checked' : '';
-      return `<div class="task-card-row"><input type="checkbox" class="task-checkbox" data-id="${t.id}"${checked}><div class="task-card snoozed" data-id="${t.id}"><div class="task-text">${esc(t.text)}</div><div class="task-meta"><div class="task-meta-info">${sourceBadge}${desigBadge}${clBadge}${commentBadge}<span class="task-time" style="color:var(--cyan)">wakes ${wakeDate}${wakeTime}</span></div><div class="task-meta-actions">${prBadge}${cancelBtn}${wakeBtn}</div></div></div></div>`;
+      const btns = [
+        hasPerm('dispatch') ? `<button class="task-wake-btn" data-id="${t.id}">Wake</button>` : '',
+        hasPerm('cancel') ? `<button class="task-cancel" data-id="${t.id}">Cancel</button>` : '',
+      ].filter(Boolean).join('');
+      actions = `<div class="task-actions"><span class="task-wake-time">wakes ${wakeDate}${wakeTime}</span>${btns}</div>`;
+    } else {
+      // completed
+      const resumeBtn = t.assignedTo ? `<button class="task-resume-btn" data-id="${t.id}" data-session="${t.assignedTo}">Resume</button>` : '';
+      if (resumeBtn) actions = `<div class="task-actions">${resumeBtn}</div>`;
     }
-    // completed
-    if (t.dispatchedAt && t.completedAt) {
-      meta += ` · done in ${Math.round((t.completedAt - t.dispatchedAt) / 60000)}m`;
+
+    // Time info
+    let timeStr = ago;
+    if (tabType === 'inprogress') timeStr = timeAgo(t.dispatchedAt || t.createdAt);
+    else if (tabType === 'completed' && t.dispatchedAt && t.completedAt) {
+      timeStr = `${Math.round((t.completedAt - t.dispatchedAt) / 60000)}m · ${ago}`;
     }
-    if (t.assignedTo) meta += ` · session ${t.assignedTo}`;
-    if (t.status === 'failed') meta += ' · failed';
-    const snippet = t.result ? `<div class="task-text" style="font-size:12px;color:var(--dim);margin-top:2px">${esc(t.result.substring(0, 80))}</div>` : '';
-    const sessionBadge = t.assignedTo ? `<span class="task-session-badge">S:${t.assignedTo}</span>` : '';
-    const resumeBtn = t.assignedTo ? `<button class="task-resume-btn" data-id="${t.id}" data-session="${t.assignedTo}">Resume</button>` : '';
-    const checked = selectedTaskIds.has(t.id) ? ' checked' : '';
-    return `<div class="task-card-row"><input type="checkbox" class="task-checkbox" data-id="${t.id}"${checked}><div class="task-card ${t.status}${selected}" data-id="${t.id}"><div class="task-text">${esc(t.text)}</div>${snippet}<div class="task-meta"><div class="task-meta-info">${sourceBadge}${originBadge}${desigBadge}${clBadge}${commentBadge}<span class="task-time">${meta} · ${ago}</span></div><div class="task-meta-actions">${prBadge}${sessionBadge}${resumeBtn}</div></div></div></div>`;
+
+    return `<div class="task-card-row"><input type="checkbox" class="task-checkbox" data-id="${t.id}"${checked}><div class="task-card ${t.status}${selected}" data-id="${t.id}">
+      <div class="task-top"><span class="task-hex">${hex}</span><div class="task-body"><div class="task-text">${esc(t.text)}</div><div class="task-info">${sourceBadge}${waitBadge}<span class="task-time">${timeStr}</span></div></div></div>${actions}</div></div>`;
   }
 
   // ── Comment panel (rendered into tab content divs) ─────
@@ -4951,569 +5012,75 @@
     sel.value = val;
   }
 
-  // ── Feed panel ────────────────────────────────────
-  $$('.feed-tab').forEach(tab => {
-    tab.addEventListener('click', () => {
-      activeFeedTab = tab.dataset.feedTab;
-      selectedFeedIds.clear();
-      $$('.feed-tab').forEach(t => t.classList.toggle('active', t.dataset.feedTab === activeFeedTab));
-      renderFeed();
-    });
-  });
-
+  // ── Notifications panel ──────────────────────────
   $('#feed-clear-btn').addEventListener('click', () => {
-    const pending = feedEntries.filter(e => !dismissedFeedIds.has(e.id));
-    for (const e of pending) {
-      dismissedFeedIds.add(e.id);
-      clearedFeedEntries.push(e);
-    }
-    // Cap cleared entries in memory
-    if (clearedFeedEntries.length > 500) clearedFeedEntries = clearedFeedEntries.slice(-500);
-    selectedFeedIds.clear();
-    renderFeed();
-    updateFeedTabCounts();
-  });
-
-  function updateFeedBulkBar() {
-    const bar = document.getElementById('feed-bulk-bar');
-    const count = selectedFeedIds.size;
-    if (count === 0) { bar.style.display = 'none'; return; }
-    bar.style.display = '';
-    document.getElementById('feed-bulk-count').textContent = `${count} selected`;
-  }
-
-  document.getElementById('feed-bulk-clear').addEventListener('click', () => {
-    for (const id of selectedFeedIds) {
-      const entry = feedEntries.find(e => e.id === id);
-      if (entry && !dismissedFeedIds.has(id)) {
-        dismissedFeedIds.add(id);
-        clearedFeedEntries.push(entry);
-      }
-    }
-    if (clearedFeedEntries.length > 500) clearedFeedEntries = clearedFeedEntries.slice(-500);
-    showToast('Cleared', `Cleared ${selectedFeedIds.size} entries`, 'success');
-    selectedFeedIds.clear();
-    updateFeedBulkBar();
-    renderFeed();
-    updateFeedTabCounts();
-  });
-
-  document.getElementById('feed-select-all').addEventListener('click', () => {
-    const visible = activeFeedTab === 'new'
-      ? feedEntries.filter(e => !dismissedFeedIds.has(e.id))
-      : [];
-    const allSelected = visible.length > 0 && visible.every(e => selectedFeedIds.has(e.id));
-    if (allSelected) {
-      selectedFeedIds.clear();
-    } else {
-      for (const e of visible) selectedFeedIds.add(e.id);
-    }
-    renderFeed();
-    updateFeedBulkBar();
+    feedEntries = [];
+    feedScroll.innerHTML = '<div class="notif-empty">No notifications</div>';
+    unreadFeedCount = 0; updateFeedBadge();
   });
 
   function renderFeed() {
     feedScroll.innerHTML = '';
-
-    if (activeFeedTab === 'new') {
-      const visible = feedEntries.filter(e => !dismissedFeedIds.has(e.id));
-      if (!visible.length) {
-        feedScroll.innerHTML = '<div class="feed-empty">All clear. New activity will appear here.</div>';
-        updateFeedTabCounts();
-        return;
-      }
-      // Reverse: newest first
-      const reversed = [...visible].reverse();
-      let unreadDividerPlaced = false;
-      for (const entry of reversed) {
-        if (!unreadDividerPlaced && lastSeenFeedId && entry.id === lastSeenFeedId && reversed.indexOf(entry) > 0) {
-          const divider = document.createElement('div');
-          divider.className = 'feed-unread-divider';
-          divider.textContent = 'new';
-          feedScroll.appendChild(divider);
-          unreadDividerPlaced = true;
-        }
-        renderFeedEntry(entry, false, false);
-      }
-      // Load older at bottom
-      if (feedHasMore) {
-        const loadBtn = document.createElement('button'); loadBtn.className = 'feed-load-more'; loadBtn.textContent = 'Load older entries';
-        loadBtn.addEventListener('click', () => { if (ws && ws.readyState === 1 && feedEntries.length) ws.send(JSON.stringify({ type: 'feed:get', before: feedEntries[0].id, limit: 50 })); });
-        feedScroll.appendChild(loadBtn);
-      }
-    } else {
-      // Cleared tab
-      if (!clearedFeedEntries.length) {
-        feedScroll.innerHTML = '<div class="feed-empty">No cleared entries.</div>';
-        updateFeedTabCounts();
-        return;
-      }
-      const reversed = [...clearedFeedEntries].reverse();
-      for (const entry of reversed) renderFeedEntry(entry, false, true);
-    }
-    updateFeedTabCounts();
-    // Restore selection highlight after re-render
-    if (feedSelectedId) {
-      const sel = feedScroll.querySelector(`.feed-entry[data-id="${feedSelectedId}"]`);
-      if (sel) sel.classList.add('selected');
-    }
-    // Show/hide Select All and bulk bar
-    const feedSelectAll = document.getElementById('feed-select-all');
-    const visibleCount = activeFeedTab === 'new' ? feedEntries.filter(e => !dismissedFeedIds.has(e.id)).length : 0;
-    feedSelectAll.style.display = visibleCount > 0 ? '' : 'none';
-    updateFeedBulkBar();
-  }
-
-  // Parse terminal preview for actionable options (bullets/numbered lists)
-  function parseFeedOptions(preview) {
-    if (!preview) return [];
-    const lines = preview.split('\n');
-    const options = [];
-    for (const line of lines) {
-      const trimmed = line.trim();
-      // Match "- Option text" or "– Option text"
-      const bullet = trimmed.match(/^[-–•]\s+(.{5,})/);
-      if (bullet) { options.push(bullet[1].trim()); continue; }
-      // Match "1. Option text" or "1) Option text"
-      const numbered = trimmed.match(/^\d+[.)]\s+(.{5,})/);
-      if (numbered) { options.push(numbered[1].trim()); continue; }
-    }
-    return options;
-  }
-
-  function renderFeedEntry(entry, prepend, isCleared) {
-    const el = document.createElement('div');
-    el.className = `feed-entry type-${entry.type}`;
-    el.dataset.id = entry.id;
-    const time = new Date(entry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    const sessionBadge = entry.session ? `<span class="feed-session-badge">${entry.session}</span>` : '';
-
-    // Build actions based on type (only for new tab)
-    let actionsHtml = '';
-    let replyHtml = '';
-    let previewHtml = '';
-    let optionsHtml = '';
-
-    // Parse options from preview (for state entries with preview)
-    const hasPreview = entry.preview && entry.type === 'state' && entry.detail.includes('idle');
-    const parsedOptions = hasPreview ? parseFeedOptions(entry.preview) : [];
-
-    if (hasPreview) {
-      // Show truncated preview (last few lines, skip option lines themselves)
-      const previewLines = entry.preview.split('\n');
-      const contextLines = previewLines.slice(-15).join('\n').trim();
-      if (contextLines) {
-        previewHtml = `<div class="feed-preview">${esc(contextLines)}</div>`;
-      }
-      // Render parsed options as buttons
-      if (parsedOptions.length && !isCleared) {
-        optionsHtml = '<div class="feed-options">';
-        for (let i = 0; i < parsedOptions.length; i++) {
-          optionsHtml += `<button class="feed-option-btn" data-session="${entry.session}" data-opt-idx="${i}">${esc(parsedOptions[i])}</button>`;
-        }
-        optionsHtml += '</div>';
-      }
-    }
-
-    if (!isCleared) {
-      const approval = pendingApprovals.find(a => a.session === entry.session && entry.type === 'approval' && entry.detail.includes('requested'));
-      if (approval) {
-        actionsHtml = `<button class="feed-action approve" data-approval="${approval.id}">Approve</button><button class="feed-action deny" data-approval="${approval.id}">Deny</button>`;
-        if (entry.session) actionsHtml += `<button class="feed-action open" data-session="${entry.session}">Open Session</button>`;
-      } else if (entry.type === 'state' && entry.session) {
-        actionsHtml = `<button class="feed-action open" data-session="${entry.session}">Open Session</button><button class="feed-action primary" data-reply="${entry.session}">Send Message</button>`;
-        replyHtml = `<div class="feed-reply-row"><input class="feed-reply-input" type="text" placeholder="Message session ${entry.session}..." autocomplete="off"><button class="feed-reply-send" data-session="${entry.session}">Send</button></div>`;
-      } else if (entry.type === 'task') {
-        const taskMatch = entry.detail.match(/Task (\S+)/);
-        const taskId = taskMatch ? taskMatch[1] : null;
-        if (entry.detail.includes('dispatched') && entry.session) {
-          actionsHtml = `<button class="feed-action open" data-session="${entry.session}">Open Session</button>`;
-          if (taskId) actionsHtml += `<button class="feed-action deny" data-cancel-task="${taskId}">Cancel</button>`;
-        } else if (entry.session) {
-          actionsHtml = `<button class="feed-action open" data-session="${entry.session}">Open Session</button>`;
-        }
-      } else if (entry.session) {
-        actionsHtml = `<button class="feed-action open" data-session="${entry.session}">Open Session</button>`;
-      }
-    }
-
-    // Dismiss button: clears entry on New tab, no dismiss on Cleared tab
-    const dismissBtn = isCleared ? '' : `<button class="feed-dismiss" title="Clear">&times;</button>`;
-
-    // For idle entries with options, auto-expand so user sees them immediately
-    const autoExpand = (parsedOptions.length && !isCleared) ? ' expanded' : '';
-
-    const feedChecked = selectedFeedIds.has(entry.id) ? ' checked' : '';
-    const feedCheckbox = !isCleared ? `<input type="checkbox" class="feed-checkbox" data-id="${entry.id}"${feedChecked}>` : '';
-
-    el.innerHTML = `
-      <div class="feed-top">
-        ${feedCheckbox}
-        <span class="feed-type-dot"></span>
-        <div class="feed-summary">
-          <div class="feed-detail">${esc(entry.detail)}</div>
-          <div class="feed-time">${time}</div>
-        </div>
-        ${sessionBadge}
-        ${dismissBtn}
-      </div>
-      ${previewHtml}
-      ${optionsHtml}
-      ${actionsHtml ? `<div class="feed-actions">${actionsHtml}</div>` : ''}
-      ${replyHtml}
-    `;
-
-    if (autoExpand) el.classList.add('expanded');
-
-    // Wire checkbox
-    const feedCb = el.querySelector('.feed-checkbox');
-    if (feedCb) {
-      feedCb.addEventListener('change', (e) => {
-        e.stopPropagation();
-        if (feedCb.checked) selectedFeedIds.add(entry.id);
-        else selectedFeedIds.delete(entry.id);
-        updateFeedBulkBar();
-      });
-      feedCb.addEventListener('click', (e) => e.stopPropagation());
-    }
-
-    // Toggle expand on click (but not on buttons)
-    el.addEventListener('click', (e) => {
-      if (e.target.closest('button, input')) return;
-      el.classList.toggle('expanded');
-      const rr = el.querySelector('.feed-reply-row');
-      if (rr) rr.classList.toggle('visible', el.classList.contains('expanded'));
-      // Select for preview pane (desktop only — pane is hidden on mobile)
-      if (entry.session) selectFeedEntry(entry);
-    });
-
-    // Dismiss → move to cleared
-    if (!isCleared) {
-      el.querySelector('.feed-dismiss').addEventListener('click', (e) => {
-        e.stopPropagation();
-        dismissedFeedIds.add(entry.id);
-        clearedFeedEntries.push(entry);
-        if (clearedFeedEntries.length > 500) clearedFeedEntries = clearedFeedEntries.slice(-500);
-        el.style.opacity = '0'; el.style.transform = 'translateX(100%)'; el.style.transition = 'all 0.2s';
-        setTimeout(() => { el.remove(); updateFeedTabCounts(); }, 200);
-      });
-
-      // Swipe-to-dismiss (touch devices)
-      let swipeStartX = 0, swipeStartY = 0, swiping = false;
-      el.addEventListener('touchstart', (e) => {
-        const t = e.touches[0];
-        swipeStartX = t.clientX; swipeStartY = t.clientY; swiping = false;
-      }, { passive: true });
-      el.addEventListener('touchmove', (e) => {
-        const t = e.touches[0];
-        const dx = t.clientX - swipeStartX;
-        const dy = Math.abs(t.clientY - swipeStartY);
-        if (dx > 10 && dy < 30) swiping = true;
-        if (swiping) {
-          el.classList.add('swiping');
-          el.style.transform = `translateX(${Math.max(0, dx)}px)`;
-          el.style.opacity = String(Math.max(0.2, 1 - dx / 300));
-        }
-      }, { passive: true });
-      el.addEventListener('touchend', () => {
-        el.classList.remove('swiping');
-        if (swiping && parseFloat(el.style.opacity) < 0.6) {
-          // Dismiss
-          dismissedFeedIds.add(entry.id);
-          clearedFeedEntries.push(entry);
-          if (clearedFeedEntries.length > 500) clearedFeedEntries = clearedFeedEntries.slice(-500);
-          el.classList.add('dismissed-swipe');
-          setTimeout(() => { el.remove(); updateFeedTabCounts(); }, 200);
-        } else {
-          // Snap back
-          el.style.transform = ''; el.style.opacity = '';
-          el.style.transition = 'transform 0.15s, opacity 0.15s';
-          setTimeout(() => { el.style.transition = ''; }, 150);
-        }
-        swiping = false;
-      });
-    }
-
-    // Action buttons
-    el.querySelectorAll('.feed-action.open[data-session]').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const s = fleetData.find(x => x.num === parseInt(btn.dataset.session));
-        if (s) openSession(s);
-      });
-    });
-
-    el.querySelectorAll('.feed-action[data-reply]').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        el.classList.add('expanded');
-        const rr = el.querySelector('.feed-reply-row');
-        if (rr) { rr.classList.add('visible'); rr.querySelector('.feed-reply-input').focus(); }
-      });
-    });
-
-    el.querySelectorAll('.feed-action[data-approval]').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        if (!ws || ws.readyState !== 1) return;
-        const approved = btn.classList.contains('approve');
-        ws.send(JSON.stringify({ type: 'approval:respond', approvalId: btn.dataset.approval, approved }));
-        btn.closest('.feed-actions').innerHTML = `<span style="color:var(--dim);font-size:12px">${approved ? 'Approved' : 'Denied'}</span>`;
-      });
-    });
-
-    el.querySelectorAll('.feed-action[data-cancel-task]').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'task:cancel', taskId: btn.dataset.cancelTask }));
-        btn.textContent = 'Cancelled'; btn.disabled = true; btn.style.opacity = '0.5';
-      });
-    });
-
-    // Option buttons — send the option text as a tell to the session
-    el.querySelectorAll('.feed-option-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const session = btn.dataset.session;
-        const idx = parseInt(btn.dataset.optIdx);
-        const option = parsedOptions[idx];
-        if (!session || !option || !ws || ws.readyState !== 1) return;
-        ws.send(JSON.stringify({ type: 'tell', session: String(session), message: option }));
-        btn.classList.add('sent');
-        btn.textContent = option + ' (sent)';
-        // Dim other option buttons
-        el.querySelectorAll('.feed-option-btn').forEach(b => { if (b !== btn) b.style.opacity = '0.3'; });
-        showToast('Sent', `"${option.substring(0, 40)}" → session ${session}`, 'success');
-      });
-    });
-
-    // Reply send
-    const replyRow = el.querySelector('.feed-reply-row');
-    if (replyRow) {
-      const input = replyRow.querySelector('.feed-reply-input');
-      const sBtn = replyRow.querySelector('.feed-reply-send');
-      const doSend = () => {
-        const text = input.value.trim();
-        if (!text || !ws || ws.readyState !== 1) return;
-        ws.send(JSON.stringify({ type: 'tell', session: String(entry.session), message: text }));
-        input.value = '';
-        showToast('Sent', `Message → session ${entry.session}`, 'success');
-      };
-      sBtn.addEventListener('click', (e) => { e.stopPropagation(); doSend(); });
-      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.stopPropagation(); doSend(); } });
-      input.addEventListener('click', (e) => e.stopPropagation());
-    }
-
-    if (prepend) {
-      feedScroll.insertBefore(el, feedScroll.firstChild);
-    } else {
-      feedScroll.appendChild(el);
-    }
-  }
-
-  function updateFeedTabCounts() {
-    const newCount = feedEntries.filter(e => !dismissedFeedIds.has(e.id)).length;
-    const clearedCount = clearedFeedEntries.length;
-    const tabs = document.querySelectorAll('.feed-tab');
-    tabs.forEach(t => {
-      if (t.dataset.feedTab === 'new') t.textContent = newCount ? `New (${newCount})` : 'New';
-      if (t.dataset.feedTab === 'cleared') t.textContent = clearedCount ? `Cleared (${clearedCount})` : 'Cleared';
-    });
-    // Also hide/show clear button based on tab
-    const clearBtn = document.getElementById('feed-clear-btn');
-    if (clearBtn) clearBtn.style.display = activeFeedTab === 'new' && newCount ? '' : 'none';
-  }
-
-  // ── Feed preview pane ───────────────────────────────
-  function selectFeedEntry(entry) {
-    // Remove previous selection
-    const prev = feedScroll.querySelector('.feed-entry.selected');
-    if (prev) prev.classList.remove('selected');
-
-    // Select current
-    const el = feedScroll.querySelector(`.feed-entry[data-id="${entry.id}"]`);
-    if (el) el.classList.add('selected');
-    feedSelectedId = entry.id;
-
-    const previewPane = document.getElementById('feed-preview-pane');
-    const titleEl = document.getElementById('feed-preview-title');
-    const branchEl = document.getElementById('feed-preview-branch');
-    const openBtn = document.getElementById('feed-preview-open');
-    const actionsEl = document.getElementById('feed-preview-actions');
-    const termEl = document.getElementById('feed-preview-terminal');
-    const inputRow = document.getElementById('feed-preview-input-row');
-
-    if (!entry.session) {
-      titleEl.textContent = 'No session';
-      branchEl.textContent = '';
-      openBtn.style.display = 'none';
-      actionsEl.innerHTML = '';
-      termEl.innerHTML = '<span class="feed-preview-empty">This entry has no associated session</span>';
-      inputRow.style.display = 'none';
-      stopFeedPreview();
+    if (!feedEntries.length) {
+      feedScroll.innerHTML = '<div class="notif-empty">No notifications</div>';
       return;
     }
-
-    const session = fleetData.find(s => s.num === parseInt(entry.session));
-    const sessionNum = String(entry.session);
-    const state = session ? session.state : 'off';
-    const branch = session ? shortBranch(session.branch) : '';
-
-    titleEl.textContent = `Session ${sessionNum}`;
-    branchEl.textContent = branch ? `— ${branch}` : '';
-    openBtn.style.display = '';
-    openBtn.onclick = () => {
-      const s = fleetData.find(x => x.num === parseInt(sessionNum));
-      if (s) openSession(s);
-    };
-
-    // Render action buttons
-    renderFeedPreviewActions(entry, session);
-
-    // Show/hide message input
-    if (state !== 'off') {
-      inputRow.style.display = '';
-      document.getElementById('feed-preview-input').placeholder = `Message session ${sessionNum}...`;
-    } else {
-      inputRow.style.display = 'none';
-    }
-
-    // Load terminal preview
-    loadFeedPreviewTerminal(sessionNum, entry);
-  }
-
-  function renderFeedPreviewActions(entry, session) {
-    const actionsEl = document.getElementById('feed-preview-actions');
-    actionsEl.innerHTML = '';
-
-    const state = session ? session.state : 'off';
-
-    // State badge
-    const badge = document.createElement('span');
-    badge.className = `state-badge ${state === 'idle' ? 'idle' : state === 'working' ? 'working' : 'off'}`;
-    badge.textContent = state;
-    actionsEl.appendChild(badge);
-
-    // Approval buttons if pending
-    const approval = pendingApprovals.find(a => a.session === entry.session && entry.type === 'approval' && entry.detail.includes('requested'));
-    if (approval) {
-      const appBtn = document.createElement('button');
-      appBtn.className = 'feed-action approve';
-      appBtn.textContent = 'Approve';
-      appBtn.addEventListener('click', () => {
-        if (ws && ws.readyState === 1) {
-          ws.send(JSON.stringify({ type: 'approval:respond', approvalId: approval.id, approved: true }));
-          appBtn.textContent = 'Approved'; appBtn.disabled = true; appBtn.style.opacity = '0.5';
-          denyBtn.style.display = 'none';
-        }
-      });
-      const denyBtn = document.createElement('button');
-      denyBtn.className = 'feed-action deny';
-      denyBtn.textContent = 'Deny';
-      denyBtn.addEventListener('click', () => {
-        if (ws && ws.readyState === 1) {
-          ws.send(JSON.stringify({ type: 'approval:respond', approvalId: approval.id, approved: false }));
-          denyBtn.textContent = 'Denied'; denyBtn.disabled = true; denyBtn.style.opacity = '0.5';
-          appBtn.style.display = 'none';
-        }
-      });
-      actionsEl.appendChild(appBtn);
-      actionsEl.appendChild(denyBtn);
-    }
-
-    // Option buttons if idle with preview
-    if (entry.preview && entry.type === 'state' && entry.detail.includes('idle')) {
-      const parsedOptions = parseFeedOptions(entry.preview);
-      for (let i = 0; i < parsedOptions.length; i++) {
-        const optBtn = document.createElement('button');
-        optBtn.className = 'feed-option-btn';
-        optBtn.textContent = parsedOptions[i];
-        const option = parsedOptions[i];
-        const sessionNum = String(entry.session);
-        optBtn.addEventListener('click', () => {
-          if (!ws || ws.readyState !== 1) return;
-          ws.send(JSON.stringify({ type: 'tell', session: sessionNum, message: option }));
-          optBtn.classList.add('sent');
-          optBtn.textContent = option + ' (sent)';
-          actionsEl.querySelectorAll('.feed-option-btn').forEach(b => { if (b !== optBtn) b.style.opacity = '0.3'; });
-          showToast('Sent', `"${option.substring(0, 40)}" → session ${sessionNum}`, 'success');
-        });
-        actionsEl.appendChild(optBtn);
+    const reversed = [...feedEntries].reverse();
+    let dividerPlaced = false;
+    for (const entry of reversed) {
+      if (!dividerPlaced && lastSeenFeedId && entry.id === lastSeenFeedId && reversed.indexOf(entry) > 0) {
+        const divider = document.createElement('div');
+        divider.className = 'notif-divider';
+        divider.textContent = 'new';
+        feedScroll.appendChild(divider);
+        dividerPlaced = true;
       }
+      renderFeedEntry(entry, false);
+    }
+    if (feedHasMore) {
+      const loadBtn = document.createElement('button');
+      loadBtn.className = 'notif-load-more';
+      loadBtn.textContent = 'Load older';
+      loadBtn.addEventListener('click', () => {
+        if (ws && ws.readyState === 1 && feedEntries.length)
+          ws.send(JSON.stringify({ type: 'feed:get', before: feedEntries[0].id, limit: 50 }));
+      });
+      feedScroll.appendChild(loadBtn);
     }
   }
 
-  function ensureFeedPreviewTerm() {
-    const container = document.getElementById('feed-preview-terminal');
-    if (feedPreviewTerm) return;
-    container.innerHTML = '';
-    feedPreviewTerm = new Terminal({
-      theme: { background: '#0f0f23', foreground: '#e2e2f0', cursor: '#e2e2f0', black: '#282a36', red: '#ff5555', green: '#50fa7b', yellow: '#f1fa8c', blue: '#bd93f9', magenta: '#ff79c6', cyan: '#8be9fd', white: '#f8f8f2', brightBlack: '#6272a4', brightRed: '#ff6e6e', brightGreen: '#69ff94', brightYellow: '#ffffa5', brightBlue: '#d6acff', brightMagenta: '#ff92df', brightCyan: '#a4ffff', brightWhite: '#ffffff' },
-      fontSize: 13, fontFamily: "'SF Mono', 'Menlo', 'Monaco', 'Courier New', monospace",
-      disableStdin: true, scrollback: 5000, convertEol: true, allowProposedApi: true,
-    });
-    feedPreviewFit = new FitAddon.FitAddon();
-    feedPreviewTerm.loadAddon(feedPreviewFit);
-    feedPreviewTerm.loadAddon(new WebLinksAddon.WebLinksAddon((e, uri) => window.open(uri, '_blank')));
-    enableTerminalCopy(feedPreviewTerm);
-    feedPreviewTerm.open(container);
-    requestAnimationFrame(() => feedPreviewFit.fit());
-  }
+  function renderFeedEntry(entry, prepend) {
+    const el = document.createElement('div');
+    el.className = `notif-item type-${entry.type}`;
+    el.dataset.id = entry.id;
 
-  function loadFeedPreviewTerminal(sessionNum, entry) {
-    ensureFeedPreviewTerm();
+    // Icon by type
+    const icons = { state: '⬤', task: '◆', ci: '⚙', approval: '⚑', broadcast: '📢' };
+    const icon = icons[entry.type] || '•';
 
-    // Show entry preview text immediately if available
-    if (entry.preview) {
-      writeFeedPreviewContent(entry.preview);
+    const time = new Date(entry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const sessionBadge = entry.session ? `<span class="notif-session">${entry.session}</span>` : '';
+
+    el.innerHTML = `
+      <span class="notif-icon">${icon}</span>
+      <div class="notif-body">
+        <span class="notif-text">${esc(entry.detail)}</span>
+        <span class="notif-time">${time}</span>
+      </div>
+      ${sessionBadge}`;
+
+    // Click → open session
+    if (entry.session) {
+      el.style.cursor = 'pointer';
+      el.addEventListener('click', () => {
+        const s = fleetData.find(x => x.num === parseInt(entry.session));
+        if (s) openSession(s);
+      });
     }
 
-    stopFeedPreview();
-    feedPreviewSession = sessionNum;
-
-    // Send initial peek
-    if (ws && ws.readyState === 1) {
-      ws.send(JSON.stringify({ type: 'peek', session: sessionNum }));
-    }
-
-    // Refresh every 3s
-    feedPreviewTimer = setInterval(() => {
-      if (ws && ws.readyState === 1 && feedPreviewSession === sessionNum) {
-        ws.send(JSON.stringify({ type: 'peek', session: sessionNum }));
-      }
-    }, 3000);
+    if (prepend) feedScroll.insertBefore(el, feedScroll.firstChild);
+    else feedScroll.appendChild(el);
   }
-
-  function stopFeedPreview() {
-    if (feedPreviewTimer) {
-      clearInterval(feedPreviewTimer);
-      feedPreviewTimer = null;
-    }
-    feedPreviewSession = null;
-  }
-
-  function writeFeedPreviewContent(content) {
-    ensureFeedPreviewTerm();
-    feedPreviewTerm.reset();
-    feedPreviewTerm.write(content);
-    requestAnimationFrame(() => feedPreviewTerm.scrollToBottom());
-  }
-
-  // ── Feed preview message sending ────────────────────
-  document.getElementById('feed-preview-send').addEventListener('click', () => {
-    const input = document.getElementById('feed-preview-input');
-    const text = input.value.trim();
-    if (!text || !feedPreviewSession || !ws || ws.readyState !== 1) return;
-    ws.send(JSON.stringify({ type: 'tell', session: feedPreviewSession, message: text }));
-    input.value = '';
-    showToast('Sent', `Message → session ${feedPreviewSession}`, 'success');
-  });
-  document.getElementById('feed-preview-input').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      document.getElementById('feed-preview-send').click();
-    }
-  });
 
   // ── More panel inner tabs ──────────────────────────
   document.querySelectorAll('.more-tab').forEach(tab => {
@@ -5522,6 +5089,10 @@
       document.querySelectorAll('.more-tab-panel').forEach(p => p.classList.remove('active'));
       tab.classList.add('active');
       document.getElementById(tab.dataset.moreTab).classList.add('active');
+      if (tab.dataset.moreTab === 'more-update' && ws && ws.readyState === 1) {
+        ws.send(JSON.stringify({ type: 'update:status' }));
+      }
+      if (tab.dataset.moreTab === 'more-automation') renderPMs();
     });
   });
 
@@ -6087,70 +5658,68 @@
 
   // ── PMs panel ──────────────────────────────────
   function renderPMs() {
-    const scroll = document.getElementById('pm-scroll');
-    if (!scroll) return;
-    scroll.innerHTML = '';
-    if (!pmList.length) {
-      scroll.innerHTML = '<div class="feed-empty">No project managers yet.</div>';
-      return;
-    }
+    const grid = document.getElementById('pm-scroll');
+    if (!grid) return;
+    grid.innerHTML = '';
+
+    // "New PM" card — always first
+    const newCard = document.createElement('div');
+    newCard.className = 'pm-card-new';
+    newCard.innerHTML = '<span class="pm-new-icon">+</span><span class="pm-new-label">New PM</span>';
+    newCard.addEventListener('click', () => openPmDialog(null));
+    grid.appendChild(newCard);
+
     for (const pm of pmList) {
       const card = document.createElement('div');
       card.className = `pm-card${pm.enabled ? '' : ' disabled'}${pm.lastError ? ' has-error' : ''}`;
       const pmdc = pm.designation ? getDesigColor(pm.designation) : null;
       const desigBadge = pm.designation ? `<span class="task-designation" style="background:${pmdc.bg};color:${pmdc.fg}">${esc(pm.designation)}</span>` : '';
       const targetBadge = pm.targetSession ? `<span class="task-designation" style="background:rgba(139,233,253,0.15);color:var(--cyan)">→${pm.targetSession}</span>` : '';
+      const sched = pm.schedule ? 'cron: ' + esc(pm.schedule) : pm.pollInterval ? 'every ' + (pm.pollInterval < 60000 ? (pm.pollInterval/1000)+'s' : (pm.pollInterval/60000)+'m') : '';
       const lastPoll = pm.lastPoll ? timeAgo(pm.lastPoll) : 'never';
       card.innerHTML = `
-        <div class="pm-top">
-          <span class="pm-name">${esc(pm.name)}</span>
-          ${desigBadge}${targetBadge}
-          <button class="pm-toggle${pm.enabled ? ' on' : ''}" data-id="${pm.id}"></button>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="pm-name" style="flex:1">${esc(pm.name)}</span>
+          <button class="pm-toggle${pm.enabled ? ' on' : ''}"></button>
         </div>
-        <div class="pm-meta">
-          <span>${pm.source.type}</span>
-          <span>${pm.schedule ? 'cron: ' + esc(pm.schedule) : pm.pollInterval ? 'every ' + (pm.pollInterval < 60000 ? (pm.pollInterval/1000)+'s' : (pm.pollInterval/60000)+'m') : ''}</span>
-          <span>${pm.tasksCreated || 0} tasks</span>${pm.memory && pm.memory.length ? `
-          <span>${pm.memory.length} learnings</span>` : ''}
+        <div class="pm-badges">${desigBadge}${targetBadge}</div>
+        <span class="pm-source">${pm.source.type}${sched ? ' · ' + sched : ''}</span>
+        ${pm.lastError ? `<div class="pm-error">${esc(pm.lastError)}</div>` : ''}
+        <div class="pm-stats">
+          <span>${pm.tasksCreated || 0} tasks</span>
           <span>polled ${lastPoll}</span>
         </div>
-        ${pm.lastError ? `<div class="pm-error">${esc(pm.lastError)}</div>` : ''}
-        <div class="pm-actions">
-          <button class="pm-action-btn rescan" data-id="${pm.id}">Scan Now</button>
-          <button class="pm-action-btn reset" data-id="${pm.id}" style="background:#c0392b;color:#fff;">Reset</button>
-          <button class="pm-action-btn edit" data-id="${pm.id}">Edit</button>
-          <button class="pm-action-btn delete" data-id="${pm.id}">Delete</button>
-        </div>
       `;
-      card.querySelector('.pm-toggle').addEventListener('click', () => {
+      card.querySelector('.pm-toggle').addEventListener('click', (e) => {
+        e.stopPropagation();
         if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'pm:toggle', id: pm.id }));
       });
-      card.querySelector('.pm-action-btn.rescan').addEventListener('click', (e) => {
-        e.target.textContent = 'Scanning...';
-        if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'pm:rescan', id: pm.id }));
-        setTimeout(() => { e.target.textContent = 'Scan Now'; }, 3000);
-      });
-      card.querySelector('.pm-action-btn.reset').addEventListener('click', () => {
-        if (confirm('This will forget all previously seen issues. The next poll will create tasks for everything matching the source query. Continue?')) {
-          if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'pm:reset', id: pm.id }));
-        }
-      });
-      card.querySelector('.pm-action-btn.edit').addEventListener('click', () => openPmDialog(pm));
-      card.querySelector('.pm-action-btn.delete').addEventListener('click', () => {
-        if (confirm(`Delete PM "${pm.name}"?`)) {
-          if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'pm:delete', id: pm.id }));
-        }
-      });
-      scroll.appendChild(card);
+      card.addEventListener('click', () => openPmDialog(pm));
+      grid.appendChild(card);
     }
   }
 
   // PM form dialog
   const pmDialog = document.getElementById('pm-dialog');
 
-  document.getElementById('pm-create-btn').addEventListener('click', () => openPmDialog(null));
   document.getElementById('pm-form-cancel').addEventListener('click', closePmDialog);
   pmDialog.addEventListener('click', (e) => { if (e.target === pmDialog) closePmDialog(); });
+  document.getElementById('pm-form-rescan').addEventListener('click', () => {
+    if (editingPmId && ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'pm:rescan', id: editingPmId }));
+    closePmDialog();
+  });
+  document.getElementById('pm-form-reset').addEventListener('click', () => {
+    if (editingPmId && confirm('This will forget all previously seen issues. The next poll will create tasks for everything matching the source query. Continue?')) {
+      if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'pm:reset', id: editingPmId }));
+      closePmDialog();
+    }
+  });
+  document.getElementById('pm-form-delete').addEventListener('click', () => {
+    if (editingPmId && confirm('Delete this PM?')) {
+      if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'pm:delete', id: editingPmId }));
+      closePmDialog();
+    }
+  });
 
   document.getElementById('pm-form-source').addEventListener('change', togglePmSourceFields);
 
@@ -6417,6 +5986,11 @@
     document.querySelectorAll('.pm-tab-content').forEach(c =>
       c.classList.toggle('active', c.dataset.pmTab === 'source'));
     togglePmSourceFields();
+    // Show/hide edit-mode actions
+    const isEdit = !!pm;
+    document.getElementById('pm-form-rescan').style.display = isEdit ? '' : 'none';
+    document.getElementById('pm-form-reset').style.display = isEdit ? '' : 'none';
+    document.getElementById('pm-form-delete').style.display = isEdit ? '' : 'none';
     pmDialog.classList.add('visible');
   }
 
