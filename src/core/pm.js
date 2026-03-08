@@ -13,12 +13,12 @@ const MCP_INSTRUCTIONS = `
 
 You have hive MCP tools available. Use them:
 
-1. **Start**: Call \`hive_get_task\` to see your full assignment before doing anything.
+1. **Start**: Call \`hive_get_task\` to see your full assignment before doing anything. Call \`hive_get_context\` to check for any shared context (plan files, PR URLs, JIRA keys) from previous work on this task.
 2. **Progress updates**: Call \`hive_post_update\` at key milestones — when you have a plan, when implementation is done, or if you hit a blocker.
-3. **Plan sharing**: When you create or update a plan file, call \`hive_set_context\` with \`{ "plan": "/absolute/path/to/plan.md" }\` so the dashboard can display it. Also set \`"pr"\` or \`"jira"\` keys if relevant.
+3. **Context sharing**: Call \`hive_set_context\` to share key information with the dashboard. Set \`"plan"\` (absolute file path), \`"pr"\` (GitHub PR URL), \`"jira"\` (issue key), \`"branch"\` (git branch), or \`"planText"\` (markdown summary). Update context as things change. Set a key to \`null\` to remove it.
 4. **Coordination**: If your task mentions other sessions or dependencies, call \`hive_get_sessions\` to check their status.
 5. **Finish**: Do NOT call \`hive_complete_task\` unless the task instructions explicitly tell you to. The task owner will close it manually or it will close when you go idle.
-6. **Learnings**: If learning mode is active, call \`hive_report_learnings\` with insights you discovered — patterns, root causes, or tips for similar tasks.
+6. **Learnings**: If learning mode is active, call \`hive_report_learnings\` with insights you discovered — patterns, root causes, or tips for similar tasks. Always report learnings BEFORE completing a task.
 `.trim();
 
 let nextPmId = 1;
