@@ -1193,10 +1193,13 @@ class ProjectManager extends EventEmitter {
    * Called by taskqueue._dispatchTask.
    */
   enrichTaskText(task) {
-    if (!task.source || !task.source.startsWith('pm:')) return task.text;
+    if (!task.source || !task.source.startsWith('pm:')) {
+      // Non-PM tasks still get MCP instructions so agents know not to auto-complete
+      return task.text + `\n\n${MCP_INSTRUCTIONS}`;
+    }
     const pmName = task.source.replace('pm:', '');
     const pm = [...this.pms.values()].find(p => p.name === pmName);
-    if (!pm) return task.text;
+    if (!pm) return task.text + `\n\n${MCP_INSTRUCTIONS}`;
     return this._buildFullText(pm, task.text);
   }
 
