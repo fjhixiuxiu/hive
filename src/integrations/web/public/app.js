@@ -5277,14 +5277,12 @@
     html += '</div>';
     popup.innerHTML = html;
 
+    // Find best parent: task-detail toolbar, session tabs, or fallback
+    const detailToolbar = anchorBtn.closest('#task-detail-toolbar');
     const tabBar = anchorBtn.closest('.tasks-session-tabs, .session-tabs');
-    if (tabBar) {
-      tabBar.style.position = 'relative';
-      tabBar.appendChild(popup);
-    } else {
-      anchorBtn.parentElement.style.position = 'relative';
-      anchorBtn.parentElement.appendChild(popup);
-    }
+    const parent = detailToolbar || tabBar || anchorBtn.parentElement;
+    parent.style.position = 'relative';
+    parent.appendChild(popup);
 
     popup.querySelector('.actions-popup-close').addEventListener('click', closeActionsPopup);
 
