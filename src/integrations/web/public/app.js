@@ -4498,21 +4498,21 @@
     } else {
       actionsHtml = task.assignedTo ? `<button class="task-detail-action" data-action="resume">Resume</button>` : '';
     }
-    // Context actions button (opens popup menu, same as tasks page)
-    if (task.actions && task.actions.length) {
-      if (actionsHtml) actionsHtml += '<span class="td-action-sep"></span>';
-      actionsHtml += `<button class="task-detail-action td-actions-btn">\u26A1 Actions (${task.actions.length})</button>`;
-    }
-
     const actionsEl = document.getElementById('task-detail-actions');
     actionsEl.innerHTML = actionsHtml;
-    actionsEl.querySelectorAll('.task-detail-action:not(.td-actions-btn)').forEach(btn => {
+    actionsEl.querySelectorAll('.task-detail-action').forEach(btn => {
       btn.addEventListener('click', () => handleTaskDetailAction(btn.dataset.action, task));
     });
-    // Wire up the Actions menu button
-    const tdActionsBtn = actionsEl.querySelector('.td-actions-btn');
-    if (tdActionsBtn) {
-      tdActionsBtn.addEventListener('click', () => renderActionsPopup(task.id, tdActionsBtn));
+
+    // Context actions button (right side, after Open Session)
+    const ctxBtn = document.getElementById('task-detail-ctx-actions');
+    if (task.actions && task.actions.length) {
+      ctxBtn.textContent = `\u26A1 Actions (${task.actions.length})`;
+      ctxBtn.style.display = '';
+      ctxBtn.onclick = () => renderActionsPopup(task.id, ctxBtn);
+    } else {
+      ctxBtn.style.display = 'none';
+      ctxBtn.onclick = null;
     }
 
     // Toolbar: checklist progress
@@ -5350,7 +5350,7 @@
   // Close actions popup on click outside
   document.addEventListener('click', (e) => {
     if (!actionsPopupTaskId) return;
-    if (e.target.closest('.actions-popup') || e.target.closest('.actions-tab') || e.target.closest('.td-actions-btn')) return;
+    if (e.target.closest('.actions-popup') || e.target.closest('.actions-tab') || e.target.closest('.td-actions-btn') || e.target.closest('#task-detail-ctx-actions')) return;
     if (e.target.closest('#action-confirm-dialog')) return;
     closeActionsPopup();
   });
