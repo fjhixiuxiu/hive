@@ -227,6 +227,13 @@
       <div class="tasks-view-toggle">
         <button class="tasks-view-btn active" data-tasks-view="list">List</button>
         <button class="tasks-view-btn" data-tasks-view="board">Board</button>
+        <span class="td-spacer"></span>
+        <input id="tasks-search-input" class="tasks-toggle-search" type="text" placeholder="Search..." autocomplete="off">
+        <button id="tasks-search-clear" class="fleet-search-clear" style="display:none">&times;</button>
+        <div class="tasks-filter-wrap" id="tasks-filter-wrap" style="display:none">
+          <button class="tasks-filter-btn" id="tasks-filter-btn">Sources</button>
+          <div class="tasks-filter-dropdown" id="tasks-filter-dropdown"></div>
+        </div>
         <button class="tasks-create-btn" id="tasks-create-btn-board" style="display:none">+ Create</button>
       </div>
       <div class="tasks-board" id="tasks-board" style="display:none">
@@ -249,14 +256,6 @@
       </div>
       <div class="tasks-panes" id="tasks-panes">
         <div class="tasks-list-pane">
-          <div class="fleet-search-bar">
-            <input id="tasks-search-input" type="text" placeholder="Search tasks..." autocomplete="off" style="flex:1;background:var(--bg2);border:1px solid var(--dim);border-radius:6px;color:var(--fg);padding:8px 32px 8px 12px;font:inherit;font-size:14px;outline:none">
-            <button id="tasks-search-clear" class="fleet-search-clear" style="display:none">&times;</button>
-            <div class="tasks-filter-wrap" id="tasks-filter-wrap" style="display:none">
-              <button class="tasks-filter-btn" id="tasks-filter-btn">Sources</button>
-              <div class="tasks-filter-dropdown" id="tasks-filter-dropdown"></div>
-            </div>
-          </div>
           <div class="tasks-tabs">
             <div class="tasks-tab-wrap">
               <button class="tasks-tab active" data-tab="inprogress" id="ip-tab-btn"><span id="ip-tab-label">In Progress</span><span class="ip-tab-caret" id="ip-tab-caret">&#9662;</span></button>

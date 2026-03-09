@@ -1523,8 +1523,19 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 
 /* ── Tasks view toggle ────────────── */
 .tasks-view-toggle {
-  display: flex; gap: 4px; padding: 8px 10px 0; flex-shrink: 0; align-items: center;
+  display: flex; gap: 4px; padding: 8px 10px; flex-shrink: 0; align-items: center;
+  position: relative;
 }
+.tasks-view-toggle .fleet-search-clear {
+  position: static; transform: none; margin-left: -28px; z-index: 1;
+}
+.tasks-toggle-search {
+  flex: 1; min-width: 0; background: var(--bg2); border: 1px solid var(--bg3);
+  border-radius: 6px; color: var(--fg); padding: 5px 10px; font: inherit;
+  font-size: 12px; outline: none;
+}
+.tasks-toggle-search:focus { border-color: var(--purple); }
+.tasks-toggle-search::placeholder { color: var(--dim); }
 .tasks-view-btn {
   background: var(--bg3); border: none; color: var(--dim); font-size: 11px;
   font-weight: 600; padding: 4px 10px; border-radius: 4px; cursor: pointer;
