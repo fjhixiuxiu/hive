@@ -641,7 +641,11 @@
 
   function hashFromState() {
     if (activeTab === 'session-panel' && currentSession) return `/session/${currentSession}`;
-    if (activeTab === 'tasks-panel' && tasksSelectedTaskId) return `/tasks/${tasksSelectedTaskId}`;
+    if (activeTab === 'tasks-panel') {
+      if (tasksViewMode === 'board') return '/tasks/board';
+      if (tasksSelectedTaskId) return `/tasks/${tasksSelectedTaskId}`;
+      return '/tasks';
+    }
     return TAB_TO_HASH[activeTab] || '/fleet';
   }
 
@@ -660,6 +664,18 @@
       // Session not found yet — store pending, will apply after fleet data arrives
       pendingRouteSession = num;
       switchTab('fleet-panel', true);
+      return;
+    }
+    if (raw === '/tasks/board') {
+      switchTab('tasks-panel', true);
+      if (tasksViewMode !== 'board') {
+        tasksViewMode = 'board';
+        document.querySelectorAll('.tasks-view-btn').forEach(b => b.classList.toggle('active', b.dataset.tasksView === 'board'));
+        document.getElementById('tasks-panes').style.display = 'none';
+        document.getElementById('tasks-board').style.display = '';
+        document.getElementById('tasks-create-btn-board').style.display = '';
+        renderTaskBoard();
+      }
       return;
     }
     const taskMatch = raw.match(/^\/tasks\/(.+)$/);
@@ -4334,6 +4350,7 @@
         createBoardBtn.style.display = 'none';
         renderTasks();
       }
+      pushHash();
     });
   });
 
