@@ -5350,7 +5350,7 @@
   // Close actions popup on click outside
   document.addEventListener('click', (e) => {
     if (!actionsPopupTaskId) return;
-    if (e.target.closest('.actions-popup') || e.target.closest('.actions-tab')) return;
+    if (e.target.closest('.actions-popup') || e.target.closest('.actions-tab') || e.target.closest('.td-actions-btn')) return;
     if (e.target.closest('#action-confirm-dialog')) return;
     closeActionsPopup();
   });
