@@ -39,7 +39,12 @@ function _httpRequest(urlStr, headers, body) {
             reject(new Error(`Invalid JSON response: ${e.message}`));
           }
         } else {
-          reject(new Error(`HTTP ${res.statusCode}: ${data.slice(0, 200)}`));
+          // Extract clean error: JSON message if possible, otherwise just the status code
+          let detail = `HTTP ${res.statusCode}`;
+          try { const j = JSON.parse(data); if (j.message) detail += `: ${j.message}`; } catch {
+            if (res.statusCode >= 500) detail += ' (server error, will retry)';
+          }
+          reject(new Error(detail));
         }
       });
     });
@@ -69,7 +74,11 @@ function _httpMethod(method, urlStr, headers, body) {
         if (res.statusCode >= 200 && res.statusCode < 300) {
           try { resolve(JSON.parse(resBody)); } catch { resolve(resBody); }
         } else {
-          reject(new Error(`HTTP ${res.statusCode}: ${resBody.slice(0, 200)}`));
+          let detail = `HTTP ${res.statusCode}`;
+          try { const j = JSON.parse(resBody); if (j.message) detail += `: ${j.message}`; } catch {
+            if (res.statusCode >= 500) detail += ' (server error, will retry)';
+          }
+          reject(new Error(detail));
         }
       });
     });

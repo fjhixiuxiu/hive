@@ -141,6 +141,9 @@
   let consoleTerm = null;
   let consoleFit = null;
   let consoleLastContent = '';
+  let consoleScrolledUp = false;
+  let consolePending = null;
+  let consoleWriting = false;
 
   // Color map: name → { css var, rgba bg }
   const DESIG_COLORS = {
@@ -1014,10 +1017,11 @@
         // Console (Session 0) terminal data
         if (consoleTerm && consoleOpen && String(msg.session) === 'hive-console') {
           if (msg.content !== consoleLastContent) {
-            consoleLastContent = msg.content;
-            consoleTerm.reset();
-            consoleTerm.write(msg.content);
-            requestAnimationFrame(() => consoleTerm.scrollToBottom());
+            if (consoleScrolledUp) {
+              consolePending = msg.content;
+            } else {
+              writeConsoleContent(msg.content);
+            }
           }
         }
         break;
@@ -2245,11 +2249,21 @@
       consoleTerm.loadAddon(new WebLinksAddon.WebLinksAddon((e, uri) => window.open(uri, '_blank')));
       enableTerminalCopy(consoleTerm);
       consoleTerm.open(document.getElementById('console-terminal'));
+      // Scroll lock: detect user scrolling up
+      consoleTerm.element.addEventListener('wheel', () => { setTimeout(checkConsoleScroll, 50); });
+      let consoleTouchStartY = 0;
+      consoleTerm.element.addEventListener('touchstart', (e) => { consoleTouchStartY = e.touches[0].clientY; }, { passive: true });
+      consoleTerm.element.addEventListener('touchend', (e) => {
+        const dy = consoleTouchStartY - (e.changedTouches[0] || {}).clientY;
+        if (Math.abs(dy) > 20) { setTimeout(checkConsoleScroll, 150); setTimeout(checkConsoleScroll, 500); }
+      });
     }
     requestAnimationFrame(() => {
       consoleFit.fit();
       consoleTerm.clear();
       consoleLastContent = '';
+      consoleScrolledUp = false;
+      consolePending = null;
       if (ws && ws.readyState === 1) {
         ws.send(JSON.stringify({ type: 'terminal:subscribe', session: 'hive-console', cols: consoleTerm.cols, rows: consoleTerm.rows }));
         // Resize tmux pane to match xterm cols
@@ -2273,6 +2287,48 @@
   function toggleConsole() {
     if (consoleOpen) closeConsole();
     else openConsole();
+  }
+
+  function checkConsoleScroll() {
+    if (!consoleTerm || consoleWriting) return;
+    const buf = consoleTerm.buffer.active;
+    const linesFromBottom = buf.baseY - buf.viewportY;
+    if (linesFromBottom <= 3 && consoleScrolledUp) {
+      consoleScrolledUp = false;
+      consoleScrollIndicator(false);
+      if (consolePending !== null) { writeConsoleContent(consolePending); consolePending = null; }
+    } else if (linesFromBottom > 3) {
+      consoleScrolledUp = true;
+      consoleScrollIndicator(true);
+    }
+  }
+
+  function writeConsoleContent(content) {
+    if (!consoleTerm) return;
+    consoleLastContent = content;
+    consoleWriting = true;
+    consoleTerm.reset();
+    consoleTerm.write(content);
+    requestAnimationFrame(() => { consoleTerm.scrollToBottom(); requestAnimationFrame(() => { consoleWriting = false; }); });
+  }
+
+  function consoleScrollIndicator(show) {
+    let el = document.getElementById('console-scroll-pause');
+    const termContainer = document.getElementById('console-terminal');
+    if (show && !el) {
+      el = document.createElement('div');
+      el.id = 'console-scroll-pause';
+      el.className = 'scroll-pause-btn';
+      el.title = 'Scroll to bottom';
+      el.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>';
+      el.addEventListener('click', () => {
+        consoleScrolledUp = false;
+        consoleScrollIndicator(false);
+        if (consoleTerm) consoleTerm.scrollToBottom();
+        if (consolePending !== null) { writeConsoleContent(consolePending); consolePending = null; }
+      });
+      if (termContainer) { termContainer.style.position = 'relative'; termContainer.appendChild(el); }
+    } else if (!show && el) { el.remove(); }
   }
 
   function updateConsoleBtnLogo() {
@@ -4389,13 +4445,17 @@
     }
   }
 
-  /** Compute effective board column: autoOnStatus rules win, then manual workState, then first col */
+  /** Compute effective board column: manual override wins, then autoOnStatus, then first col */
   function effectiveWorkState(task) {
-    // Check if any column's autoOnStatus matches this task's current status
+    // Manual override takes priority (user dragged/set explicitly)
+    if (task.workStateManual && task.workState && workStates.some(ws => ws.id === task.workState)) {
+      return task.workState;
+    }
+    // Auto-mapping: check if any column's autoOnStatus matches current status
     for (const ws of workStates) {
       if (ws.autoOnStatus && ws.autoOnStatus.includes(task.status)) return ws.id;
     }
-    // Fall back to manually-set workState, then first column
+    // Fall back to stored workState, then first column
     if (task.workState && workStates.some(ws => ws.id === task.workState)) return task.workState;
     return workStates[0]?.id || null;
   }
@@ -4472,15 +4532,39 @@
     countEl.textContent = taskList.length;
 
     container.innerHTML = '';
+
+    // Drop target: attach once so empty columns accept drops
+    if (!container._dropWired) {
+      container._dropWired = true;
+      container.addEventListener('dragover', (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; container.classList.add('board-col-drop-target'); });
+      container.addEventListener('dragleave', (e) => { if (!container.contains(e.relatedTarget)) container.classList.remove('board-col-drop-target'); });
+      container.addEventListener('drop', (e) => {
+        e.preventDefault();
+        container.classList.remove('board-col-drop-target');
+        const taskId = e.dataTransfer.getData('text/plain');
+        if (!taskId || colId === effectiveWorkState(tasks.find(t => t.id === taskId) || {})) return;
+        if (ws && ws.readyState === 1) {
+          ws.send(JSON.stringify({ type: 'task:update', taskId, updates: { workState: colId } }));
+        }
+        // Optimistic update
+        const task = tasks.find(t => t.id === taskId);
+        if (task) { task.workState = colId; task.workStateManual = true; }
+        renderTaskBoard();
+        if (taskDetailTaskId === taskId) openTaskDetail(taskId);
+      });
+    }
+
     if (!taskList.length) {
-      container.innerHTML = '<div class="board-card-empty">No tasks</div>';
+      container.innerHTML = '<div class="board-card-empty">Drop here</div>';
       return;
     }
+
     for (const t of taskList) {
       const el = document.createElement('div');
       el.className = `board-card${tasksSelectedTaskId === t.id ? ' selected' : ''}`;
       el.dataset.id = t.id;
       el.dataset.status = t.status;
+      el.draggable = true;
 
       const sourceLabel = t.source ? t.source.replace(/^pm:/, '') : '';
       const pmdc = t.designation ? getDesigColor(t.designation) : null;
@@ -4496,6 +4580,21 @@
         <div class="board-card-title">${esc(t.text)}</div>
         <div class="board-card-meta">${statusDot}${desigBadge}${sourceBadge}${sessionBadge}<span>${timeStr}</span>${assigneeBadge}</div>
       `;
+
+      // Drag start
+      el.addEventListener('dragstart', (e) => {
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', t.id);
+        el.classList.add('board-card-dragging');
+        // Highlight all column drop zones
+        document.querySelectorAll('.tasks-board-col-cards').forEach(c => c.classList.add('board-col-drop-ready'));
+      });
+      el.addEventListener('dragend', () => {
+        el.classList.remove('board-card-dragging');
+        document.querySelectorAll('.tasks-board-col-cards').forEach(c => {
+          c.classList.remove('board-col-drop-ready', 'board-col-drop-target');
+        });
+      });
 
       el.addEventListener('click', () => openTaskDetail(t.id));
       container.appendChild(el);

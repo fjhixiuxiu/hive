@@ -146,6 +146,7 @@ class TaskQueue extends EventEmitter {
       createdBy: (meta && meta.createdBy) || null,   // GitHub login of creator
       actionContext: (meta && meta.actionContext) || null, // contextual actions metadata
       workState: (meta && meta.workState) || null,
+      workStateManual: false,
       assignee: (meta && meta.assignee) || null,
     };
     this.tasks.set(task.id, task);
@@ -188,6 +189,7 @@ class TaskQueue extends EventEmitter {
       sourceSession: sessionNum,
       actionContext: (meta && meta.actionContext) || null,
       workState: (meta && meta.workState) || null,
+      workStateManual: false,
       assignee: (meta && meta.assignee) || null,
     };
     this.tasks.set(task.id, task);
@@ -205,9 +207,12 @@ class TaskQueue extends EventEmitter {
     if (!task) return null;
 
     // workState and assignee can be changed on any task regardless of status
-    const alwaysAllowed = ['workState', 'assignee'];
-    for (const key of alwaysAllowed) {
-      if (key in updates) task[key] = updates[key];
+    if ('workState' in updates) {
+      task.workState = updates.workState;
+      task.workStateManual = true;
+    }
+    if ('assignee' in updates) {
+      task.assignee = updates.assignee;
     }
 
     // Other fields only on queued/snoozed tasks
@@ -244,7 +249,7 @@ class TaskQueue extends EventEmitter {
     }
     const prevSession = task.assignedTo;
     task.status = 'queued';
-
+    task.workStateManual = false;
     task.assignedTo = null;
     task.dispatchedAt = null;
     task.targetSession = null;
@@ -268,7 +273,7 @@ class TaskQueue extends EventEmitter {
       this.activeTaskBySession.delete(task.assignedTo);
     }
     task.status = 'cancelled';
-
+    task.workStateManual = false;
     this.emit('task:cancelled', task);
     this.pushFeed('task', task.assignedTo, `Task cancelled: "${task.text}"`);
     return task;
@@ -283,7 +288,7 @@ class TaskQueue extends EventEmitter {
     }
     if (task.status !== 'queued') return null;
     task.status = 'snoozed';
-
+    task.workStateManual = false;
     task.snoozedUntil = Date.now() + durationMs;
     this._armSnoozeTimer(task);
     this.emit('task:snoozed', task);
@@ -300,7 +305,7 @@ class TaskQueue extends EventEmitter {
       this._snoozeTimers.delete(taskId);
     }
     task.status = 'queued';
-
+    task.workStateManual = false;
     task.snoozedUntil = null;
     this.emit('task:unsnoozed', task);
     this.pushFeed('task', null, `Task unsnoozed: "${task.text}"`);
@@ -325,7 +330,7 @@ class TaskQueue extends EventEmitter {
     const task = this.tasks.get(taskId);
     if (!task || task.status !== 'snoozed') return;
     task.status = 'queued';
-
+    task.workStateManual = false;
     task.snoozedUntil = null;
     this.emit('task:unsnoozed', task);
     this.pushFeed('task', null, `Snoozed task woke up: "${task.text}"`);
@@ -350,7 +355,7 @@ class TaskQueue extends EventEmitter {
     if (existingTaskId && existingTaskId !== taskId) return null;
 
     task.status = 'dispatched';
-
+    task.workStateManual = false;
     task.mode = 'manual';
     task.completedAt = null;
     task.lastActivityAt = Date.now();
@@ -370,7 +375,7 @@ class TaskQueue extends EventEmitter {
     if (!task || task.status !== 'dispatched') return null;
 
     task.status = 'completed';
-
+    task.workStateManual = false;
     task.completedAt = Date.now();
     task.result = result || null;
     task.snapshot = snapshot || null;
@@ -399,7 +404,7 @@ class TaskQueue extends EventEmitter {
     if (!task || task.status !== 'dispatched') return null;
 
     task.status = 'failed';
-
+    task.workStateManual = false;
     task.completedAt = Date.now();
     task.result = error;
 
@@ -439,7 +444,7 @@ class TaskQueue extends EventEmitter {
     }
 
     task.status = 'dispatched';
-
+    task.workStateManual = false;
     task.assignedTo = sessionNum;
     task.dispatchedAt = Date.now();
     task.lastActivityAt = Date.now();

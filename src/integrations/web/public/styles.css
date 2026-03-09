@@ -1730,9 +1730,18 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .ws-config-row.dragging { opacity: 0.4; }
 .ws-config-row.drag-over { border-top: 2px solid var(--purple); }
 .board-card-empty {
-  font-size: var(--fs-md); color: var(--dim); text-align: center; padding: 20px 8px;
-  opacity: 0.6;
+  font-size: var(--fs-sm); color: var(--dim); text-align: center; padding: 20px 8px;
+  opacity: 0.4; flex: 1; display: flex; align-items: center; justify-content: center;
+  border: 1px dashed var(--bg3); border-radius: 8px; min-height: 60px;
 }
+.board-col-drop-target .board-card-empty {
+  border-color: var(--purple); color: var(--purple); opacity: 0.7;
+}
+/* Board drag-and-drop */
+.board-card[draggable] { cursor: grab; }
+.board-card-dragging { opacity: 0.3; cursor: grabbing; }
+.board-col-drop-ready { min-height: 60px; transition: background 0.15s; }
+.board-col-drop-target { background: rgba(189,147,249,0.08); border-radius: 8px; }
 /* Board FLIP animations */
 .board-card-enter {
   animation: boardCardEnter 0.3s ease-out;
