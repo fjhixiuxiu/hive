@@ -235,24 +235,27 @@
           <div class="tasks-filter-dropdown" id="tasks-filter-dropdown"></div>
         </div>
         <button class="tasks-create-btn" id="tasks-create-btn-board" style="display:none">+ Create</button>
+        <button class="tasks-ws-config-btn" id="tasks-ws-config-btn" style="display:none" title="Configure work states">&#9881;</button>
+      </div>
+
+      <!-- Work States config modal -->
+      <div class="ws-config-overlay" id="ws-config-overlay" style="display:none">
+        <div class="ws-config-modal">
+          <div class="ws-config-header">
+            <span class="ws-config-title">Work States</span>
+            <button class="ws-config-close" id="ws-config-close">&times;</button>
+          </div>
+          <div class="ws-config-body" id="ws-config-body"></div>
+          <div class="ws-config-footer">
+            <button class="ws-config-add" id="ws-config-add">+ Add State</button>
+            <span class="td-spacer"></span>
+            <button class="ws-config-cancel" id="ws-config-cancel">Cancel</button>
+            <button class="ws-config-save" id="ws-config-save">Save</button>
+          </div>
+        </div>
       </div>
       <div class="tasks-board" id="tasks-board" style="display:none">
-        <div class="tasks-board-col" data-col="queued">
-          <div class="tasks-board-col-header"><span class="tasks-board-col-title">Queued</span><span class="tasks-board-col-count" id="board-count-queued">0</span></div>
-          <div class="tasks-board-col-cards" id="board-cards-queued"></div>
-        </div>
-        <div class="tasks-board-col" data-col="snoozed">
-          <div class="tasks-board-col-header"><span class="tasks-board-col-title">Snoozed</span><span class="tasks-board-col-count" id="board-count-snoozed">0</span></div>
-          <div class="tasks-board-col-cards" id="board-cards-snoozed"></div>
-        </div>
-        <div class="tasks-board-col" data-col="inprogress">
-          <div class="tasks-board-col-header"><span class="tasks-board-col-title">In Progress</span><span class="tasks-board-col-count" id="board-count-inprogress">0</span></div>
-          <div class="tasks-board-col-cards" id="board-cards-inprogress"></div>
-        </div>
-        <div class="tasks-board-col" data-col="completed">
-          <div class="tasks-board-col-header"><span class="tasks-board-col-title">Completed</span><span class="tasks-board-col-count" id="board-count-completed">0</span></div>
-          <div class="tasks-board-col-cards" id="board-cards-completed"></div>
-        </div>
+        <!-- Columns rendered dynamically from workStates config -->
       </div>
       <div class="tasks-panes" id="tasks-panes">
         <div class="tasks-list-pane">
@@ -1239,6 +1242,8 @@
   </div>
   <div id="task-detail-toolbar">
     <div id="task-detail-actions"></div>
+    <button class="td-work-state-btn" id="task-detail-work-state"></button>
+    <button class="td-assignee-btn" id="task-detail-assignee" title="Set assignee"></button>
     <span class="td-spacer"></span>
     <span id="task-detail-checklist" class="td-checklist"></span>
     <button class="task-detail-action" id="task-detail-open-session">Open Session</button>

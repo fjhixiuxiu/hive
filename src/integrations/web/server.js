@@ -200,6 +200,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     }
     await sendFleetStatus(ws);
     if (taskQueue) {
+      ws.send(JSON.stringify({ type: 'workStates:list', states: taskQueue.getWorkStates() }));
       ws.send(JSON.stringify({ type: 'tasks:list', tasks: taskQueue.getTasksList().map(decorateTaskActions) }));
       ws.send(JSON.stringify({ type: 'auto:status', sessions: taskQueue.getAutoSessions() }));
       ws.send(JSON.stringify({ type: 'approvals:list', approvals: taskQueue.getPendingApprovals() }));

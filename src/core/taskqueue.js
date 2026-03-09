@@ -45,6 +45,17 @@ class TaskQueue extends EventEmitter {
     this.checklistTemplates = new Map(); // name → { name, items: [string] }
     this.sessionContext = new Map();    // session num -> { plan: '/path', pr: 'url', jira: 'KEY', ... }
 
+    // Configurable work states for the board
+    // autoOnStatus: when a task's system status changes to one of these, auto-set workState
+    this.workStates = [
+      { id: 'backlog', label: 'Backlog', color: '#6272a4', autoOnStatus: ['queued'] },
+      { id: 'planning', label: 'Planning', color: '#bd93f9', autoOnStatus: ['dispatched'] },
+      { id: 'in-progress', label: 'In Progress', color: '#ffb86c', autoOnStatus: [] },
+      { id: 'review', label: 'Review', color: '#8be9fd', autoOnStatus: [] },
+      { id: 'testing', label: 'Testing', color: '#f1fa8c', autoOnStatus: [] },
+      { id: 'done', label: 'Done', color: '#50fa7b', autoOnStatus: ['completed', 'cancelled'] },
+    ];
+
     // Designation definitions + agent file scanning
     this.designationDefs = new Map(); // name → { name, agentFiles: [], description: '' }
     this.agentRoots = [];             // array of scan paths (e.g. '~/dev/agents/')
@@ -134,6 +145,8 @@ class TaskQueue extends EventEmitter {
       sourceSession: (meta && meta.session) || null, // session that triggered this
       createdBy: (meta && meta.createdBy) || null,   // GitHub login of creator
       actionContext: (meta && meta.actionContext) || null, // contextual actions metadata
+      workState: (meta && meta.workState) || null,
+      assignee: (meta && meta.assignee) || null,
     };
     this.tasks.set(task.id, task);
     this.emit('task:created', task);
@@ -174,6 +187,8 @@ class TaskQueue extends EventEmitter {
       sourcePR: (meta && meta.pr) || null,
       sourceSession: sessionNum,
       actionContext: (meta && meta.actionContext) || null,
+      workState: (meta && meta.workState) || null,
+      assignee: (meta && meta.assignee) || null,
     };
     this.tasks.set(task.id, task);
     this.activeTaskBySession.set(sessionNum, task.id);
@@ -187,12 +202,22 @@ class TaskQueue extends EventEmitter {
 
   updateTask(taskId, updates) {
     const task = this.tasks.get(taskId);
-    if (!task || (task.status !== 'queued' && task.status !== 'snoozed')) return null;
+    if (!task) return null;
 
-    const allowed = ['text', 'mode', 'targetSession', 'designation', 'actionContext'];
-    for (const key of allowed) {
+    // workState and assignee can be changed on any task regardless of status
+    const alwaysAllowed = ['workState', 'assignee'];
+    for (const key of alwaysAllowed) {
       if (key in updates) task[key] = updates[key];
     }
+
+    // Other fields only on queued/snoozed tasks
+    if (task.status === 'queued' || task.status === 'snoozed') {
+      const allowed = ['text', 'mode', 'targetSession', 'designation', 'actionContext'];
+      for (const key of allowed) {
+        if (key in updates) task[key] = updates[key];
+      }
+    }
+
     this.emit('task:updated', task);
     this._saveState();
     return task;
@@ -219,6 +244,7 @@ class TaskQueue extends EventEmitter {
     }
     const prevSession = task.assignedTo;
     task.status = 'queued';
+
     task.assignedTo = null;
     task.dispatchedAt = null;
     task.targetSession = null;
@@ -242,6 +268,7 @@ class TaskQueue extends EventEmitter {
       this.activeTaskBySession.delete(task.assignedTo);
     }
     task.status = 'cancelled';
+
     this.emit('task:cancelled', task);
     this.pushFeed('task', task.assignedTo, `Task cancelled: "${task.text}"`);
     return task;
@@ -256,6 +283,7 @@ class TaskQueue extends EventEmitter {
     }
     if (task.status !== 'queued') return null;
     task.status = 'snoozed';
+
     task.snoozedUntil = Date.now() + durationMs;
     this._armSnoozeTimer(task);
     this.emit('task:snoozed', task);
@@ -272,6 +300,7 @@ class TaskQueue extends EventEmitter {
       this._snoozeTimers.delete(taskId);
     }
     task.status = 'queued';
+
     task.snoozedUntil = null;
     this.emit('task:unsnoozed', task);
     this.pushFeed('task', null, `Task unsnoozed: "${task.text}"`);
@@ -296,6 +325,7 @@ class TaskQueue extends EventEmitter {
     const task = this.tasks.get(taskId);
     if (!task || task.status !== 'snoozed') return;
     task.status = 'queued';
+
     task.snoozedUntil = null;
     this.emit('task:unsnoozed', task);
     this.pushFeed('task', null, `Snoozed task woke up: "${task.text}"`);
@@ -320,6 +350,7 @@ class TaskQueue extends EventEmitter {
     if (existingTaskId && existingTaskId !== taskId) return null;
 
     task.status = 'dispatched';
+
     task.mode = 'manual';
     task.completedAt = null;
     task.lastActivityAt = Date.now();
@@ -339,6 +370,7 @@ class TaskQueue extends EventEmitter {
     if (!task || task.status !== 'dispatched') return null;
 
     task.status = 'completed';
+
     task.completedAt = Date.now();
     task.result = result || null;
     task.snapshot = snapshot || null;
@@ -367,6 +399,7 @@ class TaskQueue extends EventEmitter {
     if (!task || task.status !== 'dispatched') return null;
 
     task.status = 'failed';
+
     task.completedAt = Date.now();
     task.result = error;
 
@@ -406,6 +439,7 @@ class TaskQueue extends EventEmitter {
     }
 
     task.status = 'dispatched';
+
     task.assignedTo = sessionNum;
     task.dispatchedAt = Date.now();
     task.lastActivityAt = Date.now();
@@ -957,6 +991,12 @@ class TaskQueue extends EventEmitter {
           this.sessionContext.set(Number(num), ctx);
         }
       }
+      if (Array.isArray(data.workStates) && data.workStates.length) {
+        this.workStates = data.workStates.map(s => ({
+          ...s,
+          autoOnStatus: Array.isArray(s.autoOnStatus) ? s.autoOnStatus : [],
+        }));
+      }
       // Restore tasks
       if (Array.isArray(data.tasks)) {
         for (const t of data.tasks) {
@@ -1023,6 +1063,7 @@ class TaskQueue extends EventEmitter {
       spawnSlotMax: this.spawnSlotMax,
       checklistTemplates: this.getChecklistTemplates(),
       sessionContext: this.getAllSessionContexts(),
+      workStates: this.workStates,
     };
     // Merge PM data if pmManager is attached
     if (this._pmManager) {

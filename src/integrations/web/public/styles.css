@@ -1566,19 +1566,16 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .tasks-board-col-header {
   display: flex; align-items: center; gap: 6px;
   padding: 10px 12px; flex-shrink: 0;
-  border-bottom: 1px solid var(--bg3);
+  border-bottom: 2px solid var(--dim);
 }
 .tasks-board-col-title {
   font-size: var(--fs-md); font-weight: 700; text-transform: uppercase;
-  letter-spacing: 0.5px; color: var(--dim);
+  letter-spacing: 0.5px; color: var(--fg);
 }
 .tasks-board-col-count {
   font-size: var(--fs-sm); font-weight: 600; color: var(--dim);
   background: var(--bg3); border-radius: 8px; padding: 1px 6px;
 }
-.tasks-board-col[data-col="inprogress"] .tasks-board-col-title { color: var(--purple); }
-.tasks-board-col[data-col="completed"] .tasks-board-col-title { color: var(--green); }
-.tasks-board-col[data-col="snoozed"] .tasks-board-col-title { color: var(--yellow); }
 .tasks-board-col-cards {
   flex: 1; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 6px;
   -webkit-overflow-scrolling: touch;
@@ -1590,8 +1587,6 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 }
 .board-card:hover { background: var(--bg3); }
 .board-card.selected { background: rgba(189,147,249,0.12); border-left-color: var(--purple); }
-.board-card[data-status="dispatched"] { border-left-color: var(--purple); }
-.board-card[data-status="snoozed"] { border-left-color: var(--yellow); }
 .board-card-title {
   font-size: var(--fs-md); font-weight: 600; color: var(--fg);
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
@@ -1601,6 +1596,139 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   display: flex; gap: 6px; flex-wrap: wrap; align-items: center;
   font-size: var(--fs-sm); color: var(--dim);
 }
+/* System status dot on board cards */
+.board-card-status {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+}
+.board-card-status.s-queued { background: var(--dim); }
+.board-card-status.s-dispatched { background: var(--orange); }
+.board-card-status.s-completed { background: var(--green); }
+.board-card-status.s-failed { background: var(--red); }
+.board-card-status.s-snoozed { background: var(--yellow); }
+/* Assignee initials badge */
+.board-card-assignee {
+  margin-left: auto; background: var(--bg3); color: var(--fg);
+  font-size: var(--fs-xs); font-weight: 700; border-radius: 50%;
+  width: 24px; height: 24px; display: flex; align-items: center;
+  justify-content: center; flex-shrink: 0; text-transform: uppercase;
+}
+/* Work state chip in toolbar */
+.td-work-state-btn {
+  background: var(--bg3); border: none; color: var(--fg); font-size: var(--fs-sm);
+  font-weight: 600; padding: 4px 10px; border-radius: 12px; cursor: pointer;
+  white-space: nowrap;
+}
+.td-work-state-btn:hover { filter: brightness(1.2); }
+/* Work state dropdown */
+.work-state-dropdown {
+  position: absolute; top: 100%; left: 0; background: var(--bg2);
+  border: 1px solid var(--bg3); border-radius: 8px; padding: 4px;
+  z-index: 200; min-width: 140px; box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+}
+.work-state-option {
+  display: flex; align-items: center; gap: 8px; padding: 6px 10px;
+  border: none; background: none; color: var(--fg); font-size: var(--fs-sm);
+  cursor: pointer; width: 100%; border-radius: 4px; text-align: left;
+}
+.work-state-option:hover { background: var(--bg3); }
+.work-state-option.active { color: var(--green); font-weight: 700; }
+.work-state-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+/* Assignee button in toolbar */
+.td-assignee-btn {
+  background: var(--bg3); border: none; color: var(--fg); font-size: var(--fs-sm);
+  font-weight: 700; padding: 4px 10px; border-radius: 12px; cursor: pointer;
+  min-width: 28px; text-transform: uppercase;
+}
+.td-assignee-btn:hover { filter: brightness(1.2); }
+.td-assignee-btn:empty::after { content: '+👤'; font-weight: 400; opacity: 0.5; }
+/* Work States config button */
+.tasks-ws-config-btn {
+  background: none; border: 1px solid var(--bg3); color: var(--dim); font-size: var(--fs-lg);
+  width: 32px; height: 32px; border-radius: 8px; cursor: pointer; display: flex;
+  align-items: center; justify-content: center; padding: 0; line-height: 1;
+}
+.tasks-ws-config-btn:hover { color: var(--fg); border-color: var(--fg); }
+/* Work States config modal */
+.ws-config-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 500;
+  display: flex; align-items: center; justify-content: center;
+}
+.ws-config-modal {
+  background: var(--bg2); border: 1px solid var(--bg3); border-radius: 12px;
+  width: 420px; max-width: 90vw; max-height: 80vh; display: flex; flex-direction: column;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.5);
+}
+.ws-config-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 20px 12px; border-bottom: 1px solid var(--bg3);
+}
+.ws-config-title { font-size: var(--fs-lg); font-weight: 700; color: var(--fg); }
+.ws-config-close {
+  background: none; border: none; color: var(--dim); font-size: var(--fs-xl);
+  cursor: pointer; padding: 0 4px; line-height: 1;
+}
+.ws-config-close:hover { color: var(--fg); }
+.ws-config-body { padding: 12px 20px; overflow-y: auto; flex: 1; }
+.ws-config-row {
+  display: flex; flex-direction: column; gap: 4px; padding: 8px 0;
+  border-bottom: 1px solid var(--bg3);
+}
+.ws-config-row:last-child { border-bottom: none; }
+.ws-config-row-main { display: flex; align-items: center; gap: 8px; }
+.ws-auto-row {
+  display: flex; align-items: center; gap: 4px; padding-left: 36px;
+  flex-wrap: wrap;
+}
+.ws-auto-label { font-size: var(--fs-xs); color: var(--dim); white-space: nowrap; margin-right: 2px; }
+.ws-auto-chip {
+  font-size: 10px; padding: 2px 6px; border-radius: 10px;
+  border: 1px solid var(--bg3); background: none; color: var(--dim);
+  cursor: pointer; text-transform: capitalize;
+}
+.ws-auto-chip:hover { border-color: var(--fg); color: var(--fg); }
+.ws-auto-chip.active { background: var(--purple); border-color: var(--purple); color: #fff; font-weight: 700; }
+.ws-config-drag {
+  cursor: grab; color: var(--dim); font-size: var(--fs-sm); user-select: none;
+  padding: 2px 4px;
+}
+.ws-config-drag:active { cursor: grabbing; }
+.ws-config-color {
+  width: 28px; height: 28px; border-radius: 6px; border: 2px solid var(--bg3);
+  cursor: pointer; padding: 0; flex-shrink: 0;
+}
+.ws-config-color::-webkit-color-swatch-wrapper { padding: 0; }
+.ws-config-color::-webkit-color-swatch { border: none; border-radius: 4px; }
+.ws-config-label {
+  flex: 1; background: var(--bg); border: 1px solid var(--bg3); color: var(--fg);
+  font-size: var(--fs-sm); padding: 6px 10px; border-radius: 6px;
+}
+.ws-config-label:focus { border-color: var(--purple); outline: none; }
+.ws-config-delete {
+  background: none; border: none; color: var(--dim); font-size: var(--fs-lg);
+  cursor: pointer; padding: 2px 6px; border-radius: 4px;
+}
+.ws-config-delete:hover { color: var(--red); background: rgba(255,85,85,0.1); }
+.ws-config-footer {
+  display: flex; align-items: center; gap: 8px; padding: 12px 20px 16px;
+  border-top: 1px solid var(--bg3);
+}
+.ws-config-add {
+  background: none; border: 1px dashed var(--bg3); color: var(--dim);
+  font-size: var(--fs-sm); padding: 6px 12px; border-radius: 6px; cursor: pointer;
+}
+.ws-config-add:hover { color: var(--fg); border-color: var(--fg); }
+.ws-config-cancel {
+  background: var(--bg3); border: none; color: var(--fg); font-size: var(--fs-sm);
+  padding: 8px 16px; border-radius: 8px; cursor: pointer;
+}
+.ws-config-cancel:hover { filter: brightness(1.2); }
+.ws-config-save {
+  background: var(--purple); border: none; color: #fff; font-size: var(--fs-sm);
+  padding: 8px 16px; border-radius: 8px; cursor: pointer; font-weight: 700;
+}
+.ws-config-save:hover { filter: brightness(1.15); }
+.ws-config-row.dragging { opacity: 0.4; }
+.ws-config-row.drag-over { border-top: 2px solid var(--purple); }
 .board-card-empty {
   font-size: var(--fs-md); color: var(--dim); text-align: center; padding: 20px 8px;
   opacity: 0.6;

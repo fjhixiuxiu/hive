@@ -89,6 +89,7 @@
   let term = null;
   let fitAddon = null;
   let tasks = [];
+  let workStates = [];
   let autoSessions = new Set();
   let feedEntries = [];
   let feedHasMore = false;
@@ -674,6 +675,7 @@
         document.getElementById('tasks-panes').style.display = 'none';
         document.getElementById('tasks-board').style.display = '';
         document.getElementById('tasks-create-btn-board').style.display = '';
+        document.getElementById('tasks-ws-config-btn').style.display = '';
         renderTaskBoard();
       }
       return;
@@ -1070,6 +1072,11 @@
         } else {
           showToast('Error', msg.message, 'error');
         }
+        break;
+      case 'workStates:list':
+        workStates = msg.states || [];
+        renderBoardColumns();
+        if (tasksViewMode === 'board') renderTaskBoard();
         break;
       case 'tasks:list':
         tasks = msg.tasks || []; renderTasks(); updateTasksBadge();
@@ -4340,15 +4347,18 @@
       const panes = document.getElementById('tasks-panes');
       const board = document.getElementById('tasks-board');
       const createBoardBtn = document.getElementById('tasks-create-btn-board');
+      const wsConfigBtn = document.getElementById('tasks-ws-config-btn');
       if (mode === 'board') {
         panes.style.display = 'none';
         board.style.display = '';
         createBoardBtn.style.display = '';
+        wsConfigBtn.style.display = '';
         renderTaskBoard();
       } else {
         board.style.display = 'none';
         panes.style.display = '';
         createBoardBtn.style.display = 'none';
+        wsConfigBtn.style.display = 'none';
         renderTasks();
       }
       pushHash();
@@ -4358,18 +4368,58 @@
   document.getElementById('tasks-create-btn-board').addEventListener('click', () => openTaskDialog(null));
 
   // ── Tasks kanban board renderer ────────────────────
+
+  /** Build board column DOM from workStates config */
+  function renderBoardColumns() {
+    const board = document.getElementById('tasks-board');
+    if (!board) return;
+    board.innerHTML = '';
+    for (const wState of workStates) {
+      const col = document.createElement('div');
+      col.className = 'tasks-board-col';
+      col.dataset.col = wState.id;
+      col.innerHTML = `
+        <div class="tasks-board-col-header" style="border-bottom-color:${wState.color}">
+          <span class="tasks-board-col-title">${esc(wState.label)}</span>
+          <span class="tasks-board-col-count" id="board-count-${wState.id}">0</span>
+        </div>
+        <div class="tasks-board-col-cards" id="board-cards-${wState.id}"></div>
+      `;
+      board.appendChild(col);
+    }
+  }
+
+  /** Compute effective board column: autoOnStatus rules win, then manual workState, then first col */
+  function effectiveWorkState(task) {
+    // Check if any column's autoOnStatus matches this task's current status
+    for (const ws of workStates) {
+      if (ws.autoOnStatus && ws.autoOnStatus.includes(task.status)) return ws.id;
+    }
+    // Fall back to manually-set workState, then first column
+    if (task.workState && workStates.some(ws => ws.id === task.workState)) return task.workState;
+    return workStates[0]?.id || null;
+  }
+
   function renderTaskBoard() {
+    if (!workStates.length) return;
+    // Ensure columns exist (idempotent)
+    if (!document.getElementById(`board-cards-${workStates[0].id}`)) renderBoardColumns();
     const q = taskSearchQuery.toLowerCase();
-    const matchesSearch = (t) => !q || t.text.toLowerCase().includes(q) || (t.source || '').toLowerCase().includes(q) || (t.designation || '').toLowerCase().includes(q) || String(t.assignedTo || '').includes(q);
+    const matchesSearch = (t) => !q || t.text.toLowerCase().includes(q) || (t.source || '').toLowerCase().includes(q) || (t.designation || '').toLowerCase().includes(q) || String(t.assignedTo || '').includes(q) || (t.assignee || '').toLowerCase().includes(q);
 
-    const queued = tasks.filter(t => t.status === 'queued' && matchesSearch(t));
-    const snoozed = tasks.filter(t => t.status === 'snoozed' && matchesSearch(t));
-    const dispatched = tasks.filter(t => t.status === 'dispatched' && matchesSearch(t));
-    const completed = tasks.filter(t => (t.status === 'completed' || t.status === 'failed') && matchesSearch(t));
+    // Group tasks by effective work state (dynamic resolution)
+    const grouped = new Map();
+    for (const wState of workStates) grouped.set(wState.id, []);
+    // Include all non-cancelled tasks
+    const visible = tasks.filter(t => t.status !== 'cancelled' && matchesSearch(t));
+    for (const t of visible) {
+      const col = effectiveWorkState(t);
+      if (col && grouped.has(col)) grouped.get(col).push(t);
+    }
 
-    // Build new status map for animation diffing
+    // Build new state map for animation diffing (use effective, not stored)
     const newStatuses = new Map();
-    for (const t of tasks) newStatuses.set(t.id, t.status);
+    for (const t of tasks) newStatuses.set(t.id, effectiveWorkState(t) || '');
 
     // Snapshot existing card positions for FLIP
     const oldRects = new Map();
@@ -4377,18 +4427,17 @@
       oldRects.set(el.dataset.id, el.getBoundingClientRect());
     });
 
-    // Detect movers (status changed since last render)
+    // Detect movers (workState changed since last render)
     const movers = new Set();
-    for (const [id, status] of newStatuses) {
+    for (const [id, wst] of newStatuses) {
       const prev = boardPrevStatuses.get(id);
-      if (prev && prev !== status) movers.add(id);
+      if (prev !== undefined && prev !== wst) movers.add(id);
     }
 
-    // Render columns
-    renderBoardCol('queued', queued);
-    renderBoardCol('snoozed', snoozed);
-    renderBoardCol('inprogress', dispatched);
-    renderBoardCol('completed', completed);
+    // Render each column
+    for (const wState of workStates) {
+      renderBoardCol(wState.id, grouped.get(wState.id) || []);
+    }
 
     // FLIP animate movers
     document.querySelectorAll('.board-card').forEach(el => {
@@ -4404,25 +4453,22 @@
           requestAnimationFrame(() => {
             el.style.transition = 'transform 0.35s ease';
             el.style.transform = '';
-            el.addEventListener('transitionend', () => {
-              el.style.transition = '';
-            }, { once: true });
+            el.addEventListener('transitionend', () => { el.style.transition = ''; }, { once: true });
           });
         }
       } else if (movers.has(id)) {
-        // New to this column — enter animation
         el.classList.add('board-card-enter');
         el.addEventListener('animationend', () => el.classList.remove('board-card-enter'), { once: true });
       }
     });
 
-    // Save statuses for next diff
     boardPrevStatuses = newStatuses;
   }
 
   function renderBoardCol(colId, taskList) {
     const container = document.getElementById(`board-cards-${colId}`);
     const countEl = document.getElementById(`board-count-${colId}`);
+    if (!container || !countEl) return;
     countEl.textContent = taskList.length;
 
     container.innerHTML = '';
@@ -4441,11 +4487,14 @@
       const desigBadge = t.designation ? `<span class="task-designation" style="background:${pmdc.bg};color:${pmdc.fg}">${esc(t.designation)}</span>` : '';
       const sourceBadge = sourceLabel ? `<span class="task-source-badge">${esc(sourceLabel)}</span>` : '';
       const sessionBadge = t.assignedTo ? `<span class="task-session-badge">S:${t.assignedTo}</span>` : '';
-      const timeStr = colId === 'inprogress' ? timeAgo(t.dispatchedAt || t.createdAt) : timeAgo(t.createdAt);
+      const statusDot = `<span class="board-card-status s-${t.status}"></span>`;
+      const initials = t.assignee ? t.assignee.slice(0, 2).toUpperCase() : '';
+      const assigneeBadge = initials ? `<span class="board-card-assignee">${esc(initials)}</span>` : '';
+      const timeStr = t.status === 'dispatched' ? timeAgo(t.dispatchedAt || t.createdAt) : timeAgo(t.createdAt);
 
       el.innerHTML = `
         <div class="board-card-title">${esc(t.text)}</div>
-        <div class="board-card-meta">${desigBadge}${sourceBadge}${sessionBadge}<span>${timeStr}</span></div>
+        <div class="board-card-meta">${statusDot}${desigBadge}${sourceBadge}${sessionBadge}<span>${timeStr}</span>${assigneeBadge}</div>
       `;
 
       el.addEventListener('click', () => openTaskDetail(t.id));
@@ -4538,6 +4587,19 @@
       ctxBtn.onclick = null;
     }
 
+    // Work state button
+    const wsBtn = document.getElementById('task-detail-work-state');
+    const wsState = workStates.find(w => w.id === task.workState);
+    wsBtn.textContent = wsState ? wsState.label : (task.workState || 'Set state');
+    wsBtn.style.background = wsState ? wsState.color + '33' : '';
+    wsBtn.style.color = wsState ? wsState.color : 'var(--dim)';
+    wsBtn.onclick = (e) => { e.stopPropagation(); showWorkStateDropdown(task.id, wsBtn); };
+
+    // Assignee button
+    const assignBtn = document.getElementById('task-detail-assignee');
+    assignBtn.textContent = task.assignee || '';
+    assignBtn.onclick = (e) => { e.stopPropagation(); promptAssignee(task.id, assignBtn); };
+
     // Toolbar: checklist progress
     const checklistEl = document.getElementById('task-detail-checklist');
     if (task.checklist && task.checklist.length) {
@@ -4621,6 +4683,178 @@
     // Show panel
     document.getElementById('task-detail-panel').classList.add('open');
     document.getElementById('task-detail-overlay').classList.add('open');
+  }
+
+  function showWorkStateDropdown(taskId, anchorBtn) {
+    // Close existing
+    document.querySelectorAll('.work-state-dropdown').forEach(d => d.remove());
+    const dropdown = document.createElement('div');
+    dropdown.className = 'work-state-dropdown';
+    const task = tasks.find(t => t.id === taskId);
+    for (const wState of workStates) {
+      const opt = document.createElement('button');
+      opt.className = `work-state-option${task && task.workState === wState.id ? ' active' : ''}`;
+      opt.innerHTML = `<span class="work-state-dot" style="background:${wState.color}"></span>${esc(wState.label)}`;
+      opt.addEventListener('click', () => {
+        if (ws && ws.readyState === 1) {
+          ws.send(JSON.stringify({ type: 'task:update', taskId, updates: { workState: wState.id } }));
+        }
+        // Optimistic update
+        if (task) task.workState = wState.id;
+        dropdown.remove();
+        openTaskDetail(taskId); // re-render
+        renderTaskBoard();
+      });
+      dropdown.appendChild(opt);
+    }
+    anchorBtn.parentElement.style.position = 'relative';
+    anchorBtn.parentElement.appendChild(dropdown);
+    // Position below the button
+    const rect = anchorBtn.getBoundingClientRect();
+    const parentRect = anchorBtn.parentElement.getBoundingClientRect();
+    dropdown.style.left = (rect.left - parentRect.left) + 'px';
+    // Close on click outside
+    setTimeout(() => {
+      const close = (e) => { if (!dropdown.contains(e.target) && e.target !== anchorBtn) { dropdown.remove(); document.removeEventListener('click', close); } };
+      document.addEventListener('click', close);
+    }, 0);
+  }
+
+  function promptAssignee(taskId, anchorBtn) {
+    const task = tasks.find(t => t.id === taskId);
+    const current = task ? (task.assignee || '') : '';
+    // Simple inline input
+    const existing = document.querySelector('.assignee-input-inline');
+    if (existing) existing.remove();
+    const input = document.createElement('input');
+    input.className = 'assignee-input-inline';
+    input.type = 'text';
+    input.value = current;
+    input.placeholder = 'Initials...';
+    input.style.cssText = 'width:60px;padding:3px 6px;font-size:var(--fs-sm);background:var(--bg);border:1px solid var(--bg3);color:var(--fg);border-radius:6px;font-weight:700;text-transform:uppercase;';
+    const commit = () => {
+      const val = input.value.trim().slice(0, 10);
+      if (ws && ws.readyState === 1) {
+        ws.send(JSON.stringify({ type: 'task:update', taskId, updates: { assignee: val || null } }));
+      }
+      if (task) task.assignee = val || null;
+      input.replaceWith(anchorBtn);
+      openTaskDetail(taskId);
+      renderTaskBoard();
+    };
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') { input.replaceWith(anchorBtn); } });
+    input.addEventListener('blur', commit);
+    anchorBtn.replaceWith(input);
+    input.focus();
+    input.select();
+  }
+
+  // ── Work States config modal ─────────────────────
+  let wsConfigDraft = [];
+
+  document.getElementById('tasks-ws-config-btn').addEventListener('click', openWsConfig);
+  document.getElementById('ws-config-close').addEventListener('click', closeWsConfig);
+  document.getElementById('ws-config-cancel').addEventListener('click', closeWsConfig);
+  document.getElementById('ws-config-overlay').addEventListener('click', (e) => {
+    if (e.target.id === 'ws-config-overlay') closeWsConfig();
+  });
+  document.getElementById('ws-config-add').addEventListener('click', () => {
+    const id = 'state-' + Date.now().toString(36);
+    wsConfigDraft.push({ id, label: 'New State', color: '#6272a4' });
+    renderWsConfigRows();
+  });
+  document.getElementById('ws-config-save').addEventListener('click', () => {
+    syncWsConfigDraft();
+    const states = wsConfigDraft.filter(s => s.label);
+    if (!states.length) return;
+    if (ws && ws.readyState === 1) {
+      ws.send(JSON.stringify({ type: 'workStates:set', states }));
+    }
+    closeWsConfig();
+  });
+
+  function openWsConfig() {
+    wsConfigDraft = workStates.map(s => ({ ...s, autoOnStatus: [...(s.autoOnStatus || [])] }));
+    renderWsConfigRows();
+    document.getElementById('ws-config-overlay').style.display = '';
+  }
+
+  function closeWsConfig() {
+    document.getElementById('ws-config-overlay').style.display = 'none';
+  }
+
+  const TASK_STATUSES = ['queued', 'dispatched', 'completed', 'failed', 'snoozed', 'cancelled'];
+
+  function renderWsConfigRows() {
+    const body = document.getElementById('ws-config-body');
+    body.innerHTML = '';
+    wsConfigDraft.forEach((s, idx) => {
+      const row = document.createElement('div');
+      row.className = 'ws-config-row';
+      row.dataset.stateId = s.id;
+      row.draggable = true;
+      const auto = s.autoOnStatus || [];
+      const chipsHtml = TASK_STATUSES.map(st =>
+        `<button class="ws-auto-chip${auto.includes(st) ? ' active' : ''}" data-status="${st}">${st}</button>`
+      ).join('');
+      row.innerHTML = `
+        <div class="ws-config-row-main">
+          <span class="ws-config-drag">&#9776;</span>
+          <input type="color" class="ws-config-color" value="${s.color}">
+          <input type="text" class="ws-config-label" value="${esc(s.label)}" placeholder="State name">
+          <button class="ws-config-delete" title="Remove">&times;</button>
+        </div>
+        <div class="ws-auto-row">
+          <span class="ws-auto-label">Auto-set on:</span>
+          ${chipsHtml}
+        </div>
+      `;
+      // Chip toggle handlers
+      row.querySelectorAll('.ws-auto-chip').forEach(chip => {
+        chip.addEventListener('click', (e) => {
+          e.preventDefault();
+          chip.classList.toggle('active');
+        });
+      });
+      // Delete handler
+      row.querySelector('.ws-config-delete').addEventListener('click', () => {
+        syncWsConfigDraft();
+        wsConfigDraft.splice(idx, 1);
+        renderWsConfigRows();
+      });
+      // Drag-and-drop reorder
+      row.addEventListener('dragstart', (e) => {
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', idx);
+        row.classList.add('dragging');
+      });
+      row.addEventListener('dragend', () => row.classList.remove('dragging'));
+      row.addEventListener('dragover', (e) => { e.preventDefault(); row.classList.add('drag-over'); });
+      row.addEventListener('dragleave', () => row.classList.remove('drag-over'));
+      row.addEventListener('drop', (e) => {
+        e.preventDefault();
+        row.classList.remove('drag-over');
+        const fromIdx = parseInt(e.dataTransfer.getData('text/plain'));
+        if (isNaN(fromIdx) || fromIdx === idx) return;
+        syncWsConfigDraft();
+        const [item] = wsConfigDraft.splice(fromIdx, 1);
+        wsConfigDraft.splice(idx, 0, item);
+        renderWsConfigRows();
+      });
+      body.appendChild(row);
+    });
+  }
+
+  function syncWsConfigDraft() {
+    const rows = document.querySelectorAll('.ws-config-row');
+    rows.forEach((row, i) => {
+      if (wsConfigDraft[i]) {
+        wsConfigDraft[i].label = row.querySelector('.ws-config-label').value.trim() || wsConfigDraft[i].label;
+        wsConfigDraft[i].color = row.querySelector('.ws-config-color').value;
+        const chips = row.querySelectorAll('.ws-auto-chip.active');
+        wsConfigDraft[i].autoOnStatus = Array.from(chips).map(c => c.dataset.status);
+      }
+    });
   }
 
   function checkTaskDetailScroll() {
