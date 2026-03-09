@@ -4441,6 +4441,7 @@
   let taskDetailFitAddon = null;
   let taskDetailSession = null;
   let taskDetailLastContent = '';
+  let taskDetailMode = 'ask'; // 'ask' or 'tell'
 
   function openTaskDetail(taskId) {
     const task = tasks.find(t => t.id === taskId);
@@ -4526,6 +4527,7 @@
     // Terminal + input: show for dispatched tasks
     const termContainer = document.getElementById('task-detail-terminal');
     const keysBar = document.getElementById('task-detail-keys');
+    const cmdBarEl = document.getElementById('task-detail-cmd-bar');
     const inputBar = document.getElementById('task-detail-input-bar');
 
     if (isDispatched) {
@@ -4550,6 +4552,8 @@
       taskDetailLastContent = '';
       taskDetailSession = String(task.assignedTo);
       document.getElementById('task-detail-input').value = '';
+      // Render slash command bar (reuse tsCommands from tasks session)
+      renderTaskDetailCmdBar();
       // Subscribe immediately so data starts flowing
       if (ws && ws.readyState === 1) {
         ws.send(JSON.stringify({ type: 'terminal:subscribe', session: task.assignedTo }));
@@ -4562,6 +4566,7 @@
     } else {
       termContainer.style.display = 'none';
       keysBar.style.display = 'none';
+      cmdBarEl.innerHTML = '';
       inputBar.style.display = 'none';
       taskDetailSession = null;
     }
@@ -4648,13 +4653,41 @@
   document.getElementById('task-detail-prev').addEventListener('click', () => navigateTaskDetail(-1));
   document.getElementById('task-detail-next').addEventListener('click', () => navigateTaskDetail(1));
 
+  // Task detail: Ask/Tell mode toggle
+  const tdModeToggle = document.getElementById('task-detail-mode-toggle');
+  tdModeToggle.addEventListener('click', () => {
+    taskDetailMode = taskDetailMode === 'ask' ? 'tell' : 'ask';
+    tdModeToggle.textContent = taskDetailMode === 'ask' ? 'Ask' : 'Tell';
+    tdModeToggle.classList.toggle('tell', taskDetailMode === 'tell');
+  });
+
+  // Task detail: slash command bar
+  function renderTaskDetailCmdBar() {
+    const bar = document.getElementById('task-detail-cmd-bar');
+    bar.innerHTML = '';
+    // Reuse tsCommands (slash commands cached from session)
+    const cmds = tsCommands.length ? tsCommands : [];
+    for (const cmd of cmds) {
+      const btn = document.createElement('button'); btn.className = 'cmd-btn'; btn.textContent = '/' + cmd.name;
+      if (cmd.description) btn.title = cmd.description;
+      btn.addEventListener('click', () => {
+        if (!taskDetailSession || !ws || ws.readyState !== 1) return;
+        ws.send(JSON.stringify({ type: 'tell', session: taskDetailSession, message: '/' + cmd.name }));
+        showToast('Command sent', `/${cmd.name} → session ${taskDetailSession}`, 'success');
+      });
+      bar.appendChild(btn);
+    }
+  }
+
   // Task detail: send message to session
   function sendTaskDetailMessage() {
     const input = document.getElementById('task-detail-input');
     const text = input.value.trim();
     if (!text || !taskDetailSession || !ws || ws.readyState !== 1) return;
-    ws.send(JSON.stringify({ type: 'tell', session: taskDetailSession, message: text }));
+    const msgType = taskDetailMode === 'ask' ? 'ask' : 'tell';
+    ws.send(JSON.stringify({ type: msgType, session: taskDetailSession, message: text }));
     input.value = '';
+    showToast('Sent', `${msgType === 'ask' ? 'Asked' : 'Told'} session ${taskDetailSession}`, 'success');
   }
   document.getElementById('task-detail-send').addEventListener('click', sendTaskDetailMessage);
   document.getElementById('task-detail-input').addEventListener('keydown', (e) => {

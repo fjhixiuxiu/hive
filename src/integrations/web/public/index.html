@@ -1246,14 +1246,24 @@
   </div>
   <div id="task-detail-terminal"></div>
   <div id="task-detail-keys">
+    <button class="key-btn" data-td-key="Enter">Enter</button>
+    <button class="key-btn" data-td-key="Escape">Esc</button>
+    <button class="key-btn" data-td-key="c-c">Ctrl-C</button>
+    <button class="key-btn" data-td-key="Up">Up</button>
+    <button class="key-btn" data-td-key="Down">Down</button>
+    <button class="key-btn" data-td-key="Tab">Tab</button>
+    <button class="key-btn" data-td-key="BTab">S-Tab</button>
     <button class="key-btn" data-td-key="y">y</button>
     <button class="key-btn" data-td-key="n">n</button>
-    <button class="key-btn" data-td-key="Enter">&#9166;</button>
-    <button class="key-btn" data-td-key="Escape">Esc</button>
-    <button class="key-btn" data-td-key="c-c">^C</button>
+    <button class="key-btn num-key" data-td-key="1">1</button>
+    <button class="key-btn num-key" data-td-key="2">2</button>
+    <button class="key-btn num-key" data-td-key="3">3</button>
+    <button class="key-btn num-key" data-td-key="4">4</button>
   </div>
+  <div id="task-detail-cmd-bar"></div>
   <div id="task-detail-input-bar">
-    <textarea id="task-detail-input" rows="2" placeholder="Send message to session..." autocomplete="off"></textarea>
+    <button id="task-detail-mode-toggle">Ask</button>
+    <textarea id="task-detail-input" rows="3" placeholder="Message Claude..." autocomplete="off"></textarea>
     <button id="task-detail-send">Send</button>
   </div>
 </div>
