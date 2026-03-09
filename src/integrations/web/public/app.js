@@ -1129,7 +1129,6 @@
       }
       case 'task:action:result': {
         document.querySelectorAll(`.actions-popup-item[data-task-id="${msg.taskId}"]`).forEach(b => b.classList.remove('loading'));
-        document.querySelectorAll('.td-context-action.loading').forEach(b => b.classList.remove('loading'));
         if (msg.ok) {
           showToast('Action Complete', msg.message || 'Done', 'success');
         } else {
@@ -4499,33 +4498,22 @@
     } else {
       actionsHtml = task.assignedTo ? `<button class="task-detail-action" data-action="resume">Resume</button>` : '';
     }
-    // Context actions from PM (e.g. Approve PR, Merge, Close PR)
+    // Context actions button (opens popup menu, same as tasks page)
     if (task.actions && task.actions.length) {
       if (actionsHtml) actionsHtml += '<span class="td-action-sep"></span>';
-      for (const a of task.actions) {
-        const confirmIcon = a.confirm ? ' \u26A0' : '';
-        actionsHtml += `<button class="task-detail-action td-context-action" data-ctx-action="${a.id}" data-confirm="${!!a.confirm}" style="color:${a.color}">${esc(a.label)}${confirmIcon}</button>`;
-      }
+      actionsHtml += `<button class="task-detail-action td-actions-btn">\u26A1 Actions (${task.actions.length})</button>`;
     }
 
     const actionsEl = document.getElementById('task-detail-actions');
     actionsEl.innerHTML = actionsHtml;
-    // Standard task actions (done, requeue, etc.)
-    actionsEl.querySelectorAll('.task-detail-action:not(.td-context-action)').forEach(btn => {
+    actionsEl.querySelectorAll('.task-detail-action:not(.td-actions-btn)').forEach(btn => {
       btn.addEventListener('click', () => handleTaskDetailAction(btn.dataset.action, task));
     });
-    // Context actions (approve, merge, etc.)
-    actionsEl.querySelectorAll('.td-context-action').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const actionId = btn.dataset.ctxAction;
-        const needsConfirm = btn.dataset.confirm === 'true';
-        if (needsConfirm) {
-          openActionConfirmDialog(task.id, actionId, btn.textContent.replace(/\s*\u26A0$/, ''));
-        } else {
-          sendTaskAction(task.id, actionId, false, btn);
-        }
-      });
-    });
+    // Wire up the Actions menu button
+    const tdActionsBtn = actionsEl.querySelector('.td-actions-btn');
+    if (tdActionsBtn) {
+      tdActionsBtn.addEventListener('click', () => renderActionsPopup(task.id, tdActionsBtn));
+    }
 
     // Toolbar: checklist progress
     const checklistEl = document.getElementById('task-detail-checklist');

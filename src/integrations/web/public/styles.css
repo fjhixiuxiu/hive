@@ -1668,9 +1668,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .task-detail-action.primary { background: var(--purple); color: var(--bg); }
 .task-detail-action.danger { color: var(--red); }
 .td-action-sep { width: 1px; height: 20px; background: var(--bg3); flex-shrink: 0; }
-.td-context-action { background: rgba(189,147,249,0.12) !important; border: 1px solid rgba(189,147,249,0.25); }
-.td-context-action:hover { background: rgba(189,147,249,0.2) !important; }
-.td-context-action.loading { opacity: 0.5; pointer-events: none; }
+.td-actions-btn { background: rgba(189,147,249,0.12) !important; border: 1px solid rgba(189,147,249,0.25); color: var(--purple) !important; }
 #task-detail-terminal {
   flex: 1; min-height: 0; overflow: hidden;
 }
