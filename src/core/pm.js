@@ -6,8 +6,67 @@ const pmSources = require('./pm-sources');
 
 const MAX_MEMORY = 100;
 const MAX_LEARNING_LENGTH = 500;
+const SIMILARITY_THRESHOLD = 0.8; // 80% token overlap = duplicate
 
 let nextPmId = 1;
+
+/**
+ * Normalize text for comparison: lowercase, strip punctuation, collapse whitespace.
+ */
+function _normalizeForCompare(text) {
+  return text.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Check if two learning strings are semantically the same.
+ * Uses normalized containment: if the shorter text's words are mostly
+ * contained in the longer text, it's a duplicate.
+ * Returns true if duplicate.
+ */
+function _isSimilar(a, b) {
+  const normA = _normalizeForCompare(a);
+  const normB = _normalizeForCompare(b);
+  // Exact normalized match
+  if (normA === normB) return true;
+  const wordsA = new Set(normA.split(' '));
+  const wordsB = new Set(normB.split(' '));
+  // Use the shorter one as the query — check how much of it appears in the longer one
+  const [smaller, larger] = wordsA.size <= wordsB.size ? [wordsA, wordsB] : [wordsB, wordsA];
+  if (smaller.size < 3) return normA === normB;
+  let overlap = 0;
+  for (const w of smaller) {
+    if (larger.has(w)) overlap++;
+  }
+  // If 80%+ of the shorter text's words appear in the longer one, it's a dup
+  return (overlap / smaller.size) >= SIMILARITY_THRESHOLD;
+}
+
+/**
+ * Check if a new learning is a duplicate of any existing one.
+ */
+function _isDuplicate(text, memory) {
+  for (const existing of memory) {
+    if (_isSimilar(text, existing)) return true;
+  }
+  return false;
+}
+
+/**
+ * Remove duplicate learnings from a memory array (keeps the later/longer version).
+ */
+function _deduplicateMemory(memory) {
+  const result = [];
+  for (const text of memory) {
+    const dupeIdx = result.findIndex(existing => _isSimilar(text, existing));
+    if (dupeIdx === -1) {
+      result.push(text);
+    } else if (text.length > result[dupeIdx].length) {
+      // Keep the longer (more detailed) version
+      result[dupeIdx] = text;
+    }
+  }
+  return result.slice(-MAX_MEMORY);
+}
 
 class ProjectManager extends EventEmitter {
   constructor(taskQueue) {
@@ -130,14 +189,12 @@ class ProjectManager extends EventEmitter {
     const pm = this.pms.get(id);
     if (!pm || !Array.isArray(learnings)) return 0;
     if (!pm.memory) pm.memory = [];
-    const existing = new Set(pm.memory);
     let added = 0;
     for (const learning of learnings) {
       if (typeof learning !== 'string' || !learning.trim()) continue;
       const text = learning.trim().slice(0, MAX_LEARNING_LENGTH);
-      if (existing.has(text)) continue;
+      if (_isDuplicate(text, pm.memory)) continue;
       pm.memory.push(text);
-      existing.add(text);
       added++;
     }
     // Cap entries (FIFO)
@@ -181,7 +238,7 @@ class ProjectManager extends EventEmitter {
         mcpEnabled: data.mcpEnabled || false,
         learningEnabled: data.learningEnabled || false,
         learningPrompt: data.learningPrompt || '',
-        memory: Array.isArray(data.memory) ? data.memory.filter(m => typeof m === 'string' && m.trim()).slice(-MAX_MEMORY) : [],
+        memory: _deduplicateMemory(Array.isArray(data.memory) ? data.memory.filter(m => typeof m === 'string' && m.trim()) : []),
         completionConditions: Array.isArray(data.completionConditions) ? data.completionConditions : [],
         continueConditions: Array.isArray(data.continueConditions) ? data.continueConditions : [],
         enabled: data.enabled || false,

@@ -1001,11 +1001,12 @@
         // Task detail slide-out terminal
         if (taskDetailTerm && taskDetailSession && String(msg.session) === taskDetailSession) {
           if (msg.content !== taskDetailLastContent) {
-            taskDetailLastContent = msg.content;
             if (msg.cols && msg.cols > 0 && msg.cols !== taskDetailTerm.cols) taskDetailTerm.resize(msg.cols, taskDetailTerm.rows);
-            taskDetailTerm.reset();
-            taskDetailTerm.write(msg.content);
-            requestAnimationFrame(() => taskDetailTerm.scrollToBottom());
+            if (taskDetailScrolledUp) {
+              taskDetailPending = msg.content;
+            } else {
+              writeTaskDetailContent(msg.content);
+            }
           }
         }
         // Console (Session 0) terminal data
@@ -4458,7 +4459,12 @@
   let taskDetailFitAddon = null;
   let taskDetailSession = null;
   let taskDetailLastContent = '';
+  let taskDetailScrolledUp = false;
+  let taskDetailPending = null;
+  let taskDetailWriting = false;
   let taskDetailMode = 'ask'; // 'ask' or 'tell'
+  let tdHistoryIdx = -1;
+  let tdHistoryDraft = '';
 
   function openTaskDetail(taskId) {
     const task = tasks.find(t => t.id === taskId);
@@ -4578,6 +4584,16 @@
       taskDetailTerm.loadAddon(taskDetailFitAddon);
       taskDetailTerm.open(termContainer);
       taskDetailLastContent = '';
+      taskDetailScrolledUp = false;
+      taskDetailPending = null;
+      // Scroll lock: detect user scrolling up
+      taskDetailTerm.element.addEventListener('wheel', () => { setTimeout(checkTaskDetailScroll, 50); });
+      let tdTouchStartY = 0;
+      taskDetailTerm.element.addEventListener('touchstart', (e) => { tdTouchStartY = e.touches[0].clientY; }, { passive: true });
+      taskDetailTerm.element.addEventListener('touchend', (e) => {
+        const dy = tdTouchStartY - (e.changedTouches[0] || {}).clientY;
+        if (Math.abs(dy) > 20) { setTimeout(checkTaskDetailScroll, 150); setTimeout(checkTaskDetailScroll, 500); }
+      });
       taskDetailSession = String(task.assignedTo);
       document.getElementById('task-detail-input').value = '';
       // Render slash command bar (reuse tsCommands from tasks session)
@@ -4607,6 +4623,48 @@
     document.getElementById('task-detail-overlay').classList.add('open');
   }
 
+  function checkTaskDetailScroll() {
+    if (!taskDetailTerm || taskDetailWriting) return;
+    const buf = taskDetailTerm.buffer.active;
+    const linesFromBottom = buf.baseY - buf.viewportY;
+    if (linesFromBottom <= 3 && taskDetailScrolledUp) {
+      taskDetailScrolledUp = false;
+      taskDetailScrollIndicator(false);
+      if (taskDetailPending !== null) { writeTaskDetailContent(taskDetailPending); taskDetailPending = null; }
+    } else if (linesFromBottom > 3) {
+      taskDetailScrolledUp = true;
+      taskDetailScrollIndicator(true);
+    }
+  }
+
+  function writeTaskDetailContent(content) {
+    if (!taskDetailTerm) return;
+    taskDetailLastContent = content;
+    taskDetailWriting = true;
+    taskDetailTerm.reset();
+    taskDetailTerm.write(content);
+    requestAnimationFrame(() => { taskDetailTerm.scrollToBottom(); requestAnimationFrame(() => { taskDetailWriting = false; }); });
+  }
+
+  function taskDetailScrollIndicator(show) {
+    let el = document.getElementById('task-detail-scroll-pause');
+    const termContainer = document.getElementById('task-detail-terminal');
+    if (show && !el) {
+      el = document.createElement('div');
+      el.id = 'task-detail-scroll-pause';
+      el.className = 'scroll-pause-btn';
+      el.title = 'Scroll to bottom';
+      el.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>';
+      el.addEventListener('click', () => {
+        taskDetailScrolledUp = false;
+        taskDetailScrollIndicator(false);
+        if (taskDetailTerm) taskDetailTerm.scrollToBottom();
+        if (taskDetailPending !== null) { writeTaskDetailContent(taskDetailPending); taskDetailPending = null; }
+      });
+      if (termContainer) { termContainer.style.position = 'relative'; termContainer.appendChild(el); }
+    } else if (!show && el) { el.remove(); }
+  }
+
   function closeTaskDetail() {
     document.getElementById('task-detail-panel').classList.remove('open');
     document.getElementById('task-detail-overlay').classList.remove('open');
@@ -4621,6 +4679,8 @@
     taskDetailSession = null;
     taskDetailTaskId = null;
     taskDetailLastContent = '';
+    taskDetailScrolledUp = false;
+    taskDetailPending = null;
   }
 
   function updateTaskDetailNav() {
@@ -4714,13 +4774,35 @@
     if (!text || !taskDetailSession || !ws || ws.readyState !== 1) return;
     const msgType = taskDetailMode === 'ask' ? 'ask' : 'tell';
     ws.send(JSON.stringify({ type: msgType, session: taskDetailSession, message: text }));
+    pushMsgHistory(taskDetailSession, text);
+    tdHistoryIdx = -1;
+    tdHistoryDraft = '';
     input.value = '';
     showToast('Sent', `${msgType === 'ask' ? 'Asked' : 'Told'} session ${taskDetailSession}`, 'success');
   }
   document.getElementById('task-detail-send').addEventListener('click', sendTaskDetailMessage);
   document.getElementById('task-detail-input').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendTaskDetailMessage(); }
-    if (e.key === 'Escape') closeTaskDetail();
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendTaskDetailMessage(); return; }
+    if (e.key === 'Escape') { closeTaskDetail(); return; }
+    // Up/Down arrow history
+    const input = e.target;
+    const h = msgHistory[taskDetailSession] || [];
+    if (!h.length) return;
+    if (e.key === 'ArrowUp') {
+      const beforeCursor = input.value.substring(0, input.selectionStart);
+      if (beforeCursor.includes('\n')) return; // not on first line
+      e.preventDefault();
+      if (tdHistoryIdx === -1) tdHistoryDraft = input.value;
+      if (tdHistoryIdx < h.length - 1) tdHistoryIdx++;
+      input.value = h[h.length - 1 - tdHistoryIdx];
+    } else if (e.key === 'ArrowDown') {
+      const afterCursor = input.value.substring(input.selectionEnd);
+      if (afterCursor.includes('\n')) return; // not on last line
+      if (tdHistoryIdx <= -1) return;
+      e.preventDefault();
+      tdHistoryIdx--;
+      input.value = tdHistoryIdx === -1 ? tdHistoryDraft : h[h.length - 1 - tdHistoryIdx];
+    }
   });
 
   // Task detail: key buttons
