@@ -1910,8 +1910,11 @@
   function writeTerminalContent(content) {
     if (!term) return;
     lastContent = content; writingContent = true;
-    term.reset(); term.write(content);
-    requestAnimationFrame(() => { term.scrollToBottom(); requestAnimationFrame(() => { writingContent = false; }); });
+    term.reset();
+    term.write(content, () => {
+      term.scrollToBottom();
+      writingContent = false;
+    });
   }
 
   // ── Pane tabs (multi-pane terminal viewer) ───────
@@ -2314,8 +2317,10 @@
     consoleLastContent = content;
     consoleWriting = true;
     consoleTerm.reset();
-    consoleTerm.write(content);
-    requestAnimationFrame(() => { consoleTerm.scrollToBottom(); requestAnimationFrame(() => { consoleWriting = false; }); });
+    consoleTerm.write(content, () => {
+      consoleTerm.scrollToBottom();
+      consoleWriting = false;
+    });
   }
 
   function consoleScrollIndicator(show) {
@@ -3573,8 +3578,10 @@
     ensureTasksSessionTerm();
     tsLastContent = content; tsWriting = true;
     tasksSessionTerm.reset();
-    tasksSessionTerm.write(content);
-    requestAnimationFrame(() => { tasksSessionTerm.scrollToBottom(); requestAnimationFrame(() => { tsWriting = false; }); });
+    tasksSessionTerm.write(content, () => {
+      tasksSessionTerm.scrollToBottom();
+      tsWriting = false;
+    });
   }
 
   function renderTsCmdBar() {
@@ -5118,8 +5125,10 @@
     taskDetailLastContent = content;
     taskDetailWriting = true;
     taskDetailTerm.reset();
-    taskDetailTerm.write(content);
-    requestAnimationFrame(() => { taskDetailTerm.scrollToBottom(); requestAnimationFrame(() => { taskDetailWriting = false; }); });
+    taskDetailTerm.write(content, () => {
+      taskDetailTerm.scrollToBottom();
+      taskDetailWriting = false;
+    });
   }
 
   function taskDetailScrollIndicator(show) {
