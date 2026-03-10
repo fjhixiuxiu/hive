@@ -1007,6 +1007,12 @@
           if (tsActivePane === null && tsClaudePaneIdx !== null) tsActivePane = tsClaudePaneIdx;
           renderPaneTabs('ts');
         }
+        if (taskDetailSession && taskDetailSession === String(msg.session)) {
+          tdSessionPanes = msg.panes || [];
+          tdClaudePaneIdx = (typeof msg.claudePane === 'number') ? msg.claudePane : null;
+          if (tdActivePane === null && tdClaudePaneIdx !== null) tdActivePane = tdClaudePaneIdx;
+          renderPaneTabs('td');
+        }
         break;
       case 'terminal:data':
         // Route data to each terminal independently — never use break inside these blocks
@@ -1033,7 +1039,8 @@
         }
         // Task detail slide-out terminal
         if (taskDetailTerm && taskDetailSession && String(msg.session) === taskDetailSession) {
-          if (msg.content !== taskDetailLastContent) {
+          const tdPaneOk = !(typeof msg.pane === 'number' && tdActivePane !== null && msg.pane !== tdActivePane);
+          if (tdPaneOk && msg.content !== taskDetailLastContent) {
             if (msg.cols && msg.cols > 0 && msg.cols !== taskDetailTerm.cols) taskDetailTerm.resize(msg.cols, taskDetailTerm.rows);
             if (taskDetailScrolledUp) {
               taskDetailPending = msg.content;
@@ -1952,14 +1959,15 @@
   var panesCollapsed = false;  // always start expanded — collapsed is per-session toggle only
   var tsPanesCollapsed = false;
 
-  // ctx: undefined/'main' for session panel, 'ts' for tasks panel
+  // ctx: undefined/'main' for session panel, 'ts' for tasks panel, 'td' for task detail
   function renderPaneTabs(ctx) {
+    const isTd = (ctx === 'td');
     const isTs = (ctx === 'ts');
-    const barId = isTs ? 'ts-pane-tabs' : 'pane-tabs';
-    const panes = isTs ? tsSessionPanes : sessionPanes;
-    const curActive = isTs ? tsActivePane : activePane;
-    const claudeIdx = isTs ? tsClaudePaneIdx : claudePaneIdx;
-    const collapsed = isTs ? tsPanesCollapsed : panesCollapsed;
+    const barId = isTd ? 'td-pane-tabs' : isTs ? 'ts-pane-tabs' : 'pane-tabs';
+    const panes = isTd ? tdSessionPanes : isTs ? tsSessionPanes : sessionPanes;
+    const curActive = isTd ? tdActivePane : isTs ? tsActivePane : activePane;
+    const claudeIdx = isTd ? tdClaudePaneIdx : isTs ? tsClaudePaneIdx : claudePaneIdx;
+    const collapsed = isTd ? false : isTs ? tsPanesCollapsed : panesCollapsed;
     const bar = document.getElementById(barId);
     if (!bar) return;
     const hasPanes = panes.length > 1;
@@ -2011,30 +2019,36 @@
   }
 
   function switchPane(paneIdx, ctx) {
+    const isTd = (ctx === 'td');
     const isTs = (ctx === 'ts');
-    const curActive = isTs ? tsActivePane : activePane;
-    const diffPaneId = isTs ? 'ts-sidebar-diff-pane' : 'sidebar-diff-pane';
-    const diffVisible = document.getElementById(diffPaneId).classList.contains('active');
-    if (paneIdx === curActive && !diffVisible) return;
+    const curActive = isTd ? tdActivePane : isTs ? tsActivePane : activePane;
+    if (!isTd) {
+      const diffPaneId = isTs ? 'ts-sidebar-diff-pane' : 'sidebar-diff-pane';
+      const diffVisible = document.getElementById(diffPaneId).classList.contains('active');
+      if (paneIdx === curActive && !diffVisible) return;
+      switchFromDiffPane(ctx);
+    } else {
+      if (paneIdx === curActive) return;
+    }
 
-    const claudeIdx = isTs ? tsClaudePaneIdx : claudePaneIdx;
+    const claudeIdx = isTd ? tdClaudePaneIdx : isTs ? tsClaudePaneIdx : claudePaneIdx;
     const isClaudePane = (paneIdx === claudeIdx);
-    const barId = isTs ? 'ts-pane-tabs' : 'pane-tabs';
-    const sessionNum = isTs ? tasksSessionNum : currentSession;
+    const barId = isTd ? 'td-pane-tabs' : isTs ? 'ts-pane-tabs' : 'pane-tabs';
+    const sessionNum = isTd ? taskDetailSession : isTs ? tasksSessionNum : currentSession;
 
-    if (isTs) { tsActivePane = paneIdx; } else { activePane = paneIdx; }
-
-    // Hide diff pane if switching to a real pane
-    switchFromDiffPane(ctx);
+    if (isTd) { tdActivePane = paneIdx; } else if (isTs) { tsActivePane = paneIdx; } else { activePane = paneIdx; }
 
     // Update pane tab active state
     document.querySelectorAll(`#${barId} .pane-tab`).forEach(t => {
       t.classList.toggle('active', parseInt(t.dataset.paneIdx) === paneIdx);
     });
 
-    // Re-subscribe to the new pane (skip if just returning from diff to same pane)
+    // Re-subscribe to the new pane
     if (paneIdx !== curActive && ws && ws.readyState === 1 && sessionNum) {
-      if (isTs) {
+      if (isTd) {
+        taskDetailScrolledUp = false; taskDetailPending = null; taskDetailLastContent = '';
+        if (taskDetailTerm) taskDetailTerm.clear();
+      } else if (isTs) {
         tsUserScrolledUp = false; tsPendingContent = null; tsLastContent = '';
         if (tasksSessionTerm) tasksSessionTerm.clear();
       } else {
@@ -2048,11 +2062,15 @@
   }
 
   function updateInputForPane(isClaudePane, ctx) {
+    const isTd = (ctx === 'td');
     const isTs = (ctx === 'ts');
-    const msgInputEl = document.getElementById(isTs ? 'ts-msg-input' : 'msg-input');
-    const modeToggleEl = document.getElementById(isTs ? 'ts-mode-toggle' : 'mode-toggle');
+    const inputId = isTd ? 'task-detail-input' : isTs ? 'ts-msg-input' : 'msg-input';
+    const toggleId = isTd ? 'task-detail-mode-toggle' : isTs ? 'ts-mode-toggle' : 'mode-toggle';
+    const msgInputEl = document.getElementById(inputId);
+    const modeToggleEl = document.getElementById(toggleId);
+    if (!msgInputEl || !modeToggleEl) return;
     if (isClaudePane) {
-      msgInputEl.placeholder = isTs ? 'Message Claude...' : 'Message Claude...';
+      msgInputEl.placeholder = 'Message Claude...';
       modeToggleEl.style.display = '';
     } else {
       msgInputEl.placeholder = 'Run command in shell...';
@@ -4750,6 +4768,9 @@
   let taskDetailMode = 'ask'; // 'ask' or 'tell'
   let tdHistoryIdx = -1;
   let tdHistoryDraft = '';
+  let tdActivePane = null;
+  let tdSessionPanes = [];
+  let tdClaudePaneIdx = null;
 
   function openTaskDetail(taskId) {
     const task = tasks.find(t => t.id === taskId);
@@ -4893,12 +4914,15 @@
         if (Math.abs(dy) > 20) { setTimeout(checkTaskDetailScroll, 150); setTimeout(checkTaskDetailScroll, 500); }
       });
       taskDetailSession = String(task.assignedTo);
+      tdActivePane = null; tdSessionPanes = []; tdClaudePaneIdx = null;
+      renderPaneTabs('td');
       document.getElementById('task-detail-input').value = '';
       // Render slash command bar (reuse tsCommands from tasks session)
       renderTaskDetailCmdBar();
       // Subscribe immediately so data starts flowing
       if (ws && ws.readyState === 1) {
         ws.send(JSON.stringify({ type: 'terminal:subscribe', session: task.assignedTo }));
+        ws.send(JSON.stringify({ type: 'terminal:panes', session: task.assignedTo }));
       }
       // Delay fit until panel is fully visible
       const panelOpen = document.getElementById('task-detail-panel').classList.contains('open');
@@ -5222,6 +5246,8 @@
     taskDetailLastContent = '';
     taskDetailScrolledUp = false;
     taskDetailPending = null;
+    tdActivePane = null; tdSessionPanes = []; tdClaudePaneIdx = null;
+    renderPaneTabs('td');
   }
 
   function updateTaskDetailNav() {
@@ -5313,8 +5339,13 @@
     const input = document.getElementById('task-detail-input');
     const text = input.value.trim();
     if (!text || !taskDetailSession || !ws || ws.readyState !== 1) return;
-    const msgType = taskDetailMode === 'ask' ? 'ask' : 'tell';
-    ws.send(JSON.stringify({ type: msgType, session: taskDetailSession, message: text }));
+    const isShellPane = (tdActivePane !== null && tdActivePane !== tdClaudePaneIdx);
+    if (isShellPane) {
+      ws.send(JSON.stringify({ type: 'tell', session: taskDetailSession, message: text, pane: tdActivePane }));
+    } else {
+      const msgType = taskDetailMode === 'ask' ? 'ask' : 'tell';
+      ws.send(JSON.stringify({ type: msgType, session: taskDetailSession, message: text }));
+    }
     pushMsgHistory(taskDetailSession, text);
     tdHistoryIdx = -1;
     tdHistoryDraft = '';
@@ -5351,11 +5382,9 @@
     btn.addEventListener('click', () => {
       if (!taskDetailSession || !ws || ws.readyState !== 1) return;
       const key = btn.dataset.tdKey;
-      if (key === 'c-c') {
-        ws.send(JSON.stringify({ type: 'keys', session: taskDetailSession, keys: ['C-c'] }));
-      } else {
-        ws.send(JSON.stringify({ type: 'keys', session: taskDetailSession, keys: [key] }));
-      }
+      const keysMsg = { type: 'keys', session: taskDetailSession, keys: [key === 'c-c' ? 'C-c' : key] };
+      if (tdActivePane !== null) keysMsg.pane = tdActivePane;
+      ws.send(JSON.stringify(keysMsg));
     });
   });
 
