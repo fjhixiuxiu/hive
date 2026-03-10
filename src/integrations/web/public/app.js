@@ -1830,10 +1830,12 @@
     userScrolledUp = false;
     pendingContent = null;
     lastContent = '';
-    // Reset pane state
+    // Reset pane state — always start expanded
     activePane = null;
     sessionPanes = [];
     claudePaneIdx = null;
+    panesCollapsed = false;
+    tsPanesCollapsed = false;
     renderPaneTabs();
     updateInputForPane(true); // reset input to Claude mode
     // Reset to terminal tab
@@ -1913,8 +1915,8 @@
   }
 
   // ── Pane tabs (multi-pane terminal viewer) ───────
-  let panesCollapsed = localStorage.getItem('hive:panesCollapsed') === '1';
-  let tsPanesCollapsed = panesCollapsed; // sync with shared preference
+  let panesCollapsed = false;  // always start expanded — collapsed is per-session toggle only
+  let tsPanesCollapsed = false;
 
   // ctx: undefined/'main' for session panel, 'ts' for tasks panel
   function renderPaneTabs(ctx) {
