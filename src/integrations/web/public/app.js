@@ -701,7 +701,7 @@
       if (tasksViewMode !== 'board') {
         tasksViewMode = 'board';
         document.querySelectorAll('.tasks-view-btn').forEach(b => b.classList.toggle('active', b.dataset.tasksView === 'board'));
-        document.getElementById('tasks-panes').style.display = 'none';
+        document.getElementById('tasks-panel').classList.add('board-mode');
         document.getElementById('tasks-board').style.display = '';
         document.getElementById('tasks-create-btn-board').style.display = '';
         document.getElementById('tasks-ws-config-btn').style.display = '';
@@ -4462,13 +4462,13 @@
       if (mode === tasksViewMode) return;
       tasksViewMode = mode;
       document.querySelectorAll('.tasks-view-btn').forEach(b => b.classList.toggle('active', b.dataset.tasksView === mode));
-      const panes = document.getElementById('tasks-panes');
       const board = document.getElementById('tasks-board');
       const createBoardBtn = document.getElementById('tasks-create-btn-board');
       const wsConfigBtn = document.getElementById('tasks-ws-config-btn');
       const pmSelect = document.getElementById('board-pm-select');
+      const panel = document.getElementById('tasks-panel');
       if (mode === 'board') {
-        panes.style.display = 'none';
+        panel.classList.add('board-mode');
         board.style.display = '';
         createBoardBtn.style.display = '';
         wsConfigBtn.style.display = '';
@@ -4476,8 +4476,8 @@
         populateBoardPmSelect();
         renderTaskBoard();
       } else {
+        panel.classList.remove('board-mode');
         board.style.display = 'none';
-        panes.style.display = '';
         createBoardBtn.style.display = 'none';
         wsConfigBtn.style.display = 'none';
         pmSelect.style.display = 'none';
@@ -4733,7 +4733,17 @@
         });
       });
 
-      el.addEventListener('click', () => openTaskDetail(t.id));
+      el.addEventListener('click', () => {
+        openTaskDetail(t.id);
+        // Also load session terminal in the session pane (pane tabs, git, etc.)
+        if (t.status === 'dispatched' && t.assignedTo) {
+          tasksSelectedTaskId = t.id;
+          openTaskSession(t.assignedTo);
+          renderCommentPanel(t.id);
+          updateChecklistButtons();
+          updateActionsButton();
+        }
+      });
       container.appendChild(el);
     }
   }
