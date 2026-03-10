@@ -1590,6 +1590,15 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   flex: 1; display: flex; gap: 10px; padding: 10px; overflow-x: auto;
   -webkit-overflow-scrolling: touch; min-height: 0;
 }
+/* Board mode: board + terminal stacked vertically (desktop only) */
+#tasks-panel.board-mode .tasks-list-pane { display: none !important; }
+#tasks-panel.board-mode .tasks-panes-resize { display: none !important; }
+@media (min-width: 900px) {
+  #tasks-panel.board-mode .tasks-board { flex: 1; min-height: 120px; border-bottom: 1px solid var(--bg3); }
+  #tasks-panel.board-mode .tasks-panes { flex: 1; min-height: 0; }
+  #tasks-panel.board-mode .tasks-session-pane { display: flex; width: 100%; flex: 1; }
+  #tasks-panel.board-mode .tasks-board-col { max-width: none; }
+}
 .tasks-board-col {
   flex: 1; min-width: 200px; max-width: 320px;
   display: flex; flex-direction: column; min-height: 0;
