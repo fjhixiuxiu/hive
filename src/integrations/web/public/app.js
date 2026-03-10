@@ -1393,6 +1393,10 @@
           renderGitPanel(msg, 'ts-git-sidebar');
           renderGitFilesSidebar(msg, 'ts-git-files-list');
         }
+        if (taskDetailSession && taskDetailSession === String(msg.session)) {
+          renderGitPanel(msg, 'td-git-sidebar');
+          document.getElementById('td-git-section').style.display = '';
+        }
         break;
       case 'git:diff':
         if (currentSession === String(msg.session)) {
@@ -1403,6 +1407,9 @@
           showDiffViewer(msg.file, msg.diff, 'ts-git-diff');
           if (gitFilesSidebarOpen) showSidebarDiff(msg.file, msg.diff, 'ts');
         }
+        if (taskDetailSession && taskDetailSession === String(msg.session)) {
+          showDiffViewer(msg.file, msg.diff, 'td-git-diff');
+        }
         break;
       case 'git:commit':
         if (currentSession === String(msg.session)) {
@@ -1412,6 +1419,9 @@
         if (tasksSessionNum === String(msg.session) && activeTab === 'tasks-panel') {
           expandCommitRow(msg.hash, msg.files, 'ts-git-sidebar', tasksSessionNum);
           expandCommitRow(msg.hash, msg.files, 'ts-git-files-list', tasksSessionNum);
+        }
+        if (taskDetailSession && taskDetailSession === String(msg.session)) {
+          expandCommitRow(msg.hash, msg.files, 'td-git-sidebar', taskDetailSession);
         }
         break;
       case 'idea:list':
@@ -4985,6 +4995,7 @@
       if (ws && ws.readyState === 1) {
         ws.send(JSON.stringify({ type: 'terminal:subscribe', session: task.assignedTo }));
         ws.send(JSON.stringify({ type: 'terminal:panes', session: task.assignedTo }));
+        ws.send(JSON.stringify({ type: 'git:info', session: task.assignedTo }));
       }
       // Delay fit until panel is fully visible
       const panelOpen = document.getElementById('task-detail-panel').classList.contains('open');
@@ -5318,6 +5329,13 @@
     taskDetailPending = null;
     tdActivePane = null; tdSessionPanes = []; tdClaudePaneIdx = null;
     renderPaneTabs('td');
+    // Reset git section
+    const gitSection = document.getElementById('td-git-section');
+    gitSection.style.display = 'none';
+    gitSection.classList.remove('open');
+    document.getElementById('td-git-sidebar').innerHTML = '';
+    document.getElementById('td-git-diff-header').style.display = 'none';
+    document.getElementById('td-git-diff-content').innerHTML = '<div class="git-empty">Select a file to view diff</div>';
   }
 
   function updateTaskDetailNav() {
@@ -5377,6 +5395,11 @@
   document.getElementById('task-detail-overlay').addEventListener('click', closeTaskDetail);
   document.getElementById('task-detail-prev').addEventListener('click', () => navigateTaskDetail(-1));
   document.getElementById('task-detail-next').addEventListener('click', () => navigateTaskDetail(1));
+
+  // Task detail: Git section toggle
+  document.getElementById('td-git-toggle').addEventListener('click', () => {
+    document.getElementById('td-git-section').classList.toggle('open');
+  });
 
   // Task detail: Ask/Tell mode toggle
   const tdModeToggle = document.getElementById('task-detail-mode-toggle');
@@ -7360,7 +7383,7 @@
   function renderGitPanel(data, sidebarId) {
     const scroll = document.getElementById(sidebarId || 'git-sidebar');
     if (!scroll) return;
-    const sessionForGit = sidebarId === 'ts-git-sidebar' ? tasksSessionNum : currentSession;
+    const sessionForGit = sidebarId === 'td-git-sidebar' ? taskDetailSession : sidebarId === 'ts-git-sidebar' ? tasksSessionNum : currentSession;
     // Preserve state across refreshes
     const prevSelected = scroll.querySelector('.git-file-row.selected');
     const selectedFile = prevSelected ? prevSelected.dataset.file : null;
@@ -7552,7 +7575,7 @@
 
   function showDiffViewer(file, diff, prefix) {
     const pfx = prefix || 'git-diff';
-    const sidebarId = prefix === 'ts-git-diff' ? 'ts-git-sidebar' : 'git-sidebar';
+    const sidebarId = prefix === 'td-git-diff' ? 'td-git-sidebar' : prefix === 'ts-git-diff' ? 'ts-git-sidebar' : 'git-sidebar';
     document.getElementById(pfx + '-header').style.display = '';
     document.getElementById(pfx + '-filename').textContent = file;
     const content = document.getElementById(pfx + '-content');
