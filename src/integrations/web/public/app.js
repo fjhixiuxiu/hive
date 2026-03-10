@@ -12,6 +12,14 @@
     });
   }
 
+  // ── Theme ────────────────────────────────────────
+  const XTERM_DARK = { background: '#0f0f23', foreground: '#e2e2f0', cursor: '#e2e2f0', black: '#282a36', red: '#ff5555', green: '#50fa7b', yellow: '#f1fa8c', blue: '#bd93f9', magenta: '#ff79c6', cyan: '#8be9fd', white: '#f8f8f2', brightBlack: '#6272a4', brightRed: '#ff6e6e', brightGreen: '#69ff94', brightYellow: '#ffffa5', brightBlue: '#d6acff', brightMagenta: '#ff92df', brightCyan: '#a4ffff', brightWhite: '#ffffff' };
+  const XTERM_LIGHT = { background: '#f5f5f7', foreground: '#1d1d2b', cursor: '#1d1d2b', black: '#e0e0e6', red: '#d93025', green: '#1a8f3f', yellow: '#9a7b00', blue: '#7c3aed', magenta: '#c72880', cyan: '#0277a8', white: '#1d1d2b', brightBlack: '#6e7191', brightRed: '#e8453a', brightGreen: '#2da653', brightYellow: '#b08f00', brightBlue: '#9058f0', brightMagenta: '#d94095', brightCyan: '#0892c4', brightWhite: '#1d1d2b' };
+  let currentTheme = localStorage.getItem('hive:theme') || 'dark';
+
+  // Apply saved theme immediately (prevent dark flash on light theme)
+  document.documentElement.setAttribute('data-theme', currentTheme);
+
   // ── State ─────────────────────────────────────────
   let ws = null;
   let authenticated = false;
@@ -584,6 +592,23 @@
       return false;
     }
     return true;
+  }
+
+  function applyTheme(theme) {
+    currentTheme = theme;
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('hive:theme', theme);
+    const btn = document.getElementById('theme-toggle');
+    if (btn) btn.innerHTML = theme === 'light' ? '&#9728;' : '&#9790;';
+    // Update meta theme-color for mobile browser chrome
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.content = theme === 'light' ? '#f5f5f7' : '#0f0f23';
+    // Update all xterm instances
+    const xt = theme === 'light' ? XTERM_LIGHT : XTERM_DARK;
+    if (term) term.options.theme = xt;
+    if (consoleTerm) consoleTerm.options.theme = xt;
+    if (tasksSessionTerm) tasksSessionTerm.options.theme = xt;
+    if (taskDetailTerm) taskDetailTerm.options.theme = xt;
   }
 
   function connect() {
@@ -1815,9 +1840,9 @@
   function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
   // ── Session detail view ───────────────────────────
-  let userScrolledUp = false;
-  let pendingContent = null;
-  let lastContent = '';
+  var userScrolledUp = false;
+  var pendingContent = null;
+  var lastContent = '';
 
   function openSession(s, fromRoute) {
     currentSession = String(s.num);
@@ -1858,7 +1883,7 @@
 
     if (!term) {
       term = new Terminal({
-        theme: { background: '#0f0f23', foreground: '#e2e2f0', cursor: '#e2e2f0', black: '#282a36', red: '#ff5555', green: '#50fa7b', yellow: '#f1fa8c', blue: '#bd93f9', magenta: '#ff79c6', cyan: '#8be9fd', white: '#f8f8f2', brightBlack: '#6272a4', brightRed: '#ff6e6e', brightGreen: '#69ff94', brightYellow: '#ffffa5', brightBlue: '#d6acff', brightMagenta: '#ff92df', brightCyan: '#a4ffff', brightWhite: '#ffffff' },
+        theme: currentTheme === 'light' ? XTERM_LIGHT : XTERM_DARK,
         fontSize: 13, fontFamily: "'SF Mono', 'Menlo', 'Monaco', 'Courier New', monospace",
         disableStdin: true, scrollback: 5000, convertEol: true, allowProposedApi: true,
       });
@@ -1895,7 +1920,7 @@
     applyNavPreferences();
   }
 
-  let writingContent = false;
+  var writingContent = false;
 
   function checkScrollPosition() {
     if (!term || writingContent) return;
@@ -1918,8 +1943,8 @@
   }
 
   // ── Pane tabs (multi-pane terminal viewer) ───────
-  let panesCollapsed = false;  // always start expanded — collapsed is per-session toggle only
-  let tsPanesCollapsed = false;
+  var panesCollapsed = false;  // always start expanded — collapsed is per-session toggle only
+  var tsPanesCollapsed = false;
 
   // ctx: undefined/'main' for session panel, 'ts' for tasks panel
   function renderPaneTabs(ctx) {
@@ -2249,7 +2274,7 @@
     updateConsoleBtnLogo();
     if (!consoleTerm) {
       consoleTerm = new Terminal({
-        theme: { background: 'transparent', foreground: '#e2e2f0', cursor: '#e2e2f0', black: '#282a36', red: '#ff5555', green: '#50fa7b', yellow: '#f1fa8c', blue: '#bd93f9', magenta: '#ff79c6', cyan: '#8be9fd', white: '#f8f8f2', brightBlack: '#6272a4', brightRed: '#ff6e6e', brightGreen: '#69ff94', brightYellow: '#ffffa5', brightBlue: '#d6acff', brightMagenta: '#ff92df', brightCyan: '#a4ffff', brightWhite: '#ffffff' },
+        theme: currentTheme === 'light' ? XTERM_LIGHT : XTERM_DARK,
         fontSize: 12, fontFamily: "'SF Mono', 'Menlo', 'Monaco', 'Courier New', monospace",
         disableStdin: true, scrollback: 5000, convertEol: true, allowProposedApi: true,
       });
@@ -2382,6 +2407,12 @@
 
   let consoleHistoryIdx = -1;
   let consoleHistoryDraft = '';
+
+  // Theme toggle
+  document.getElementById('theme-toggle').addEventListener('click', () => {
+    applyTheme(currentTheme === 'dark' ? 'light' : 'dark');
+  });
+  applyTheme(currentTheme); // set icon and xterm themes on load
 
   // Console event listeners
   document.getElementById('console-btn').addEventListener('click', toggleConsole);
@@ -3062,8 +3093,10 @@
   });
 
   // ── Command buttons ────────────────────────────
-  const cmdBar = $('#cmd-bar');
+  var cmdBar = null;
   function renderCommands(commands) {
+    if (!cmdBar) cmdBar = document.getElementById('cmd-bar');
+    if (!cmdBar) return;
     cmdBar.innerHTML = '';
     for (const cmd of commands) {
       const btn = document.createElement('button'); btn.className = 'cmd-btn'; btn.textContent = '/' + cmd.name;
@@ -3534,7 +3567,7 @@
     if (tasksSessionTerm) return;
     container.innerHTML = '';
     tasksSessionTerm = new Terminal({
-      theme: { background: '#0f0f23', foreground: '#e2e2f0', cursor: '#e2e2f0', black: '#282a36', red: '#ff5555', green: '#50fa7b', yellow: '#f1fa8c', blue: '#bd93f9', magenta: '#ff79c6', cyan: '#8be9fd', white: '#f8f8f2', brightBlack: '#6272a4', brightRed: '#ff6e6e', brightGreen: '#69ff94', brightYellow: '#ffffa5', brightBlue: '#d6acff', brightMagenta: '#ff92df', brightCyan: '#a4ffff', brightWhite: '#ffffff' },
+      theme: currentTheme === 'light' ? XTERM_LIGHT : XTERM_DARK,
       fontSize: 13, fontFamily: "'SF Mono', 'Menlo', 'Monaco', 'Courier New', monospace",
       disableStdin: true, scrollback: 5000, convertEol: true, allowProposedApi: true,
     });
@@ -3551,7 +3584,7 @@
     requestAnimationFrame(() => fitTasksTerminal());
   }
 
-  let tsWriting = false;
+  var tsWriting = false;
   function tsCheckScroll() {
     if (!tasksSessionTerm || tsWriting) return;
     const buf = tasksSessionTerm.buffer.active;
@@ -4442,23 +4475,25 @@
 
   // ── Board PM selector ─────────────────────────────
   const boardPmSelectEl = document.getElementById('board-pm-select');
-  boardPmSelectEl.addEventListener('change', () => {
+  if (boardPmSelectEl) boardPmSelectEl.addEventListener('change', () => {
     boardPmFilter = boardPmSelectEl.value || null;
     renderBoardColumns();
     renderTaskBoard();
   });
 
   function populateBoardPmSelect() {
+    const el = document.getElementById('board-pm-select');
+    if (!el) return;
     const prev = boardPmFilter;
-    boardPmSelectEl.innerHTML = '<option value="">All PMs</option>';
+    el.innerHTML = '<option value="">All PMs</option>';
     for (const pm of pmList) {
       const opt = document.createElement('option');
       opt.value = pm.id;
       opt.textContent = pm.name;
       if (pm.id === prev) opt.selected = true;
-      boardPmSelectEl.appendChild(opt);
+      el.appendChild(opt);
     }
-    boardPmFilter = boardPmSelectEl.value || null;
+    boardPmFilter = el.value || null;
   }
 
   /** Get the active work states for the current board view */
@@ -4688,14 +4723,14 @@
   }
 
   // ── Task detail slide-out (board view) ───────────
-  let taskDetailTaskId = null;
-  let taskDetailTerm = null;
-  let taskDetailFitAddon = null;
-  let taskDetailSession = null;
-  let taskDetailLastContent = '';
-  let taskDetailScrolledUp = false;
-  let taskDetailPending = null;
-  let taskDetailWriting = false;
+  var taskDetailTaskId = null;
+  var taskDetailTerm = null;
+  var taskDetailFitAddon = null;
+  var taskDetailSession = null;
+  var taskDetailLastContent = '';
+  var taskDetailScrolledUp = false;
+  var taskDetailPending = null;
+  var taskDetailWriting = false;
   let taskDetailMode = 'ask'; // 'ask' or 'tell'
   let tdHistoryIdx = -1;
   let tdHistoryDraft = '';
@@ -4824,7 +4859,7 @@
       termContainer.innerHTML = '';
       taskDetailTerm = new Terminal({
         fontSize: 12, fontFamily: "'SF Mono', Menlo, Monaco, monospace",
-        theme: { background: '#0f0f23', foreground: '#e2e2f0', cursor: '#e2e2f0' },
+        theme: currentTheme === 'light' ? XTERM_LIGHT : XTERM_DARK,
         scrollback: 5000, convertEol: true, cursorBlink: false, disableStdin: true,
       });
       taskDetailFitAddon = new FitAddon.FitAddon();
@@ -5396,7 +5431,7 @@
   }
 
   // ── Comment panel (rendered into tab content divs) ─────
-  let commentPanelTaskId = null;
+  var commentPanelTaskId = null;
 
   // target: 'tasks' (default) renders into #ts-comments-drawer, 'session' into #session-comments-drawer
   function renderCommentPanel(taskId, target) {
@@ -5481,7 +5516,7 @@
   }
 
   // ── Admin panel (user permissions in More tab) ───
-  const PERM_LABELS = {
+  var PERM_LABELS = {
     'view': 'View', 'comment': 'Comment', 'create-tasks': 'Create Tasks',
     'send-messages': 'Send Messages', 'cancel': 'Cancel', 'restart': 'Restart',
     'dispatch': 'Dispatch', 'admin': 'Admin',
@@ -6169,7 +6204,7 @@
   });
 
   // ── MCP tools ───────────────────────────────────────
-  const MCP_TOOLS = [
+  var MCP_TOOLS = [
     { name: 'hive_get_task', desc: 'Get your currently assigned task from hive' },
     { name: 'hive_complete_task', desc: 'Mark your current task as complete' },
     { name: 'hive_post_update', desc: 'Post a status update to the hive activity feed' },
