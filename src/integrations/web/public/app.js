@@ -1932,13 +1932,19 @@
     } else if (linesFromBottom > 3) { userScrolledUp = true; scrollIndicator(true); }
   }
 
+  let _termWriteRAF = null;
   function writeTerminalContent(content) {
     if (!term) return;
     lastContent = content; writingContent = true;
-    term.reset();
-    term.write(content, () => {
-      term.scrollToBottom();
-      writingContent = false;
+    // Coalesce rapid updates — only the last content wins
+    if (_termWriteRAF) cancelAnimationFrame(_termWriteRAF);
+    _termWriteRAF = requestAnimationFrame(() => {
+      _termWriteRAF = null;
+      term.reset();
+      term.write(content, () => {
+        term.scrollToBottom();
+        writingContent = false;
+      });
     });
   }
 
@@ -2337,14 +2343,19 @@
     }
   }
 
+  let _consWriteRAF = null;
   function writeConsoleContent(content) {
     if (!consoleTerm) return;
     consoleLastContent = content;
     consoleWriting = true;
-    consoleTerm.reset();
-    consoleTerm.write(content, () => {
-      consoleTerm.scrollToBottom();
-      consoleWriting = false;
+    if (_consWriteRAF) cancelAnimationFrame(_consWriteRAF);
+    _consWriteRAF = requestAnimationFrame(() => {
+      _consWriteRAF = null;
+      consoleTerm.reset();
+      consoleTerm.write(content, () => {
+        consoleTerm.scrollToBottom();
+        consoleWriting = false;
+      });
     });
   }
 
@@ -3607,13 +3618,18 @@
     } else if (!show && el) { el.remove(); }
   }
 
+  let _tsWriteRAF = null;
   function writeTasksSessionContent(content) {
     ensureTasksSessionTerm();
     tsLastContent = content; tsWriting = true;
-    tasksSessionTerm.reset();
-    tasksSessionTerm.write(content, () => {
-      tasksSessionTerm.scrollToBottom();
-      tsWriting = false;
+    if (_tsWriteRAF) cancelAnimationFrame(_tsWriteRAF);
+    _tsWriteRAF = requestAnimationFrame(() => {
+      _tsWriteRAF = null;
+      tasksSessionTerm.reset();
+      tasksSessionTerm.write(content, () => {
+        tasksSessionTerm.scrollToBottom();
+        tsWriting = false;
+      });
     });
   }
 
@@ -5155,14 +5171,19 @@
     }
   }
 
+  let _tdWriteRAF = null;
   function writeTaskDetailContent(content) {
     if (!taskDetailTerm) return;
     taskDetailLastContent = content;
     taskDetailWriting = true;
-    taskDetailTerm.reset();
-    taskDetailTerm.write(content, () => {
-      taskDetailTerm.scrollToBottom();
-      taskDetailWriting = false;
+    if (_tdWriteRAF) cancelAnimationFrame(_tdWriteRAF);
+    _tdWriteRAF = requestAnimationFrame(() => {
+      _tdWriteRAF = null;
+      taskDetailTerm.reset();
+      taskDetailTerm.write(content, () => {
+        taskDetailTerm.scrollToBottom();
+        taskDetailWriting = false;
+      });
     });
   }
 

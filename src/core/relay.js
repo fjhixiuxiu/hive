@@ -30,14 +30,17 @@ async function ask(config, node, sessionName, message, callbacks = {}) {
   const { pollInterval, cooldown, timeout } = config.relay;
   const streamInterval = config.relay.streamInterval || 3000;
 
-  // Check if session is idle first (skip if force=true for manual user input)
-  const beforeContent = await node.capturePane(paneTarget, { lines: 3 });
-  const currentState = tmux.detectState(beforeContent, config);
-  if (currentState === 'working' && !force) {
-    return { success: false, error: 'Session is busy. Use /peek to see what it\'s doing.' };
-  }
-  if (currentState === 'off') {
-    return { success: false, error: 'Claude is not running in this session.' };
+  // Check if session is idle first (skip entirely for manual user input via force=true,
+  // since the user can see the session state in the UI and chose to send anyway)
+  if (!force) {
+    const beforeContent = await node.capturePane(paneTarget, { lines: 3 });
+    const currentState = tmux.detectState(beforeContent, config);
+    if (currentState === 'working') {
+      return { success: false, error: 'Session is busy. Use /peek to see what it\'s doing.' };
+    }
+    if (currentState === 'off') {
+      return { success: false, error: 'Claude is not running in this session.' };
+    }
   }
 
   // Ensure Claude's TUI is in INSERT mode (only needed for vim-mode terminals)

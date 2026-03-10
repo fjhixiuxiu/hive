@@ -160,6 +160,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
   // In legacy token mode (no OAuth), all actions are allowed.
   function checkPermission(ws, user, capability) {
     if (!auth.isOAuthEnabled()) return true; // legacy token mode — no enforcement
+    if (user && user.login === '__service__') return true; // WEB_TOKEN service accounts have full access
     if (!user || !user.login) {
       ws.send(JSON.stringify({ type: 'error', message: 'Not authenticated' }));
       return false;
@@ -315,8 +316,11 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
           // MCP service auth — accept WEB_TOKEN even in OAuth mode
           authenticated = true;
           if (authTimeout) clearTimeout(authTimeout);
+          // Set service identity so permission checks (admin, etc.) pass
+          const serviceUser = { login: '__service__', name: 'Service', avatar: null };
+          wsUser.set(ws, serviceUser);
           clients.add(ws);
-          ws.send(JSON.stringify({ type: 'auth', ok: true }));
+          ws.send(JSON.stringify({ type: 'auth', ok: true, user: serviceUser }));
         } else {
           ws.send(JSON.stringify({ type: 'auth', ok: false }));
           ws.close();

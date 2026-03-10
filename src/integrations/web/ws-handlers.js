@@ -185,6 +185,11 @@ function createMessageHandler(deps) {
             error: result.error,
             duration: result.duration,
           }));
+        }).catch((err) => {
+          log.error('ask error:', err);
+          if (ws.readyState === 1) {
+            ws.send(JSON.stringify({ type: 'ask:done', session: msg.session, success: false, error: err.message }));
+          }
         });
         break;
       }
