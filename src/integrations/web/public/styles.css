@@ -1642,6 +1642,13 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .td-assignee-btn:hover { filter: brightness(1.2); }
 .td-assignee-btn:empty::after { content: '+👤'; font-weight: 400; opacity: 0.5; }
 /* Work States config button */
+/* Board PM selector */
+.board-pm-select {
+  background: var(--bg2); border: 1px solid var(--purple); color: var(--fg);
+  font-size: var(--fs-sm); padding: 6px 10px; border-radius: 8px; cursor: pointer;
+  min-width: 120px; font-weight: 600;
+}
+.board-pm-select:focus { border-color: var(--purple); outline: none; }
 .tasks-ws-config-btn {
   background: none; border: 1px solid var(--bg3); color: var(--dim); font-size: var(--fs-lg);
   width: 32px; height: 32px; border-radius: 8px; cursor: pointer; display: flex;
@@ -1687,6 +1694,14 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 }
 .ws-auto-chip:hover { border-color: var(--fg); color: var(--fg); }
 .ws-auto-chip.active { background: var(--purple); border-color: var(--purple); color: #fff; font-weight: 700; }
+/* Per-PM board state config */
+.ws-pm-state-row { padding: 8px 0; border-bottom: 1px solid var(--bg3); }
+.ws-pm-state-row:last-child { border-bottom: none; }
+.ws-pm-state-main {
+  display: flex; align-items: center; gap: 8px; padding: 2px 0;
+}
+.ws-pm-state-cb { width: 16px; height: 16px; accent-color: var(--purple); cursor: pointer; }
+.ws-pm-state-label { font-size: var(--fs-sm); color: var(--fg); font-weight: 600; }
 .ws-config-drag {
   cursor: grab; color: var(--dim); font-size: var(--fs-sm); user-select: none;
   padding: 2px 4px;

@@ -107,6 +107,7 @@
   let manualTarget = null;
   let activeTaskTab = 'inprogress';
   let tasksViewMode = 'list'; // 'list' or 'board'
+  let boardPmFilter = null; // null = All, or PM id string
   let boardPrevStatuses = new Map(); // taskId → previous status for FLIP animation
   let taskSearchQuery = '';
   let taskSourceFilter = new Set(); // empty = show all; non-empty = show only matching sources
@@ -679,6 +680,8 @@
         document.getElementById('tasks-board').style.display = '';
         document.getElementById('tasks-create-btn-board').style.display = '';
         document.getElementById('tasks-ws-config-btn').style.display = '';
+        document.getElementById('board-pm-select').style.display = '';
+        populateBoardPmSelect();
         renderTaskBoard();
       }
       return;
@@ -1248,6 +1251,7 @@
         break;
       }
       case 'pm:list': pmList = msg.pms || []; renderPMs();
+        if (tasksViewMode === 'board') { populateBoardPmSelect(); renderBoardColumns(); renderTaskBoard(); }
         if (loadingActive) completeLoadingStage('pms', (msg.pms || []).length + ' active');
         break;
       case 'pm:created': showToast('PM Created', msg.pm.name, 'success'); break;
@@ -4404,17 +4408,21 @@
       const board = document.getElementById('tasks-board');
       const createBoardBtn = document.getElementById('tasks-create-btn-board');
       const wsConfigBtn = document.getElementById('tasks-ws-config-btn');
+      const pmSelect = document.getElementById('board-pm-select');
       if (mode === 'board') {
         panes.style.display = 'none';
         board.style.display = '';
         createBoardBtn.style.display = '';
         wsConfigBtn.style.display = '';
+        pmSelect.style.display = '';
+        populateBoardPmSelect();
         renderTaskBoard();
       } else {
         board.style.display = 'none';
         panes.style.display = '';
         createBoardBtn.style.display = 'none';
         wsConfigBtn.style.display = 'none';
+        pmSelect.style.display = 'none';
         renderTasks();
       }
       pushHash();
@@ -4423,14 +4431,51 @@
 
   document.getElementById('tasks-create-btn-board').addEventListener('click', () => openTaskDialog(null));
 
+  // ── Board PM selector ─────────────────────────────
+  const boardPmSelectEl = document.getElementById('board-pm-select');
+  boardPmSelectEl.addEventListener('change', () => {
+    boardPmFilter = boardPmSelectEl.value || null;
+    renderBoardColumns();
+    renderTaskBoard();
+  });
+
+  function populateBoardPmSelect() {
+    const prev = boardPmFilter;
+    boardPmSelectEl.innerHTML = '<option value="">All PMs</option>';
+    for (const pm of pmList) {
+      const opt = document.createElement('option');
+      opt.value = pm.id;
+      opt.textContent = pm.name;
+      if (pm.id === prev) opt.selected = true;
+      boardPmSelectEl.appendChild(opt);
+    }
+    boardPmFilter = boardPmSelectEl.value || null;
+  }
+
+  /** Get the active work states for the current board view */
+  function activeBoardStates() {
+    if (!boardPmFilter) return workStates; // All PMs → global states
+    const pm = pmList.find(p => p.id === boardPmFilter);
+    if (!pm || !pm.boardStates || !pm.boardStates.length) return workStates; // PM has no overrides → global
+    // PM defines which global states to show
+    return pm.boardStates
+      .map(bs => {
+        const global = workStates.find(ws => ws.id === bs.stateId);
+        if (!global) return null;
+        return { ...global, autoOnStatus: bs.autoOnStatus || [] };
+      })
+      .filter(Boolean);
+  }
+
   // ── Tasks kanban board renderer ────────────────────
 
-  /** Build board column DOM from workStates config */
+  /** Build board column DOM from active board states */
   function renderBoardColumns() {
     const board = document.getElementById('tasks-board');
     if (!board) return;
     board.innerHTML = '';
-    for (const wState of workStates) {
+    const states = activeBoardStates();
+    for (const wState of states) {
       const col = document.createElement('div');
       col.className = 'tasks-board-col';
       col.dataset.col = wState.id;
@@ -4445,33 +4490,65 @@
     }
   }
 
-  /** Compute effective board column: manual override wins, then autoOnStatus, then first col */
+  /** Get auto-on-status mappings for a task: PM-specific first, then global fallback */
+  function autoStatesForTask(task) {
+    // Check if task's source PM has boardStates
+    if (task.source) {
+      const pmName = task.source.replace(/^pm:/, '');
+      const pm = pmList.find(p => p.name === pmName);
+      if (pm && pm.boardStates && pm.boardStates.length) {
+        return pm.boardStates.map(bs => {
+          const g = workStates.find(ws => ws.id === bs.stateId);
+          return g ? { id: g.id, autoOnStatus: bs.autoOnStatus || [] } : null;
+        }).filter(Boolean);
+      }
+    }
+    // Fall back to global workStates
+    return workStates;
+  }
+
+  /** Compute effective board column: manual override wins, then PM autoOnStatus, then global, then first col */
   function effectiveWorkState(task) {
+    const states = activeBoardStates();
     // Manual override takes priority (user dragged/set explicitly)
-    if (task.workStateManual && task.workState && workStates.some(ws => ws.id === task.workState)) {
+    if (task.workStateManual && task.workState && states.some(ws => ws.id === task.workState)) {
       return task.workState;
     }
-    // Auto-mapping: check if any column's autoOnStatus matches current status
-    for (const ws of workStates) {
-      if (ws.autoOnStatus && ws.autoOnStatus.includes(task.status)) return ws.id;
+    // Auto-mapping: PM-specific first, then global
+    const autoStates = autoStatesForTask(task);
+    for (const ws of autoStates) {
+      if (ws.autoOnStatus && ws.autoOnStatus.includes(task.status)) {
+        // Only return if this state exists in the active board
+        if (states.some(s => s.id === ws.id)) return ws.id;
+      }
     }
-    // Fall back to stored workState, then first column
-    if (task.workState && workStates.some(ws => ws.id === task.workState)) return task.workState;
-    return workStates[0]?.id || null;
+    // Fall back to stored workState if it exists in active board
+    if (task.workState && states.some(ws => ws.id === task.workState)) return task.workState;
+    return states[0]?.id || null;
   }
 
   function renderTaskBoard() {
-    if (!workStates.length) return;
+    const states = activeBoardStates();
+    if (!states.length) return;
     // Ensure columns exist (idempotent)
-    if (!document.getElementById(`board-cards-${workStates[0].id}`)) renderBoardColumns();
+    if (!document.getElementById(`board-cards-${states[0].id}`)) renderBoardColumns();
     const q = taskSearchQuery.toLowerCase();
     const matchesSearch = (t) => !q || t.text.toLowerCase().includes(q) || (t.source || '').toLowerCase().includes(q) || (t.designation || '').toLowerCase().includes(q) || String(t.assignedTo || '').includes(q) || (t.assignee || '').toLowerCase().includes(q);
 
+    // Filter tasks by selected PM
+    const pmFilteredTasks = boardPmFilter
+      ? tasks.filter(t => {
+          const pmName = (t.source || '').replace(/^pm:/, '');
+          const pm = pmList.find(p => p.id === boardPmFilter);
+          return pm && pmName === pm.name;
+        })
+      : tasks;
+
     // Group tasks by effective work state (dynamic resolution)
     const grouped = new Map();
-    for (const wState of workStates) grouped.set(wState.id, []);
+    for (const wState of states) grouped.set(wState.id, []);
     // Include all non-cancelled tasks
-    const visible = tasks.filter(t => t.status !== 'cancelled' && matchesSearch(t));
+    const visible = pmFilteredTasks.filter(t => t.status !== 'cancelled' && matchesSearch(t));
     for (const t of visible) {
       const col = effectiveWorkState(t);
       if (col && grouped.has(col)) grouped.get(col).push(t);
@@ -4479,7 +4556,7 @@
 
     // Build new state map for animation diffing (use effective, not stored)
     const newStatuses = new Map();
-    for (const t of tasks) newStatuses.set(t.id, effectiveWorkState(t) || '');
+    for (const t of pmFilteredTasks) newStatuses.set(t.id, effectiveWorkState(t) || '');
 
     // Snapshot existing card positions for FLIP
     const oldRects = new Map();
@@ -4495,7 +4572,7 @@
     }
 
     // Render each column
-    for (const wState of workStates) {
+    for (const wState of states) {
       renderBoardCol(wState.id, grouped.get(wState.id) || []);
     }
 
@@ -4862,19 +4939,49 @@
     wsConfigDraft.push({ id, label: 'New State', color: '#6272a4' });
     renderWsConfigRows();
   });
+  let wsConfigMode = 'global'; // 'global' or pm id
+
   document.getElementById('ws-config-save').addEventListener('click', () => {
-    syncWsConfigDraft();
-    const states = wsConfigDraft.filter(s => s.label);
-    if (!states.length) return;
-    if (ws && ws.readyState === 1) {
-      ws.send(JSON.stringify({ type: 'workStates:set', states }));
+    if (wsConfigMode === 'global') {
+      syncWsConfigDraft();
+      const states = wsConfigDraft.filter(s => s.label);
+      if (!states.length) return;
+      if (ws && ws.readyState === 1) {
+        ws.send(JSON.stringify({ type: 'workStates:set', states }));
+      }
+    } else {
+      // Per-PM: save boardStates
+      const boardStates = [];
+      document.querySelectorAll('.ws-pm-state-row').forEach(row => {
+        const cb = row.querySelector('.ws-pm-state-cb');
+        if (!cb.checked) return;
+        const chips = row.querySelectorAll('.ws-auto-chip.active');
+        boardStates.push({
+          stateId: row.dataset.stateId,
+          autoOnStatus: Array.from(chips).map(c => c.dataset.status),
+        });
+      });
+      if (ws && ws.readyState === 1) {
+        ws.send(JSON.stringify({ type: 'pm:update', id: wsConfigMode, updates: { boardStates } }));
+      }
     }
     closeWsConfig();
   });
 
   function openWsConfig() {
-    wsConfigDraft = workStates.map(s => ({ ...s, autoOnStatus: [...(s.autoOnStatus || [])] }));
-    renderWsConfigRows();
+    if (boardPmFilter) {
+      wsConfigMode = boardPmFilter;
+      const pm = pmList.find(p => p.id === boardPmFilter);
+      document.querySelector('.ws-config-title').textContent = pm ? `${pm.name} — Board States` : 'Board States';
+      document.getElementById('ws-config-add').style.display = 'none';
+      renderWsPmRows(pm);
+    } else {
+      wsConfigMode = 'global';
+      document.querySelector('.ws-config-title').textContent = 'Work States';
+      document.getElementById('ws-config-add').style.display = '';
+      wsConfigDraft = workStates.map(s => ({ ...s, autoOnStatus: [...(s.autoOnStatus || [])] }));
+      renderWsConfigRows();
+    }
     document.getElementById('ws-config-overlay').style.display = '';
   }
 
@@ -4883,6 +4990,40 @@
   }
 
   const TASK_STATUSES = ['queued', 'dispatched', 'completed', 'failed', 'snoozed', 'cancelled'];
+
+  /** Render per-PM board state config: checkboxes for each global state + autoOnStatus chips */
+  function renderWsPmRows(pm) {
+    const body = document.getElementById('ws-config-body');
+    body.innerHTML = '';
+    const pmStates = (pm && pm.boardStates) || [];
+    const pmMap = new Map(pmStates.map(bs => [bs.stateId, bs]));
+    for (const gs of workStates) {
+      const pmState = pmMap.get(gs.id);
+      const active = !!pmState || !pmStates.length; // if no boardStates defined, all checked by default
+      const auto = pmState ? (pmState.autoOnStatus || []) : (gs.autoOnStatus || []);
+      const row = document.createElement('div');
+      row.className = 'ws-pm-state-row';
+      row.dataset.stateId = gs.id;
+      const chipsHtml = TASK_STATUSES.map(st =>
+        `<button class="ws-auto-chip${auto.includes(st) ? ' active' : ''}" data-status="${st}">${st}</button>`
+      ).join('');
+      row.innerHTML = `
+        <div class="ws-pm-state-main">
+          <input type="checkbox" class="ws-pm-state-cb" ${active ? 'checked' : ''}>
+          <span class="work-state-dot" style="background:${gs.color}"></span>
+          <span class="ws-pm-state-label">${esc(gs.label)}</span>
+        </div>
+        <div class="ws-auto-row" style="padding-left:32px">
+          <span class="ws-auto-label">Auto-set on:</span>
+          ${chipsHtml}
+        </div>
+      `;
+      row.querySelectorAll('.ws-auto-chip').forEach(chip => {
+        chip.addEventListener('click', (e) => { e.preventDefault(); chip.classList.toggle('active'); });
+      });
+      body.appendChild(row);
+    }
+  }
 
   function renderWsConfigRows() {
     const body = document.getElementById('ws-config-body');
