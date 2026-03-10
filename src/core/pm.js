@@ -242,6 +242,7 @@ class ProjectManager extends EventEmitter {
         memory: _deduplicateMemory(Array.isArray(data.memory) ? data.memory.filter(m => typeof m === 'string' && m.trim()) : []),
         completionConditions: Array.isArray(data.completionConditions) ? data.completionConditions : [],
         continueConditions: Array.isArray(data.continueConditions) ? data.continueConditions : [],
+        boardStates: Array.isArray(data.boardStates) ? data.boardStates : null,
         enabled: data.enabled || false,
         seenKeys: Array.isArray(data.seenKeys) ? data.seenKeys : [],
         tasksCreated: data.tasksCreated || 0,
