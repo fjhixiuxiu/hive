@@ -165,8 +165,14 @@ async function tell(config, node, sessionName, message, { vimMode } = {}) {
   } catch (err) {
     return { success: false, error: `Failed to send message: ${err.message}` };
   }
-  await new Promise(r => setTimeout(r, 100));
+  const isMultiLine = message && message.includes('\n');
+  await new Promise(r => setTimeout(r, isMultiLine ? 200 : 100));
   await node.exec(`tmux send-keys -t "${paneTarget}" Enter`);
+  // Safety: second Enter for multi-line pastes (TUI can swallow the first)
+  if (isMultiLine) {
+    await new Promise(r => setTimeout(r, 300));
+    await node.exec(`tmux send-keys -t "${paneTarget}" Enter`);
+  }
   return { success: true };
 }
 

@@ -89,6 +89,7 @@
   let term = null;
   let fitAddon = null;
   let tasks = [];
+  let workStates = [];
   let autoSessions = new Set();
   let feedEntries = [];
   let feedHasMore = false;
@@ -105,6 +106,9 @@
   let taskAutoComplete = true;
   let manualTarget = null;
   let activeTaskTab = 'inprogress';
+  let tasksViewMode = 'list'; // 'list' or 'board'
+  let boardPmFilter = null; // null = All, or PM id string
+  let boardPrevStatuses = new Map(); // taskId → previous status for FLIP animation
   let taskSearchQuery = '';
   let taskSourceFilter = new Set(); // empty = show all; non-empty = show only matching sources
   let selectedTaskIds = new Set();
@@ -138,6 +142,9 @@
   let consoleTerm = null;
   let consoleFit = null;
   let consoleLastContent = '';
+  let consoleScrolledUp = false;
+  let consolePending = null;
+  let consoleWriting = false;
 
   // Color map: name → { css var, rgba bg }
   const DESIG_COLORS = {
@@ -639,7 +646,11 @@
 
   function hashFromState() {
     if (activeTab === 'session-panel' && currentSession) return `/session/${currentSession}`;
-    if (activeTab === 'tasks-panel' && tasksSelectedTaskId) return `/tasks/${tasksSelectedTaskId}`;
+    if (activeTab === 'tasks-panel') {
+      if (tasksViewMode === 'board') return '/tasks/board';
+      if (tasksSelectedTaskId) return `/tasks/${tasksSelectedTaskId}`;
+      return '/tasks';
+    }
     return TAB_TO_HASH[activeTab] || '/fleet';
   }
 
@@ -658,6 +669,21 @@
       // Session not found yet — store pending, will apply after fleet data arrives
       pendingRouteSession = num;
       switchTab('fleet-panel', true);
+      return;
+    }
+    if (raw === '/tasks/board') {
+      switchTab('tasks-panel', true);
+      if (tasksViewMode !== 'board') {
+        tasksViewMode = 'board';
+        document.querySelectorAll('.tasks-view-btn').forEach(b => b.classList.toggle('active', b.dataset.tasksView === 'board'));
+        document.getElementById('tasks-panes').style.display = 'none';
+        document.getElementById('tasks-board').style.display = '';
+        document.getElementById('tasks-create-btn-board').style.display = '';
+        document.getElementById('tasks-ws-config-btn').style.display = '';
+        document.getElementById('board-pm-select').style.display = '';
+        populateBoardPmSelect();
+        renderTaskBoard();
+      }
       return;
     }
     const taskMatch = raw.match(/^\/tasks\/(.+)$/);
@@ -958,28 +984,47 @@
         }
         break;
       case 'terminal:data':
-        // Ignore data from stale pane subscriptions (race between clearInterval and in-flight poll)
+        // Route data to each terminal independently — never use break inside these blocks
+        // (break would exit the entire switch, starving downstream terminals)
         if (term && currentSession === String(msg.session)) {
-          if (typeof msg.pane === 'number' && activePane !== null && msg.pane !== activePane) break;
-          if (msg.cols && msg.cols > 0) { paneCols = msg.cols; if (msg.cols !== term.cols) term.resize(msg.cols, term.rows); }
-          if (msg.content === lastContent) break;
-          if (userScrolledUp) { pendingContent = msg.content; }
-          else { writeTerminalContent(msg.content); }
+          const paneOk = !(typeof msg.pane === 'number' && activePane !== null && msg.pane !== activePane);
+          if (paneOk) {
+            if (msg.cols && msg.cols > 0) { paneCols = msg.cols; if (msg.cols !== term.cols) term.resize(msg.cols, term.rows); }
+            if (msg.content !== lastContent) {
+              if (userScrolledUp) { pendingContent = msg.content; }
+              else { writeTerminalContent(msg.content); }
+            }
+          }
         }
         if (tasksSessionTerm && tasksSessionNum === String(msg.session) && activeTab === 'tasks-panel') {
-          if (typeof msg.pane === 'number' && tsActivePane !== null && msg.pane !== tsActivePane) break;
-          if (msg.cols && msg.cols > 0) { tsPaneCols = msg.cols; if (msg.cols !== tasksSessionTerm.cols) tasksSessionTerm.resize(msg.cols, tasksSessionTerm.rows); }
-          if (msg.content === tsLastContent) break;
-          if (tsUserScrolledUp) { tsPendingContent = msg.content; }
-          else { writeTasksSessionContent(msg.content); }
+          const paneOk = !(typeof msg.pane === 'number' && tsActivePane !== null && msg.pane !== tsActivePane);
+          if (paneOk) {
+            if (msg.cols && msg.cols > 0) { tsPaneCols = msg.cols; if (msg.cols !== tasksSessionTerm.cols) tasksSessionTerm.resize(msg.cols, tasksSessionTerm.rows); }
+            if (msg.content !== tsLastContent) {
+              if (tsUserScrolledUp) { tsPendingContent = msg.content; }
+              else { writeTasksSessionContent(msg.content); }
+            }
+          }
+        }
+        // Task detail slide-out terminal
+        if (taskDetailTerm && taskDetailSession && String(msg.session) === taskDetailSession) {
+          if (msg.content !== taskDetailLastContent) {
+            if (msg.cols && msg.cols > 0 && msg.cols !== taskDetailTerm.cols) taskDetailTerm.resize(msg.cols, taskDetailTerm.rows);
+            if (taskDetailScrolledUp) {
+              taskDetailPending = msg.content;
+            } else {
+              writeTaskDetailContent(msg.content);
+            }
+          }
         }
         // Console (Session 0) terminal data
         if (consoleTerm && consoleOpen && String(msg.session) === 'hive-console') {
           if (msg.content !== consoleLastContent) {
-            consoleLastContent = msg.content;
-            consoleTerm.reset();
-            consoleTerm.write(msg.content);
-            requestAnimationFrame(() => consoleTerm.scrollToBottom());
+            if (consoleScrolledUp) {
+              consolePending = msg.content;
+            } else {
+              writeConsoleContent(msg.content);
+            }
           }
         }
         break;
@@ -1035,6 +1080,11 @@
           showToast('Error', msg.message, 'error');
         }
         break;
+      case 'workStates:list':
+        workStates = msg.states || [];
+        renderBoardColumns();
+        if (tasksViewMode === 'board') renderTaskBoard();
+        break;
       case 'tasks:list':
         tasks = msg.tasks || []; renderTasks(); updateTasksBadge();
         if (loadingActive) { const _q = msg.tasks ? msg.tasks.filter(t => t.status === 'queued').length : 0, _a = msg.tasks ? msg.tasks.filter(t => t.status === 'dispatched').length : 0; completeLoadingStage('tasks', _q + ' queued, ' + _a + ' active'); }
@@ -1048,6 +1098,10 @@
         if (msg.type === 'task:completed' || msg.type === 'task:failed') {
           const doneId = msg.task.id;
           const doneSession = msg.task.assignedTo ? String(msg.task.assignedTo) : null;
+          // Task detail slide-out: auto-advance to next task
+          if (taskDetailTaskId === doneId) {
+            setTimeout(() => navigateTaskDetail(1), 300);
+          }
           // Task sheet: if this task was selected, advance to next dispatched task
           if (tasksSelectedTaskId === doneId) {
             const navList = tasks.filter(t => t.status === 'dispatched' && t.id !== doneId);
@@ -1067,6 +1121,10 @@
             }
             // Otherwise updateSessionTaskButtons already hid the done/requeue buttons
           }
+        }
+        // Task detail slide-out: refresh toolbar if the viewed task was updated
+        if (taskDetailTaskId === msg.task.id) {
+          openTaskDetail(msg.task.id); // re-render with updated data
         }
         break;
       }
@@ -1193,6 +1251,7 @@
         break;
       }
       case 'pm:list': pmList = msg.pms || []; renderPMs();
+        if (tasksViewMode === 'board') { populateBoardPmSelect(); renderBoardColumns(); renderTaskBoard(); }
         if (loadingActive) completeLoadingStage('pms', (msg.pms || []).length + ' active');
         break;
       case 'pm:created': showToast('PM Created', msg.pm.name, 'success'); break;
@@ -2194,11 +2253,21 @@
       consoleTerm.loadAddon(new WebLinksAddon.WebLinksAddon((e, uri) => window.open(uri, '_blank')));
       enableTerminalCopy(consoleTerm);
       consoleTerm.open(document.getElementById('console-terminal'));
+      // Scroll lock: detect user scrolling up
+      consoleTerm.element.addEventListener('wheel', () => { setTimeout(checkConsoleScroll, 50); });
+      let consoleTouchStartY = 0;
+      consoleTerm.element.addEventListener('touchstart', (e) => { consoleTouchStartY = e.touches[0].clientY; }, { passive: true });
+      consoleTerm.element.addEventListener('touchend', (e) => {
+        const dy = consoleTouchStartY - (e.changedTouches[0] || {}).clientY;
+        if (Math.abs(dy) > 20) { setTimeout(checkConsoleScroll, 150); setTimeout(checkConsoleScroll, 500); }
+      });
     }
     requestAnimationFrame(() => {
       consoleFit.fit();
       consoleTerm.clear();
       consoleLastContent = '';
+      consoleScrolledUp = false;
+      consolePending = null;
       if (ws && ws.readyState === 1) {
         ws.send(JSON.stringify({ type: 'terminal:subscribe', session: 'hive-console', cols: consoleTerm.cols, rows: consoleTerm.rows }));
         // Resize tmux pane to match xterm cols
@@ -2222,6 +2291,48 @@
   function toggleConsole() {
     if (consoleOpen) closeConsole();
     else openConsole();
+  }
+
+  function checkConsoleScroll() {
+    if (!consoleTerm || consoleWriting) return;
+    const buf = consoleTerm.buffer.active;
+    const linesFromBottom = buf.baseY - buf.viewportY;
+    if (linesFromBottom <= 3 && consoleScrolledUp) {
+      consoleScrolledUp = false;
+      consoleScrollIndicator(false);
+      if (consolePending !== null) { writeConsoleContent(consolePending); consolePending = null; }
+    } else if (linesFromBottom > 3) {
+      consoleScrolledUp = true;
+      consoleScrollIndicator(true);
+    }
+  }
+
+  function writeConsoleContent(content) {
+    if (!consoleTerm) return;
+    consoleLastContent = content;
+    consoleWriting = true;
+    consoleTerm.reset();
+    consoleTerm.write(content);
+    requestAnimationFrame(() => { consoleTerm.scrollToBottom(); requestAnimationFrame(() => { consoleWriting = false; }); });
+  }
+
+  function consoleScrollIndicator(show) {
+    let el = document.getElementById('console-scroll-pause');
+    const termContainer = document.getElementById('console-terminal');
+    if (show && !el) {
+      el = document.createElement('div');
+      el.id = 'console-scroll-pause';
+      el.className = 'scroll-pause-btn';
+      el.title = 'Scroll to bottom';
+      el.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>';
+      el.addEventListener('click', () => {
+        consoleScrolledUp = false;
+        consoleScrollIndicator(false);
+        if (consoleTerm) consoleTerm.scrollToBottom();
+        if (consolePending !== null) { writeConsoleContent(consolePending); consolePending = null; }
+      });
+      if (termContainer) { termContainer.style.position = 'relative'; termContainer.appendChild(el); }
+    } else if (!show && el) { el.remove(); }
   }
 
   function updateConsoleBtnLogo() {
@@ -3975,6 +4086,8 @@
 
   // ── Render tasks ───────────────────────────────────
   function renderTasks() {
+    // If in board mode, render board instead
+    if (tasksViewMode === 'board') { renderTaskBoard(); return; }
     // Clean up selectedTaskIds for tasks that no longer exist
     const taskIds = new Set(tasks.map(t => t.id));
     for (const id of selectedTaskIds) { if (!taskIds.has(id)) selectedTaskIds.delete(id); }
@@ -4282,6 +4395,901 @@
     updateTasksBulkBar();
     renderTasks();
     updateTasksBadge();
+  });
+
+  // ── Tasks view toggle (List / Board) ────────────────
+  document.querySelectorAll('.tasks-view-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const mode = btn.dataset.tasksView;
+      if (mode === tasksViewMode) return;
+      tasksViewMode = mode;
+      document.querySelectorAll('.tasks-view-btn').forEach(b => b.classList.toggle('active', b.dataset.tasksView === mode));
+      const panes = document.getElementById('tasks-panes');
+      const board = document.getElementById('tasks-board');
+      const createBoardBtn = document.getElementById('tasks-create-btn-board');
+      const wsConfigBtn = document.getElementById('tasks-ws-config-btn');
+      const pmSelect = document.getElementById('board-pm-select');
+      if (mode === 'board') {
+        panes.style.display = 'none';
+        board.style.display = '';
+        createBoardBtn.style.display = '';
+        wsConfigBtn.style.display = '';
+        pmSelect.style.display = '';
+        populateBoardPmSelect();
+        renderTaskBoard();
+      } else {
+        board.style.display = 'none';
+        panes.style.display = '';
+        createBoardBtn.style.display = 'none';
+        wsConfigBtn.style.display = 'none';
+        pmSelect.style.display = 'none';
+        renderTasks();
+      }
+      pushHash();
+    });
+  });
+
+  document.getElementById('tasks-create-btn-board').addEventListener('click', () => openTaskDialog(null));
+
+  // ── Board PM selector ─────────────────────────────
+  const boardPmSelectEl = document.getElementById('board-pm-select');
+  boardPmSelectEl.addEventListener('change', () => {
+    boardPmFilter = boardPmSelectEl.value || null;
+    renderBoardColumns();
+    renderTaskBoard();
+  });
+
+  function populateBoardPmSelect() {
+    const prev = boardPmFilter;
+    boardPmSelectEl.innerHTML = '<option value="">All PMs</option>';
+    for (const pm of pmList) {
+      const opt = document.createElement('option');
+      opt.value = pm.id;
+      opt.textContent = pm.name;
+      if (pm.id === prev) opt.selected = true;
+      boardPmSelectEl.appendChild(opt);
+    }
+    boardPmFilter = boardPmSelectEl.value || null;
+  }
+
+  /** Get the active work states for the current board view */
+  function activeBoardStates() {
+    if (!boardPmFilter) return workStates; // All PMs → global states
+    const pm = pmList.find(p => p.id === boardPmFilter);
+    if (!pm || !pm.boardStates || !pm.boardStates.length) return workStates; // PM has no overrides → global
+    // PM defines which global states to show
+    return pm.boardStates
+      .map(bs => {
+        const global = workStates.find(ws => ws.id === bs.stateId);
+        if (!global) return null;
+        return { ...global, autoOnStatus: bs.autoOnStatus || [] };
+      })
+      .filter(Boolean);
+  }
+
+  // ── Tasks kanban board renderer ────────────────────
+
+  /** Build board column DOM from active board states */
+  function renderBoardColumns() {
+    const board = document.getElementById('tasks-board');
+    if (!board) return;
+    board.innerHTML = '';
+    const states = activeBoardStates();
+    for (const wState of states) {
+      const col = document.createElement('div');
+      col.className = 'tasks-board-col';
+      col.dataset.col = wState.id;
+      col.innerHTML = `
+        <div class="tasks-board-col-header" style="border-bottom-color:${wState.color}">
+          <span class="tasks-board-col-title">${esc(wState.label)}</span>
+          <span class="tasks-board-col-count" id="board-count-${wState.id}">0</span>
+        </div>
+        <div class="tasks-board-col-cards" id="board-cards-${wState.id}"></div>
+      `;
+      board.appendChild(col);
+    }
+  }
+
+  /** Get auto-on-status mappings for a task: PM-specific first, then global fallback */
+  function autoStatesForTask(task) {
+    // Check if task's source PM has boardStates
+    if (task.source) {
+      const pmName = task.source.replace(/^pm:/, '');
+      const pm = pmList.find(p => p.name === pmName);
+      if (pm && pm.boardStates && pm.boardStates.length) {
+        return pm.boardStates.map(bs => {
+          const g = workStates.find(ws => ws.id === bs.stateId);
+          return g ? { id: g.id, autoOnStatus: bs.autoOnStatus || [] } : null;
+        }).filter(Boolean);
+      }
+    }
+    // Fall back to global workStates
+    return workStates;
+  }
+
+  /** Compute effective board column: manual override wins, then PM autoOnStatus, then global, then first col */
+  function effectiveWorkState(task) {
+    const states = activeBoardStates();
+    // Manual override takes priority (user dragged/set explicitly)
+    if (task.workStateManual && task.workState && states.some(ws => ws.id === task.workState)) {
+      return task.workState;
+    }
+    // Auto-mapping: PM-specific first, then global
+    const autoStates = autoStatesForTask(task);
+    for (const ws of autoStates) {
+      if (ws.autoOnStatus && ws.autoOnStatus.includes(task.status)) {
+        // Only return if this state exists in the active board
+        if (states.some(s => s.id === ws.id)) return ws.id;
+      }
+    }
+    // Fall back to stored workState if it exists in active board
+    if (task.workState && states.some(ws => ws.id === task.workState)) return task.workState;
+    return states[0]?.id || null;
+  }
+
+  function renderTaskBoard() {
+    const states = activeBoardStates();
+    if (!states.length) return;
+    // Ensure columns exist (idempotent)
+    if (!document.getElementById(`board-cards-${states[0].id}`)) renderBoardColumns();
+    const q = taskSearchQuery.toLowerCase();
+    const matchesSearch = (t) => !q || t.text.toLowerCase().includes(q) || (t.source || '').toLowerCase().includes(q) || (t.designation || '').toLowerCase().includes(q) || String(t.assignedTo || '').includes(q) || (t.assignee || '').toLowerCase().includes(q);
+
+    // Filter tasks by selected PM
+    const pmFilteredTasks = boardPmFilter
+      ? tasks.filter(t => {
+          const pmName = (t.source || '').replace(/^pm:/, '');
+          const pm = pmList.find(p => p.id === boardPmFilter);
+          return pm && pmName === pm.name;
+        })
+      : tasks;
+
+    // Group tasks by effective work state (dynamic resolution)
+    const grouped = new Map();
+    for (const wState of states) grouped.set(wState.id, []);
+    // Include all non-cancelled tasks
+    const visible = pmFilteredTasks.filter(t => t.status !== 'cancelled' && matchesSearch(t));
+    for (const t of visible) {
+      const col = effectiveWorkState(t);
+      if (col && grouped.has(col)) grouped.get(col).push(t);
+    }
+
+    // Build new state map for animation diffing (use effective, not stored)
+    const newStatuses = new Map();
+    for (const t of pmFilteredTasks) newStatuses.set(t.id, effectiveWorkState(t) || '');
+
+    // Snapshot existing card positions for FLIP
+    const oldRects = new Map();
+    document.querySelectorAll('.board-card').forEach(el => {
+      oldRects.set(el.dataset.id, el.getBoundingClientRect());
+    });
+
+    // Detect movers (workState changed since last render)
+    const movers = new Set();
+    for (const [id, wst] of newStatuses) {
+      const prev = boardPrevStatuses.get(id);
+      if (prev !== undefined && prev !== wst) movers.add(id);
+    }
+
+    // Render each column
+    for (const wState of states) {
+      renderBoardCol(wState.id, grouped.get(wState.id) || []);
+    }
+
+    // FLIP animate movers
+    document.querySelectorAll('.board-card').forEach(el => {
+      const id = el.dataset.id;
+      const oldRect = oldRects.get(id);
+      if (movers.has(id) && oldRect) {
+        const newRect = el.getBoundingClientRect();
+        const dx = oldRect.left - newRect.left;
+        const dy = oldRect.top - newRect.top;
+        if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
+          el.style.transform = `translate(${dx}px, ${dy}px)`;
+          el.style.transition = 'none';
+          requestAnimationFrame(() => {
+            el.style.transition = 'transform 0.35s ease';
+            el.style.transform = '';
+            el.addEventListener('transitionend', () => { el.style.transition = ''; }, { once: true });
+          });
+        }
+      } else if (movers.has(id)) {
+        el.classList.add('board-card-enter');
+        el.addEventListener('animationend', () => el.classList.remove('board-card-enter'), { once: true });
+      }
+    });
+
+    boardPrevStatuses = newStatuses;
+  }
+
+  function renderBoardCol(colId, taskList) {
+    const container = document.getElementById(`board-cards-${colId}`);
+    const countEl = document.getElementById(`board-count-${colId}`);
+    if (!container || !countEl) return;
+    countEl.textContent = taskList.length;
+
+    container.innerHTML = '';
+
+    // Drop target: attach once so empty columns accept drops
+    if (!container._dropWired) {
+      container._dropWired = true;
+      container.addEventListener('dragover', (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; container.classList.add('board-col-drop-target'); });
+      container.addEventListener('dragleave', (e) => { if (!container.contains(e.relatedTarget)) container.classList.remove('board-col-drop-target'); });
+      container.addEventListener('drop', (e) => {
+        e.preventDefault();
+        container.classList.remove('board-col-drop-target');
+        const taskId = e.dataTransfer.getData('text/plain');
+        if (!taskId || colId === effectiveWorkState(tasks.find(t => t.id === taskId) || {})) return;
+        if (ws && ws.readyState === 1) {
+          ws.send(JSON.stringify({ type: 'task:update', taskId, updates: { workState: colId } }));
+        }
+        // Optimistic update
+        const task = tasks.find(t => t.id === taskId);
+        if (task) { task.workState = colId; task.workStateManual = true; }
+        renderTaskBoard();
+        if (taskDetailTaskId === taskId) openTaskDetail(taskId);
+      });
+    }
+
+    if (!taskList.length) {
+      container.innerHTML = '<div class="board-card-empty">Drop here</div>';
+      return;
+    }
+
+    for (const t of taskList) {
+      const el = document.createElement('div');
+      el.className = `board-card${tasksSelectedTaskId === t.id ? ' selected' : ''}`;
+      el.dataset.id = t.id;
+      el.dataset.status = t.status;
+      el.draggable = true;
+
+      const sourceLabel = t.source ? t.source.replace(/^pm:/, '') : '';
+      const pmdc = t.designation ? getDesigColor(t.designation) : null;
+      const desigBadge = t.designation ? `<span class="task-designation" style="background:${pmdc.bg};color:${pmdc.fg}">${esc(t.designation)}</span>` : '';
+      const sourceBadge = sourceLabel ? `<span class="task-source-badge">${esc(sourceLabel)}</span>` : '';
+      const sessionBadge = t.assignedTo ? `<span class="task-session-badge">S:${t.assignedTo}</span>` : '';
+      const statusDot = `<span class="board-card-status s-${t.status}"></span>`;
+      const initials = t.assignee ? t.assignee.slice(0, 2).toUpperCase() : '';
+      const assigneeBadge = initials ? `<span class="board-card-assignee">${esc(initials)}</span>` : '';
+      const timeStr = t.status === 'dispatched' ? timeAgo(t.dispatchedAt || t.createdAt) : timeAgo(t.createdAt);
+
+      el.innerHTML = `
+        <div class="board-card-title">${esc(t.text)}</div>
+        <div class="board-card-meta">${statusDot}${desigBadge}${sourceBadge}${sessionBadge}<span>${timeStr}</span>${assigneeBadge}</div>
+      `;
+
+      // Drag start
+      el.addEventListener('dragstart', (e) => {
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', t.id);
+        el.classList.add('board-card-dragging');
+        // Highlight all column drop zones
+        document.querySelectorAll('.tasks-board-col-cards').forEach(c => c.classList.add('board-col-drop-ready'));
+      });
+      el.addEventListener('dragend', () => {
+        el.classList.remove('board-card-dragging');
+        document.querySelectorAll('.tasks-board-col-cards').forEach(c => {
+          c.classList.remove('board-col-drop-ready', 'board-col-drop-target');
+        });
+      });
+
+      el.addEventListener('click', () => openTaskDetail(t.id));
+      container.appendChild(el);
+    }
+  }
+
+  // ── Task detail slide-out (board view) ───────────
+  let taskDetailTaskId = null;
+  let taskDetailTerm = null;
+  let taskDetailFitAddon = null;
+  let taskDetailSession = null;
+  let taskDetailLastContent = '';
+  let taskDetailScrolledUp = false;
+  let taskDetailPending = null;
+  let taskDetailWriting = false;
+  let taskDetailMode = 'ask'; // 'ask' or 'tell'
+  let tdHistoryIdx = -1;
+  let tdHistoryDraft = '';
+
+  function openTaskDetail(taskId) {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+
+    // Clean up previous session subscription if switching tasks
+    if (taskDetailSession && taskDetailSession !== String(task.assignedTo || '')) {
+      if (ws && ws.readyState === 1) {
+        ws.send(JSON.stringify({ type: 'terminal:unsubscribe', session: taskDetailSession }));
+      }
+      taskDetailSession = null;
+      taskDetailLastContent = '';
+    }
+
+    taskDetailTaskId = taskId;
+    tasksSelectedTaskId = taskId;
+
+    // Highlight on board
+    document.querySelectorAll('.board-card').forEach(c => c.classList.toggle('selected', c.dataset.id === taskId));
+
+    // Header: title + meta
+    document.getElementById('task-detail-title').textContent = task.text;
+    const sourceLabel = task.source ? task.source.replace(/^pm:/, '') : '';
+    const pmdc = task.designation ? getDesigColor(task.designation) : null;
+    const desigHtml = task.designation ? `<span class="task-designation" style="background:${pmdc.bg};color:${pmdc.fg}">${esc(task.designation)}</span>` : '';
+    const sourceHtml = sourceLabel ? `<span class="task-source-badge">${esc(sourceLabel)}</span>` : '';
+    const sessionHtml = task.assignedTo ? `<span class="task-session-badge">S:${task.assignedTo}</span>` : '';
+    const timeHtml = `<span>${timeAgo(task.createdAt)}</span>`;
+    document.getElementById('task-detail-meta').innerHTML = [desigHtml, sourceHtml, sessionHtml, timeHtml].filter(Boolean).join('');
+
+    // Toolbar: actions
+    let actionsHtml = '';
+    if (task.status === 'dispatched') {
+      actionsHtml = `
+        <button class="task-detail-action primary" data-action="done">Done</button>
+        <button class="task-detail-action" data-action="requeue">Requeue</button>
+        <button class="task-detail-action" data-action="snooze">Snooze</button>
+        <button class="task-detail-action danger" data-action="cancel">Cancel</button>
+      `;
+    } else if (task.status === 'queued') {
+      actionsHtml = `
+        <button class="task-detail-action primary" data-action="assign">Assign</button>
+        <button class="task-detail-action" data-action="edit">Edit</button>
+        <button class="task-detail-action" data-action="snooze">Snooze</button>
+        <button class="task-detail-action danger" data-action="cancel">Cancel</button>
+      `;
+    } else if (task.status === 'snoozed') {
+      const wakeTime = task.snoozedUntil ? new Date(task.snoozedUntil).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+      actionsHtml = `
+        ${wakeTime ? `<span style="font-size:11px;color:var(--yellow)">Wakes ${wakeTime}</span>` : ''}
+        <button class="task-detail-action primary" data-action="wake">Wake Now</button>
+        <button class="task-detail-action danger" data-action="cancel">Cancel</button>
+      `;
+    } else {
+      actionsHtml = task.assignedTo ? `<button class="task-detail-action" data-action="resume">Resume</button>` : '';
+    }
+    const actionsEl = document.getElementById('task-detail-actions');
+    actionsEl.innerHTML = actionsHtml;
+    actionsEl.querySelectorAll('.task-detail-action').forEach(btn => {
+      btn.addEventListener('click', () => handleTaskDetailAction(btn.dataset.action, task));
+    });
+
+    // Context actions button (right side, after Open Session)
+    const ctxBtn = document.getElementById('task-detail-ctx-actions');
+    if (task.actions && task.actions.length) {
+      ctxBtn.textContent = `\u26A1 Actions (${task.actions.length})`;
+      ctxBtn.style.display = '';
+      ctxBtn.onclick = () => renderActionsPopup(task.id, ctxBtn);
+    } else {
+      ctxBtn.style.display = 'none';
+      ctxBtn.onclick = null;
+    }
+
+    // Work state button
+    const wsBtn = document.getElementById('task-detail-work-state');
+    const wsState = workStates.find(w => w.id === task.workState);
+    wsBtn.textContent = wsState ? wsState.label : (task.workState || 'Set state');
+    wsBtn.style.background = wsState ? wsState.color + '33' : '';
+    wsBtn.style.color = wsState ? wsState.color : 'var(--dim)';
+    wsBtn.onclick = (e) => { e.stopPropagation(); showWorkStateDropdown(task.id, wsBtn); };
+
+    // Assignee button
+    const assignBtn = document.getElementById('task-detail-assignee');
+    assignBtn.textContent = task.assignee || '';
+    assignBtn.onclick = (e) => { e.stopPropagation(); promptAssignee(task.id, assignBtn); };
+
+    // Toolbar: checklist progress
+    const checklistEl = document.getElementById('task-detail-checklist');
+    if (task.checklist && task.checklist.length) {
+      const done = task.checklist.filter(c => c.done).length;
+      checklistEl.textContent = `Checklist ${done}/${task.checklist.length}`;
+      checklistEl.style.color = done === task.checklist.length ? 'var(--green)' : 'var(--dim)';
+    } else {
+      checklistEl.textContent = '';
+    }
+
+    // Toolbar: open session button
+    const openBtn = document.getElementById('task-detail-open-session');
+    const isDispatched = task.status === 'dispatched' && task.assignedTo;
+    openBtn.style.display = isDispatched ? '' : 'none';
+    openBtn.onclick = isDispatched ? () => {
+      closeTaskDetail();
+      const s = fleetData.find(x => x.num === task.assignedTo);
+      if (s) openSession(s);
+    } : null;
+
+    // Terminal + input: show for dispatched tasks
+    const termContainer = document.getElementById('task-detail-terminal');
+    const keysBar = document.getElementById('task-detail-keys');
+    const cmdBarEl = document.getElementById('task-detail-cmd-bar');
+    const inputBar = document.getElementById('task-detail-input-bar');
+
+    if (isDispatched) {
+      termContainer.style.display = '';
+      keysBar.style.display = '';
+      inputBar.style.display = '';
+      // Dispose old terminal and create fresh — xterm open() can only be called once
+      if (taskDetailTerm) {
+        taskDetailTerm.dispose();
+        taskDetailTerm = null;
+        taskDetailFitAddon = null;
+      }
+      termContainer.innerHTML = '';
+      taskDetailTerm = new Terminal({
+        fontSize: 12, fontFamily: "'SF Mono', Menlo, Monaco, monospace",
+        theme: { background: '#0f0f23', foreground: '#e2e2f0', cursor: '#e2e2f0' },
+        scrollback: 5000, convertEol: true, cursorBlink: false, disableStdin: true,
+      });
+      taskDetailFitAddon = new FitAddon.FitAddon();
+      taskDetailTerm.loadAddon(taskDetailFitAddon);
+      taskDetailTerm.open(termContainer);
+      taskDetailLastContent = '';
+      taskDetailScrolledUp = false;
+      taskDetailPending = null;
+      // Scroll lock: detect user scrolling up
+      taskDetailTerm.element.addEventListener('wheel', () => { setTimeout(checkTaskDetailScroll, 50); });
+      let tdTouchStartY = 0;
+      taskDetailTerm.element.addEventListener('touchstart', (e) => { tdTouchStartY = e.touches[0].clientY; }, { passive: true });
+      taskDetailTerm.element.addEventListener('touchend', (e) => {
+        const dy = tdTouchStartY - (e.changedTouches[0] || {}).clientY;
+        if (Math.abs(dy) > 20) { setTimeout(checkTaskDetailScroll, 150); setTimeout(checkTaskDetailScroll, 500); }
+      });
+      taskDetailSession = String(task.assignedTo);
+      document.getElementById('task-detail-input').value = '';
+      // Render slash command bar (reuse tsCommands from tasks session)
+      renderTaskDetailCmdBar();
+      // Subscribe immediately so data starts flowing
+      if (ws && ws.readyState === 1) {
+        ws.send(JSON.stringify({ type: 'terminal:subscribe', session: task.assignedTo }));
+      }
+      // Delay fit until panel is fully visible
+      const panelOpen = document.getElementById('task-detail-panel').classList.contains('open');
+      setTimeout(() => {
+        try { taskDetailFitAddon.fit(); } catch(_) {}
+      }, panelOpen ? 50 : 300);
+    } else {
+      termContainer.style.display = 'none';
+      keysBar.style.display = 'none';
+      cmdBarEl.innerHTML = '';
+      inputBar.style.display = 'none';
+      taskDetailSession = null;
+    }
+
+    // Nav buttons
+    updateTaskDetailNav();
+
+    // Show panel
+    document.getElementById('task-detail-panel').classList.add('open');
+    document.getElementById('task-detail-overlay').classList.add('open');
+  }
+
+  function showWorkStateDropdown(taskId, anchorBtn) {
+    // Close existing
+    document.querySelectorAll('.work-state-dropdown').forEach(d => d.remove());
+    const dropdown = document.createElement('div');
+    dropdown.className = 'work-state-dropdown';
+    const task = tasks.find(t => t.id === taskId);
+    for (const wState of workStates) {
+      const opt = document.createElement('button');
+      opt.className = `work-state-option${task && task.workState === wState.id ? ' active' : ''}`;
+      opt.innerHTML = `<span class="work-state-dot" style="background:${wState.color}"></span>${esc(wState.label)}`;
+      opt.addEventListener('click', () => {
+        if (ws && ws.readyState === 1) {
+          ws.send(JSON.stringify({ type: 'task:update', taskId, updates: { workState: wState.id } }));
+        }
+        // Optimistic update
+        if (task) task.workState = wState.id;
+        dropdown.remove();
+        openTaskDetail(taskId); // re-render
+        renderTaskBoard();
+      });
+      dropdown.appendChild(opt);
+    }
+    anchorBtn.parentElement.style.position = 'relative';
+    anchorBtn.parentElement.appendChild(dropdown);
+    // Position below the button
+    const rect = anchorBtn.getBoundingClientRect();
+    const parentRect = anchorBtn.parentElement.getBoundingClientRect();
+    dropdown.style.left = (rect.left - parentRect.left) + 'px';
+    // Close on click outside
+    setTimeout(() => {
+      const close = (e) => { if (!dropdown.contains(e.target) && e.target !== anchorBtn) { dropdown.remove(); document.removeEventListener('click', close); } };
+      document.addEventListener('click', close);
+    }, 0);
+  }
+
+  function promptAssignee(taskId, anchorBtn) {
+    const task = tasks.find(t => t.id === taskId);
+    const current = task ? (task.assignee || '') : '';
+    // Simple inline input
+    const existing = document.querySelector('.assignee-input-inline');
+    if (existing) existing.remove();
+    const input = document.createElement('input');
+    input.className = 'assignee-input-inline';
+    input.type = 'text';
+    input.value = current;
+    input.placeholder = 'Initials...';
+    input.style.cssText = 'width:60px;padding:3px 6px;font-size:var(--fs-sm);background:var(--bg);border:1px solid var(--bg3);color:var(--fg);border-radius:6px;font-weight:700;text-transform:uppercase;';
+    const commit = () => {
+      const val = input.value.trim().slice(0, 10);
+      if (ws && ws.readyState === 1) {
+        ws.send(JSON.stringify({ type: 'task:update', taskId, updates: { assignee: val || null } }));
+      }
+      if (task) task.assignee = val || null;
+      input.replaceWith(anchorBtn);
+      openTaskDetail(taskId);
+      renderTaskBoard();
+    };
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') { input.replaceWith(anchorBtn); } });
+    input.addEventListener('blur', commit);
+    anchorBtn.replaceWith(input);
+    input.focus();
+    input.select();
+  }
+
+  // ── Work States config modal ─────────────────────
+  let wsConfigDraft = [];
+
+  document.getElementById('tasks-ws-config-btn').addEventListener('click', openWsConfig);
+  document.getElementById('ws-config-close').addEventListener('click', closeWsConfig);
+  document.getElementById('ws-config-cancel').addEventListener('click', closeWsConfig);
+  document.getElementById('ws-config-overlay').addEventListener('click', (e) => {
+    if (e.target.id === 'ws-config-overlay') closeWsConfig();
+  });
+  document.getElementById('ws-config-add').addEventListener('click', () => {
+    const id = 'state-' + Date.now().toString(36);
+    wsConfigDraft.push({ id, label: 'New State', color: '#6272a4' });
+    renderWsConfigRows();
+  });
+  let wsConfigMode = 'global'; // 'global' or pm id
+
+  document.getElementById('ws-config-save').addEventListener('click', () => {
+    if (wsConfigMode === 'global') {
+      syncWsConfigDraft();
+      const states = wsConfigDraft.filter(s => s.label);
+      if (!states.length) return;
+      if (ws && ws.readyState === 1) {
+        ws.send(JSON.stringify({ type: 'workStates:set', states }));
+      }
+    } else {
+      // Per-PM: save boardStates
+      const boardStates = [];
+      document.querySelectorAll('.ws-pm-state-row').forEach(row => {
+        const cb = row.querySelector('.ws-pm-state-cb');
+        if (!cb.checked) return;
+        const chips = row.querySelectorAll('.ws-auto-chip.active');
+        boardStates.push({
+          stateId: row.dataset.stateId,
+          autoOnStatus: Array.from(chips).map(c => c.dataset.status),
+        });
+      });
+      if (ws && ws.readyState === 1) {
+        ws.send(JSON.stringify({ type: 'pm:update', id: wsConfigMode, updates: { boardStates } }));
+      }
+    }
+    closeWsConfig();
+  });
+
+  function openWsConfig() {
+    if (boardPmFilter) {
+      wsConfigMode = boardPmFilter;
+      const pm = pmList.find(p => p.id === boardPmFilter);
+      document.querySelector('.ws-config-title').textContent = pm ? `${pm.name} — Board States` : 'Board States';
+      document.getElementById('ws-config-add').style.display = 'none';
+      renderWsPmRows(pm);
+    } else {
+      wsConfigMode = 'global';
+      document.querySelector('.ws-config-title').textContent = 'Work States';
+      document.getElementById('ws-config-add').style.display = '';
+      wsConfigDraft = workStates.map(s => ({ ...s, autoOnStatus: [...(s.autoOnStatus || [])] }));
+      renderWsConfigRows();
+    }
+    document.getElementById('ws-config-overlay').style.display = '';
+  }
+
+  function closeWsConfig() {
+    document.getElementById('ws-config-overlay').style.display = 'none';
+  }
+
+  const TASK_STATUSES = ['queued', 'dispatched', 'completed', 'failed', 'snoozed', 'cancelled'];
+
+  /** Render per-PM board state config: checkboxes for each global state + autoOnStatus chips */
+  function renderWsPmRows(pm) {
+    const body = document.getElementById('ws-config-body');
+    body.innerHTML = '';
+    const pmStates = (pm && pm.boardStates) || [];
+    const pmMap = new Map(pmStates.map(bs => [bs.stateId, bs]));
+    for (const gs of workStates) {
+      const pmState = pmMap.get(gs.id);
+      const active = !!pmState || !pmStates.length; // if no boardStates defined, all checked by default
+      const auto = pmState ? (pmState.autoOnStatus || []) : (gs.autoOnStatus || []);
+      const row = document.createElement('div');
+      row.className = 'ws-pm-state-row';
+      row.dataset.stateId = gs.id;
+      const chipsHtml = TASK_STATUSES.map(st =>
+        `<button class="ws-auto-chip${auto.includes(st) ? ' active' : ''}" data-status="${st}">${st}</button>`
+      ).join('');
+      row.innerHTML = `
+        <div class="ws-pm-state-main">
+          <input type="checkbox" class="ws-pm-state-cb" ${active ? 'checked' : ''}>
+          <span class="work-state-dot" style="background:${gs.color}"></span>
+          <span class="ws-pm-state-label">${esc(gs.label)}</span>
+        </div>
+        <div class="ws-auto-row" style="padding-left:32px">
+          <span class="ws-auto-label">Auto-set on:</span>
+          ${chipsHtml}
+        </div>
+      `;
+      row.querySelectorAll('.ws-auto-chip').forEach(chip => {
+        chip.addEventListener('click', (e) => { e.preventDefault(); chip.classList.toggle('active'); });
+      });
+      body.appendChild(row);
+    }
+  }
+
+  function renderWsConfigRows() {
+    const body = document.getElementById('ws-config-body');
+    body.innerHTML = '';
+    wsConfigDraft.forEach((s, idx) => {
+      const row = document.createElement('div');
+      row.className = 'ws-config-row';
+      row.dataset.stateId = s.id;
+      row.draggable = true;
+      const auto = s.autoOnStatus || [];
+      const chipsHtml = TASK_STATUSES.map(st =>
+        `<button class="ws-auto-chip${auto.includes(st) ? ' active' : ''}" data-status="${st}">${st}</button>`
+      ).join('');
+      row.innerHTML = `
+        <div class="ws-config-row-main">
+          <span class="ws-config-drag">&#9776;</span>
+          <input type="color" class="ws-config-color" value="${s.color}">
+          <input type="text" class="ws-config-label" value="${esc(s.label)}" placeholder="State name">
+          <button class="ws-config-delete" title="Remove">&times;</button>
+        </div>
+        <div class="ws-auto-row">
+          <span class="ws-auto-label">Auto-set on:</span>
+          ${chipsHtml}
+        </div>
+      `;
+      // Chip toggle handlers
+      row.querySelectorAll('.ws-auto-chip').forEach(chip => {
+        chip.addEventListener('click', (e) => {
+          e.preventDefault();
+          chip.classList.toggle('active');
+        });
+      });
+      // Delete handler
+      row.querySelector('.ws-config-delete').addEventListener('click', () => {
+        syncWsConfigDraft();
+        wsConfigDraft.splice(idx, 1);
+        renderWsConfigRows();
+      });
+      // Drag-and-drop reorder
+      row.addEventListener('dragstart', (e) => {
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', idx);
+        row.classList.add('dragging');
+      });
+      row.addEventListener('dragend', () => row.classList.remove('dragging'));
+      row.addEventListener('dragover', (e) => { e.preventDefault(); row.classList.add('drag-over'); });
+      row.addEventListener('dragleave', () => row.classList.remove('drag-over'));
+      row.addEventListener('drop', (e) => {
+        e.preventDefault();
+        row.classList.remove('drag-over');
+        const fromIdx = parseInt(e.dataTransfer.getData('text/plain'));
+        if (isNaN(fromIdx) || fromIdx === idx) return;
+        syncWsConfigDraft();
+        const [item] = wsConfigDraft.splice(fromIdx, 1);
+        wsConfigDraft.splice(idx, 0, item);
+        renderWsConfigRows();
+      });
+      body.appendChild(row);
+    });
+  }
+
+  function syncWsConfigDraft() {
+    const rows = document.querySelectorAll('.ws-config-row');
+    rows.forEach((row, i) => {
+      if (wsConfigDraft[i]) {
+        wsConfigDraft[i].label = row.querySelector('.ws-config-label').value.trim() || wsConfigDraft[i].label;
+        wsConfigDraft[i].color = row.querySelector('.ws-config-color').value;
+        const chips = row.querySelectorAll('.ws-auto-chip.active');
+        wsConfigDraft[i].autoOnStatus = Array.from(chips).map(c => c.dataset.status);
+      }
+    });
+  }
+
+  function checkTaskDetailScroll() {
+    if (!taskDetailTerm || taskDetailWriting) return;
+    const buf = taskDetailTerm.buffer.active;
+    const linesFromBottom = buf.baseY - buf.viewportY;
+    if (linesFromBottom <= 3 && taskDetailScrolledUp) {
+      taskDetailScrolledUp = false;
+      taskDetailScrollIndicator(false);
+      if (taskDetailPending !== null) { writeTaskDetailContent(taskDetailPending); taskDetailPending = null; }
+    } else if (linesFromBottom > 3) {
+      taskDetailScrolledUp = true;
+      taskDetailScrollIndicator(true);
+    }
+  }
+
+  function writeTaskDetailContent(content) {
+    if (!taskDetailTerm) return;
+    taskDetailLastContent = content;
+    taskDetailWriting = true;
+    taskDetailTerm.reset();
+    taskDetailTerm.write(content);
+    requestAnimationFrame(() => { taskDetailTerm.scrollToBottom(); requestAnimationFrame(() => { taskDetailWriting = false; }); });
+  }
+
+  function taskDetailScrollIndicator(show) {
+    let el = document.getElementById('task-detail-scroll-pause');
+    const termContainer = document.getElementById('task-detail-terminal');
+    if (show && !el) {
+      el = document.createElement('div');
+      el.id = 'task-detail-scroll-pause';
+      el.className = 'scroll-pause-btn';
+      el.title = 'Scroll to bottom';
+      el.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>';
+      el.addEventListener('click', () => {
+        taskDetailScrolledUp = false;
+        taskDetailScrollIndicator(false);
+        if (taskDetailTerm) taskDetailTerm.scrollToBottom();
+        if (taskDetailPending !== null) { writeTaskDetailContent(taskDetailPending); taskDetailPending = null; }
+      });
+      if (termContainer) { termContainer.style.position = 'relative'; termContainer.appendChild(el); }
+    } else if (!show && el) { el.remove(); }
+  }
+
+  function closeTaskDetail() {
+    document.getElementById('task-detail-panel').classList.remove('open');
+    document.getElementById('task-detail-overlay').classList.remove('open');
+    if (taskDetailSession && ws && ws.readyState === 1) {
+      ws.send(JSON.stringify({ type: 'terminal:unsubscribe', session: taskDetailSession }));
+    }
+    if (taskDetailTerm) {
+      taskDetailTerm.dispose();
+      taskDetailTerm = null;
+      taskDetailFitAddon = null;
+    }
+    taskDetailSession = null;
+    taskDetailTaskId = null;
+    taskDetailLastContent = '';
+    taskDetailScrolledUp = false;
+    taskDetailPending = null;
+  }
+
+  function updateTaskDetailNav() {
+    const allTasks = tasks.filter(t => t.status !== 'completed' && t.status !== 'failed');
+    const idx = allTasks.findIndex(t => t.id === taskDetailTaskId);
+    document.getElementById('task-detail-prev').disabled = idx <= 0;
+    document.getElementById('task-detail-next').disabled = idx < 0 || idx >= allTasks.length - 1;
+  }
+
+  function handleTaskDetailAction(action, task) {
+    if (!ws || ws.readyState !== 1) return;
+    switch (action) {
+      case 'done':
+        ws.send(JSON.stringify({ type: 'task:complete', taskId: task.id }));
+        navigateTaskDetail(1); // auto-advance to next
+        break;
+      case 'requeue':
+        openTaskConfirmDialog('requeue', task.id);
+        break;
+      case 'snooze':
+        openTaskConfirmDialog('snooze', task.id);
+        break;
+      case 'cancel':
+        openTaskConfirmDialog('cancel', task.id);
+        break;
+      case 'wake':
+        ws.send(JSON.stringify({ type: 'task:unsnooze', taskId: task.id }));
+        showToast('Woke up', 'Task returned to queue', 'success');
+        break;
+      case 'assign':
+        openAssignDialog(task.id);
+        break;
+      case 'edit':
+        openTaskDialog(task.id);
+        break;
+      case 'resume':
+        if (task.assignedTo) {
+          ws.send(JSON.stringify({ type: 'task:resume', taskId: task.id, sendResume: false }));
+          showToast('Resuming', `Task resumed on session ${task.assignedTo}`, 'success');
+        }
+        break;
+    }
+  }
+
+  function navigateTaskDetail(dir) {
+    const allTasks = tasks.filter(t => t.status !== 'completed' && t.status !== 'failed');
+    const idx = allTasks.findIndex(t => t.id === taskDetailTaskId);
+    const next = allTasks[idx + dir];
+    if (next) {
+      openTaskDetail(next.id);
+    } else {
+      closeTaskDetail();
+    }
+  }
+
+  document.getElementById('task-detail-close').addEventListener('click', closeTaskDetail);
+  document.getElementById('task-detail-overlay').addEventListener('click', closeTaskDetail);
+  document.getElementById('task-detail-prev').addEventListener('click', () => navigateTaskDetail(-1));
+  document.getElementById('task-detail-next').addEventListener('click', () => navigateTaskDetail(1));
+
+  // Task detail: Ask/Tell mode toggle
+  const tdModeToggle = document.getElementById('task-detail-mode-toggle');
+  tdModeToggle.addEventListener('click', () => {
+    taskDetailMode = taskDetailMode === 'ask' ? 'tell' : 'ask';
+    tdModeToggle.textContent = taskDetailMode === 'ask' ? 'Ask' : 'Tell';
+    tdModeToggle.classList.toggle('tell', taskDetailMode === 'tell');
+  });
+
+  // Task detail: slash command bar
+  function renderTaskDetailCmdBar() {
+    const bar = document.getElementById('task-detail-cmd-bar');
+    bar.innerHTML = '';
+    // Reuse tsCommands (slash commands cached from session)
+    const cmds = tsCommands.length ? tsCommands : [];
+    for (const cmd of cmds) {
+      const btn = document.createElement('button'); btn.className = 'cmd-btn'; btn.textContent = '/' + cmd.name;
+      if (cmd.description) btn.title = cmd.description;
+      btn.addEventListener('click', () => {
+        if (!taskDetailSession || !ws || ws.readyState !== 1) return;
+        ws.send(JSON.stringify({ type: 'tell', session: taskDetailSession, message: '/' + cmd.name }));
+        showToast('Command sent', `/${cmd.name} → session ${taskDetailSession}`, 'success');
+      });
+      bar.appendChild(btn);
+    }
+  }
+
+  // Task detail: send message to session
+  function sendTaskDetailMessage() {
+    const input = document.getElementById('task-detail-input');
+    const text = input.value.trim();
+    if (!text || !taskDetailSession || !ws || ws.readyState !== 1) return;
+    const msgType = taskDetailMode === 'ask' ? 'ask' : 'tell';
+    ws.send(JSON.stringify({ type: msgType, session: taskDetailSession, message: text }));
+    pushMsgHistory(taskDetailSession, text);
+    tdHistoryIdx = -1;
+    tdHistoryDraft = '';
+    input.value = '';
+    showToast('Sent', `${msgType === 'ask' ? 'Asked' : 'Told'} session ${taskDetailSession}`, 'success');
+  }
+  document.getElementById('task-detail-send').addEventListener('click', sendTaskDetailMessage);
+  document.getElementById('task-detail-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendTaskDetailMessage(); return; }
+    if (e.key === 'Escape') { closeTaskDetail(); return; }
+    // Up/Down arrow history
+    const input = e.target;
+    const h = msgHistory[taskDetailSession] || [];
+    if (!h.length) return;
+    if (e.key === 'ArrowUp') {
+      const beforeCursor = input.value.substring(0, input.selectionStart);
+      if (beforeCursor.includes('\n')) return; // not on first line
+      e.preventDefault();
+      if (tdHistoryIdx === -1) tdHistoryDraft = input.value;
+      if (tdHistoryIdx < h.length - 1) tdHistoryIdx++;
+      input.value = h[h.length - 1 - tdHistoryIdx];
+    } else if (e.key === 'ArrowDown') {
+      const afterCursor = input.value.substring(input.selectionEnd);
+      if (afterCursor.includes('\n')) return; // not on last line
+      if (tdHistoryIdx <= -1) return;
+      e.preventDefault();
+      tdHistoryIdx--;
+      input.value = tdHistoryIdx === -1 ? tdHistoryDraft : h[h.length - 1 - tdHistoryIdx];
+    }
+  });
+
+  // Task detail: key buttons
+  document.querySelectorAll('[data-td-key]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (!taskDetailSession || !ws || ws.readyState !== 1) return;
+      const key = btn.dataset.tdKey;
+      if (key === 'c-c') {
+        ws.send(JSON.stringify({ type: 'keys', session: taskDetailSession, keys: ['C-c'] }));
+      } else {
+        ws.send(JSON.stringify({ type: 'keys', session: taskDetailSession, keys: [key] }));
+      }
+    });
   });
 
   // Task nav buttons
@@ -4842,14 +5850,12 @@
     html += '</div>';
     popup.innerHTML = html;
 
+    // Find best parent: task-detail toolbar, session tabs, or fallback
+    const detailToolbar = anchorBtn.closest('#task-detail-toolbar');
     const tabBar = anchorBtn.closest('.tasks-session-tabs, .session-tabs');
-    if (tabBar) {
-      tabBar.style.position = 'relative';
-      tabBar.appendChild(popup);
-    } else {
-      anchorBtn.parentElement.style.position = 'relative';
-      anchorBtn.parentElement.appendChild(popup);
-    }
+    const parent = detailToolbar || tabBar || anchorBtn.parentElement;
+    parent.style.position = 'relative';
+    parent.appendChild(popup);
 
     popup.querySelector('.actions-popup-close').addEventListener('click', closeActionsPopup);
 
@@ -4917,7 +5923,7 @@
   // Close actions popup on click outside
   document.addEventListener('click', (e) => {
     if (!actionsPopupTaskId) return;
-    if (e.target.closest('.actions-popup') || e.target.closest('.actions-tab')) return;
+    if (e.target.closest('.actions-popup') || e.target.closest('.actions-tab') || e.target.closest('.td-actions-btn') || e.target.closest('#task-detail-ctx-actions')) return;
     if (e.target.closest('#action-confirm-dialog')) return;
     closeActionsPopup();
   });

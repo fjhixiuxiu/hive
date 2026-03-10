@@ -914,6 +914,15 @@ function createMessageHandler(deps) {
         break;
       }
 
+      // -- Work States config ---------------------------------------------------
+      case 'workStates:set': {
+        if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'admin')) break;
+        const states = taskQueue.setWorkStates(msg.states || []);
+        broadcast({ type: 'workStates:list', states });
+        break;
+      }
+
       // -- Task checklist messages ---------------------------------------------
       case 'task:checklist:toggle': {
         if (!taskQueue) break;

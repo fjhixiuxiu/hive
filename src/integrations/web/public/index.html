@@ -169,7 +169,7 @@
       <span class="nav-badge" id="tasks-badge"></span>
     </button>
     <button class="nav-btn" data-tab="feed-panel">
-      <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></span>Notifs
+      <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></span>Alerts
       <span class="nav-badge" id="feed-badge"></span>
     </button>
     <!-- Secondary nav -->
@@ -224,16 +224,42 @@
 
     <!-- Tasks panel -->
     <div id="tasks-panel" class="panel">
-      <div class="tasks-panes">
-        <div class="tasks-list-pane">
-          <div class="fleet-search-bar">
-            <input id="tasks-search-input" type="text" placeholder="Search tasks..." autocomplete="off" style="flex:1;background:var(--bg2);border:1px solid var(--dim);border-radius:6px;color:var(--fg);padding:8px 32px 8px 12px;font:inherit;font-size:14px;outline:none">
-            <button id="tasks-search-clear" class="fleet-search-clear" style="display:none">&times;</button>
-            <div class="tasks-filter-wrap" id="tasks-filter-wrap" style="display:none">
-              <button class="tasks-filter-btn" id="tasks-filter-btn">Sources</button>
-              <div class="tasks-filter-dropdown" id="tasks-filter-dropdown"></div>
-            </div>
+      <div class="tasks-view-toggle">
+        <button class="tasks-view-btn active" data-tasks-view="list">List</button>
+        <button class="tasks-view-btn" data-tasks-view="board">Board</button>
+        <span class="td-spacer"></span>
+        <input id="tasks-search-input" class="tasks-toggle-search" type="text" placeholder="Search..." autocomplete="off">
+        <button id="tasks-search-clear" class="fleet-search-clear" style="display:none">&times;</button>
+        <div class="tasks-filter-wrap" id="tasks-filter-wrap" style="display:none">
+          <button class="tasks-filter-btn" id="tasks-filter-btn">Sources</button>
+          <div class="tasks-filter-dropdown" id="tasks-filter-dropdown"></div>
+        </div>
+        <select class="board-pm-select" id="board-pm-select" style="display:none"></select>
+        <button class="tasks-create-btn" id="tasks-create-btn-board" style="display:none">+ Create</button>
+        <button class="tasks-ws-config-btn" id="tasks-ws-config-btn" style="display:none" title="Configure work states">&#9881;</button>
+      </div>
+
+      <!-- Work States config modal -->
+      <div class="ws-config-overlay" id="ws-config-overlay" style="display:none">
+        <div class="ws-config-modal">
+          <div class="ws-config-header">
+            <span class="ws-config-title">Work States</span>
+            <button class="ws-config-close" id="ws-config-close">&times;</button>
           </div>
+          <div class="ws-config-body" id="ws-config-body"></div>
+          <div class="ws-config-footer">
+            <button class="ws-config-add" id="ws-config-add">+ Add State</button>
+            <span class="td-spacer"></span>
+            <button class="ws-config-cancel" id="ws-config-cancel">Cancel</button>
+            <button class="ws-config-save" id="ws-config-save">Save</button>
+          </div>
+        </div>
+      </div>
+      <div class="tasks-board" id="tasks-board" style="display:none">
+        <!-- Columns rendered dynamically from workStates config -->
+      </div>
+      <div class="tasks-panes" id="tasks-panes">
+        <div class="tasks-list-pane">
           <div class="tasks-tabs">
             <div class="tasks-tab-wrap">
               <button class="tasks-tab active" data-tab="inprogress" id="ip-tab-btn"><span id="ip-tab-label">In Progress</span><span class="ip-tab-caret" id="ip-tab-caret">&#9662;</span></button>
@@ -1200,6 +1226,51 @@
   <div id="console-input-bar">
     <textarea id="console-input" rows="3" placeholder="Ask hive anything..." autocomplete="off"></textarea>
     <button id="console-send">Send</button>
+  </div>
+</div>
+
+<!-- Task detail slide-out (board view) -->
+<div id="task-detail-overlay"></div>
+<div id="task-detail-panel">
+  <div id="task-detail-header">
+    <span id="task-detail-title">Task</span>
+    <div id="task-detail-meta"></div>
+    <div id="task-detail-nav">
+      <button class="task-detail-nav-btn" id="task-detail-prev">&larr;</button>
+      <button class="task-detail-nav-btn" id="task-detail-next">&rarr;</button>
+    </div>
+    <button id="task-detail-close">&times;</button>
+  </div>
+  <div id="task-detail-toolbar">
+    <div id="task-detail-actions"></div>
+    <button class="td-work-state-btn" id="task-detail-work-state"></button>
+    <button class="td-assignee-btn" id="task-detail-assignee" title="Set assignee"></button>
+    <span class="td-spacer"></span>
+    <span id="task-detail-checklist" class="td-checklist"></span>
+    <button class="task-detail-action" id="task-detail-open-session">Open Session</button>
+    <button class="task-detail-action td-actions-btn" id="task-detail-ctx-actions" style="display:none"></button>
+  </div>
+  <div id="task-detail-terminal"></div>
+  <div id="task-detail-keys">
+    <button class="key-btn" data-td-key="Enter">Enter</button>
+    <button class="key-btn" data-td-key="Escape">Esc</button>
+    <button class="key-btn" data-td-key="c-c">Ctrl-C</button>
+    <button class="key-btn" data-td-key="Up">Up</button>
+    <button class="key-btn" data-td-key="Down">Down</button>
+    <button class="key-btn" data-td-key="Tab">Tab</button>
+    <button class="key-btn" data-td-key="BTab">S-Tab</button>
+    <button class="key-btn" data-td-key="y">y</button>
+    <button class="key-btn" data-td-key="n">n</button>
+    <button class="key-btn num-key" data-td-key="1">1</button>
+    <button class="key-btn num-key" data-td-key="2">2</button>
+    <button class="key-btn num-key" data-td-key="3">3</button>
+    <button class="key-btn num-key" data-td-key="4">4</button>
+  </div>
+  <div id="task-detail-cmd-bar"></div>
+  <div id="task-detail-input-bar">
+    <button id="task-detail-mode-toggle">Ask</button>
+    <textarea id="task-detail-input" rows="3" placeholder="Message Claude..." autocomplete="off"></textarea>
+    <button id="task-detail-send">Send</button>
   </div>
 </div>
 

@@ -73,6 +73,8 @@ async function sendKeys(target, keys, enter = true) {
   const cleaned = keys.replace(/\r\n/g, '\n').trim();
   if (!cleaned && !enter) return;
 
+  const isMultiLine = cleaned && cleaned.includes('\n');
+
   if (cleaned) {
     // Write to temp file + tmux load-buffer/paste-buffer to avoid all shell
     // escaping issues with quotes, backticks, $, !, etc.
@@ -88,7 +90,19 @@ async function sendKeys(target, keys, enter = true) {
     }
   }
   if (enter) {
+    // For multi-line pastes, wait for the TUI to process the pasted content
+    // before sending Enter — otherwise Enter can get swallowed
+    if (isMultiLine) {
+      await new Promise(r => setTimeout(r, 150));
+    }
     await exec(`tmux send-keys -t "${target}" Enter`);
+    // Safety: send a second Enter after a delay for multi-line pastes.
+    // Claude Code's TUI sometimes swallows the first Enter while still
+    // rendering/processing large pasted text.
+    if (isMultiLine) {
+      await new Promise(r => setTimeout(r, 300));
+      await exec(`tmux send-keys -t "${target}" Enter`);
+    }
   }
 }
 

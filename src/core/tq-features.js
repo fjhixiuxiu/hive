@@ -225,6 +225,25 @@ function _scanDir(dir, root, results) {
   }
 }
 
+// ── Work States ─────────────────────────────────────────
+
+function getWorkStates() {
+  return this.workStates;
+}
+
+function setWorkStates(states) {
+  if (!Array.isArray(states) || !states.length) return this.workStates;
+  this.workStates = states.map(s => ({
+    id: s.id || s.label.toLowerCase().replace(/\s+/g, '-'),
+    label: s.label || s.id,
+    color: s.color || '#6272a4',
+    autoOnStatus: Array.isArray(s.autoOnStatus) ? s.autoOnStatus : [],
+  }));
+  this.emit('workStates:changed', this.workStates);
+  this._saveState();
+  return this.workStates;
+}
+
 module.exports = {
   // Checklist Templates
   getChecklistTemplates,
@@ -251,4 +270,7 @@ module.exports = {
   setAgentRoots,
   scanAgentFiles,
   _scanDir,
+  // Work States
+  getWorkStates,
+  setWorkStates,
 };
