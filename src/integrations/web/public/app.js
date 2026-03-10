@@ -115,7 +115,7 @@
   let manualTarget = null;
   let activeTaskTab = 'inprogress';
   let tasksViewMode = 'list'; // 'list' or 'board'
-  let boardPmFilter = null; // null = All, or PM id string
+  let boardPmFilter = new Set(); // empty = All PMs, non-empty = selected PM ids
   let boardPrevStatuses = new Map(); // taskId → previous status for FLIP animation
   let taskSearchQuery = '';
   let taskSourceFilter = new Set(); // empty = show all; non-empty = show only matching sources
@@ -705,7 +705,7 @@
         document.getElementById('tasks-board').style.display = '';
         document.getElementById('tasks-create-btn-board').style.display = '';
         document.getElementById('tasks-ws-config-btn').style.display = '';
-        document.getElementById('board-pm-select').style.display = '';
+        document.getElementById('board-pm-wrap').style.display = '';
         populateBoardPmSelect();
         renderTaskBoard();
       }
@@ -4484,13 +4484,13 @@
       const board = document.getElementById('tasks-board');
       const createBoardBtn = document.getElementById('tasks-create-btn-board');
       const wsConfigBtn = document.getElementById('tasks-ws-config-btn');
-      const pmSelect = document.getElementById('board-pm-select');
+      const pmWrap = document.getElementById('board-pm-wrap');
       if (mode === 'board') {
         panes.style.display = 'none';
         board.style.display = '';
         createBoardBtn.style.display = '';
         wsConfigBtn.style.display = '';
-        pmSelect.style.display = '';
+        pmWrap.style.display = '';
         populateBoardPmSelect();
         renderTaskBoard();
       } else {
@@ -4498,7 +4498,7 @@
         panes.style.display = '';
         createBoardBtn.style.display = 'none';
         wsConfigBtn.style.display = 'none';
-        pmSelect.style.display = 'none';
+        pmWrap.style.display = 'none';
         renderTasks();
       }
       pushHash();
@@ -4507,42 +4507,102 @@
 
   document.getElementById('tasks-create-btn-board').addEventListener('click', () => openTaskDialog(null));
 
-  // ── Board PM selector ─────────────────────────────
-  const boardPmSelectEl = document.getElementById('board-pm-select');
-  if (boardPmSelectEl) boardPmSelectEl.addEventListener('change', () => {
-    boardPmFilter = boardPmSelectEl.value || null;
-    renderBoardColumns();
-    renderTaskBoard();
+  // ── Board PM multi-select ─────────────────────────
+  const boardPmBtn = document.getElementById('board-pm-btn');
+  const boardPmDropdown = document.getElementById('board-pm-dropdown');
+
+  if (boardPmBtn) boardPmBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    boardPmDropdown.classList.toggle('open');
   });
 
+  // Close dropdown on outside click
+  document.addEventListener('click', () => boardPmDropdown && boardPmDropdown.classList.remove('open'));
+  if (boardPmDropdown) boardPmDropdown.addEventListener('click', (e) => e.stopPropagation());
+
   function populateBoardPmSelect() {
-    const el = document.getElementById('board-pm-select');
-    if (!el) return;
-    const prev = boardPmFilter;
-    el.innerHTML = '<option value="">All PMs</option>';
+    if (!boardPmDropdown) return;
+    boardPmDropdown.innerHTML = '';
     for (const pm of pmList) {
-      const opt = document.createElement('option');
-      opt.value = pm.id;
-      opt.textContent = pm.name;
-      if (pm.id === prev) opt.selected = true;
-      el.appendChild(opt);
+      const lbl = document.createElement('label');
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.value = pm.id;
+      cb.checked = boardPmFilter.has(pm.id);
+      cb.addEventListener('change', () => {
+        if (cb.checked) boardPmFilter.add(pm.id);
+        else boardPmFilter.delete(pm.id);
+        updateBoardPmBtnLabel();
+        renderBoardColumns();
+        renderTaskBoard();
+      });
+      lbl.appendChild(cb);
+      lbl.appendChild(document.createTextNode(pm.name));
+      boardPmDropdown.appendChild(lbl);
     }
-    boardPmFilter = el.value || null;
+    // Remove stale selections (PM deleted)
+    for (const id of boardPmFilter) {
+      if (!pmList.some(p => p.id === id)) boardPmFilter.delete(id);
+    }
+    updateBoardPmBtnLabel();
+  }
+
+  function updateBoardPmBtnLabel() {
+    if (!boardPmBtn) return;
+    if (!boardPmFilter.size) {
+      boardPmBtn.textContent = 'All PMs';
+    } else if (boardPmFilter.size === 1) {
+      const pm = pmList.find(p => p.id === [...boardPmFilter][0]);
+      boardPmBtn.textContent = pm ? pm.name : 'All PMs';
+    } else {
+      boardPmBtn.textContent = `${boardPmFilter.size} PMs`;
+    }
   }
 
   /** Get the active work states for the current board view */
   function activeBoardStates() {
-    if (!boardPmFilter) return workStates; // All PMs → global states
-    const pm = pmList.find(p => p.id === boardPmFilter);
-    if (!pm || !pm.boardStates || !pm.boardStates.length) return workStates; // PM has no overrides → global
-    // PM defines which global states to show
-    return pm.boardStates
-      .map(bs => {
-        const global = workStates.find(ws => ws.id === bs.stateId);
-        if (!global) return null;
-        return { ...global, autoOnStatus: bs.autoOnStatus || [] };
-      })
-      .filter(Boolean);
+    if (!boardPmFilter.size) return workStates; // All PMs → global states
+    if (boardPmFilter.size === 1) {
+      // Single PM: use its boardStates if defined
+      const pm = pmList.find(p => p.id === [...boardPmFilter][0]);
+      if (!pm || !pm.boardStates || !pm.boardStates.length) return workStates;
+      return pm.boardStates
+        .map(bs => {
+          const global = workStates.find(ws => ws.id === bs.stateId);
+          if (!global) return null;
+          return { ...global, autoOnStatus: bs.autoOnStatus || [] };
+        })
+        .filter(Boolean);
+    }
+    // Multiple PMs: merge — union of all board states across selected PMs
+    const stateMap = new Map(); // stateId → { ...global, autoOnStatus: merged[] }
+    for (const pmId of boardPmFilter) {
+      const pm = pmList.find(p => p.id === pmId);
+      const pmStates = pm && pm.boardStates && pm.boardStates.length ? pm.boardStates : null;
+      if (!pmStates) {
+        // PM has no custom boardStates → include all global states
+        for (const ws of workStates) {
+          if (!stateMap.has(ws.id)) stateMap.set(ws.id, { ...ws, autoOnStatus: [...(ws.autoOnStatus || [])] });
+          else {
+            const existing = stateMap.get(ws.id);
+            for (const s of (ws.autoOnStatus || [])) { if (!existing.autoOnStatus.includes(s)) existing.autoOnStatus.push(s); }
+          }
+        }
+      } else {
+        for (const bs of pmStates) {
+          const global = workStates.find(ws => ws.id === bs.stateId);
+          if (!global) continue;
+          if (!stateMap.has(bs.stateId)) {
+            stateMap.set(bs.stateId, { ...global, autoOnStatus: [...(bs.autoOnStatus || [])] });
+          } else {
+            const existing = stateMap.get(bs.stateId);
+            for (const s of (bs.autoOnStatus || [])) { if (!existing.autoOnStatus.includes(s)) existing.autoOnStatus.push(s); }
+          }
+        }
+      }
+    }
+    // Preserve global ordering
+    return workStates.filter(ws => stateMap.has(ws.id)).map(ws => stateMap.get(ws.id));
   }
 
   // ── Tasks kanban board renderer ────────────────────
@@ -4613,14 +4673,16 @@
     const q = taskSearchQuery.toLowerCase();
     const matchesSearch = (t) => !q || t.text.toLowerCase().includes(q) || (t.source || '').toLowerCase().includes(q) || (t.designation || '').toLowerCase().includes(q) || String(t.assignedTo || '').includes(q) || (t.assignee || '').toLowerCase().includes(q);
 
-    // Filter tasks by selected PM
-    const pmFilteredTasks = boardPmFilter
-      ? tasks.filter(t => {
-          const pmName = (t.source || '').replace(/^pm:/, '');
-          const pm = pmList.find(p => p.id === boardPmFilter);
-          return pm && pmName === pm.name;
-        })
-      : tasks;
+    // Filter tasks by selected PMs (empty = all)
+    let pmFilteredTasks = tasks;
+    if (boardPmFilter.size) {
+      const pmNames = new Set();
+      for (const id of boardPmFilter) {
+        const pm = pmList.find(p => p.id === id);
+        if (pm) pmNames.add(pm.name);
+      }
+      pmFilteredTasks = tasks.filter(t => pmNames.has((t.source || '').replace(/^pm:/, '')));
+    }
 
     // Group tasks by effective work state (dynamic resolution)
     const grouped = new Map();
@@ -5053,12 +5115,20 @@
   });
 
   function openWsConfig() {
-    if (boardPmFilter) {
-      wsConfigMode = boardPmFilter;
-      const pm = pmList.find(p => p.id === boardPmFilter);
+    if (boardPmFilter.size === 1) {
+      const pmId = [...boardPmFilter][0];
+      wsConfigMode = pmId;
+      const pm = pmList.find(p => p.id === pmId);
       document.querySelector('.ws-config-title').textContent = pm ? `${pm.name} — Board States` : 'Board States';
       document.getElementById('ws-config-add').style.display = 'none';
       renderWsPmRows(pm);
+    } else if (boardPmFilter.size > 1) {
+      // Multi-PM merged view: show global config
+      wsConfigMode = 'global';
+      document.querySelector('.ws-config-title').textContent = 'Work States (Merged View)';
+      document.getElementById('ws-config-add').style.display = '';
+      wsConfigDraft = workStates.map(s => ({ ...s, autoOnStatus: [...(s.autoOnStatus || [])] }));
+      renderWsConfigRows();
     } else {
       wsConfigMode = 'global';
       document.querySelector('.ws-config-title').textContent = 'Work States';

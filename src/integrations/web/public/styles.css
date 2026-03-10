@@ -1674,13 +1674,27 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .td-assignee-btn:hover { filter: brightness(1.2); }
 .td-assignee-btn:empty::after { content: '+👤'; font-weight: 400; opacity: 0.5; }
 /* Work States config button */
-/* Board PM selector */
-.board-pm-select {
+/* Board PM multi-select */
+.board-pm-wrap { position: relative; }
+.board-pm-btn {
   background: var(--bg2); border: 1px solid var(--purple); color: var(--fg);
   font-size: var(--fs-sm); padding: 6px 10px; border-radius: 8px; cursor: pointer;
-  min-width: 120px; font-weight: 600;
+  min-width: 120px; font-weight: 600; text-align: left; white-space: nowrap;
 }
-.board-pm-select:focus { border-color: var(--purple); outline: none; }
+.board-pm-btn:hover { border-color: var(--purple); background: var(--bg3); }
+.board-pm-btn::after { content: ' \25BE'; opacity: 0.5; }
+.board-pm-dropdown {
+  display: none; position: absolute; top: 100%; left: 0; margin-top: 4px;
+  background: var(--bg2); border: 1px solid var(--bg3); border-radius: 8px;
+  min-width: 180px; z-index: 200; padding: 4px 0; box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+}
+.board-pm-dropdown.open { display: block; }
+.board-pm-dropdown label {
+  display: flex; align-items: center; gap: 8px; padding: 6px 12px; cursor: pointer;
+  font-size: var(--fs-sm); color: var(--fg); white-space: nowrap;
+}
+.board-pm-dropdown label:hover { background: var(--bg3); }
+.board-pm-dropdown input[type="checkbox"] { accent-color: var(--purple); }
 .tasks-ws-config-btn {
   background: none; border: 1px solid var(--bg3); color: var(--dim); font-size: var(--fs-lg);
   width: 32px; height: 32px; border-radius: 8px; cursor: pointer; display: flex;
