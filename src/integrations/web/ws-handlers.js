@@ -26,7 +26,7 @@ function createMessageHandler(deps) {
     broadcast, checkPermission, resolveSession,
     clearTermSub, clearConsoleSub, termSubs, consoleSubs,
     sendFleetStatus, broadcastFleetStatus, sendInitialState, _previewCache,
-    commands, clients, wsUser, workers,
+    commands, clients, wsUser, workers, mcpClients,
   } = deps;
 
   return async function handleMessage(ws, msg, user) {
@@ -1643,15 +1643,17 @@ function createMessageHandler(deps) {
             count++;
           } catch {}
         }
-        // Kill existing MCP server processes so Claude Code respawns with updated code
-        let killed = 0;
-        try {
-          const pids = execSync('pgrep -f "mcp-server/index.mjs"', { encoding: 'utf8' }).trim().split('\n').filter(Boolean);
-          for (const pid of pids) {
-            try { process.kill(Number(pid), 'SIGTERM'); killed++; } catch {}
+        // Tell connected MCP server processes to exit — Claude Code will respawn them
+        let restarted = 0;
+        if (mcpClients) {
+          for (const [mcpWs] of mcpClients) {
+            try {
+              mcpWs.send(JSON.stringify({ type: 'mcp:exit' }));
+              restarted++;
+            } catch {}
           }
-        } catch {} // pgrep returns exit 1 if no matches
-        ws.send(JSON.stringify({ type: 'mcp:deployed', count, killed }));
+        }
+        ws.send(JSON.stringify({ type: 'mcp:deployed', count, restarted }));
         break;
       }
 
