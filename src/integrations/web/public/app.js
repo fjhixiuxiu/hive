@@ -1352,9 +1352,9 @@
       }
       case 'mcp:deployed':
         document.getElementById('mcp-result').textContent = `Deployed to ${msg.count} session(s)`;
-        if (msg.count > 0) {
-          showMcpRestartConfirm(msg.count);
-        }
+        break;
+      case 'mcp:restarted':
+        document.getElementById('mcp-result').textContent = `Deployed to ${msg.deployed} session(s), killed ${msg.killed} MCP process(es)`;
         break;
       case 'restart:all:done':
         showToast('Restarting All', `${msg.restarted} session(s) restarting${msg.failed ? `, ${msg.failed} failed` : ''} — claude --continue`, msg.failed ? 'warning' : 'success');
@@ -6385,9 +6385,9 @@
       if (cb.checked) enabled.push(cb.dataset.tool);
     });
     if (ws && ws.readyState === 1) {
-      ws.send(JSON.stringify({ type: 'mcp:deploy', tools: enabled }));
+      ws.send(JSON.stringify({ type: 'mcp:restart', tools: enabled }));
     }
-    document.getElementById('mcp-result').textContent = 'Deploying...';
+    document.getElementById('mcp-result').textContent = 'Deploying & restarting MCP...';
   });
 
   document.getElementById('mcp-remove-btn').addEventListener('click', () => {
