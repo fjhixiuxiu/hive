@@ -6355,6 +6355,8 @@
     { name: 'hive_report_learnings', desc: 'Report learnings/insights discovered during this task' },
     { name: 'hive_get_context', desc: 'Get shared context for this session (plan file, PR, JIRA, etc.)' },
     { name: 'hive_set_context', desc: 'Share context with hive (plan file path, PR URL, JIRA key, etc.)' },
+    { name: 'hive_share_knowledge', desc: 'Share an insight with the fleet knowledge base' },
+    { name: 'hive_get_knowledge', desc: 'Query the fleet knowledge base for insights about files or domains' },
   ];
 
   function renderMcpTools(enabledTools) {

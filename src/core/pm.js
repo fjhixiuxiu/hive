@@ -1,12 +1,18 @@
 const EventEmitter = require('events');
 const { exec } = require('child_process');
+const fs = require('fs');
+const path = require('path');
 const cron = require('node-cron');
 const log = require('./log');
 const pmSources = require('./pm-sources');
 
+const KB_FILE = path.join(process.cwd(), '.hive-knowledge.json');
+
 const MAX_MEMORY = 100;
 const MAX_LEARNING_LENGTH = 500;
+const MAX_KB_ENTRIES = 500;
 const SIMILARITY_THRESHOLD = 0.8; // 80% token overlap = duplicate
+
 
 let nextPmId = 1;
 
@@ -74,6 +80,8 @@ class ProjectManager extends EventEmitter {
     this.taskQueue = taskQueue;
     this.pms = new Map(); // id → PM config
     this.timers = new Map(); // id → interval handle
+    this.knowledgeBase = []; // shared cross-PM learnings: [{ text, files[], sourcePm, createdAt }]
+    this._loadKnowledgeBase();
     // Let taskQueue know about us so _saveState() includes PM data
     taskQueue._pmManager = this;
     this._githubLogin = null;
@@ -207,6 +215,71 @@ class ProjectManager extends EventEmitter {
       this.emit('pm:changed');
     }
     return added;
+  }
+
+  // ── Knowledge Base (shared cross-PM) ─────────────────
+
+  /**
+   * Add a structured knowledge entry to the shared knowledge base.
+   */
+  addKnowledge(entry) {
+    // Dedup by insight text
+    const kbTexts = this.knowledgeBase.map(e => e.insight);
+    if (_isDuplicate(entry.insight, kbTexts)) return false;
+    this.knowledgeBase.push(entry);
+    if (this.knowledgeBase.length > MAX_KB_ENTRIES) {
+      this.knowledgeBase = this.knowledgeBase.slice(-MAX_KB_ENTRIES);
+    }
+    this._saveKnowledgeBase();
+    return true;
+  }
+
+  /**
+   * Query the knowledge base.
+   * Matches by domain (exact), file paths (basename), and keyword overlap.
+   */
+  queryKnowledge(queryText, { files, domain, limit = 20 } = {}) {
+    if (!this.knowledgeBase.length) return [];
+    const queryFiles = Array.isArray(files) ? files : [];
+    const queryDomain = (domain || '').toLowerCase();
+    const queryWords = queryText
+      ? new Set(queryText.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter(w => w.length > 3))
+      : new Set();
+
+    // If no filters at all, return nothing (don't dump the whole KB)
+    if (!queryWords.size && !queryFiles.length && !queryDomain) return [];
+
+    const scored = [];
+    for (const entry of this.knowledgeBase) {
+      let score = 0;
+
+      // Domain match: strong signal
+      if (queryDomain && entry.domain === queryDomain) score += 20;
+
+      // File match
+      if (queryFiles.length && entry.files && entry.files.length) {
+        for (const ef of entry.files) {
+          const efBase = ef.split('/').pop();
+          for (const qf of queryFiles) {
+            if (ef === qf) score += 10;
+            else if (qf.split('/').pop() === efBase) score += 5;
+          }
+        }
+      }
+
+      // Keyword overlap on insight text
+      if (queryWords.size) {
+        const entryWords = entry.insight.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter(w => w.length > 3);
+        for (const w of entryWords) {
+          if (queryWords.has(w)) score += 1;
+        }
+      }
+
+      if (score > 0) scored.push({ ...entry, score });
+    }
+    scored.sort((a, b) => b.score - a.score);
+    // Strip internal score from results
+    return scored.slice(0, limit).map(({ score, ...rest }) => rest);
   }
 
   // ── Serialization ───────────────────────────────────
@@ -813,6 +886,26 @@ class ProjectManager extends EventEmitter {
 
   _save() {
     this.taskQueue._saveState();
+  }
+
+  _saveKnowledgeBase() {
+    try {
+      fs.writeFileSync(KB_FILE, JSON.stringify(this.knowledgeBase, null, 2));
+    } catch (err) {
+      log.error('[pm] Failed to save knowledge base:', err.message);
+    }
+  }
+
+  _loadKnowledgeBase() {
+    try {
+      const data = JSON.parse(fs.readFileSync(KB_FILE, 'utf8'));
+      if (Array.isArray(data)) {
+        this.knowledgeBase = data.slice(-MAX_KB_ENTRIES);
+        log.info(`[pm] Loaded ${this.knowledgeBase.length} knowledge base entries`);
+      }
+    } catch {
+      // No KB file yet — that's fine
+    }
   }
 
   stopAll() {
