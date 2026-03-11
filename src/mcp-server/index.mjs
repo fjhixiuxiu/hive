@@ -36,6 +36,7 @@ function connectWs() {
       const msg = JSON.parse(data.toString());
       if (msg.type === 'auth' && msg.ok) { wsReady = true; return; }
       if (msg.type === 'auth' && !msg.ok) { ws.close(); return; }
+      if (msg.type === 'mcp:exit') { process.exit(0); }
       if (msg._reqId && pending.has(msg._reqId)) {
         pending.get(msg._reqId)(msg);
         pending.delete(msg._reqId);

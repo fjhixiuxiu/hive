@@ -148,6 +148,8 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
   const consoleSubs = new Map();
   // Track worker connections: ws -> RemoteNode
   const workers = new Map();
+  // Track MCP service connections: ws -> { session }
+  const mcpClients = new Map();
   // Fleet preview cache (used by handleMessage and broadcastFleetStatus)
   let _previewCache = { result: null, ts: 0, pending: null };
 
@@ -320,6 +322,13 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
           const serviceUser = { login: '__service__', name: 'Service', avatar: null };
           wsUser.set(ws, serviceUser);
           clients.add(ws);
+          // Track as MCP client if session param present in URL
+          const urlParams = new URL(request.url, 'http://localhost').searchParams;
+          const mcpSession = urlParams.get('session');
+          if (mcpSession != null) {
+            mcpClients.set(ws, { session: Number(mcpSession) });
+            log.info(`MCP client connected for session ${mcpSession}`);
+          }
           ws.send(JSON.stringify({ type: 'auth', ok: true, user: serviceUser }));
         } else {
           ws.send(JSON.stringify({ type: 'auth', ok: false }));
@@ -351,6 +360,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     ws.on('close', () => {
       authenticated = false;
       clients.delete(ws);
+      mcpClients.delete(ws);
       clearTermSub(ws);
       clearConsoleSub(ws);
       clearTimeout(authTimeout);
@@ -367,6 +377,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
 
     ws.on('error', () => {
       clients.delete(ws);
+      mcpClients.delete(ws);
       clearTermSub(ws);
       clearConsoleSub(ws);
       const node = workers.get(ws);
@@ -387,7 +398,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     broadcast, checkPermission, resolveSession,
     clearTermSub, clearConsoleSub, termSubs, consoleSubs,
     sendFleetStatus, broadcastFleetStatus, sendInitialState, _previewCache,
-    commands, clients, wsUser, workers,
+    commands, clients, wsUser, workers, mcpClients,
   });
 
   // ── Session 0 helper: resolve session (fleet or hive-console) ──

@@ -1351,9 +1351,10 @@
         break;
       }
       case 'mcp:deployed': {
-        const killedMsg = msg.killed ? `, restarted ${msg.killed} MCP process(es)` : '';
-        document.getElementById('mcp-result').textContent = `Deployed to ${msg.count} session(s)${killedMsg}`;
-        if (msg.count > 0) {
+        const restartMsg = msg.restarted ? `, restarted ${msg.restarted} MCP server(s)` : '';
+        document.getElementById('mcp-result').textContent = `Deployed to ${msg.count} session(s)${restartMsg}`;
+        // Show restart dialog only if no MCP servers were restarted (need full session restart)
+        if (msg.count > 0 && !msg.restarted) {
           showMcpRestartConfirm(msg.count);
         }
         break;
