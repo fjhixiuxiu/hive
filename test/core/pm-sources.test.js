@@ -883,13 +883,13 @@ describe('PM helpers: enrichTaskText', () => {
     expect(result).toContain('patterns and root causes');
   });
 
-  it('includes existing memory in learning section', () => {
+  it('does not inject PM memory into task prompt (pulled via hive_get_knowledge instead)', () => {
     const created = pm.create({ name: 'MemPM', learningEnabled: true, learningPrompt: 'insights' });
     pm.addLearnings(created.id, ['Known pattern A', 'Known pattern B']);
     const result = pm.enrichTaskText({ text: 'task', source: 'pm:MemPM' });
-    expect(result).toContain('Known pattern A');
-    expect(result).toContain('Known pattern B');
-    expect(result).toContain("don't repeat");
+    expect(result).not.toContain('Known pattern A');
+    expect(result).not.toContain('Institutional Knowledge');
+    expect(result).toContain('hive_report_learnings');
   });
 });
 

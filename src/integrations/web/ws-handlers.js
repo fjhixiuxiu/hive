@@ -1544,6 +1544,64 @@ function createMessageHandler(deps) {
         break;
       }
 
+      case 'mcp:share_knowledge': {
+        if (!pmManager) { ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'No PM manager' })); break; }
+        const sessionNum = msg.session;
+        const taskId = taskQueue ? taskQueue.activeTaskBySession.get(sessionNum) : null;
+        const task = taskId ? taskQueue.tasks.get(taskId) : null;
+        const sourcePm = task && task.source ? task.source.replace(/^pm:/, '') : 'unknown';
+        const entry = {
+          insight: (msg.insight || '').slice(0, 500),
+          files: Array.isArray(msg.files) ? msg.files.slice(0, 20) : [],
+          domain: (msg.domain || '').slice(0, 50).toLowerCase() || null,
+          type: msg.insightType || null,
+          sourcePm,
+          sourceSession: sessionNum,
+          createdAt: Date.now(),
+        };
+        if (!entry.insight) {
+          ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'Missing insight text' }));
+          break;
+        }
+        pmManager.addKnowledge(entry);
+        if (taskQueue) taskQueue.pushFeed('task', null, `Knowledge shared: "${entry.insight.slice(0, 80)}..." [${entry.domain || 'general'}]`);
+        ws.send(JSON.stringify({ _reqId: msg._reqId, ok: true }));
+        break;
+      }
+
+      case 'mcp:get_knowledge': {
+        if (!pmManager) { ws.send(JSON.stringify({ _reqId: msg._reqId, entries: [], pmLearnings: [] })); break; }
+        // Fleet knowledge base
+        const entries = pmManager.queryKnowledge(msg.query || '', {
+          files: msg.files,
+          domain: msg.domain,
+        });
+        // PM-specific learnings for the session's active task
+        let pmLearnings = [];
+        if (taskQueue) {
+          const sessionNum = msg.session;
+          const taskId = taskQueue.activeTaskBySession.get(sessionNum);
+          const task = taskId ? taskQueue.tasks.get(taskId) : null;
+          if (task && task.source && task.source.startsWith('pm:')) {
+            const pmName = task.source.slice(3);
+            const pm = pmManager.getAll().find(p => p.name === pmName);
+            if (pm && pm.memory && pm.memory.length) {
+              // Filter PM learnings by query relevance
+              const q = (msg.query || '').toLowerCase();
+              const qWords = q ? new Set(q.replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter(w => w.length > 3)) : null;
+              pmLearnings = pm.memory.filter(m => {
+                if (!qWords || !qWords.size) return true; // no query = return all
+                const mLower = m.toLowerCase();
+                for (const w of qWords) { if (mLower.includes(w)) return true; }
+                return false;
+              }).slice(0, 20);
+            }
+          }
+        }
+        ws.send(JSON.stringify({ _reqId: msg._reqId, entries, pmLearnings }));
+        break;
+      }
+
       case 'mcp:get_context': {
         if (!taskQueue) { ws.send(JSON.stringify({ _reqId: msg._reqId, context: {} })); break; }
         const ctx = taskQueue.getSessionContext(msg.session);
