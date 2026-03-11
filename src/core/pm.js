@@ -317,6 +317,7 @@ class ProjectManager extends EventEmitter {
         completionConditions: Array.isArray(data.completionConditions) ? data.completionConditions : [],
         continueConditions: Array.isArray(data.continueConditions) ? data.continueConditions : [],
         boardStates: Array.isArray(data.boardStates) ? data.boardStates : null,
+        actions: Array.isArray(data.actions) ? data.actions : null,
         enabled: data.enabled || false,
         seenKeys: Array.isArray(data.seenKeys) ? data.seenKeys : [],
         tasksCreated: data.tasksCreated || 0,
