@@ -1647,6 +1647,33 @@ function createMessageHandler(deps) {
         break;
       }
 
+      case 'mcp:restart': {
+        if (!checkPermission(ws, user, 'admin')) break;
+        const sessionMgrR = require('../../core/session-manager');
+        const sessionsR = await fleet.getFleetStatus(config, router);
+        const webTokenR = process.env.WEB_TOKEN || '';
+        const hiveWsUrlR = `ws://127.0.0.1:${process.env.WEB_PORT || 3000}`;
+        // 1. Deploy fresh configs to all sessions
+        let deployed = 0;
+        for (const sess of sessionsR) {
+          try {
+            const repoDir = config.sessions.repoDir(sess.num);
+            sessionMgrR.writeMcpConfig(repoDir, hiveWsUrlR, webTokenR, sess.num, msg.tools);
+            deployed++;
+          } catch {}
+        }
+        // 2. Kill existing MCP server processes so Claude Code respawns them
+        let killed = 0;
+        try {
+          const pids = execSync('pgrep -f "mcp-server/index.mjs"', { encoding: 'utf8' }).trim().split('\n').filter(Boolean);
+          for (const pid of pids) {
+            try { process.kill(Number(pid), 'SIGTERM'); killed++; } catch {}
+          }
+        } catch {} // pgrep returns exit 1 if no matches
+        ws.send(JSON.stringify({ type: 'mcp:restarted', deployed, killed }));
+        break;
+      }
+
       case 'mcp:remove': {
         if (!checkPermission(ws, user, 'admin')) break;
         const sessionMgr2 = require('../../core/session-manager');
