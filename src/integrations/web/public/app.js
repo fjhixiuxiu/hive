@@ -1351,12 +1351,10 @@
         break;
       }
       case 'mcp:deployed': {
-        const restartMsg = msg.restarted ? `, restarted ${msg.restarted} MCP server(s)` : '';
-        document.getElementById('mcp-result').textContent = `Deployed to ${msg.count} session(s)${restartMsg}`;
-        // Show restart dialog only if no MCP servers were restarted (need full session restart)
-        if (msg.count > 0 && !msg.restarted) {
-          showMcpRestartConfirm(msg.count);
-        }
+        const parts = [`Deployed to ${msg.count} session(s)`];
+        if (msg.restarted) parts.push(`${msg.restarted} restarted via WS`);
+        if (msg.nudged) parts.push(`${msg.nudged} nudged with /mcp`);
+        document.getElementById('mcp-result').textContent = parts.join(', ');
         break;
       }
       case 'restart:all:done':
