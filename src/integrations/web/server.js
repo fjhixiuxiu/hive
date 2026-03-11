@@ -204,7 +204,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     await sendFleetStatus(ws);
     if (taskQueue) {
       ws.send(JSON.stringify({ type: 'workStates:list', states: taskQueue.getWorkStates() }));
-      ws.send(JSON.stringify({ type: 'tasks:list', tasks: taskQueue.getTasksList().map(decorateTaskActions) }));
+      ws.send(JSON.stringify({ type: 'tasks:list', tasks: taskQueue.getTasksList().map(t => decorateTaskActions(t, pmManager)) }));
       ws.send(JSON.stringify({ type: 'auto:status', sessions: taskQueue.getAutoSessions() }));
       ws.send(JSON.stringify({ type: 'approvals:list', approvals: taskQueue.getPendingApprovals() }));
       const feedData = taskQueue.getFeed(null, 50);
@@ -602,15 +602,15 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
   // -- TaskQueue event bridge ---------------------------------------------
 
   if (taskQueue) {
-    taskQueue.on('task:created', (task) => broadcast({ type: 'task:created', task: decorateTaskActions(task) }));
-    taskQueue.on('task:dispatched', (task) => broadcast({ type: 'task:dispatched', task: decorateTaskActions(task) }));
-    taskQueue.on('task:completed', (task) => broadcast({ type: 'task:completed', task: decorateTaskActions(task) }));
-    taskQueue.on('task:failed', (task) => broadcast({ type: 'task:failed', task: decorateTaskActions(task) }));
-    taskQueue.on('task:cancelled', (task) => broadcast({ type: 'task:cancelled', task: decorateTaskActions(task) }));
-    taskQueue.on('task:requeued', (task) => broadcast({ type: 'task:requeued', task: decorateTaskActions(task) }));
-    taskQueue.on('task:snoozed', (task) => broadcast({ type: 'task:snoozed', task: decorateTaskActions(task) }));
-    taskQueue.on('task:unsnoozed', (task) => broadcast({ type: 'task:unsnoozed', task: decorateTaskActions(task) }));
-    taskQueue.on('task:updated', (task) => broadcast({ type: 'task:updated', task: decorateTaskActions(task) }));
+    taskQueue.on('task:created', (task) => broadcast({ type: 'task:created', task: decorateTaskActions(task, pmManager) }));
+    taskQueue.on('task:dispatched', (task) => broadcast({ type: 'task:dispatched', task: decorateTaskActions(task, pmManager) }));
+    taskQueue.on('task:completed', (task) => broadcast({ type: 'task:completed', task: decorateTaskActions(task, pmManager) }));
+    taskQueue.on('task:failed', (task) => broadcast({ type: 'task:failed', task: decorateTaskActions(task, pmManager) }));
+    taskQueue.on('task:cancelled', (task) => broadcast({ type: 'task:cancelled', task: decorateTaskActions(task, pmManager) }));
+    taskQueue.on('task:requeued', (task) => broadcast({ type: 'task:requeued', task: decorateTaskActions(task, pmManager) }));
+    taskQueue.on('task:snoozed', (task) => broadcast({ type: 'task:snoozed', task: decorateTaskActions(task, pmManager) }));
+    taskQueue.on('task:unsnoozed', (task) => broadcast({ type: 'task:unsnoozed', task: decorateTaskActions(task, pmManager) }));
+    taskQueue.on('task:updated', (task) => broadcast({ type: 'task:updated', task: decorateTaskActions(task, pmManager) }));
     taskQueue.on('auto:changed', (sessions) => broadcast({ type: 'auto:status', sessions }));
     taskQueue.on('feed:new', (entry) => broadcast({ type: 'feed:new', entry }));
     taskQueue.on('approval:new', (approval) => broadcast({ type: 'approval:new', approval }));

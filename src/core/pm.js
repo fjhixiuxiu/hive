@@ -110,6 +110,7 @@ class ProjectManager extends EventEmitter {
       memory: [],
       completionConditions: cfg.completionConditions || [],
       continueConditions: cfg.continueConditions || [],
+      actions: cfg.actions || null, // allowed context action IDs (null = all)
       boardStates: cfg.boardStates || null, // per-PM work state overrides: [{ stateId, autoOnStatus }]
       enabled: false,
       seenKeys: [],

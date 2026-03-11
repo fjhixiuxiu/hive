@@ -319,23 +319,21 @@ function createMessageHandler(deps) {
             const { name, nodeId } = found;
             const node = router.getNode(nodeId);
             const paneTarget = `${name}:.${config.sessions.claudePane}`;
-            await node.exec(`tmux send-keys -t "${paneTarget}" Escape`);
-            // Stagger restarts: each session gets a delayed /exit + claude --continue
-            const delay = restarted * 4000; // 4s apart to avoid overwhelming tmux
+            // Stagger restarts: sequential with delays
+            const delay = restarted * 5000;
             setTimeout(async () => {
               try {
+                // Cancel any pending input, then /exit
+                await node.exec(`tmux send-keys -t "${paneTarget}" C-c`);
+                await new Promise(r => setTimeout(r, 500));
                 await node.exec(`tmux send-keys -t "${paneTarget}" -l '/exit'`);
                 await node.exec(`tmux send-keys -t "${paneTarget}" Enter`);
-                setTimeout(async () => {
-                  try {
-                    await node.exec(`tmux send-keys -t "${paneTarget}" -l 'claude --continue'`);
-                    await node.exec(`tmux send-keys -t "${paneTarget}" Enter`);
-                  } catch (err) {
-                    log.error(`[restart:all] Failed to resume session ${sess.num}: ${err.message}`);
-                  }
-                }, 3000);
+                // Wait for Claude to exit, then restart
+                await new Promise(r => setTimeout(r, 3000));
+                await node.exec(`tmux send-keys -t "${paneTarget}" -l 'claude --continue'`);
+                await node.exec(`tmux send-keys -t "${paneTarget}" Enter`);
               } catch (err) {
-                log.error(`[restart:all] Failed to exit session ${sess.num}: ${err.message}`);
+                log.error(`[restart:all] Failed to restart session ${sess.num}: ${err.message}`);
               }
             }, delay);
             restarted++;
@@ -469,7 +467,7 @@ function createMessageHandler(deps) {
         if (!taskQueue) break;
         if (!checkPermission(ws, user, 'dispatch')) break;
         const requeuedTask = taskQueue.requeueTask(msg.taskId);
-        if (requeuedTask) broadcast({ type: 'task:requeued', task: decorateTaskActions(requeuedTask) });
+        if (requeuedTask) broadcast({ type: 'task:requeued', task: decorateTaskActions(requeuedTask, pmManager) });
         break;
       }
 
@@ -485,7 +483,7 @@ function createMessageHandler(deps) {
         if (!taskQueue) break;
         if (!checkPermission(ws, user, 'dispatch')) break;
         const snoozedTask = taskQueue.snoozeTask(msg.taskId, msg.durationMs);
-        if (snoozedTask) broadcast({ type: 'task:snoozed', task: decorateTaskActions(snoozedTask) });
+        if (snoozedTask) broadcast({ type: 'task:snoozed', task: decorateTaskActions(snoozedTask, pmManager) });
         break;
       }
 
@@ -493,7 +491,7 @@ function createMessageHandler(deps) {
         if (!taskQueue) break;
         if (!checkPermission(ws, user, 'dispatch')) break;
         const unsnoozedTask = taskQueue.unsnoozeTask(msg.taskId);
-        if (unsnoozedTask) broadcast({ type: 'task:unsnoozed', task: decorateTaskActions(unsnoozedTask) });
+        if (unsnoozedTask) broadcast({ type: 'task:unsnoozed', task: decorateTaskActions(unsnoozedTask, pmManager) });
         break;
       }
 
@@ -565,7 +563,7 @@ function createMessageHandler(deps) {
               } catch {}
             }
             const completed = taskQueue.completeTask(msg.taskId, result.message, actionSnap, actionSnapCols);
-            if (completed) broadcast({ type: 'task:completed', task: decorateTaskActions(completed) });
+            if (completed) broadcast({ type: 'task:completed', task: decorateTaskActions(completed, pmManager) });
           }
         } catch (err) {
           ws.send(JSON.stringify({ type: 'task:action:result', taskId: msg.taskId, actionId: msg.actionId, ok: false, error: err.message }));
@@ -1645,34 +1643,15 @@ function createMessageHandler(deps) {
         }
         // Tell connected MCP server processes to exit — Claude Code will respawn them
         let restarted = 0;
-        const connectedSessions = new Set();
         if (mcpClients) {
-          for (const [mcpWs, info] of mcpClients) {
+          for (const [mcpWs] of mcpClients) {
             try {
               mcpWs.send(JSON.stringify({ type: 'mcp:exit' }));
-              connectedSessions.add(info.session);
               restarted++;
             } catch {}
           }
         }
-        // For sessions without a connected MCP client, send Escape + /mcp to trigger config reload
-        let nudged = 0;
-        for (const sess of sessions) {
-          if (connectedSessions.has(sess.num)) continue;
-          try {
-            const found = await fleet.findSession(config, router, sess.num);
-            if (!found) continue;
-            const { name, nodeId } = found;
-            const node = router.getNode(nodeId);
-            const paneTarget = `${name}:.${config.sessions.claudePane}`;
-            await node.exec(`tmux send-keys -t "${paneTarget}" Escape`);
-            await new Promise(r => setTimeout(r, 200));
-            await node.exec(`tmux send-keys -t "${paneTarget}" -l '/mcp'`);
-            await node.exec(`tmux send-keys -t "${paneTarget}" Enter`);
-            nudged++;
-          } catch {}
-        }
-        ws.send(JSON.stringify({ type: 'mcp:deployed', count, restarted, nudged }));
+        ws.send(JSON.stringify({ type: 'mcp:deployed', count, restarted }));
         break;
       }
 
