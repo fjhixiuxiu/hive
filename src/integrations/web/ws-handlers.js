@@ -1645,15 +1645,34 @@ function createMessageHandler(deps) {
         }
         // Tell connected MCP server processes to exit — Claude Code will respawn them
         let restarted = 0;
+        const connectedSessions = new Set();
         if (mcpClients) {
-          for (const [mcpWs] of mcpClients) {
+          for (const [mcpWs, info] of mcpClients) {
             try {
               mcpWs.send(JSON.stringify({ type: 'mcp:exit' }));
+              connectedSessions.add(info.session);
               restarted++;
             } catch {}
           }
         }
-        ws.send(JSON.stringify({ type: 'mcp:deployed', count, restarted }));
+        // For sessions without a connected MCP client, send Escape + /mcp to trigger config reload
+        let nudged = 0;
+        for (const sess of sessions) {
+          if (connectedSessions.has(sess.num)) continue;
+          try {
+            const found = await fleet.findSession(config, router, sess.num);
+            if (!found) continue;
+            const { name, nodeId } = found;
+            const node = router.getNode(nodeId);
+            const paneTarget = `${name}:.${config.sessions.claudePane}`;
+            await node.exec(`tmux send-keys -t "${paneTarget}" Escape`);
+            await new Promise(r => setTimeout(r, 200));
+            await node.exec(`tmux send-keys -t "${paneTarget}" -l '/mcp'`);
+            await node.exec(`tmux send-keys -t "${paneTarget}" Enter`);
+            nudged++;
+          } catch {}
+        }
+        ws.send(JSON.stringify({ type: 'mcp:deployed', count, restarted, nudged }));
         break;
       }
 
