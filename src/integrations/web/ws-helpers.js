@@ -30,10 +30,19 @@ const ACTION_DEFS = {
   ],
 };
 
-function decorateTaskActions(task) {
+function decorateTaskActions(task, pmManager) {
   if (!task.actionContext || !task.actionContext.type) return task;
-  const defs = ACTION_DEFS[task.actionContext.type];
+  let defs = ACTION_DEFS[task.actionContext.type];
   if (!defs) return task;
+  // Look up PM's allowed actions at render time (not baked into task)
+  if (pmManager && task.source) {
+    const pmName = task.source.replace(/^pm:/, '');
+    const pm = pmManager.getAll().find(p => p.name === pmName);
+    if (pm && pm.actions && pm.actions.length) {
+      const allowed = new Set(pm.actions);
+      defs = defs.filter(d => allowed.has(d.id));
+    }
+  }
   return { ...task, actions: defs };
 }
 

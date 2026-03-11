@@ -1351,10 +1351,12 @@
         break;
       }
       case 'mcp:deployed': {
-        const parts = [`Deployed to ${msg.count} session(s)`];
-        if (msg.restarted) parts.push(`${msg.restarted} restarted via WS`);
-        if (msg.nudged) parts.push(`${msg.nudged} nudged with /mcp`);
-        document.getElementById('mcp-result').textContent = parts.join(', ');
+        const restartMsg = msg.restarted ? `, ${msg.restarted} restarted via WS` : '';
+        document.getElementById('mcp-result').textContent = `Deployed to ${msg.count} session(s)${restartMsg}`;
+        const remaining = msg.count - (msg.restarted || 0);
+        if (remaining > 0) {
+          showMcpRestartConfirm(remaining);
+        }
         break;
       }
       case 'restart:all:done':
@@ -7000,6 +7002,12 @@
       if (contGithub) contGithub.style.display = isGhType ? '' : 'none';
       if (contJira) contJira.style.display = isJiraType ? '' : 'none';
     }
+    // Context actions: show for github PR types
+    const actionsField = document.getElementById('pm-form-actions-field');
+    if (actionsField) {
+      const isGhPr = type === 'github-prs' || type === 'github-re-reviews';
+      actionsField.style.display = isGhPr ? '' : 'none';
+    }
   }
 
   document.getElementById('pm-form-save').addEventListener('click', () => {
@@ -7104,6 +7112,15 @@
       }
     }
     cfg.continueConditions = continueConditions;
+    // Collect allowed context actions
+    if (isGhType) {
+      const actionEls = document.querySelectorAll('#pm-form-actions input[data-action]');
+      if (actionEls.length) {
+        const selected = [];
+        actionEls.forEach(cb => { if (cb.checked) selected.push(cb.dataset.action); });
+        cfg.actions = selected.length < actionEls.length ? selected : null; // null = all
+      }
+    }
     if (!cfg.name) { showToast('Error', 'Name required', 'error'); return; }
     if (ws && ws.readyState === 1) {
       if (editingPmId) {
@@ -7177,6 +7194,22 @@
     document.getElementById('pm-form-cont-pr-changes').checked = !!contConds.find(c => c.type === 'github-pr-changes');
     const jiraContCond = contConds.find(c => c.type === 'jira-status');
     document.getElementById('pm-form-cont-jira-statuses').value = jiraContCond ? jiraContCond.statuses.join(', ') : '';
+    // Populate context actions checkboxes
+    const actionsContainer = document.getElementById('pm-form-actions');
+    const PR_ACTIONS = [
+      { id: 'approve', label: 'Approve' },
+      { id: 'request-changes', label: 'Request Changes' },
+      { id: 'merge', label: 'Merge (Squash)' },
+      { id: 'merge-commit', label: 'Merge (Merge Commit)' },
+      { id: 'admin-merge', label: 'Admin Merge (Override)' },
+      { id: 'close-pr', label: 'Close PR' },
+    ];
+    const allowedActions = pm && pm.actions ? new Set(pm.actions) : null;
+    actionsContainer.innerHTML = PR_ACTIONS.map(a => {
+      const checked = !allowedActions || allowedActions.has(a.id) ? 'checked' : '';
+      return `<label style="font-size:13px;color:var(--fg);cursor:pointer;display:flex;align-items:center;gap:4px">
+        <input type="checkbox" data-action="${a.id}" ${checked}> ${a.label}</label>`;
+    }).join('');
     // Reset to first tab
     activePmTab = 'source';
     document.querySelectorAll('.pm-tab').forEach(t =>
