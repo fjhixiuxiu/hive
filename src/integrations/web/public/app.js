@@ -1353,6 +1353,9 @@
       case 'mcp:deployed': {
         const killedMsg = msg.killed ? `, restarted ${msg.killed} MCP process(es)` : '';
         document.getElementById('mcp-result').textContent = `Deployed to ${msg.count} session(s)${killedMsg}`;
+        if (msg.count > 0) {
+          showMcpRestartConfirm(msg.count);
+        }
         break;
       }
       case 'restart:all:done':
