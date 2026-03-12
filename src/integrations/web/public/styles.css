@@ -1414,9 +1414,8 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .fleet-cols-btn:hover { color: var(--fg); }
 .fleet-cols-btn.active { background: var(--bg3); color: var(--fg); outline: 1px solid var(--dim); }
 .fleet-live-btn { background: var(--bg3); border: none; color: var(--dim); font-size: var(--fs-sm); font-weight: 600; padding: 3px 10px; border-radius: 4px; cursor: pointer; border-left: 1px solid var(--bg3); margin-left: 2px; }
-.fleet-live-btn:hover:not(:disabled) { color: var(--fg); }
+.fleet-live-btn:hover { color: var(--fg); }
 .fleet-live-btn.active { background: var(--green); color: var(--bg); }
-.fleet-live-btn:disabled { opacity: 0.35; cursor: default; }
 /* ── Swimlane mode ── */
 #grid.swimlane { display: flex; flex-direction: column; gap: 8px; padding: 6px 10px; overflow-y: auto; }
 @media (min-width: 600px) { #grid.swimlane { padding: 6px 12px; } }

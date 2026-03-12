@@ -2055,8 +2055,10 @@
   });
 
   // ── Fleet view toggle ──────────────────────────────
-  function updateLiveBtnState() {
-    fleetLiveBtn.disabled = fleetViewMode !== 'grid';
+  function updateGridControls() {
+    const isGrid = fleetViewMode === 'grid';
+    document.getElementById('fleet-cols-toggle').style.display = isGrid ? '' : 'none';
+    fleetLiveBtn.style.display = isGrid ? '' : 'none';
   }
 
   document.querySelectorAll('.fleet-view-btn').forEach(btn => {
@@ -2065,7 +2067,7 @@
       localStorage.setItem('hive_fleet_view', fleetViewMode);
       document.querySelectorAll('.fleet-view-btn').forEach(b =>
         b.classList.toggle('active', b.dataset.view === fleetViewMode));
-      updateLiveBtnState();
+      updateGridControls();
       renderGrid();
     });
   });
@@ -2097,7 +2099,7 @@
   });
   // Apply saved state on load
   fleetLiveBtn.classList.toggle('active', liveTerminals);
-  updateLiveBtnState();
+  updateGridControls();
 
   function renderFleetSearchResults(query, results) {
     if (!query || fleetSearchInput.value.trim() !== query) return; // stale result
