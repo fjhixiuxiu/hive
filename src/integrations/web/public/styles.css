@@ -1437,6 +1437,28 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 }
 .fleet-col-cards { display: flex; flex-direction: column; gap: 6px; }
 #grid.columns .card-preview { -webkit-line-clamp: 2; }
+/* ── Terminals (live) view ── */
+#grid.terminals {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(480px, 1fr));
+  gap: 10px; padding: 6px 10px; overflow-y: auto;
+}
+@media (min-width: 600px) { #grid.terminals { padding: 6px 12px; } }
+@media (min-width: 900px) { #grid.terminals { padding: 6px 16px; } }
+#grid.terminals .card {
+  cursor: default; flex-direction: column; gap: 0;
+}
+#grid.terminals .card-top { cursor: pointer; padding: 6px 0 4px; }
+.card-terminals-row { display: flex; gap: 6px; margin-top: 6px; }
+.card-term-section { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.card-term-label {
+  font-size: var(--fs-xs); font-weight: 700; color: var(--dim);
+  text-transform: uppercase; letter-spacing: 0.5px;
+  padding: 2px 0 3px; border-bottom: 1px solid var(--bg3); margin-bottom: 4px;
+}
+.card-terminal { width: 100%; height: 240px; overflow: hidden; border-radius: 4px; background: var(--bg); cursor: pointer; }
+.card-terminal * { pointer-events: none; }
+.card-focused { box-shadow: 0 0 0 2px var(--purple) !important; }
 /* ── Color swatch picker ── */
 .desig-color-picker-row { display: flex; align-items: center; gap: 10px; padding: 4px 0; }
 .desig-color-swatches { display: flex; gap: 8px; }

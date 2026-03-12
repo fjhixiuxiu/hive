@@ -96,6 +96,8 @@
   let linkTemplates = {};
   let term = null;
   let fitAddon = null;
+  // Card terminals for 'terminals' view mode: Map<"sessionNum:pane", {term, fit, lastContent}>
+  const cardTerminals = new Map();
   let tasks = [];
   let workStates = [];
   let autoSessions = new Set();
@@ -1059,6 +1061,21 @@
             }
           }
         }
+        // Card terminal data (terminals view mode)
+        if (msg.card && typeof msg.pane === 'number') {
+          // Try exact pane key first; fall back to 'claude' sentinel for the default pane
+          const ct = cardTerminals.get(`${msg.session}:${msg.pane}`) || cardTerminals.get(`${msg.session}:claude`);
+          if (ct && ct.term && msg.content !== ct.lastContent) {
+            ct.lastContent = msg.content;
+            if (msg.cols && msg.cols > 0 && msg.cols !== ct.term.cols) ct.term.resize(msg.cols, ct.term.rows);
+            if (ct._raf) cancelAnimationFrame(ct._raf);
+            ct._raf = requestAnimationFrame(() => {
+              ct._raf = null;
+              ct.term.reset();
+              ct.term.write(msg.content, () => ct.term.scrollToBottom());
+            });
+          }
+        }
         break;
       case 'ask:stream': break;
       case 'ask:done':
@@ -1536,6 +1553,17 @@
 
   // ── Fleet grid rendering ──────────────────────────
   function renderGrid() {
+    // Terminals mode manages its own DOM diffing — never wipe the grid
+    if (fleetViewMode === 'terminals') {
+      if (fleetData.length === 0) {
+        grid.innerHTML = hiveLoaderHtml('Loading sessions...');
+        grid.className = 'terminals';
+        return;
+      }
+      renderTerminalsGrid();
+      return;
+    }
+
     grid.innerHTML = '';
     grid.className = '';
     grid.classList.add(fleetViewMode); // 'grid', 'list', 'swimlane', or 'columns'
@@ -1697,6 +1725,187 @@
     (container || grid).appendChild(card);
   }
 
+  // ── Terminals view (live panes in each card) ──────
+  function renderTerminalsGrid() {
+    grid.className = 'terminals';
+
+    // Remove any loading indicator left over from before fleet data arrived
+    grid.querySelectorAll('.hive-loader').forEach(el => el.remove());
+
+    const currentNums = new Set(fleetData.map(s => String(s.num)));
+
+    // Remove cards for sessions that left the fleet and dispose their terminals
+    grid.querySelectorAll('.card[data-session]').forEach(card => {
+      const num = card.dataset.session;
+      if (!currentNums.has(num)) {
+        unsubscribeCardTerminals(num);
+        card.remove();
+      }
+    });
+
+    // Update existing expanded cards, or replace compact cards / create new ones
+    for (const s of fleetData) {
+      const existing = grid.querySelector(`.card[data-session="${s.num}"]`);
+      if (existing && existing.querySelector('.card-terminals-row')) {
+        // Already expanded — just refresh metadata
+        updateExpandedCardMeta(existing, s);
+      } else {
+        // Compact card from another view, or missing — replace with expanded version
+        if (existing) existing.remove();
+        renderExpandedCard(s);
+      }
+    }
+
+    // Re-subscribe all card terminals (handles reconnect and new cards)
+    requestAnimationFrame(() => {
+      for (const s of fleetData) {
+        attachCardTerminal(s.num, 'claude', null);
+        // Only subscribe bash if the container exists (pane 0 may not exist in all setups)
+        if (document.getElementById(`card-term-${s.num}-bash`)) {
+          attachCardTerminal(s.num, 'bash', 0);
+        }
+      }
+    });
+  }
+
+  function renderExpandedCard(s) {
+    const card = document.createElement('div');
+    card.className = `card ${s.state === 'off' ? 'off' : ''}`;
+    card.dataset.session = s.num;
+    const desig = designations[s.num];
+    const dc = desig ? getDesigColor(desig) : null;
+    if (dc) card.style.borderLeft = `3px solid ${dc.fg}`;
+
+    const branch = shortBranch(s.branch);
+    const gitStr = cardGitHtml(s.git || {});
+    const { pr: prStr, ci: ciStr, review: revStr } = cardPrHtml(s.pr);
+    const activityHtml = s.lastActivity ? `<span class="card-activity">${timeAgo(s.lastActivity)}</span>` : '';
+    let metaParts = '';
+    if (gitStr) metaParts += `<span class="card-git">${gitStr}</span>`;
+    if (prStr) metaParts += `<span class="card-pr">${prStr}</span>`;
+    if (ciStr) metaParts += ciStr;
+    if (revStr) metaParts += revStr;
+    metaParts += activityHtml;
+
+    card.innerHTML = `
+      <div class="card-top">
+        <span class="card-hex">${fleetHexSvg(s.state)}</span>
+        <span class="card-num">${s.num}</span>
+        <span class="card-branch">${esc(branch)}</span>
+      </div>
+      <div class="card-meta">${metaParts}</div>
+      <div class="card-terminals-row">
+        <div class="card-term-section">
+          <div class="card-term-label">Claude</div>
+          <div class="card-terminal" id="card-term-${s.num}-claude"></div>
+        </div>
+      </div>`;
+
+    card.querySelector('.card-top').addEventListener('click', () => openSession(s));
+    const numEl = card.querySelector('.card-num');
+    if (numEl) numEl.addEventListener('click', (e) => { e.stopPropagation(); selectQuickSession(s.num); });
+    const termRow = card.querySelector('.card-terminals-row');
+    if (termRow) termRow.addEventListener('click', (e) => { e.stopPropagation(); focusCardSession(s.num); });
+
+    if (s.state === 'off') {
+      const overlay = document.createElement('div');
+      overlay.className = 'card-off-overlay';
+      overlay.innerHTML = `<button class="start-btn" data-session="${s.num}">Start</button>`;
+      overlay.querySelector('.start-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (!ws || ws.readyState !== 1) return;
+        e.target.disabled = true; e.target.textContent = 'Starting...';
+        ws.send(JSON.stringify({ type: 'restart', session: String(s.num) }));
+      });
+      card.appendChild(overlay);
+    }
+
+    grid.appendChild(card);
+  }
+
+  function attachCardTerminal(sessionNum, label, paneIdx) {
+    const key = `${sessionNum}:${paneIdx ?? 'claude'}`;
+    const container = document.getElementById(`card-term-${sessionNum}-${label}`);
+    if (!container) return;
+
+    let ct = cardTerminals.get(key);
+    if (!ct) {
+      // First time: create and open the terminal
+      const t = new Terminal({
+        theme: currentTheme === 'light' ? XTERM_LIGHT : XTERM_DARK,
+        fontSize: 11,
+        fontFamily: "'SF Mono', 'Menlo', 'Monaco', 'Courier New', monospace",
+        disableStdin: true,
+        scrollback: 500,
+        convertEol: true,
+        allowProposedApi: true,
+      });
+      const f = new FitAddon.FitAddon();
+      t.loadAddon(f);
+      ct = { term: t, fit: f, lastContent: '', opened: false };
+      cardTerminals.set(key, ct);
+    }
+
+    if (!ct.opened) {
+      ct.term.open(container);
+      ct.opened = true;
+    } else if (ct.term.element && ct.term.element.parentElement !== container) {
+      // DOM was recreated (e.g. card re-rendered) — move the existing xterm element
+      container.innerHTML = '';
+      container.appendChild(ct.term.element);
+    }
+    // Retry fit after paint — xterm canvas needs a visible, sized container
+    try { ct.fit.fit(); } catch (_) {}
+    setTimeout(() => { try { ct.fit.fit(); } catch (_) {} }, 100);
+
+    // Always send subscribe — handles both initial attach and reconnect
+    if (ws && ws.readyState === 1) {
+      const subMsg = { type: 'terminal:subscribe', session: String(sessionNum), card: true };
+      if (typeof paneIdx === 'number') subMsg.pane = paneIdx;
+      ws.send(JSON.stringify(subMsg));
+    }
+  }
+
+  function updateExpandedCardMeta(card, s) {
+    const hexEl = card.querySelector('.card-hex');
+    if (hexEl) hexEl.innerHTML = fleetHexSvg(s.state);
+    card.classList.toggle('off', s.state === 'off');
+
+    const branch = shortBranch(s.branch);
+    const branchEl = card.querySelector('.card-branch');
+    if (branchEl) branchEl.textContent = branch;
+
+    const metaEl = card.querySelector('.card-meta');
+    if (metaEl) {
+      const gitStr = cardGitHtml(s.git || {});
+      const { pr: prStr, ci: ciStr, review: revStr } = cardPrHtml(s.pr);
+      const activityHtml = s.lastActivity ? `<span class="card-activity">${timeAgo(s.lastActivity)}</span>` : '';
+      let metaParts = '';
+      if (gitStr) metaParts += `<span class="card-git">${gitStr}</span>`;
+      if (prStr) metaParts += `<span class="card-pr">${prStr}</span>`;
+      if (ciStr) metaParts += ciStr;
+      if (revStr) metaParts += revStr;
+      metaParts += activityHtml;
+      metaEl.innerHTML = metaParts;
+    }
+  }
+
+  function unsubscribeCardTerminals(sessionNum) {
+    const prefix = `${sessionNum}:`;
+    const keysToRemove = [...cardTerminals.keys()].filter(k => k.startsWith(prefix));
+    for (const key of keysToRemove) {
+      const ct = cardTerminals.get(key);
+      if (ct && ct.term) { try { ct.term.dispose(); } catch (_) {} }
+      cardTerminals.delete(key);
+      if (ws && ws.readyState === 1) {
+        const pane = key.slice(prefix.length);
+        const msg = { type: 'terminal:card:unsubscribe', session: String(sessionNum) };
+        if (pane !== 'claude') msg.pane = parseInt(pane, 10);
+        ws.send(JSON.stringify(msg));
+      }
+    }
+  }
+
   // ── List table ───────────────────────────────────
   function renderFleetList() {
     const table = document.createElement('table');
@@ -1800,10 +2009,15 @@
   // ── Fleet view toggle ──────────────────────────────
   document.querySelectorAll('.fleet-view-btn').forEach(btn => {
     btn.addEventListener('click', () => {
+      const prev = fleetViewMode;
       fleetViewMode = btn.dataset.view;
       localStorage.setItem('hive_fleet_view', fleetViewMode);
       document.querySelectorAll('.fleet-view-btn').forEach(b =>
         b.classList.toggle('active', b.dataset.view === fleetViewMode));
+      // Tear down card terminals when leaving terminals view
+      if (prev === 'terminals' && fleetViewMode !== 'terminals') {
+        for (const num of fleetData.map(s => s.num)) unsubscribeCardTerminals(num);
+      }
       renderGrid();
     });
   });
@@ -3228,6 +3442,18 @@
     quickInput.focus();
   }
 
+  // In Live view: click a card terminal to exclusively target that session
+  function focusCardSession(num) {
+    quickSessions.clear();
+    quickSessions.add(String(num));
+    updateQuickBar();
+    // Highlight just this card
+    grid.querySelectorAll('.card').forEach(c => c.classList.remove('card-focused'));
+    const card = grid.querySelector(`.card[data-session="${num}"]`);
+    if (card) card.classList.add('card-focused');
+    quickInput.focus();
+  }
+
   function updateQuickBar() {
     const count = quickSessions.size;
     quickAllBtn.classList.toggle('active', count > 0 && count === fleetData.length);
@@ -3260,6 +3486,7 @@
     updateQuickBar();
     quickInput.value = '';
     grid.querySelectorAll('.card, .fleet-row').forEach(c => c.style.outline = '');
+    grid.querySelectorAll('.card-focused').forEach(c => c.classList.remove('card-focused'));
   });
 
   quickAllBtn.addEventListener('click', () => {

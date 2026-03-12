@@ -146,6 +146,8 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
   const termSubs = new Map();
   // Per-client console (session 0) subscriptions: ws -> { interval, cancelled }
   const consoleSubs = new Map();
+  // Per-client card terminal subscriptions: ws -> Map<"session:pane", sub>
+  const cardTermSubs = new Map();
   // Track worker connections: ws -> RemoteNode
   const workers = new Map();
   // Fleet preview cache (used by handleMessage and broadcastFleetStatus)
@@ -353,6 +355,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       clients.delete(ws);
       clearTermSub(ws);
       clearConsoleSub(ws);
+      clearAllCardSubs(ws);
       clearTimeout(authTimeout);
       // Clean up worker
       const node = workers.get(ws);
@@ -369,6 +372,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       clients.delete(ws);
       clearTermSub(ws);
       clearConsoleSub(ws);
+      clearAllCardSubs(ws);
       const node = workers.get(ws);
       if (node) {
         node.disconnect();
@@ -386,6 +390,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     config, taskQueue, pmManager, router,
     broadcast, checkPermission, resolveSession,
     clearTermSub, clearConsoleSub, termSubs, consoleSubs,
+    clearCardSub, clearAllCardSubs, cardTermSubs,
     sendFleetStatus, broadcastFleetStatus, sendInitialState, _previewCache,
     commands, clients, wsUser, workers,
   });
@@ -416,6 +421,28 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       clearInterval(sub.interval);
       consoleSubs.delete(ws);
     }
+  }
+
+  function clearCardSub(ws, subKey) {
+    const subs = cardTermSubs.get(ws);
+    if (!subs) return;
+    const sub = subs.get(subKey);
+    if (sub) {
+      sub.cancelled = true;
+      clearInterval(sub.interval);
+      subs.delete(subKey);
+    }
+    if (subs.size === 0) cardTermSubs.delete(ws);
+  }
+
+  function clearAllCardSubs(ws) {
+    const subs = cardTermSubs.get(ws);
+    if (!subs) return;
+    for (const sub of subs.values()) {
+      sub.cancelled = true;
+      clearInterval(sub.interval);
+    }
+    cardTermSubs.delete(ws);
   }
 
   // -- Fleet status broadcast --------------------------------------------
@@ -692,6 +719,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     for (const ws of clients) {
       clearTermSub(ws);
       clearConsoleSub(ws);
+      clearAllCardSubs(ws);
       ws.close();
     }
     clients.clear();
