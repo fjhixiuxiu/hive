@@ -96,8 +96,20 @@
   let linkTemplates = {};
   let term = null;
   let fitAddon = null;
-  // Card terminals for 'terminals' view mode: Map<"sessionNum:pane", {term, fit, lastContent}>
+  // Card terminals for Live mode: Map<"sessionNum:pane", {term, fit, lastContent, opened}>
   const cardTerminals = new Map();
+  // IntersectionObserver: subscribe visible cards, pause off-screen ones
+  const cardTerminalObserver = new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      const num = entry.target.dataset.session;
+      if (!num) continue;
+      if (entry.isIntersecting) {
+        requestAnimationFrame(() => attachCardTerminal(num, 'claude', null));
+      } else {
+        pauseCardTerminal(num);
+      }
+    }
+  }, { rootMargin: '200px', threshold: 0 });
   let tasks = [];
   let workStates = [];
   let autoSessions = new Set();
@@ -195,6 +207,10 @@
   let showNavButtons = localStorage.getItem('hive_show_nav_buttons') !== 'false';
   let showFleetStrip = localStorage.getItem('hive_show_fleet_strip') === 'true';
   let fleetViewMode = localStorage.getItem('hive_fleet_view') || 'grid';
+  // Migrate old 'terminals' mode → grid + live
+  if (fleetViewMode === 'terminals') { fleetViewMode = 'grid'; localStorage.setItem('hive_fleet_view', 'grid'); }
+  let liveTerminals = localStorage.getItem('hive_live_terminals') === 'true';
+  let gridCols = localStorage.getItem('hive_grid_cols') || 'auto';
 
   // ── DOM refs ──────────────────────────────────────
   const $ = (s) => document.querySelector(s);
@@ -1552,21 +1568,33 @@
   }
 
   // ── Fleet grid rendering ──────────────────────────
+  function applyGridCols() {
+    // Remove any existing cols-* class, then add the current one
+    grid.classList.remove('cols-auto', 'cols-1', 'cols-2', 'cols-3', 'cols-4', 'cols-6');
+    grid.classList.add(`cols-${gridCols}`);
+  }
+
   function renderGrid() {
-    // Terminals mode manages its own DOM diffing — never wipe the grid
-    if (fleetViewMode === 'terminals') {
+    // Live grid mode manages its own DOM diffing — never wipe the grid
+    if (liveTerminals && fleetViewMode === 'grid') {
       if (fleetData.length === 0) {
         grid.innerHTML = hiveLoaderHtml('Loading sessions...');
-        grid.className = 'terminals';
+        grid.className = 'grid live';
         return;
       }
-      renderTerminalsGrid();
+      renderLiveGrid();
       return;
+    }
+
+    // Switching away from live grid — tear down card terminals
+    if (grid.classList.contains('live')) {
+      for (const s of fleetData) unsubscribeCardTerminals(s.num);
     }
 
     grid.innerHTML = '';
     grid.className = '';
     grid.classList.add(fleetViewMode); // 'grid', 'list', 'swimlane', or 'columns'
+    if (fleetViewMode === 'grid') applyGridCols();
 
     if (fleetData.length === 0) {
       grid.innerHTML = hiveLoaderHtml('Loading sessions...');
@@ -1725,12 +1753,15 @@
     (container || grid).appendChild(card);
   }
 
-  // ── Terminals view (live panes in each card) ──────
-  function renderTerminalsGrid() {
-    grid.className = 'terminals';
+  // ── Live grid (live panes in each card) ──────────
+  function renderLiveGrid() {
+    grid.className = 'grid live';
+    applyGridCols();
 
-    // Remove any loading indicator left over from before fleet data arrived
-    grid.querySelectorAll('.hive-loader').forEach(el => el.remove());
+    // Remove any non-card leftovers from other views (list table, loader, etc.)
+    Array.from(grid.children).forEach(el => {
+      if (!el.classList.contains('card') || !el.dataset.session) el.remove();
+    });
 
     const currentNums = new Set(fleetData.map(s => String(s.num)));
 
@@ -1751,21 +1782,14 @@
         updateExpandedCardMeta(existing, s);
       } else {
         // Compact card from another view, or missing — replace with expanded version
-        if (existing) existing.remove();
+        if (existing) {
+          cardTerminalObserver.unobserve(existing);
+          existing.remove();
+        }
         renderExpandedCard(s);
       }
     }
-
-    // Re-subscribe all card terminals (handles reconnect and new cards)
-    requestAnimationFrame(() => {
-      for (const s of fleetData) {
-        attachCardTerminal(s.num, 'claude', null);
-        // Only subscribe bash if the container exists (pane 0 may not exist in all setups)
-        if (document.getElementById(`card-term-${s.num}-bash`)) {
-          attachCardTerminal(s.num, 'bash', 0);
-        }
-      }
-    });
+    // IntersectionObserver handles subscriptions as cards enter/leave the viewport
   }
 
   function renderExpandedCard(s) {
@@ -1821,6 +1845,7 @@
     }
 
     grid.appendChild(card);
+    cardTerminalObserver.observe(card);
   }
 
   function attachCardTerminal(sessionNum, label, paneIdx) {
@@ -1903,6 +1928,16 @@
         if (pane !== 'claude') msg.pane = parseInt(pane, 10);
         ws.send(JSON.stringify(msg));
       }
+    }
+    // Unobserve the card DOM element if still present
+    const card = grid.querySelector(`.card[data-session="${sessionNum}"]`);
+    if (card) cardTerminalObserver.unobserve(card);
+  }
+
+  // Stop server polling for a card without disposing the terminal DOM
+  function pauseCardTerminal(sessionNum) {
+    if (ws && ws.readyState === 1) {
+      ws.send(JSON.stringify({ type: 'terminal:card:unsubscribe', session: String(sessionNum) }));
     }
   }
 
@@ -2007,23 +2042,49 @@
   });
 
   // ── Fleet view toggle ──────────────────────────────
+  function updateLiveBtnState() {
+    fleetLiveBtn.disabled = fleetViewMode !== 'grid';
+  }
+
   document.querySelectorAll('.fleet-view-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      const prev = fleetViewMode;
       fleetViewMode = btn.dataset.view;
       localStorage.setItem('hive_fleet_view', fleetViewMode);
       document.querySelectorAll('.fleet-view-btn').forEach(b =>
         b.classList.toggle('active', b.dataset.view === fleetViewMode));
-      // Tear down card terminals when leaving terminals view
-      if (prev === 'terminals' && fleetViewMode !== 'terminals') {
-        for (const num of fleetData.map(s => s.num)) unsubscribeCardTerminals(num);
-      }
+      updateLiveBtnState();
       renderGrid();
     });
   });
   // Apply saved state on load
   document.querySelectorAll('.fleet-view-btn').forEach(b =>
     b.classList.toggle('active', b.dataset.view === fleetViewMode));
+
+  // ── Grid column count toggle ───────────────────────
+  document.querySelectorAll('.fleet-cols-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      gridCols = btn.dataset.cols;
+      localStorage.setItem('hive_grid_cols', gridCols);
+      document.querySelectorAll('.fleet-cols-btn').forEach(b =>
+        b.classList.toggle('active', b.dataset.cols === gridCols));
+      if (fleetViewMode === 'grid') applyGridCols();
+    });
+  });
+  // Apply saved state on load
+  document.querySelectorAll('.fleet-cols-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.cols === gridCols));
+
+  // ── Live terminals toggle ──────────────────────────
+  const fleetLiveBtn = document.getElementById('fleet-live-btn');
+  fleetLiveBtn.addEventListener('click', () => {
+    liveTerminals = !liveTerminals;
+    localStorage.setItem('hive_live_terminals', liveTerminals);
+    fleetLiveBtn.classList.toggle('active', liveTerminals);
+    renderGrid();
+  });
+  // Apply saved state on load
+  fleetLiveBtn.classList.toggle('active', liveTerminals);
+  updateLiveBtnState();
 
   function renderFleetSearchResults(query, results) {
     if (!query || fleetSearchInput.value.trim() !== query) return; // stale result

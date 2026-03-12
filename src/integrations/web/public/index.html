@@ -203,12 +203,22 @@
         <button id="shutdown-all-btn" title="Shutdown All">&#9632; Stop</button>
       </div>
       <div id="fleet-search-results" class="fleet-search-results" style="display:none"></div>
-      <div class="fleet-view-toggle" id="fleet-view-toggle">
-        <button class="fleet-view-btn active" data-view="grid" title="Grid view">&#9638; Grid</button>
-        <button class="fleet-view-btn" data-view="list" title="List view">&#9776; List</button>
-        <button class="fleet-view-btn" data-view="swimlane" title="Swimlane (horizontal)">&#8801; Swim</button>
-        <button class="fleet-view-btn" data-view="columns" title="Swimlane (vertical)">&#9707; Cols</button>
-        <button class="fleet-view-btn" data-view="terminals" title="Live terminals in each card">&#9654; Live</button>
+      <div class="fleet-toolbar">
+        <div class="fleet-view-toggle" id="fleet-view-toggle">
+          <button class="fleet-view-btn active" data-view="grid" title="Grid view">&#9638; Grid</button>
+          <button class="fleet-view-btn" data-view="list" title="List view">&#9776; List</button>
+          <button class="fleet-view-btn" data-view="swimlane" title="Swimlane (horizontal)">&#8801; Swim</button>
+          <button class="fleet-view-btn" data-view="columns" title="Swimlane (vertical)">&#9707; Cols</button>
+        </div>
+        <div class="fleet-cols-toggle" id="fleet-cols-toggle">
+          <button class="fleet-cols-btn active" data-cols="auto">Auto</button>
+          <button class="fleet-cols-btn" data-cols="1">1</button>
+          <button class="fleet-cols-btn" data-cols="2">2</button>
+          <button class="fleet-cols-btn" data-cols="3">3</button>
+          <button class="fleet-cols-btn" data-cols="4">4</button>
+          <button class="fleet-cols-btn" data-cols="6">6</button>
+        </div>
+        <button class="fleet-live-btn" id="fleet-live-btn" title="Toggle live terminals">&#9654; Live</button>
       </div>
       <div id="grid"></div>
       <div id="quick-bar">
