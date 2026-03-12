@@ -253,6 +253,16 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 }
 @media (min-width: 600px) { #grid.grid { grid-template-columns: repeat(4, 1fr); gap: 8px; padding: 8px 12px; } }
 @media (min-width: 900px) { #grid.grid { grid-template-columns: repeat(4, 1fr); gap: 8px; padding: 8px 16px; } }
+/* Explicit column overrides (user-selected) */
+#grid.grid.cols-1 { grid-template-columns: 1fr !important; }
+#grid.grid.cols-2 { grid-template-columns: repeat(2, 1fr) !important; }
+#grid.grid.cols-3 { grid-template-columns: repeat(3, 1fr) !important; }
+#grid.grid.cols-4 { grid-template-columns: repeat(4, 1fr) !important; }
+#grid.grid.cols-6 { grid-template-columns: repeat(6, 1fr) !important; }
+/* Live mode: wider cards by default to fit terminals */
+#grid.grid.live.cols-auto { grid-template-columns: repeat(auto-fill, minmax(480px, 1fr)) !important; }
+#grid.grid.live .card { cursor: default; flex-direction: column; gap: 0; }
+#grid.grid.live .card-top { cursor: pointer; padding: 6px 0 4px; }
 /* List mode */
 #grid.list { display: block; padding: 6px 10px; }
 @media (min-width: 600px) { #grid.list { padding: 6px 12px; } }
@@ -1393,11 +1403,19 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .desig-def-row .desig-def-name { font-weight: 700; min-width: 80px; }
 /* ── Fleet group headers ── */
 .fleet-group-header { font-size: var(--fs-sm); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; padding: 12px 4px 4px; grid-column: 1 / -1; }
-/* ── Fleet view toggle ── */
-.fleet-view-toggle { display: flex; gap: 2px; padding: 4px 12px; flex-shrink: 0; }
+/* ── Fleet toolbar ── */
+.fleet-toolbar { display: flex; align-items: center; gap: 6px; padding: 4px 12px; flex-shrink: 0; flex-wrap: wrap; }
+.fleet-view-toggle { display: flex; gap: 2px; }
 .fleet-view-btn { background: var(--bg3); border: none; color: var(--dim); font-size: var(--fs-sm); font-weight: 600; padding: 3px 10px; border-radius: 4px; cursor: pointer; }
 .fleet-view-btn:hover { color: var(--fg); }
 .fleet-view-btn.active { background: var(--purple); color: var(--bg); }
+.fleet-cols-toggle { display: flex; gap: 2px; border-left: 1px solid var(--bg3); padding-left: 6px; }
+.fleet-cols-btn { background: var(--bg3); border: none; color: var(--dim); font-size: var(--fs-sm); font-weight: 600; padding: 3px 8px; border-radius: 4px; cursor: pointer; }
+.fleet-cols-btn:hover { color: var(--fg); }
+.fleet-cols-btn.active { background: var(--bg3); color: var(--fg); outline: 1px solid var(--dim); }
+.fleet-live-btn { background: var(--bg3); border: none; color: var(--dim); font-size: var(--fs-sm); font-weight: 600; padding: 3px 10px; border-radius: 4px; cursor: pointer; border-left: 1px solid var(--bg3); margin-left: 2px; }
+.fleet-live-btn:hover { color: var(--fg); }
+.fleet-live-btn.active { background: var(--green); color: var(--bg); }
 /* ── Swimlane mode ── */
 #grid.swimlane { display: flex; flex-direction: column; gap: 8px; padding: 6px 10px; overflow-y: auto; }
 @media (min-width: 600px) { #grid.swimlane { padding: 6px 12px; } }
@@ -1437,6 +1455,16 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 }
 .fleet-col-cards { display: flex; flex-direction: column; gap: 6px; }
 #grid.columns .card-preview { -webkit-line-clamp: 2; }
+.card-terminals-row { display: flex; gap: 6px; margin-top: 6px; }
+.card-term-section { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.card-term-label {
+  font-size: var(--fs-xs); font-weight: 700; color: var(--dim);
+  text-transform: uppercase; letter-spacing: 0.5px;
+  padding: 2px 0 3px; border-bottom: 1px solid var(--bg3); margin-bottom: 4px;
+}
+.card-terminal { width: 100%; height: 240px; overflow: hidden; border-radius: 4px; background: var(--bg); cursor: pointer; }
+.card-terminal * { pointer-events: none; }
+.card-focused { box-shadow: 0 0 0 2px var(--purple) !important; }
 /* ── Color swatch picker ── */
 .desig-color-picker-row { display: flex; align-items: center; gap: 10px; padding: 4px 0; }
 .desig-color-swatches { display: flex; gap: 8px; }

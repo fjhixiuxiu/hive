@@ -25,6 +25,7 @@ function createMessageHandler(deps) {
     config, taskQueue, pmManager, router,
     broadcast, checkPermission, resolveSession,
     clearTermSub, clearConsoleSub, termSubs, consoleSubs,
+    clearCardSub, clearAllCardSubs, cardTermSubs,
     sendFleetStatus, broadcastFleetStatus, sendInitialState, _previewCache,
     commands, clients, wsUser, workers, mcpClients,
   } = deps;
@@ -106,8 +107,10 @@ function createMessageHandler(deps) {
 
       case 'terminal:subscribe': {
         const isConsole = String(msg.session) === 'hive-console';
-        // Console uses separate subscription so it doesn't conflict with main terminal
-        if (isConsole) {
+        const isCard = msg.card === true;
+        if (isCard) {
+          // Card terminals: keyed by session:pane, multiple per connection
+        } else if (isConsole) {
           clearConsoleSub(ws);
         } else {
           clearTermSub(ws);
@@ -123,24 +126,40 @@ function createMessageHandler(deps) {
         const paneTarget = `${name}:.${subPaneIdx}`;
         // Send immediately
         const { content: subContent, cols: subCols } = await capturePaneAnsi(node, paneTarget);
-        ws.send(JSON.stringify({ type: 'terminal:data', session: msg.session, pane: subPaneIdx, content: subContent, cols: subCols }));
+        ws.send(JSON.stringify({ type: 'terminal:data', session: msg.session, pane: subPaneIdx, content: subContent, cols: subCols, card: isCard }));
         // Poll every 2s (guard against stale callbacks after clearInterval)
         const sub = { interval: null, session: msg.session, name, node, pane: subPaneIdx, cancelled: false };
+        const subKey = `${msg.session}:${subPaneIdx}`;
         sub.interval = setInterval(async () => {
-          if (sub.cancelled || ws.readyState !== 1) { isConsole ? clearConsoleSub(ws) : clearTermSub(ws); return; }
+          if (sub.cancelled || ws.readyState !== 1) {
+            if (isCard) clearCardSub(ws, subKey);
+            else if (isConsole) clearConsoleSub(ws);
+            else clearTermSub(ws);
+            return;
+          }
           try {
             const { content: pollContent, cols: pollCols } = await capturePaneAnsi(node, paneTarget);
-            if (sub.cancelled) return; // check again after async
-            ws.send(JSON.stringify({ type: 'terminal:data', session: msg.session, pane: subPaneIdx, content: pollContent, cols: pollCols }));
+            if (sub.cancelled) return;
+            ws.send(JSON.stringify({ type: 'terminal:data', session: msg.session, pane: subPaneIdx, content: pollContent, cols: pollCols, card: isCard }));
           } catch {
             // Node may have disconnected
           }
         }, 2000);
-        if (isConsole) {
+        if (isCard) {
+          clearCardSub(ws, subKey); // replace if already exists
+          if (!cardTermSubs.has(ws)) cardTermSubs.set(ws, new Map());
+          cardTermSubs.get(ws).set(subKey, sub);
+        } else if (isConsole) {
           consoleSubs.set(ws, sub);
         } else {
           termSubs.set(ws, sub);
         }
+        break;
+      }
+
+      case 'terminal:card:unsubscribe': {
+        const pane = typeof msg.pane === 'number' ? msg.pane : config.sessions.claudePane;
+        clearCardSub(ws, `${msg.session}:${pane}`);
         break;
       }
 
