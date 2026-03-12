@@ -36,6 +36,7 @@ function connectWs() {
       const msg = JSON.parse(data.toString());
       if (msg.type === 'auth' && msg.ok) { wsReady = true; return; }
       if (msg.type === 'auth' && !msg.ok) { ws.close(); return; }
+      if (msg.type === 'mcp:exit') { process.exit(0); }
       if (msg._reqId && pending.has(msg._reqId)) {
         pending.get(msg._reqId)(msg);
         pending.delete(msg._reqId);
@@ -146,6 +147,66 @@ if (!enabledTools || enabledTools.includes('hive_report_learnings')) {
       try {
         const resp = await sendRequest('mcp:report_learnings', { learnings });
         return { content: [{ type: 'text', text: resp.ok ? 'Learnings recorded' : (resp.error || 'Failed') }] };
+      } catch (err) {
+        return { content: [{ type: 'text', text: `Error: ${err.message}` }], isError: true };
+      }
+    }
+  );
+}
+
+// Tool: hive_share_knowledge
+if (!enabledTools || enabledTools.includes('hive_share_knowledge')) {
+  server.tool(
+    'hive_share_knowledge',
+    'Share an insight with the fleet knowledge base so other sessions can benefit from your experience',
+    {
+      insight: z.string().describe('What you learned — a gotcha, pattern, root cause, or tip'),
+      files: z.array(z.string()).optional().describe('File paths involved (e.g. ["evv-modal.js", "gps-suggestion.js"])'),
+      domain: z.string().optional().describe('Domain area (e.g. "evv", "billing", "booking", "payroll")'),
+      type: z.enum(['gotcha', 'pattern', 'fix', 'dependency', 'tip']).optional().describe('Type of insight'),
+    },
+    async ({ insight, files, domain, type: insightType }) => {
+      try {
+        const resp = await sendRequest('mcp:share_knowledge', { insight, files, domain, insightType });
+        return { content: [{ type: 'text', text: resp.ok ? 'Knowledge shared with the fleet' : (resp.error || 'Failed') }] };
+      } catch (err) {
+        return { content: [{ type: 'text', text: `Error: ${err.message}` }], isError: true };
+      }
+    }
+  );
+}
+
+// Tool: hive_get_knowledge
+if (!enabledTools || enabledTools.includes('hive_get_knowledge')) {
+  server.tool(
+    'hive_get_knowledge',
+    'Query the fleet knowledge base for insights from other sessions about specific files, domains, or topics',
+    {
+      query: z.string().optional().describe('Free-text search (e.g. "GPS validation timezone")'),
+      files: z.array(z.string()).optional().describe('File paths to find knowledge about'),
+      domain: z.string().optional().describe('Domain to filter by (e.g. "evv", "billing")'),
+    },
+    async ({ query, files, domain }) => {
+      try {
+        const resp = await sendRequest('mcp:get_knowledge', { query, files, domain });
+        const entries = resp.entries || [];
+        const pmLearnings = resp.pmLearnings || [];
+        const parts = [];
+        if (pmLearnings.length) {
+          parts.push(`Your team's learnings (${pmLearnings.length}):\n` + pmLearnings.map(m => `- ${m}`).join('\n'));
+        }
+        if (entries.length) {
+          const kbText = entries.map(e => {
+            const meta = [e.sourcePm, e.domain, e.type].filter(Boolean).join(' · ');
+            const fileList = (e.files || []).length ? `\n  Files: ${e.files.join(', ')}` : '';
+            return `- [${meta}] ${e.insight}${fileList}`;
+          }).join('\n');
+          parts.push(`Fleet knowledge (${entries.length}):\n${kbText}`);
+        }
+        if (!parts.length) {
+          return { content: [{ type: 'text', text: 'No relevant knowledge found.' }] };
+        }
+        return { content: [{ type: 'text', text: parts.join('\n\n') }] };
       } catch (err) {
         return { content: [{ type: 'text', text: `Error: ${err.message}` }], isError: true };
       }

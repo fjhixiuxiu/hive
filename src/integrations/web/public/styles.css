@@ -1922,6 +1922,22 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 }
 #task-detail-terminal .xterm { height: 100%; }
 #task-detail-terminal .xterm-viewport { overflow-y: auto !important; }
+/* Task detail git section */
+.td-git-section { border-top: 1px solid var(--bg3); flex-shrink: 0; }
+.td-git-toggle {
+  display: flex; align-items: center; gap: 6px; width: 100%; padding: 6px 12px;
+  background: var(--bg2); border: none; color: var(--dim); font-size: var(--fs-sm);
+  cursor: pointer; font-weight: 600; text-align: left;
+}
+.td-git-toggle:hover { color: var(--fg); background: var(--bg3); }
+.td-git-toggle::before { content: '\25B6'; font-size: 9px; transition: transform 0.2s; }
+.td-git-section.open .td-git-toggle::before { transform: rotate(90deg); }
+.td-git-body {
+  display: none; max-height: 300px; overflow: auto;
+}
+.td-git-section.open .td-git-body { display: flex; }
+.td-git-section .git-sidebar { flex: 1; min-width: 200px; max-width: 280px; overflow-y: auto; border-right: 1px solid var(--bg3); }
+.td-git-section .git-diff-pane { flex: 2; overflow: auto; }
 #task-detail-keys {
   display: flex; gap: 4px; padding: 6px 10px; background: var(--bg2);
   border-top: 1px solid var(--bg3); flex-shrink: 0;
@@ -2043,7 +2059,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 /* ── Comments drawer (overlay) ────────── */
 .comments-drawer {
   position: absolute; right: 0; top: 0; bottom: 0; width: 280px; z-index: 999;
-  background: rgba(26,26,46,0.97); border-left: 1px solid var(--bg3);
+  background: var(--bg2); border-left: 1px solid var(--bg3);
   transform: translateX(100%); transition: transform 0.2s ease;
   display: flex; flex-direction: column; overflow: hidden;
 }

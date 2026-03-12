@@ -27,7 +27,7 @@ function createMessageHandler(deps) {
     clearTermSub, clearConsoleSub, termSubs, consoleSubs,
     clearCardSub, clearAllCardSubs, cardTermSubs,
     sendFleetStatus, broadcastFleetStatus, sendInitialState, _previewCache,
-    commands, clients, wsUser, workers,
+    commands, clients, wsUser, workers, mcpClients,
   } = deps;
 
   return async function handleMessage(ws, msg, user) {
@@ -338,23 +338,21 @@ function createMessageHandler(deps) {
             const { name, nodeId } = found;
             const node = router.getNode(nodeId);
             const paneTarget = `${name}:.${config.sessions.claudePane}`;
-            await node.exec(`tmux send-keys -t "${paneTarget}" Escape`);
-            // Stagger restarts: each session gets a delayed /exit + claude --continue
-            const delay = restarted * 4000; // 4s apart to avoid overwhelming tmux
+            // Stagger restarts: sequential with delays
+            const delay = restarted * 5000;
             setTimeout(async () => {
               try {
+                // Cancel any pending input, then /exit
+                await node.exec(`tmux send-keys -t "${paneTarget}" C-c`);
+                await new Promise(r => setTimeout(r, 500));
                 await node.exec(`tmux send-keys -t "${paneTarget}" -l '/exit'`);
                 await node.exec(`tmux send-keys -t "${paneTarget}" Enter`);
-                setTimeout(async () => {
-                  try {
-                    await node.exec(`tmux send-keys -t "${paneTarget}" -l 'claude --continue'`);
-                    await node.exec(`tmux send-keys -t "${paneTarget}" Enter`);
-                  } catch (err) {
-                    log.error(`[restart:all] Failed to resume session ${sess.num}: ${err.message}`);
-                  }
-                }, 3000);
+                // Wait for Claude to exit, then restart
+                await new Promise(r => setTimeout(r, 3000));
+                await node.exec(`tmux send-keys -t "${paneTarget}" -l 'claude --continue'`);
+                await node.exec(`tmux send-keys -t "${paneTarget}" Enter`);
               } catch (err) {
-                log.error(`[restart:all] Failed to exit session ${sess.num}: ${err.message}`);
+                log.error(`[restart:all] Failed to restart session ${sess.num}: ${err.message}`);
               }
             }, delay);
             restarted++;
@@ -488,7 +486,7 @@ function createMessageHandler(deps) {
         if (!taskQueue) break;
         if (!checkPermission(ws, user, 'dispatch')) break;
         const requeuedTask = taskQueue.requeueTask(msg.taskId);
-        if (requeuedTask) broadcast({ type: 'task:requeued', task: decorateTaskActions(requeuedTask) });
+        if (requeuedTask) broadcast({ type: 'task:requeued', task: decorateTaskActions(requeuedTask, pmManager) });
         break;
       }
 
@@ -504,7 +502,7 @@ function createMessageHandler(deps) {
         if (!taskQueue) break;
         if (!checkPermission(ws, user, 'dispatch')) break;
         const snoozedTask = taskQueue.snoozeTask(msg.taskId, msg.durationMs);
-        if (snoozedTask) broadcast({ type: 'task:snoozed', task: decorateTaskActions(snoozedTask) });
+        if (snoozedTask) broadcast({ type: 'task:snoozed', task: decorateTaskActions(snoozedTask, pmManager) });
         break;
       }
 
@@ -512,7 +510,7 @@ function createMessageHandler(deps) {
         if (!taskQueue) break;
         if (!checkPermission(ws, user, 'dispatch')) break;
         const unsnoozedTask = taskQueue.unsnoozeTask(msg.taskId);
-        if (unsnoozedTask) broadcast({ type: 'task:unsnoozed', task: decorateTaskActions(unsnoozedTask) });
+        if (unsnoozedTask) broadcast({ type: 'task:unsnoozed', task: decorateTaskActions(unsnoozedTask, pmManager) });
         break;
       }
 
@@ -584,7 +582,7 @@ function createMessageHandler(deps) {
               } catch {}
             }
             const completed = taskQueue.completeTask(msg.taskId, result.message, actionSnap, actionSnapCols);
-            if (completed) broadcast({ type: 'task:completed', task: decorateTaskActions(completed) });
+            if (completed) broadcast({ type: 'task:completed', task: decorateTaskActions(completed, pmManager) });
           }
         } catch (err) {
           ws.send(JSON.stringify({ type: 'task:action:result', taskId: msg.taskId, actionId: msg.actionId, ok: false, error: err.message }));
@@ -1563,6 +1561,64 @@ function createMessageHandler(deps) {
         break;
       }
 
+      case 'mcp:share_knowledge': {
+        if (!pmManager) { ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'No PM manager' })); break; }
+        const sessionNum = msg.session;
+        const taskId = taskQueue ? taskQueue.activeTaskBySession.get(sessionNum) : null;
+        const task = taskId ? taskQueue.tasks.get(taskId) : null;
+        const sourcePm = task && task.source ? task.source.replace(/^pm:/, '') : 'unknown';
+        const entry = {
+          insight: (msg.insight || '').slice(0, 500),
+          files: Array.isArray(msg.files) ? msg.files.slice(0, 20) : [],
+          domain: (msg.domain || '').slice(0, 50).toLowerCase() || null,
+          type: msg.insightType || null,
+          sourcePm,
+          sourceSession: sessionNum,
+          createdAt: Date.now(),
+        };
+        if (!entry.insight) {
+          ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'Missing insight text' }));
+          break;
+        }
+        pmManager.addKnowledge(entry);
+        if (taskQueue) taskQueue.pushFeed('task', null, `Knowledge shared: "${entry.insight.slice(0, 80)}..." [${entry.domain || 'general'}]`);
+        ws.send(JSON.stringify({ _reqId: msg._reqId, ok: true }));
+        break;
+      }
+
+      case 'mcp:get_knowledge': {
+        if (!pmManager) { ws.send(JSON.stringify({ _reqId: msg._reqId, entries: [], pmLearnings: [] })); break; }
+        // Fleet knowledge base
+        const entries = pmManager.queryKnowledge(msg.query || '', {
+          files: msg.files,
+          domain: msg.domain,
+        });
+        // PM-specific learnings for the session's active task
+        let pmLearnings = [];
+        if (taskQueue) {
+          const sessionNum = msg.session;
+          const taskId = taskQueue.activeTaskBySession.get(sessionNum);
+          const task = taskId ? taskQueue.tasks.get(taskId) : null;
+          if (task && task.source && task.source.startsWith('pm:')) {
+            const pmName = task.source.slice(3);
+            const pm = pmManager.getAll().find(p => p.name === pmName);
+            if (pm && pm.memory && pm.memory.length) {
+              // Filter PM learnings by query relevance
+              const q = (msg.query || '').toLowerCase();
+              const qWords = q ? new Set(q.replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter(w => w.length > 3)) : null;
+              pmLearnings = pm.memory.filter(m => {
+                if (!qWords || !qWords.size) return true; // no query = return all
+                const mLower = m.toLowerCase();
+                for (const w of qWords) { if (mLower.includes(w)) return true; }
+                return false;
+              }).slice(0, 20);
+            }
+          }
+        }
+        ws.send(JSON.stringify({ _reqId: msg._reqId, entries, pmLearnings }));
+        break;
+      }
+
       case 'mcp:get_context': {
         if (!taskQueue) { ws.send(JSON.stringify({ _reqId: msg._reqId, context: {} })); break; }
         const ctx = taskQueue.getSessionContext(msg.session);
@@ -1604,7 +1660,17 @@ function createMessageHandler(deps) {
             count++;
           } catch {}
         }
-        ws.send(JSON.stringify({ type: 'mcp:deployed', count }));
+        // Tell connected MCP server processes to exit — Claude Code will respawn them
+        let restarted = 0;
+        if (mcpClients) {
+          for (const [mcpWs] of mcpClients) {
+            try {
+              mcpWs.send(JSON.stringify({ type: 'mcp:exit' }));
+              restarted++;
+            } catch {}
+          }
+        }
+        ws.send(JSON.stringify({ type: 'mcp:deployed', count, restarted }));
         break;
       }
 

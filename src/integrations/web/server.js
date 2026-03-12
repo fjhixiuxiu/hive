@@ -150,6 +150,8 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
   const cardTermSubs = new Map();
   // Track worker connections: ws -> RemoteNode
   const workers = new Map();
+  // Track MCP service connections: ws -> { session }
+  const mcpClients = new Map();
   // Fleet preview cache (used by handleMessage and broadcastFleetStatus)
   let _previewCache = { result: null, ts: 0, pending: null };
 
@@ -204,7 +206,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     await sendFleetStatus(ws);
     if (taskQueue) {
       ws.send(JSON.stringify({ type: 'workStates:list', states: taskQueue.getWorkStates() }));
-      ws.send(JSON.stringify({ type: 'tasks:list', tasks: taskQueue.getTasksList().map(decorateTaskActions) }));
+      ws.send(JSON.stringify({ type: 'tasks:list', tasks: taskQueue.getTasksList().map(t => decorateTaskActions(t, pmManager)) }));
       ws.send(JSON.stringify({ type: 'auto:status', sessions: taskQueue.getAutoSessions() }));
       ws.send(JSON.stringify({ type: 'approvals:list', approvals: taskQueue.getPendingApprovals() }));
       const feedData = taskQueue.getFeed(null, 50);
@@ -322,6 +324,13 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
           const serviceUser = { login: '__service__', name: 'Service', avatar: null };
           wsUser.set(ws, serviceUser);
           clients.add(ws);
+          // Track as MCP client if session param present in URL
+          const urlParams = new URL(request.url, 'http://localhost').searchParams;
+          const mcpSession = urlParams.get('session');
+          if (mcpSession != null) {
+            mcpClients.set(ws, { session: Number(mcpSession) });
+            log.info(`MCP client connected for session ${mcpSession}`);
+          }
           ws.send(JSON.stringify({ type: 'auth', ok: true, user: serviceUser }));
         } else {
           ws.send(JSON.stringify({ type: 'auth', ok: false }));
@@ -353,6 +362,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     ws.on('close', () => {
       authenticated = false;
       clients.delete(ws);
+      mcpClients.delete(ws);
       clearTermSub(ws);
       clearConsoleSub(ws);
       clearAllCardSubs(ws);
@@ -370,6 +380,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
 
     ws.on('error', () => {
       clients.delete(ws);
+      mcpClients.delete(ws);
       clearTermSub(ws);
       clearConsoleSub(ws);
       clearAllCardSubs(ws);
@@ -392,7 +403,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     clearTermSub, clearConsoleSub, termSubs, consoleSubs,
     clearCardSub, clearAllCardSubs, cardTermSubs,
     sendFleetStatus, broadcastFleetStatus, sendInitialState, _previewCache,
-    commands, clients, wsUser, workers,
+    commands, clients, wsUser, workers, mcpClients,
   });
 
   // ── Session 0 helper: resolve session (fleet or hive-console) ──
@@ -618,15 +629,15 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
   // -- TaskQueue event bridge ---------------------------------------------
 
   if (taskQueue) {
-    taskQueue.on('task:created', (task) => broadcast({ type: 'task:created', task: decorateTaskActions(task) }));
-    taskQueue.on('task:dispatched', (task) => broadcast({ type: 'task:dispatched', task: decorateTaskActions(task) }));
-    taskQueue.on('task:completed', (task) => broadcast({ type: 'task:completed', task: decorateTaskActions(task) }));
-    taskQueue.on('task:failed', (task) => broadcast({ type: 'task:failed', task: decorateTaskActions(task) }));
-    taskQueue.on('task:cancelled', (task) => broadcast({ type: 'task:cancelled', task: decorateTaskActions(task) }));
-    taskQueue.on('task:requeued', (task) => broadcast({ type: 'task:requeued', task: decorateTaskActions(task) }));
-    taskQueue.on('task:snoozed', (task) => broadcast({ type: 'task:snoozed', task: decorateTaskActions(task) }));
-    taskQueue.on('task:unsnoozed', (task) => broadcast({ type: 'task:unsnoozed', task: decorateTaskActions(task) }));
-    taskQueue.on('task:updated', (task) => broadcast({ type: 'task:updated', task: decorateTaskActions(task) }));
+    taskQueue.on('task:created', (task) => broadcast({ type: 'task:created', task: decorateTaskActions(task, pmManager) }));
+    taskQueue.on('task:dispatched', (task) => broadcast({ type: 'task:dispatched', task: decorateTaskActions(task, pmManager) }));
+    taskQueue.on('task:completed', (task) => broadcast({ type: 'task:completed', task: decorateTaskActions(task, pmManager) }));
+    taskQueue.on('task:failed', (task) => broadcast({ type: 'task:failed', task: decorateTaskActions(task, pmManager) }));
+    taskQueue.on('task:cancelled', (task) => broadcast({ type: 'task:cancelled', task: decorateTaskActions(task, pmManager) }));
+    taskQueue.on('task:requeued', (task) => broadcast({ type: 'task:requeued', task: decorateTaskActions(task, pmManager) }));
+    taskQueue.on('task:snoozed', (task) => broadcast({ type: 'task:snoozed', task: decorateTaskActions(task, pmManager) }));
+    taskQueue.on('task:unsnoozed', (task) => broadcast({ type: 'task:unsnoozed', task: decorateTaskActions(task, pmManager) }));
+    taskQueue.on('task:updated', (task) => broadcast({ type: 'task:updated', task: decorateTaskActions(task, pmManager) }));
     taskQueue.on('auto:changed', (sessions) => broadcast({ type: 'auto:status', sessions }));
     taskQueue.on('feed:new', (entry) => broadcast({ type: 'feed:new', entry }));
     taskQueue.on('approval:new', (approval) => broadcast({ type: 'approval:new', approval }));

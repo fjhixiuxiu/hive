@@ -1383,12 +1383,15 @@
         }
         break;
       }
-      case 'mcp:deployed':
-        document.getElementById('mcp-result').textContent = `Deployed to ${msg.count} session(s)`;
-        if (msg.count > 0) {
-          showMcpRestartConfirm(msg.count);
+      case 'mcp:deployed': {
+        const restartMsg = msg.restarted ? `, ${msg.restarted} restarted via WS` : '';
+        document.getElementById('mcp-result').textContent = `Deployed to ${msg.count} session(s)${restartMsg}`;
+        const remaining = msg.count - (msg.restarted || 0);
+        if (remaining > 0) {
+          showMcpRestartConfirm(remaining);
         }
         break;
+      }
       case 'restart:all:done':
         showToast('Restarting All', `${msg.restarted} session(s) restarting${msg.failed ? `, ${msg.failed} failed` : ''} — claude --continue`, msg.failed ? 'warning' : 'success');
         break;
@@ -1426,6 +1429,10 @@
           renderGitPanel(msg, 'ts-git-sidebar');
           renderGitFilesSidebar(msg, 'ts-git-files-list');
         }
+        if (taskDetailSession && taskDetailSession === String(msg.session)) {
+          renderGitPanel(msg, 'td-git-sidebar');
+          document.getElementById('td-git-section').style.display = '';
+        }
         break;
       case 'git:diff':
         if (currentSession === String(msg.session)) {
@@ -1436,6 +1443,9 @@
           showDiffViewer(msg.file, msg.diff, 'ts-git-diff');
           if (gitFilesSidebarOpen) showSidebarDiff(msg.file, msg.diff, 'ts');
         }
+        if (taskDetailSession && taskDetailSession === String(msg.session)) {
+          showDiffViewer(msg.file, msg.diff, 'td-git-diff');
+        }
         break;
       case 'git:commit':
         if (currentSession === String(msg.session)) {
@@ -1445,6 +1455,9 @@
         if (tasksSessionNum === String(msg.session) && activeTab === 'tasks-panel') {
           expandCommitRow(msg.hash, msg.files, 'ts-git-sidebar', tasksSessionNum);
           expandCommitRow(msg.hash, msg.files, 'ts-git-files-list', tasksSessionNum);
+        }
+        if (taskDetailSession && taskDetailSession === String(msg.session)) {
+          expandCommitRow(msg.hash, msg.files, 'td-git-sidebar', taskDetailSession);
         }
         break;
       case 'idea:list':
@@ -5273,6 +5286,7 @@
       if (ws && ws.readyState === 1) {
         ws.send(JSON.stringify({ type: 'terminal:subscribe', session: task.assignedTo }));
         ws.send(JSON.stringify({ type: 'terminal:panes', session: task.assignedTo }));
+        ws.send(JSON.stringify({ type: 'git:info', session: task.assignedTo }));
       }
       // Delay fit until panel is fully visible
       const panelOpen = document.getElementById('task-detail-panel').classList.contains('open');
@@ -5606,6 +5620,13 @@
     taskDetailPending = null;
     tdActivePane = null; tdSessionPanes = []; tdClaudePaneIdx = null;
     renderPaneTabs('td');
+    // Reset git section
+    const gitSection = document.getElementById('td-git-section');
+    gitSection.style.display = 'none';
+    gitSection.classList.remove('open');
+    document.getElementById('td-git-sidebar').innerHTML = '';
+    document.getElementById('td-git-diff-header').style.display = 'none';
+    document.getElementById('td-git-diff-content').innerHTML = '<div class="git-empty">Select a file to view diff</div>';
   }
 
   function updateTaskDetailNav() {
@@ -5665,6 +5686,11 @@
   document.getElementById('task-detail-overlay').addEventListener('click', closeTaskDetail);
   document.getElementById('task-detail-prev').addEventListener('click', () => navigateTaskDetail(-1));
   document.getElementById('task-detail-next').addEventListener('click', () => navigateTaskDetail(1));
+
+  // Task detail: Git section toggle
+  document.getElementById('td-git-toggle').addEventListener('click', () => {
+    document.getElementById('td-git-section').classList.toggle('open');
+  });
 
   // Task detail: Ask/Tell mode toggle
   const tdModeToggle = document.getElementById('task-detail-mode-toggle');
@@ -6620,6 +6646,8 @@
     { name: 'hive_report_learnings', desc: 'Report learnings/insights discovered during this task' },
     { name: 'hive_get_context', desc: 'Get shared context for this session (plan file, PR, JIRA, etc.)' },
     { name: 'hive_set_context', desc: 'Share context with hive (plan file path, PR URL, JIRA key, etc.)' },
+    { name: 'hive_share_knowledge', desc: 'Share an insight with the fleet knowledge base' },
+    { name: 'hive_get_knowledge', desc: 'Query the fleet knowledge base for insights about files or domains' },
   ];
 
   function renderMcpTools(enabledTools) {
@@ -6650,7 +6678,7 @@
     if (ws && ws.readyState === 1) {
       ws.send(JSON.stringify({ type: 'mcp:deploy', tools: enabled }));
     }
-    document.getElementById('mcp-result').textContent = 'Deploying...';
+    document.getElementById('mcp-result').textContent = 'Deploying & restarting MCP...';
   });
 
   document.getElementById('mcp-remove-btn').addEventListener('click', () => {
@@ -7262,6 +7290,12 @@
       if (contGithub) contGithub.style.display = isGhType ? '' : 'none';
       if (contJira) contJira.style.display = isJiraType ? '' : 'none';
     }
+    // Context actions: show for github PR types
+    const actionsField = document.getElementById('pm-form-actions-field');
+    if (actionsField) {
+      const isGhPr = type === 'github-prs' || type === 'github-re-reviews';
+      actionsField.style.display = isGhPr ? '' : 'none';
+    }
   }
 
   document.getElementById('pm-form-save').addEventListener('click', () => {
@@ -7366,6 +7400,15 @@
       }
     }
     cfg.continueConditions = continueConditions;
+    // Collect allowed context actions
+    if (isGhType) {
+      const actionEls = document.querySelectorAll('#pm-form-actions input[data-action]');
+      if (actionEls.length) {
+        const selected = [];
+        actionEls.forEach(cb => { if (cb.checked) selected.push(cb.dataset.action); });
+        cfg.actions = selected.length < actionEls.length ? selected : null; // null = all
+      }
+    }
     if (!cfg.name) { showToast('Error', 'Name required', 'error'); return; }
     if (ws && ws.readyState === 1) {
       if (editingPmId) {
@@ -7439,6 +7482,22 @@
     document.getElementById('pm-form-cont-pr-changes').checked = !!contConds.find(c => c.type === 'github-pr-changes');
     const jiraContCond = contConds.find(c => c.type === 'jira-status');
     document.getElementById('pm-form-cont-jira-statuses').value = jiraContCond ? jiraContCond.statuses.join(', ') : '';
+    // Populate context actions checkboxes
+    const actionsContainer = document.getElementById('pm-form-actions');
+    const PR_ACTIONS = [
+      { id: 'approve', label: 'Approve' },
+      { id: 'request-changes', label: 'Request Changes' },
+      { id: 'merge', label: 'Merge (Squash)' },
+      { id: 'merge-commit', label: 'Merge (Merge Commit)' },
+      { id: 'admin-merge', label: 'Admin Merge (Override)' },
+      { id: 'close-pr', label: 'Close PR' },
+    ];
+    const allowedActions = pm && pm.actions ? new Set(pm.actions) : null;
+    actionsContainer.innerHTML = PR_ACTIONS.map(a => {
+      const checked = !allowedActions || allowedActions.has(a.id) ? 'checked' : '';
+      return `<label style="font-size:13px;color:var(--fg);cursor:pointer;display:flex;align-items:center;gap:4px">
+        <input type="checkbox" data-action="${a.id}" ${checked}> ${a.label}</label>`;
+    }).join('');
     // Reset to first tab
     activePmTab = 'source';
     document.querySelectorAll('.pm-tab').forEach(t =>
@@ -7648,7 +7707,7 @@
   function renderGitPanel(data, sidebarId) {
     const scroll = document.getElementById(sidebarId || 'git-sidebar');
     if (!scroll) return;
-    const sessionForGit = sidebarId === 'ts-git-sidebar' ? tasksSessionNum : currentSession;
+    const sessionForGit = sidebarId === 'td-git-sidebar' ? taskDetailSession : sidebarId === 'ts-git-sidebar' ? tasksSessionNum : currentSession;
     // Preserve state across refreshes
     const prevSelected = scroll.querySelector('.git-file-row.selected');
     const selectedFile = prevSelected ? prevSelected.dataset.file : null;
@@ -7840,7 +7899,7 @@
 
   function showDiffViewer(file, diff, prefix) {
     const pfx = prefix || 'git-diff';
-    const sidebarId = prefix === 'ts-git-diff' ? 'ts-git-sidebar' : 'git-sidebar';
+    const sidebarId = prefix === 'td-git-diff' ? 'td-git-sidebar' : prefix === 'ts-git-diff' ? 'ts-git-sidebar' : 'git-sidebar';
     document.getElementById(pfx + '-header').style.display = '';
     document.getElementById(pfx + '-filename').textContent = file;
     const content = document.getElementById(pfx + '-content');

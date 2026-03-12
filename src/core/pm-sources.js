@@ -8,11 +8,13 @@ const MCP_INSTRUCTIONS = `
 You have hive MCP tools available. Use them:
 
 1. **Start**: Call \`hive_get_task\` to see your full assignment before doing anything. Call \`hive_get_context\` to check for any shared context (plan files, PR URLs, JIRA keys) from previous work on this task.
-2. **Progress updates**: Call \`hive_post_update\` at key milestones — when you have a plan, when implementation is done, or if you hit a blocker.
-3. **Context sharing**: Call \`hive_set_context\` to share key information with the dashboard. Set \`"plan"\` (absolute file path), \`"pr"\` (GitHub PR URL), \`"jira"\` (issue key), \`"branch"\` (git branch), or \`"planText"\` (markdown summary). Update context as things change. Set a key to \`null\` to remove it.
-4. **Coordination**: If your task mentions other sessions or dependencies, call \`hive_get_sessions\` to check their status.
-5. **Finish**: Do NOT call \`hive_complete_task\` unless the task instructions explicitly tell you to. The task owner will close it manually or it will close when you go idle.
-6. **Learnings**: If learning mode is active, call \`hive_report_learnings\` with insights you discovered — patterns, root causes, or tips for similar tasks. Always report learnings BEFORE completing a task.
+2. **Knowledge**: Before diving in, call \`hive_get_knowledge\` with the domain or file names relevant to your task. This returns insights from other sessions that have worked on the same code — gotchas, patterns, and things that failed. Use this knowledge to avoid repeating mistakes.
+3. **Progress updates**: Call \`hive_post_update\` at key milestones — when you have a plan, when implementation is done, or if you hit a blocker.
+4. **Context sharing**: Call \`hive_set_context\` to share key information with the dashboard. Set \`"plan"\` (absolute file path), \`"pr"\` (GitHub PR URL), \`"jira"\` (issue key), \`"branch"\` (git branch), or \`"planText"\` (markdown summary). Update context as things change. Set a key to \`null\` to remove it.
+5. **Coordination**: If your task mentions other sessions or dependencies, call \`hive_get_sessions\` to check their status.
+6. **Finish**: Do NOT call \`hive_complete_task\` unless the task instructions explicitly tell you to. The task owner will close it manually or it will close when you go idle.
+7. **Share knowledge**: Before finishing, call \`hive_share_knowledge\` with insights you discovered — include the specific file paths and domain (e.g. "evv", "billing", "booking"). This builds the fleet's shared knowledge base so other sessions benefit from your work.
+8. **Learnings**: If learning mode is active, also call \`hive_report_learnings\` with insights for your PM's local memory.
 `.trim();
 
 // ── HTTP layer ──────────────────────────────────────────
@@ -476,13 +478,8 @@ function _buildFullText(pm, text) {
   if (pm.mcpEnabled) result += `\n\n${MCP_INSTRUCTIONS}`;
   if (pm.learningEnabled && pm.learningPrompt) {
     result += '\n\n## Learning\n\n';
-    result += 'After completing this task, call `hive_report_learnings` with what you discovered.\n\n';
+    result += 'After completing this task, call `hive_report_learnings` with NEW insights you discovered.\n\n';
     result += 'Focus on: ' + pm.learningPrompt + '\n';
-    const mem = pm.memory ? pm.memory.slice() : [];
-    if (mem.length > 0) {
-      result += "\nAlready known (don't repeat these):\n";
-      result += mem.map(m => `- ${m}`).join('\n');
-    }
   }
   return result;
 }
