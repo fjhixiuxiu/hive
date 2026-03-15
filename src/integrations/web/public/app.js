@@ -2674,7 +2674,7 @@
       el = document.createElement('div');
       el.id = 'console-scroll-pause';
       el.className = 'scroll-pause-btn';
-      el.title = 'Scroll to bottom';
+      el.setAttribute('data-tooltip', 'Scroll to bottom');
       el.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>';
       el.addEventListener('click', () => {
         consoleScrolledUp = false;
@@ -2777,7 +2777,7 @@
     let el = document.getElementById('scroll-pause');
     if (show && !el) {
       el = document.createElement('div'); el.id = 'scroll-pause';
-      el.title = 'Scroll to bottom';
+      el.setAttribute('data-tooltip', 'Scroll to bottom');
       el.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>';
       el.addEventListener('click', () => { userScrolledUp = false; scrollIndicator(false); if (term) term.scrollToBottom(); if (pendingContent !== null) { writeTerminalContent(pendingContent); pendingContent = null; } });
       termWrap.appendChild(el);
@@ -3419,7 +3419,7 @@
     cmdBar.innerHTML = '';
     for (const cmd of commands) {
       const btn = document.createElement('button'); btn.className = 'cmd-btn'; btn.textContent = '/' + cmd.name;
-      if (cmd.description) btn.title = cmd.description;
+      if (cmd.description) btn.setAttribute('data-tooltip', cmd.description);
       btn.addEventListener('click', () => {
         if (!currentSession || !ws || ws.readyState !== 1) return;
         ws.send(JSON.stringify({ type: 'tell', session: currentSession, message: '/' + cmd.name }));
@@ -3932,7 +3932,7 @@
     let el = container.querySelector('.ts-scroll-pause');
     if (show && !el) {
       el = document.createElement('div'); el.className = 'ts-scroll-pause';
-      el.title = 'Scroll to bottom';
+      el.setAttribute('data-tooltip', 'Scroll to bottom');
       el.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>';
       el.addEventListener('click', () => { tsUserScrolledUp = false; tsScrollIndicator(false); if (tasksSessionTerm) tasksSessionTerm.scrollToBottom(); if (tsPendingContent !== null) { writeTasksSessionContent(tsPendingContent); tsPendingContent = null; } });
       container.appendChild(el);
@@ -3959,7 +3959,7 @@
     bar.innerHTML = '';
     for (const cmd of tsCommands) {
       const btn = document.createElement('button'); btn.className = 'cmd-btn'; btn.textContent = '/' + cmd.name;
-      if (cmd.description) btn.title = cmd.description;
+      if (cmd.description) btn.setAttribute('data-tooltip', cmd.description);
       btn.addEventListener('click', () => {
         if (!tasksSessionNum || !ws || ws.readyState !== 1) return;
         ws.send(JSON.stringify({ type: 'tell', session: tasksSessionNum, message: '/' + cmd.name }));
@@ -5592,7 +5592,7 @@
       el = document.createElement('div');
       el.id = 'task-detail-scroll-pause';
       el.className = 'scroll-pause-btn';
-      el.title = 'Scroll to bottom';
+      el.setAttribute('data-tooltip', 'Scroll to bottom');
       el.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>';
       el.addEventListener('click', () => {
         taskDetailScrolledUp = false;
@@ -5710,7 +5710,7 @@
     const cmds = tsCommands.length ? tsCommands : [];
     for (const cmd of cmds) {
       const btn = document.createElement('button'); btn.className = 'cmd-btn'; btn.textContent = '/' + cmd.name;
-      if (cmd.description) btn.title = cmd.description;
+      if (cmd.description) btn.setAttribute('data-tooltip', cmd.description);
       btn.addEventListener('click', () => {
         if (!taskDetailSession || !ws || ws.readyState !== 1) return;
         ws.send(JSON.stringify({ type: 'tell', session: taskDetailSession, message: '/' + cmd.name }));
@@ -8019,6 +8019,129 @@
   }
 
   function timeAgo(ts) { const diff = Date.now() - ts; if (diff < 60000) return 'just now'; if (diff < 3600000) return `${Math.round(diff / 60000)}m ago`; if (diff < 86400000) return `${Math.round(diff / 3600000)}h ago`; return `${Math.round(diff / 86400000)}d ago`; }
+
+  // ── Tooltips ──────────────────────────────────────
+  const Tooltip = (() => {
+    let el = null;          // the tooltip DOM element
+    let showTimer = null;   // delay before showing
+    let hideTimer = null;   // delay before hiding
+    let longPressTimer = null;
+    let currentTarget = null;
+    const SHOW_DELAY = 400;
+    const HIDE_DELAY = 100;
+    const LONG_PRESS_DELAY = 500;
+    const isTouchDevice = () => 'ontouchstart' in window;
+
+    function create() {
+      if (el) return;
+      el = document.createElement('div');
+      el.className = 'hive-tooltip';
+      el.setAttribute('role', 'tooltip');
+      document.body.appendChild(el);
+    }
+
+    function position(target) {
+      const r = target.getBoundingClientRect();
+      const pad = 8;
+      el.classList.remove('pos-above');
+
+      // Try below first
+      let top = r.bottom + pad;
+      let left = r.left + r.width / 2 - el.offsetWidth / 2;
+
+      // Flip above if clipped at bottom
+      if (top + el.offsetHeight > window.innerHeight - pad) {
+        top = r.top - el.offsetHeight - pad;
+        el.classList.add('pos-above');
+      }
+
+      // Clamp horizontally
+      left = Math.max(pad, Math.min(left, window.innerWidth - el.offsetWidth - pad));
+
+      el.style.top = top + 'px';
+      el.style.left = left + 'px';
+    }
+
+    function show(target) {
+      const text = target.getAttribute('data-tooltip');
+      if (!text) return;
+      create();
+      clearTimeout(hideTimer);
+      el.innerHTML = text;
+      currentTarget = target;
+
+      // Position off-screen first to measure, then reposition
+      el.style.top = '-9999px';
+      el.style.left = '-9999px';
+      el.classList.remove('visible');
+      // Force layout so we can measure offsetWidth/Height
+      void el.offsetHeight;
+      position(target);
+      // Trigger animation on next frame
+      requestAnimationFrame(() => el.classList.add('visible'));
+    }
+
+    function hide() {
+      clearTimeout(showTimer);
+      clearTimeout(longPressTimer);
+      if (!el) return;
+      el.classList.remove('visible');
+      currentTarget = null;
+    }
+
+    function startShow(target) {
+      clearTimeout(hideTimer);
+      clearTimeout(showTimer);
+      if (currentTarget === target) return;
+      showTimer = setTimeout(() => show(target), SHOW_DELAY);
+    }
+
+    function startHide() {
+      clearTimeout(showTimer);
+      hideTimer = setTimeout(hide, HIDE_DELAY);
+    }
+
+    function init() {
+      // Desktop: hover via event delegation on body
+      document.body.addEventListener('mouseenter', (e) => {
+        if (isTouchDevice()) return;
+        const t = e.target.closest('[data-tooltip]');
+        if (t) startShow(t);
+      }, true);
+
+      document.body.addEventListener('mouseleave', (e) => {
+        if (isTouchDevice()) return;
+        const t = e.target.closest('[data-tooltip]');
+        if (t) startHide();
+      }, true);
+
+      // Mobile: long-press
+      document.body.addEventListener('touchstart', (e) => {
+        const t = e.target.closest('[data-tooltip]');
+        if (!t) return;
+        clearTimeout(longPressTimer);
+        longPressTimer = setTimeout(() => show(t), LONG_PRESS_DELAY);
+      }, { passive: true });
+
+      document.body.addEventListener('touchend', () => {
+        clearTimeout(longPressTimer);
+        hide();
+      }, { passive: true });
+
+      document.body.addEventListener('touchcancel', () => {
+        clearTimeout(longPressTimer);
+        hide();
+      }, { passive: true });
+
+      // Dismiss on scroll or Escape
+      window.addEventListener('scroll', hide, { passive: true, capture: true });
+      document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hide(); });
+    }
+
+    return { init };
+  })();
+
+  Tooltip.init();
 
   // ── Service worker registration ───────────────────
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});

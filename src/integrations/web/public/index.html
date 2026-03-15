@@ -160,35 +160,35 @@
   <div id="sidebar">
     <div id="sidebar-logo"><svg class="hive-logo logo-purple" width="24" height="24" viewBox="0 0 100 100"><g transform="translate(50,50)" fill="none" stroke-width="2"><polygon points="0,-12 10.4,-6 10.4,6 0,12 -10.4,6 -10.4,-6"/><polygon points="0,-33 10.4,-27 10.4,-15 0,-9 -10.4,-15 -10.4,-27"/><polygon points="18,-22.5 28.4,-16.5 28.4,-4.5 18,1.5 7.6,-4.5 7.6,-16.5"/><polygon points="18,1.5 28.4,7.5 28.4,19.5 18,25.5 7.6,19.5 7.6,7.5"/><polygon points="0,12 10.4,18 10.4,30 0,36 -10.4,30 -10.4,18"/><polygon points="-18,1.5 -7.6,7.5 -7.6,19.5 -18,25.5 -28.4,19.5 -28.4,7.5"/><polygon points="-18,-22.5 -7.6,-16.5 -7.6,-4.5 -18,1.5 -28.4,-4.5 -28.4,-16.5"/></g></svg></div>
     <!-- Primary nav -->
-    <button class="nav-btn active" data-tab="fleet-panel">
+    <button class="nav-btn active" data-tab="fleet-panel" data-tooltip="Fleet overview &amp; session grid">
       <span class="nav-icon">&#9638;</span>Home
       <span class="nav-badge" id="fleet-badge"></span>
     </button>
-    <button class="nav-btn" data-tab="tasks-panel">
+    <button class="nav-btn" data-tab="tasks-panel" data-tooltip="Task queue &amp; dispatch">
       <span class="nav-icon">&#9776;</span>Tasks
       <span class="nav-badge" id="tasks-badge"></span>
     </button>
-    <button class="nav-btn" data-tab="feed-panel">
+    <button class="nav-btn" data-tab="feed-panel" data-tooltip="Alerts &amp; notifications">
       <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></span>Alerts
       <span class="nav-badge" id="feed-badge"></span>
     </button>
     <!-- Secondary nav -->
     <div class="nav-divider"></div>
-    <button class="nav-btn" data-tab="ideas-panel">
+    <button class="nav-btn" data-tab="ideas-panel" data-tooltip="Brainstorm &amp; idea backlog">
       <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg></span>Ideas
     </button>
-    <button class="nav-btn" data-tab="more-panel">
+    <button class="nav-btn" data-tab="more-panel" data-tooltip="Settings, rules &amp; automations">
       <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>Admin
     </button>
-    <button id="console-btn" title="Talk to Hive (Session 0)">
+    <button id="console-btn" data-tooltip="Talk to Hive (Session 0)">
       <span class="nav-icon"><svg class="hive-logo logo-purple" width="20" height="20" viewBox="0 0 100 100"><g transform="translate(50,50)" fill="none" stroke-width="2"><polygon points="0,-12 10.4,-6 10.4,6 0,12 -10.4,6 -10.4,-6"/><polygon points="0,-33 10.4,-27 10.4,-15 0,-9 -10.4,-15 -10.4,-27"/><polygon points="18,-22.5 28.4,-16.5 28.4,-4.5 18,1.5 7.6,-4.5 7.6,-16.5"/><polygon points="18,1.5 28.4,7.5 28.4,19.5 18,25.5 7.6,19.5 7.6,7.5"/><polygon points="0,12 10.4,18 10.4,30 0,36 -10.4,30 -10.4,18"/><polygon points="-18,1.5 -7.6,7.5 -7.6,19.5 -18,25.5 -28.4,19.5 -28.4,7.5"/><polygon points="-18,-22.5 -7.6,-16.5 -7.6,-4.5 -18,1.5 -28.4,-4.5 -28.4,-16.5"/></g></svg></span>Ask
     </button>
     <!-- Bottom nav -->
     <div class="nav-spacer"></div>
-    <button id="theme-toggle" title="Toggle light/dark theme">&#9790;</button>
+    <button id="theme-toggle" data-tooltip="Toggle light/dark theme">&#9790;</button>
     <div id="user-badge" style="display:none">
       <img id="user-avatar" src="" alt="">
-      <a id="user-logout" href="/auth/logout" title="Logout">&#x2716;</a>
+      <a id="user-logout" href="/auth/logout" data-tooltip="Logout">&#x2716;</a>
     </div>
   </div>
 
@@ -199,16 +199,16 @@
       <div class="fleet-search-bar">
         <input id="fleet-search-input" type="text" placeholder="Search sessions (e.g. DEV-1234)..." autocomplete="off">
         <button id="fleet-search-clear" class="fleet-search-clear" style="display:none">&times;</button>
-        <button id="restart-all-btn" title="Restart All Sessions">&#8635; Restart</button>
-        <button id="shutdown-all-btn" title="Shutdown All">&#9632; Stop</button>
+        <button id="restart-all-btn" data-tooltip="Restart Claude in all active sessions">&#8635; Restart</button>
+        <button id="shutdown-all-btn" data-tooltip="Stop all running sessions">&#9632; Stop</button>
       </div>
       <div id="fleet-search-results" class="fleet-search-results" style="display:none"></div>
       <div class="fleet-toolbar">
         <div class="fleet-view-toggle" id="fleet-view-toggle">
-          <button class="fleet-view-btn active" data-view="grid" title="Grid view">&#9638; Grid</button>
-          <button class="fleet-view-btn" data-view="list" title="List view">&#9776; List</button>
-          <button class="fleet-view-btn" data-view="swimlane" title="Swimlane (horizontal)">&#8801; Swim</button>
-          <button class="fleet-view-btn" data-view="columns" title="Swimlane (vertical)">&#9707; Cols</button>
+          <button class="fleet-view-btn active" data-view="grid" data-tooltip="Card grid view">&#9638; Grid</button>
+          <button class="fleet-view-btn" data-view="list" data-tooltip="Compact list view">&#9776; List</button>
+          <button class="fleet-view-btn" data-view="swimlane" data-tooltip="Group by status (horizontal)">&#8801; Swim</button>
+          <button class="fleet-view-btn" data-view="columns" data-tooltip="Group by status (vertical)">&#9707; Cols</button>
         </div>
         <div class="fleet-cols-toggle" id="fleet-cols-toggle">
           <button class="fleet-cols-btn active" data-cols="auto">Auto</button>
@@ -218,19 +218,19 @@
           <button class="fleet-cols-btn" data-cols="4">4</button>
           <button class="fleet-cols-btn" data-cols="6">6</button>
         </div>
-        <button class="fleet-live-btn" id="fleet-live-btn" title="Toggle live terminals">&#9654; Live</button>
+        <button class="fleet-live-btn" id="fleet-live-btn" data-tooltip="Show live terminal previews in cards">&#9654; Live</button>
       </div>
       <div id="grid"></div>
       <div id="quick-bar">
-        <button id="quick-target">-</button>
-        <button id="quick-all">All</button>
-        <button id="quick-mode">Tell</button>
+        <button id="quick-target" data-tooltip="Click session cards to pick targets">-</button>
+        <button id="quick-all" data-tooltip="Send to all sessions at once">All</button>
+        <button id="quick-mode" data-tooltip="Tell: send without waiting. Ask: wait for approval">Tell</button>
         <input id="quick-input" type="text" placeholder="Click session numbers to select..." disabled autocomplete="off">
         <div class="history-pill-wrap" id="quick-history-wrap" style="display:none">
-          <button class="history-pill" id="quick-history-btn">&#8635;</button>
+          <button class="history-pill" id="quick-history-btn" data-tooltip="Recent messages">&#8635;</button>
           <div class="history-popup" id="quick-history-popup"></div>
         </div>
-        <button id="quick-send" disabled>Send</button>
+        <button id="quick-send" disabled data-tooltip="Send message to selected sessions">Send</button>
       </div>
     </div>
 
@@ -251,7 +251,7 @@
           <div class="board-pm-dropdown" id="board-pm-dropdown"></div>
         </div>
         <button class="tasks-create-btn" id="tasks-create-btn-board" style="display:none">+ Create</button>
-        <button class="tasks-ws-config-btn" id="tasks-ws-config-btn" style="display:none" title="Configure work states">&#9881;</button>
+        <button class="tasks-ws-config-btn" id="tasks-ws-config-btn" style="display:none" data-tooltip="Configure work states">&#9881;</button>
       </div>
 
       <!-- Work States config modal -->
@@ -328,9 +328,9 @@
             </div>
             <div style="flex:1;display:flex;flex-direction:column;min-width:0">
               <div class="pane-tabs-row" id="ts-pane-tabs-row">
-                <button class="git-files-toggle" id="ts-git-files-toggle" title="Toggle changed files">&#128193;</button>
+                <button class="git-files-toggle" id="ts-git-files-toggle" data-tooltip="Toggle changed files sidebar">&#128193;</button>
                 <div class="pane-tabs" id="ts-pane-tabs" style="display:none"></div>
-                <button class="plan-toggle" id="ts-plan-toggle" title="Toggle context">&#128203;</button>
+                <button class="plan-toggle" id="ts-plan-toggle" data-tooltip="Toggle context sidebar (plan, PR, output)">&#128203;</button>
               </div>
               <div id="ts-off-banner" class="session-off-banner">
                 <img src="/icon-192.png" alt="off">
@@ -370,20 +370,20 @@
           </div>
           <div class="comments-drawer" id="ts-comments-drawer"></div>
           <div class="tasks-session-keys" id="tasks-session-keys" style="display:none">
-            <button class="key-btn vim-toggle">VIM</button>
-            <button class="key-btn ts-key-btn" data-key="Enter">Enter</button>
-            <button class="key-btn ts-key-btn" data-key="Escape">Esc</button>
-            <button class="key-btn ts-key-btn" data-key="C-c">Ctrl-C</button>
-            <button class="key-btn ts-key-btn" data-key="Up">Up</button>
-            <button class="key-btn ts-key-btn" data-key="Down">Down</button>
-            <button class="key-btn ts-key-btn" data-key="Tab">Tab</button>
-            <button class="key-btn ts-key-btn" data-key="BTab">S-Tab</button>
-            <button class="key-btn ts-key-btn" data-key="y">y</button>
-            <button class="key-btn ts-key-btn" data-key="n">n</button>
-            <button class="key-btn num-key ts-key-btn" data-key="1">1</button>
-            <button class="key-btn num-key ts-key-btn" data-key="2">2</button>
-            <button class="key-btn num-key ts-key-btn" data-key="3">3</button>
-            <button class="key-btn num-key ts-key-btn" data-key="4">4</button>
+            <button class="key-btn vim-toggle" data-tooltip="Toggle VIM mode for arrow key navigation">VIM</button>
+            <button class="key-btn ts-key-btn" data-key="Enter" data-tooltip="Send Enter key to terminal">Enter</button>
+            <button class="key-btn ts-key-btn" data-key="Escape" data-tooltip="Send Escape key to terminal">Esc</button>
+            <button class="key-btn ts-key-btn" data-key="C-c" data-tooltip="Interrupt current process">Ctrl-C</button>
+            <button class="key-btn ts-key-btn" data-key="Up" data-tooltip="Scroll up / previous command">Up</button>
+            <button class="key-btn ts-key-btn" data-key="Down" data-tooltip="Scroll down / next command">Down</button>
+            <button class="key-btn ts-key-btn" data-key="Tab" data-tooltip="Autocomplete or next option">Tab</button>
+            <button class="key-btn ts-key-btn" data-key="BTab" data-tooltip="Previous option (Shift+Tab)">S-Tab</button>
+            <button class="key-btn ts-key-btn" data-key="y" data-tooltip="Confirm (yes)">y</button>
+            <button class="key-btn ts-key-btn" data-key="n" data-tooltip="Decline (no)">n</button>
+            <button class="key-btn num-key ts-key-btn" data-key="1" data-tooltip="Select option 1">1</button>
+            <button class="key-btn num-key ts-key-btn" data-key="2" data-tooltip="Select option 2">2</button>
+            <button class="key-btn num-key ts-key-btn" data-key="3" data-tooltip="Select option 3">3</button>
+            <button class="key-btn num-key ts-key-btn" data-key="4" data-tooltip="Select option 4">4</button>
           </div>
           <div id="ts-cmd-bar" class="ts-cmd-bar" style="display:none"></div>
           <div id="ts-status-line" class="session-status-line"></div>
@@ -655,12 +655,12 @@
           <span id="session-activity"></span>
         </div>
         <div id="session-actions">
-          <button id="track-btn" title="Attach a tracking task to this session">Track</button>
-          <button id="session-task-requeue" class="session-task-btn" style="display:none" title="Return task to queue">Requeue</button>
-          <button id="session-task-done" class="session-task-btn done" style="display:none" title="Mark task as done">Done</button>
-          <button id="session-task-cancel" class="session-task-btn cancel" style="display:none" title="Cancel task">Cancel</button>
-          <button id="restart-btn" title="Restart Claude">Restart</button>
-          <button id="kill-btn" title="Kill this tmux session">Close</button>
+          <button id="track-btn" data-tooltip="Attach a tracking task to this session">Track</button>
+          <button id="session-task-requeue" class="session-task-btn" style="display:none" data-tooltip="Return task to queue">Requeue</button>
+          <button id="session-task-done" class="session-task-btn done" style="display:none" data-tooltip="Mark task as done">Done</button>
+          <button id="session-task-cancel" class="session-task-btn cancel" style="display:none" data-tooltip="Cancel task">Cancel</button>
+          <button id="restart-btn" data-tooltip="Restart Claude in this session">Restart</button>
+          <button id="kill-btn" data-tooltip="Kill this tmux session">Close</button>
         </div>
       </div>
       <div id="mini-fleet-strip" style="display:none"></div>
@@ -668,7 +668,7 @@
         <button id="nav-prev" class="session-nav-btn">&larr; Prev</button>
         <button id="nav-next" class="session-nav-btn">Next &rarr;</button>
         <button id="nav-next-idle" class="session-nav-btn idle">Next Idle</button>
-        <button id="nav-next-desig" class="session-nav-btn desig" title="Next session in same designation">Next Desig</button>
+        <button id="nav-next-desig" class="session-nav-btn desig" data-tooltip="Next session in same designation">Next Desig</button>
       </div>
       <div class="session-tabs">
         <button class="session-tab active" data-stab="terminal">Terminal</button>
@@ -687,9 +687,9 @@
         </div>
         <div style="flex:1;display:flex;flex-direction:column;min-width:0">
           <div class="pane-tabs-row" id="pane-tabs-row">
-            <button class="git-files-toggle" id="git-files-toggle" title="Toggle changed files">&#128193;</button>
+            <button class="git-files-toggle" id="git-files-toggle" data-tooltip="Toggle changed files sidebar">&#128193;</button>
             <div class="pane-tabs" id="pane-tabs" style="display:none"></div>
-            <button class="plan-toggle" id="plan-toggle" title="Toggle context">&#128203;</button>
+            <button class="plan-toggle" id="plan-toggle" data-tooltip="Toggle context sidebar (plan, PR, output)">&#128203;</button>
           </div>
           <div id="session-off-banner" class="session-off-banner">
             <img src="/icon-192.png" alt="off">
@@ -729,28 +729,28 @@
       </div>
       <div class="comments-drawer" id="session-comments-drawer"></div>
       <div id="keys-bar">
-        <button class="key-btn vim-toggle">VIM</button>
-        <button class="key-btn" data-key="Enter">Enter</button>
-        <button class="key-btn" data-key="Escape">Esc</button>
-        <button class="key-btn" data-key="C-c">Ctrl-C</button>
-        <button class="key-btn" data-key="Up">Up</button>
-        <button class="key-btn" data-key="Down">Down</button>
-        <button class="key-btn" data-key="Tab">Tab</button>
-        <button class="key-btn" data-key="BTab">S-Tab</button>
-        <button class="key-btn" data-key="y">y</button>
-        <button class="key-btn" data-key="n">n</button>
-        <button class="key-btn num-key" data-key="1">1</button>
-        <button class="key-btn num-key" data-key="2">2</button>
-        <button class="key-btn num-key" data-key="3">3</button>
-        <button class="key-btn num-key" data-key="4">4</button>
+        <button class="key-btn vim-toggle" data-tooltip="Toggle VIM mode for arrow key navigation">VIM</button>
+        <button class="key-btn" data-key="Enter" data-tooltip="Send Enter key to terminal">Enter</button>
+        <button class="key-btn" data-key="Escape" data-tooltip="Send Escape key to terminal">Esc</button>
+        <button class="key-btn" data-key="C-c" data-tooltip="Interrupt current process">Ctrl-C</button>
+        <button class="key-btn" data-key="Up" data-tooltip="Scroll up / previous command">Up</button>
+        <button class="key-btn" data-key="Down" data-tooltip="Scroll down / next command">Down</button>
+        <button class="key-btn" data-key="Tab" data-tooltip="Autocomplete or next option">Tab</button>
+        <button class="key-btn" data-key="BTab" data-tooltip="Previous option (Shift+Tab)">S-Tab</button>
+        <button class="key-btn" data-key="y" data-tooltip="Confirm (yes)">y</button>
+        <button class="key-btn" data-key="n" data-tooltip="Decline (no)">n</button>
+        <button class="key-btn num-key" data-key="1" data-tooltip="Select option 1">1</button>
+        <button class="key-btn num-key" data-key="2" data-tooltip="Select option 2">2</button>
+        <button class="key-btn num-key" data-key="3" data-tooltip="Select option 3">3</button>
+        <button class="key-btn num-key" data-key="4" data-tooltip="Select option 4">4</button>
       </div>
       <div id="cmd-bar"></div>
       <div id="session-status-line"></div>
       <div id="attachment-strip" class="attachment-strip"></div>
       <div id="input-bar">
-        <button id="mode-toggle">Ask</button>
+        <button id="mode-toggle" data-tooltip="Ask: wait for approval before running. Tell: run immediately">Ask</button>
         <textarea id="msg-input" rows="4" placeholder="Message Claude..." autocomplete="off"></textarea>
-        <button id="send-btn">Send</button>
+        <button id="send-btn" data-tooltip="Send message to this session">Send</button>
       </div>
     </div>
   </div>
@@ -1125,7 +1125,7 @@
       <label class="task-dialog-label">Color</label>
       <div class="desig-color-picker-row">
         <div class="desig-color-swatches" id="desig-def-color-swatches"></div>
-        <input type="color" id="desig-def-color-wheel" value="#ffb86c" title="Custom color">
+        <input type="color" id="desig-def-color-wheel" value="#ffb86c" data-tooltip="Pick a custom color">
       </div>
     </div>
     <div class="task-dialog-field">
@@ -1232,15 +1232,15 @@
   </div>
   <div id="console-terminal"></div>
   <div id="console-keys-bar">
-    <button class="key-btn" data-console-key="Enter">Enter</button>
-    <button class="key-btn" data-console-key="Escape">Esc</button>
-    <button class="key-btn" data-console-key="C-c">Ctrl-C</button>
-    <button class="key-btn" data-console-key="Up">Up</button>
-    <button class="key-btn" data-console-key="Down">Down</button>
-    <button class="key-btn" data-console-key="Tab">Tab</button>
-    <button class="key-btn" data-console-key="BTab">S-Tab</button>
-    <button class="key-btn" data-console-key="y">y</button>
-    <button class="key-btn" data-console-key="n">n</button>
+    <button class="key-btn" data-console-key="Enter" data-tooltip="Send Enter key">Enter</button>
+    <button class="key-btn" data-console-key="Escape" data-tooltip="Send Escape key">Esc</button>
+    <button class="key-btn" data-console-key="C-c" data-tooltip="Interrupt current process">Ctrl-C</button>
+    <button class="key-btn" data-console-key="Up" data-tooltip="Previous command">Up</button>
+    <button class="key-btn" data-console-key="Down" data-tooltip="Next command">Down</button>
+    <button class="key-btn" data-console-key="Tab" data-tooltip="Autocomplete">Tab</button>
+    <button class="key-btn" data-console-key="BTab" data-tooltip="Previous option (Shift+Tab)">S-Tab</button>
+    <button class="key-btn" data-console-key="y" data-tooltip="Confirm (yes)">y</button>
+    <button class="key-btn" data-console-key="n" data-tooltip="Decline (no)">n</button>
   </div>
   <div id="console-attachment-strip" class="attachment-strip"></div>
   <div id="console-input-bar">
@@ -1264,7 +1264,7 @@
   <div id="task-detail-toolbar">
     <div id="task-detail-actions"></div>
     <button class="td-work-state-btn" id="task-detail-work-state"></button>
-    <button class="td-assignee-btn" id="task-detail-assignee" title="Set assignee"></button>
+    <button class="td-assignee-btn" id="task-detail-assignee" data-tooltip="Set assignee"></button>
     <span class="td-spacer"></span>
     <span id="task-detail-checklist" class="td-checklist"></span>
     <button class="task-detail-action" id="task-detail-open-session">Open Session</button>
@@ -1287,19 +1287,19 @@
     </div>
   </div>
   <div id="task-detail-keys">
-    <button class="key-btn" data-td-key="Enter">Enter</button>
-    <button class="key-btn" data-td-key="Escape">Esc</button>
-    <button class="key-btn" data-td-key="c-c">Ctrl-C</button>
-    <button class="key-btn" data-td-key="Up">Up</button>
-    <button class="key-btn" data-td-key="Down">Down</button>
-    <button class="key-btn" data-td-key="Tab">Tab</button>
-    <button class="key-btn" data-td-key="BTab">S-Tab</button>
-    <button class="key-btn" data-td-key="y">y</button>
-    <button class="key-btn" data-td-key="n">n</button>
-    <button class="key-btn num-key" data-td-key="1">1</button>
-    <button class="key-btn num-key" data-td-key="2">2</button>
-    <button class="key-btn num-key" data-td-key="3">3</button>
-    <button class="key-btn num-key" data-td-key="4">4</button>
+    <button class="key-btn" data-td-key="Enter" data-tooltip="Send Enter key">Enter</button>
+    <button class="key-btn" data-td-key="Escape" data-tooltip="Send Escape key">Esc</button>
+    <button class="key-btn" data-td-key="c-c" data-tooltip="Interrupt current process">Ctrl-C</button>
+    <button class="key-btn" data-td-key="Up" data-tooltip="Previous command">Up</button>
+    <button class="key-btn" data-td-key="Down" data-tooltip="Next command">Down</button>
+    <button class="key-btn" data-td-key="Tab" data-tooltip="Autocomplete">Tab</button>
+    <button class="key-btn" data-td-key="BTab" data-tooltip="Previous option (Shift+Tab)">S-Tab</button>
+    <button class="key-btn" data-td-key="y" data-tooltip="Confirm (yes)">y</button>
+    <button class="key-btn" data-td-key="n" data-tooltip="Decline (no)">n</button>
+    <button class="key-btn num-key" data-td-key="1" data-tooltip="Select option 1">1</button>
+    <button class="key-btn num-key" data-td-key="2" data-tooltip="Select option 2">2</button>
+    <button class="key-btn num-key" data-td-key="3" data-tooltip="Select option 3">3</button>
+    <button class="key-btn num-key" data-td-key="4" data-tooltip="Select option 4">4</button>
   </div>
   <div id="task-detail-cmd-bar"></div>
   <div id="task-detail-input-bar">
