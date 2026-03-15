@@ -2312,3 +2312,28 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 #loading-screen .loading-step.active .loading-step-count { color: var(--green); opacity: 0.7; }
 #loading-screen.fade-out { animation: loadFadeOut 0.3s ease forwards; }
 @keyframes loadFadeOut { to { opacity: 0; } }
+
+/* ── Tooltips ───────────────────────── */
+.hive-tooltip {
+  position: fixed; z-index: 9999;
+  background: var(--bg3); color: var(--fg);
+  font-size: var(--fs-sm); font-weight: 500;
+  padding: 6px 10px; border-radius: 6px;
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow);
+  pointer-events: none;
+  white-space: nowrap;
+  opacity: 0; transform: translateY(4px);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  max-width: 260px; white-space: normal;
+  line-height: 1.4;
+}
+.hive-tooltip.visible { opacity: 1; transform: translateY(0); }
+.hive-tooltip.pos-above { transform: translateY(-4px); }
+.hive-tooltip.pos-above.visible { transform: translateY(0); }
+.hive-tooltip .tt-key {
+  display: inline-block; background: var(--bg); color: var(--dim);
+  font-family: 'SF Mono', 'Menlo', monospace; font-size: var(--fs-xs);
+  padding: 1px 5px; border-radius: 3px; border: 1px solid var(--border-subtle);
+  margin-left: 6px; vertical-align: baseline;
+}
