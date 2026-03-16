@@ -27,7 +27,7 @@ function _httpRequest(urlStr, headers, body) {
     const options = {
       method: body ? 'POST' : 'GET',
       headers: { ...headers },
-      timeout: 15000,
+      timeout: 30000,
     };
 
     const req = mod.request(urlStr, options, (res) => {
@@ -68,7 +68,7 @@ function _httpMethod(method, urlStr, headers, body) {
     const req = mod.request(urlStr, {
       method,
       headers: reqHeaders,
-      timeout: 15000,
+      timeout: 30000,
     }, (res) => {
       let resBody = '';
       res.on('data', (chunk) => resBody += chunk);
@@ -213,7 +213,7 @@ async function _fetchGithubPrs(source) {
 
   const allPrs = [];
   for (const base of allowedBases) {
-    const params = new URLSearchParams({ per_page: '50', base });
+    const params = new URLSearchParams({ per_page: '100', base });
     if (source.state) params.set('state', source.state);
     const urlStr = `https://api.github.com/repos/${source.repo}/pulls?${params}`;
     const data = await this._httpRequest(urlStr, this._githubHeaders());
