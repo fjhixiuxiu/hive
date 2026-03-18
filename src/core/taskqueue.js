@@ -123,6 +123,15 @@ class TaskQueue extends EventEmitter {
     setTimeout(() => {
       this._tryAutoDispatch().catch(err => log.error('Auto-dispatch error:', err.message));
     }, 60000);
+
+    // Periodic backlog check — catches tasks stuck when sessions boot after startup
+    // or when idle events are missed. Runs every 30s.
+    this._backlogInterval = setInterval(() => {
+      const hasQueued = Array.from(this.tasks.values()).some(t => t.status === 'queued');
+      if (hasQueued) {
+        this._tryAutoDispatch().catch(err => log.error('Backlog check error:', err.message));
+      }
+    }, 30000);
   }
 
   // -- Task lifecycle -----------------------------------------------
@@ -577,15 +586,53 @@ class TaskQueue extends EventEmitter {
 
       // Dispatch one task per idle session (not all at once)
       for (const session of idleAuto) {
+        const sessionDesig = this.designations.get(session.num);
         const task = queuedTasks.find(t => {
           if (t.status !== 'queued') return false;
           if (t.designation) {
-            return this.designations.get(session.num) === t.designation;
+            // Designated task → only match sessions with same designation
+            return sessionDesig === t.designation;
           }
-          return true; // no designation -- any session
+          // Undesignated task → only match sessions with no designation
+          return !sessionDesig;
         });
         if (task) {
           await this._dispatchTask(task, session.num);
+        }
+      }
+
+      // Auto-create session for undesignated tasks with no matching idle session
+      const remainingTasks = queuedTasks.filter(t => t.status === 'queued' && !t.designation);
+      if (remainingTasks.length > 0) {
+        // Check all sessions (not just idle ones) — an undesignated session may be booting
+        const allUndesignated = sessions.filter(s => !this.designations.get(s.num));
+        const hasIdleUndesignated = allUndesignated.some(s =>
+          s.state === 'idle' && this.autoSessions.has(s.num)
+          && !this.dispatchLock.has(s.num) && !this.activeTaskBySession.has(s.num)
+        );
+        const hasBootingUndesignated = allUndesignated.some(s =>
+          s.state !== 'idle' && this.autoSessions.has(s.num)
+          && !this.activeTaskBySession.has(s.num)
+        );
+        if (!hasIdleUndesignated && !hasBootingUndesignated) {
+          try {
+            const slots = await this.getAvailableSlots();
+            if (slots.length > 0) {
+              const num = slots[0];
+              const repoDir = this.config.sessions.repoDir(num);
+              const size = this.config.tmux?.defaultSize || { cols: 200, rows: 50 };
+              const prefix = this.config.sessions?.namePrefix || '';
+              const sessionName = `${prefix}${num}`;
+              log.info(`[auto-dispatch] No idle undesignated session — creating session ${num}`);
+              await sessionManager.createSession(sessionName, repoDir, { panes: 3, tmuxLayout: 'main-vertical', claudePaneWidth: '50%' }, size);
+              await sessionManager.startClaude(sessionName, this.config.sessions.claudePane, 'claude');
+              this.autoSessions.add(num);
+              this._saveState();
+              this.pushFeed('state', num, `Auto-created session ${num} for undesignated task`);
+            }
+          } catch (err) {
+            log.error(`[auto-dispatch] Failed to auto-create session: ${err.message}`);
+          }
         }
       }
     } finally {
