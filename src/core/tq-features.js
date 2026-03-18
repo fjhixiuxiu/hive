@@ -225,6 +225,42 @@ function _scanDir(dir, root, results) {
   }
 }
 
+// ── Skills Scanning ─────────────────────────────────
+
+function scanSkills() {
+  const skillsDir = path.join(os.homedir(), '.claude', 'skills');
+  const results = [];
+  let entries;
+  try {
+    entries = fs.readdirSync(skillsDir, { withFileTypes: true });
+  } catch {
+    return results;
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
+    const skillDir = path.join(skillsDir, entry.name);
+    // Look for SKILL.md or skill.md
+    for (const fname of ['SKILL.md', 'skill.md']) {
+      const skillPath = path.join(skillDir, fname);
+      if (fs.existsSync(skillPath)) {
+        let description = '';
+        try {
+          const content = fs.readFileSync(skillPath, 'utf8');
+          // Extract description from frontmatter
+          const fmMatch = content.match(/^---\s*\n([\s\S]*?)\n---/);
+          if (fmMatch) {
+            const descMatch = fmMatch[1].match(/description:\s*(.+)/);
+            if (descMatch) description = descMatch[1].trim();
+          }
+        } catch { /* ignore read errors */ }
+        results.push({ name: entry.name, path: skillPath, description });
+        break;
+      }
+    }
+  }
+  return results;
+}
+
 // ── Work States ─────────────────────────────────────────
 
 function getWorkStates() {
@@ -273,4 +309,6 @@ module.exports = {
   // Work States
   getWorkStates,
   setWorkStates,
+  // Skills
+  scanSkills,
 };
