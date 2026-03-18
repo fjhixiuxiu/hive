@@ -4246,7 +4246,19 @@
     textarea.addEventListener('drop', (e) => {
       e.preventDefault();
       textarea.classList.remove('drag-over');
-      if (e.dataTransfer.files.length) handleImageFiles(e.dataTransfer.files, targetArray, stripEl);
+      if (e.dataTransfer.files.length) {
+        handleImageFiles(e.dataTransfer.files, targetArray, stripEl);
+        return;
+      }
+      // Board card drop — look up task and insert its text
+      const taskId = e.dataTransfer.getData('text/plain');
+      const task = taskId && tasks.find(t => t.id === taskId);
+      if (task) {
+        const insert = task.text || taskId;
+        textarea.value = textarea.value ? textarea.value + '\n' + insert : insert;
+        textarea.dispatchEvent(new Event('input'));
+        textarea.focus();
+      }
     });
     textarea.addEventListener('paste', (e) => {
       const files = e.clipboardData && e.clipboardData.files;
@@ -4260,8 +4272,11 @@
     });
   }
 
+  const tdAttachmentStrip = document.getElementById('td-attachment-strip');
+  const tdAttachedImages = [];
   setupDragDrop(msgInput, attachedImages, attachmentStrip);
   setupDragDrop(tsMsgInput, tsAttachedImages, tsAttachmentStrip);
+  setupDragDrop(document.getElementById('task-detail-input'), tdAttachedImages, tdAttachmentStrip);
 
   tsModeToggle.addEventListener('click', () => {
     tasksSessionMode = tasksSessionMode === 'ask' ? 'tell' : 'ask';
@@ -5727,13 +5742,21 @@
   function sendTaskDetailMessage() {
     const input = document.getElementById('task-detail-input');
     const text = input.value.trim();
-    if (!text || !taskDetailSession || !ws || ws.readyState !== 1) return;
+    const hasImages = tdAttachedImages.length > 0;
+    if ((!text && !hasImages) || !taskDetailSession || !ws || ws.readyState !== 1) return;
+    let message = text;
+    if (hasImages) {
+      const paths = tdAttachedImages.map(i => i.path).join(', ');
+      const prefix = `[Attached images: ${paths}]`;
+      message = text ? `${prefix}\n\n${text}` : `${prefix}\n\nLook at the attached screenshot.`;
+      clearAttachments(tdAttachedImages, tdAttachmentStrip);
+    }
     const isShellPane = (tdActivePane !== null && tdActivePane !== tdClaudePaneIdx);
+    const msgType = taskDetailMode === 'ask' ? 'ask' : 'tell';
     if (isShellPane) {
-      ws.send(JSON.stringify({ type: 'tell', session: taskDetailSession, message: text, pane: tdActivePane }));
+      ws.send(JSON.stringify({ type: 'tell', session: taskDetailSession, message, pane: tdActivePane }));
     } else {
-      const msgType = taskDetailMode === 'ask' ? 'ask' : 'tell';
-      ws.send(JSON.stringify({ type: msgType, session: taskDetailSession, message: text }));
+      ws.send(JSON.stringify({ type: msgType, session: taskDetailSession, message }));
     }
     pushMsgHistory(taskDetailSession, text);
     tdHistoryIdx = -1;
@@ -5742,6 +5765,8 @@
     showToast('Sent', `${msgType === 'ask' ? 'Asked' : 'Told'} session ${taskDetailSession}`, 'success');
   }
   document.getElementById('task-detail-send').addEventListener('click', sendTaskDetailMessage);
+
+
   document.getElementById('task-detail-input').addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendTaskDetailMessage(); return; }
     if (e.key === 'Escape') { closeTaskDetail(); return; }
