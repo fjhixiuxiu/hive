@@ -34,6 +34,9 @@ describe('PM source: _fetchJira', () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
+    delete process.env.JIRA_BASE_URL;
+    delete process.env.JIRA_EMAIL;
+    delete process.env.JIRA_API_TOKEN;
     taskQueue = createMockTaskQueue();
     pm = new ProjectManager(taskQueue);
   });
@@ -394,6 +397,9 @@ describe('PM source: _fetchJenkins', () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
+    delete process.env.JENKINS_URL;
+    delete process.env.JENKINS_USER;
+    delete process.env.JENKINS_API_TOKEN;
     taskQueue = createMockTaskQueue();
     pm = new ProjectManager(taskQueue);
   });
