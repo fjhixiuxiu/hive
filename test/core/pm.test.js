@@ -57,6 +57,16 @@ describe('ProjectManager', () => {
       pm.create({ name: 'Test' });
       expect(spy).toHaveBeenCalledTimes(1);
     });
+
+    it('stores slackUserId when provided', () => {
+      const result = pm.create({ name: 'Slack PM', slackUserId: 'U01ABC23DEF' });
+      expect(result.slackUserId).toBe('U01ABC23DEF');
+    });
+
+    it('defaults slackUserId to null', () => {
+      const result = pm.create({ name: 'No Slack' });
+      expect(result.slackUserId).toBeNull();
+    });
   });
 
   describe('update', () => {
@@ -119,6 +129,24 @@ describe('ProjectManager', () => {
       const pm2 = new ProjectManager(taskQueue);
       pm2.loadState(data);
       expect(pm2.getAll()).toHaveLength(1);
+    });
+
+    it('round-trips slackUserId through serialize/loadState', () => {
+      pm.create({ name: 'Slack PM', slackUserId: 'U01ABC, U02DEF', source: { type: 'manual' } });
+      const data = pm.serialize();
+      expect(data[0].slackUserId).toBe('U01ABC, U02DEF');
+
+      const pm2 = new ProjectManager(taskQueue);
+      pm2.loadState(data);
+      expect(pm2.getAll()[0].slackUserId).toBe('U01ABC, U02DEF');
+      pm2.stopAll();
+    });
+
+    it('loadState defaults slackUserId to null for old data', () => {
+      const pm2 = new ProjectManager(taskQueue);
+      pm2.loadState([{ id: '1', name: 'Old PM', source: { type: 'jira', jql: '' } }]);
+      expect(pm2.getAll()[0].slackUserId).toBeNull();
+      pm2.stopAll();
     });
 
     it('handles null/empty loadState', () => {
@@ -1192,6 +1220,22 @@ describe('ProjectManager', () => {
       expect(pollSpy).toHaveBeenCalledWith('99');
       expect(pm2.timers.has('99')).toBe(true);
       pm2.stopAll();
+    });
+  });
+
+  describe('exportPM', () => {
+    it('includes slackUserId in exported prompt', () => {
+      taskQueue.designationDefs = new Map();
+      const created = pm.create({ name: 'Export Test', slackUserId: 'U01ABC23DEF' });
+      const exported = pm.exportPM(created.id, []);
+      expect(exported).toContain('U01ABC23DEF');
+    });
+
+    it('exports null slackUserId when not set', () => {
+      taskQueue.designationDefs = new Map();
+      const created = pm.create({ name: 'Export No Slack' });
+      const exported = pm.exportPM(created.id, []);
+      expect(exported).toContain('"slackUserId": null');
     });
   });
 });

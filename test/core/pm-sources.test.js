@@ -897,6 +897,38 @@ describe('PM helpers: enrichTaskText', () => {
     expect(result).not.toContain('Institutional Knowledge');
     expect(result).toContain('hive_report_learnings');
   });
+
+  it('appends single Slack user ID contact section', () => {
+    pm.create({ name: 'SlackPM', slackUserId: 'U01ABC23DEF' });
+    const result = pm.enrichTaskText({ text: 'task', source: 'pm:SlackPM' });
+    expect(result).toContain('PM Slack Contact');
+    expect(result).toContain('`U01ABC23DEF`');
+    expect(result).toContain('send a Slack DM to this user ID');
+  });
+
+  it('appends multiple Slack user ID contact section', () => {
+    pm.create({ name: 'MultiSlack', slackUserId: 'U01ABC23DEF, U04XYZ78GHI' });
+    const result = pm.enrichTaskText({ text: 'task', source: 'pm:MultiSlack' });
+    expect(result).toContain('PM Slack Contacts');
+    expect(result).toContain('`U01ABC23DEF`');
+    expect(result).toContain('`U04XYZ78GHI`');
+    expect(result).toContain('send a Slack DM to each of these user IDs');
+  });
+
+  it('does not append Slack section when slackUserId is not set', () => {
+    pm.create({ name: 'NoSlack' });
+    const result = pm.enrichTaskText({ text: 'task', source: 'pm:NoSlack' });
+    expect(result).not.toContain('PM Slack Contact');
+    expect(result).not.toContain('Slack User ID');
+  });
+
+  it('handles whitespace-only and empty entries in comma-separated IDs', () => {
+    pm.create({ name: 'TrimSlack', slackUserId: ' U01ABC , , U02DEF ' });
+    const result = pm.enrichTaskText({ text: 'task', source: 'pm:TrimSlack' });
+    expect(result).toContain('`U01ABC`');
+    expect(result).toContain('`U02DEF`');
+    expect(result).not.toContain('``');
+  });
 });
 
 // ── _seedChecklist ──────────────────────────────────────

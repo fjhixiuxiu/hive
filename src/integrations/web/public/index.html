@@ -969,6 +969,11 @@
       <label class="pm-form-label">Auto Threshold (story points)</label>
       <input class="pm-form-input" id="pm-form-threshold" type="number" value="3" min="0" max="100">
     </div>
+    <div class="pm-form-field full-width">
+      <label class="pm-form-label">Slack User IDs <span style="color:var(--dim)">(comma-separated, for status reporting)</span></label>
+      <input class="pm-form-input" id="pm-form-slack-user-id" type="text" placeholder="e.g. U01ABC23DEF, U04XYZ78GHI" autocomplete="off">
+      <span style="font-size:11px;color:var(--dim);margin-top:4px;display:block;">Agents can report task status back to these Slack users via DM. Use in instructions: "report status to the PM assignees via slack"</span>
+    </div>
     </div><!-- /dispatch tab -->
     <!-- ── Instructions tab ── -->
     <div class="pm-tab-content" data-pm-tab="instructions">

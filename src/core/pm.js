@@ -110,6 +110,7 @@ class ProjectManager extends EventEmitter {
       memory: [],
       completionConditions: cfg.completionConditions || [],
       continueConditions: cfg.continueConditions || [],
+      slackUserId: cfg.slackUserId || null, // Slack user ID for PM status reporting
       actions: cfg.actions || null, // allowed context action IDs (null = all)
       boardStates: cfg.boardStates || null, // per-PM work state overrides: [{ stateId, autoOnStatus }]
       enabled: false,
@@ -289,13 +290,12 @@ class ProjectManager extends EventEmitter {
     const pm = this.pms.get(id);
     if (!pm) return null;
 
-    // Build clean PM config (strip runtime fields)
+    // Build clean PM config (strip runtime and local-only fields)
     const exportConfig = {
       name: pm.name,
       source: pm.source,
       designation: pm.designation,
       instructions: pm.instructions,
-      targetSession: pm.targetSession,
       autoThreshold: pm.autoThreshold,
       pollInterval: pm.pollInterval,
       schedule: pm.schedule,
@@ -306,6 +306,7 @@ class ProjectManager extends EventEmitter {
       learningPrompt: pm.learningPrompt,
       completionConditions: pm.completionConditions,
       continueConditions: pm.continueConditions,
+      slackUserId: pm.slackUserId,
       boardStates: pm.boardStates,
       actions: pm.actions,
       memory: pm.memory || [],
@@ -355,23 +356,31 @@ class ProjectManager extends EventEmitter {
     const hasAgentFiles = agentFiles.length > 0;
     const hasDesignation = !!designationDef;
 
-    // Extract instructions from config to handle separately
+    // Extract instructions from config — include directly in pm:create config
     const instructions = config.instructions || '';
-    const configWithoutInstructions = { ...config, instructions: hasAgentFiles || instructions ? '(see Instructions section below)' : '' };
+    const configForJson = { ...config };
+    if (instructions) {
+      configForJson.instructions = '(see Instructions section below — set this field in the pm:create/pm:update call)';
+    }
 
     // Preamble with API reference
-    const port = parseInt(process.env.WEB_PORT) || 3000;
     sections.push(`I need you to set up a Project Manager in hive. Follow the sections below — skip any that don't apply.
 
 **Important:** Before creating anything, check if a PM with the same name or a designation with the same name already exists. If so, update the existing one instead of creating a duplicate.
 
-**API Reference** (WebSocket on ws://localhost:${port}):
-- Check existing PMs: send \`{ "type": "pm:list" }\` → receive \`{ "type": "pm:list", "pms": [...] }\`
-- Create PM: send \`{ "type": "pm:create", "config": { ...pmConfig } }\`
-- Update PM: send \`{ "type": "pm:update", "id": "<pmId>", "updates": { ...changes } }\`
-- Check designations: send \`{ "type": "designationDefs:get" }\` → receive \`{ "type": "designationDefs:list", "defs": [...] }\`
-- Create/update designation: send \`{ "type": "designationDef:set", "name": "...", "agentFiles": [...], "description": "...", "color": "..." }\`
-- Get agent roots: send \`{ "type": "agentRoots:get" }\` → receive \`{ "type": "agentRoots:list", "roots": [...] }\``);
+**Hive WebSocket API:**
+Connect to the hive WebSocket server (check \`WEB_PORT\` in the hive \`.env\` for the port, default is 3000). Authenticate first: send \`{ "type": "auth", "token": "<WEB_TOKEN from .env>" }\`, wait for \`{ "type": "auth", "ok": true }\`.
+
+| Action | Send | Response |
+|--------|------|----------|
+| List PMs | \`{ "type": "pm:list" }\` | \`{ "type": "pm:list", "pms": [...] }\` |
+| Create PM | \`{ "type": "pm:create", "config": { ... } }\` | \`{ "type": "pm:created", "pm": { ... } }\` + broadcast \`pm:list\` |
+| Update PM | \`{ "type": "pm:update", "id": "<id>", "updates": { ... } }\` | broadcast \`pm:list\` |
+| List designations | \`{ "type": "designationDefs:get" }\` | \`{ "type": "designationDefs:list", "defs": [...] }\` |
+| Set designation | \`{ "type": "designationDef:set", "name": "...", ... }\` | broadcast \`designationDefs:list\` |
+| Get agent roots | \`{ "type": "agentRoots:get" }\` | \`{ "type": "agentRoots:list", "roots": [...] }\` |
+
+PMs are created disabled by default — no need to set \`enabled: false\`.`);
 
     // Agent files (only if there are any)
     if (hasAgentFiles) {
@@ -381,7 +390,7 @@ class ProjectManager extends EventEmitter {
         if (af.content) {
           agentSection += `\n### ${af.name}\n\n\`\`\`markdown\n${af.content}\n\`\`\`\n`;
         } else {
-          agentSection += `\n### ${af.name}\n\n*(File could not be read from: ${af.path})*\n`;
+          agentSection += `\n### ${af.name}\n\n*(File content was not available at export time — ask the user to provide it)*\n`;
         }
       }
       sections.push(agentSection);
@@ -402,17 +411,26 @@ class ProjectManager extends EventEmitter {
       if (hasAgentFiles) {
         desigNote = `\n\nNote: The \`agentFiles\` values above are filenames — after writing them to the agent root, use their full absolute paths when sending the \`designationDef:set\` message.`;
       }
-      sections.push(`## ${sectionNum}. Designation\n\nCreate or update this designation via \`designationDef:set\`:\n\n\`\`\`json\n${JSON.stringify(defExport, null, 2)}\n\`\`\`${desigNote}`);
+      sections.push(`## ${sectionNum}. Designation\n\nCreate or update via \`designationDef:set\`:\n\n\`\`\`json\n${JSON.stringify(defExport, null, 2)}\n\`\`\`${desigNote}`);
     }
 
-    // PM config (instructions extracted out)
+    // PM config
     sectionNum++;
-    sections.push(`## ${sectionNum}. PM Configuration\n\nCreate or update a PM named "${config.name}" via \`pm:create\` or \`pm:update\`:\n\n\`\`\`json\n${JSON.stringify(configWithoutInstructions, null, 2)}\n\`\`\`\n\nNote: The PM will be created in disabled state.`);
+    // Build notes about fields that may need adjustment
+    const envNotes = [];
+    if (config.source && config.source.repo) envNotes.push(`\`source.repo\` ("${config.source.repo}") — verify this repo is accessible from the target environment`);
+    if (config.source && config.source.jql) envNotes.push(`\`source.jql\` — verify this JQL query works in the target JIRA instance`);
+    if (config.checklistTemplate) envNotes.push(`\`checklistTemplate\` ("${config.checklistTemplate}") — this template must exist on the target hive`);
+    if (config.boardStates) envNotes.push(`\`boardStates\` — these work state IDs must exist on the target hive`);
+    const envWarning = envNotes.length > 0
+      ? `\n\n**Review before importing** — these fields may need adjustment for the target environment:\n${envNotes.map(n => '- ' + n).join('\n')}`
+      : '';
+    sections.push(`## ${sectionNum}. PM Configuration\n\nCreate or update a PM named "${config.name}" via \`pm:create\` (with \`config\` field) or \`pm:update\` (with \`id\` and \`updates\` fields):\n\n\`\`\`json\n${JSON.stringify(configForJson, null, 2)}\n\`\`\`${envWarning}`);
 
-    // Instructions as separate section (avoids JSON escaping nightmare)
+    // Instructions as separate section
     if (instructions) {
       sectionNum++;
-      sections.push(`## ${sectionNum}. Instructions\n\nThe \`instructions\` field for this PM contains markdown with code blocks. To avoid escaping issues, write it to the PM config using a file-based approach or set it programmatically.\n\nFull instructions content:\n\n---\n${instructions}\n---\n\nSet this as the PM's \`instructions\` field after creation via \`pm:update\`.`);
+      sections.push(`## ${sectionNum}. Instructions\n\nSet the PM's \`instructions\` field to the content below. Include this directly in the \`pm:create\` config or \`pm:update\` updates — the WebSocket JSON handles the escaping, so just pass the string value as-is.\n\nFull instructions content:\n\n---\n${instructions}\n---`);
     }
 
     // Memory note
@@ -435,20 +453,19 @@ class ProjectManager extends EventEmitter {
     sectionNum++;
     const verifyChecks = [];
     if (hasDesignation) {
-      verifyChecks.push(`- Designation "${designationDef.name}" exists (query \`designationDefs:get\`)`);
+      verifyChecks.push(`- Send \`designationDefs:get\` → response \`designationDefs:list\` should contain a def with \`name: "${designationDef.name}"\``);
     }
-    verifyChecks.push(`- PM "${config.name}" exists and is disabled (query \`pm:list\`)`);
+    verifyChecks.push(`- Send \`pm:list\` → response \`pm:list\` should contain a PM with \`name: "${config.name}"\` and \`enabled: false\``);
     if (instructions) {
-      // Pick a few keywords from instructions for verification
-      const instrPreview = instructions.slice(0, 100).replace(/\n/g, ' ').trim();
-      verifyChecks.push(`- PM instructions field is populated (starts with: "${instrPreview}...")`);
+      const instrPreview = instructions.slice(0, 80).replace(/\n/g, ' ').trim();
+      verifyChecks.push(`- The PM's \`instructions\` field should start with: "${instrPreview}..."`);
     }
     if (hasAgentFiles) {
       for (const af of agentFiles) {
-        verifyChecks.push(`- Agent file "${af.name}" exists in agent root directory`);
+        verifyChecks.push(`- Agent file "${af.name}" exists on disk in an agent root directory`);
       }
     }
-    sections.push(`## ${sectionNum}. Verification\n\nAfter setup, verify:\n${verifyChecks.join('\n')}`);
+    sections.push(`## ${sectionNum}. Verification\n\nAfter setup, verify by querying the API:\n${verifyChecks.join('\n')}`);
 
     return sections.join('\n\n');
   }
@@ -486,6 +503,7 @@ class ProjectManager extends EventEmitter {
         memory: _deduplicateMemory(Array.isArray(data.memory) ? data.memory.filter(m => typeof m === 'string' && m.trim()) : []),
         completionConditions: Array.isArray(data.completionConditions) ? data.completionConditions : [],
         continueConditions: Array.isArray(data.continueConditions) ? data.continueConditions : [],
+        slackUserId: data.slackUserId || null,
         boardStates: Array.isArray(data.boardStates) ? data.boardStates : null,
         actions: Array.isArray(data.actions) ? data.actions : null,
         enabled: data.enabled || false,

@@ -7385,6 +7385,7 @@
       autoThreshold: parseInt(document.getElementById('pm-form-threshold').value) || 3,
       pollInterval: parseInt(document.getElementById('pm-form-interval').value) || 60000,
       schedule: document.getElementById('pm-form-cron').value.trim() || null,
+      slackUserId: document.getElementById('pm-form-slack-user-id').value.trim() || null,
     };
     // Collect completion conditions
     const completionConditions = [];
@@ -7473,6 +7474,7 @@
     document.getElementById('pm-form-learning-prompt').value = pm ? (pm.learningPrompt || '') : '';
     document.getElementById('pm-form-learning-prompt-wrap').style.display = (pm && pm.learningEnabled) ? '' : 'none';
     document.getElementById('pm-form-threshold').value = pm ? pm.autoThreshold : 3;
+    document.getElementById('pm-form-slack-user-id').value = pm ? (pm.slackUserId || '') : '';
     document.getElementById('pm-form-interval').value = pm ? pm.pollInterval : 60000;
     document.getElementById('pm-form-cron').value = pm ? (pm.schedule || '') : '';
     // Set schedule tab state

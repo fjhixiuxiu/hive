@@ -475,6 +475,15 @@ function enrichTaskText(task) {
 function _buildFullText(pm, text) {
   let result = text;
   if (pm.instructions) result += `\n\nInstructions: ${pm.instructions}`;
+  if (pm.slackUserId) {
+    const ids = pm.slackUserId.split(',').map(id => id.trim()).filter(Boolean);
+    if (ids.length === 1) {
+      result += `\n\n## PM Slack Contact\n\nThe PM assignee for this task has Slack User ID: \`${ids[0]}\`. When asked to report status to the PM, send a Slack DM to this user ID.`;
+    } else if (ids.length > 1) {
+      const formatted = ids.map(id => `\`${id}\``).join(', ');
+      result += `\n\n## PM Slack Contacts\n\nThe PM assignees for this task have Slack User IDs: ${formatted}. When asked to report status to the PMs, send a Slack DM to each of these user IDs.`;
+    }
+  }
   if (pm.mcpEnabled) result += `\n\n${MCP_INSTRUCTIONS}`;
   if (pm.learningEnabled && pm.learningPrompt) {
     result += '\n\n## Learning\n\n';
