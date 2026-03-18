@@ -898,6 +898,24 @@ function createMessageHandler(deps) {
         break;
       }
 
+      case 'pm:export': {
+        if (!pmManager) break;
+        const prompt = pmManager.exportPM(msg.id, msg.skillPaths || []);
+        if (prompt) {
+          ws.send(JSON.stringify({ type: 'pm:export:result', id: msg.id, prompt }));
+        } else {
+          ws.send(JSON.stringify({ type: 'error', message: 'PM not found' }));
+        }
+        break;
+      }
+
+      case 'pm:skills': {
+        if (!taskQueue) break;
+        const skills = taskQueue.scanSkills();
+        ws.send(JSON.stringify({ type: 'pm:skills', skills }));
+        break;
+      }
+
       // -- Task comment messages ----------------------------------------------
       case 'task:comment:add': {
         if (!taskQueue) break;

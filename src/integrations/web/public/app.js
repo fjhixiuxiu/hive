@@ -1321,6 +1321,9 @@
         break;
       case 'pm:created': showToast('PM Created', msg.pm.name, 'success'); break;
       case 'pm:error': showToast('PM Error', `${msg.id}: ${msg.error}`, 'error'); break;
+      case 'pm:export:result':
+      case 'pm:skills':
+        handleExportMessage(msg); break;
       case 'context:all':
         sessionContexts = msg.contexts || {};
         updatePlanSidebar();
@@ -7170,6 +7173,7 @@
       card.innerHTML = `
         <div style="display:flex;align-items:center;gap:8px">
           <span class="pm-name" style="flex:1">${esc(pm.name)}</span>
+          <button class="pm-export-btn" title="Export PM" style="background:none;border:none;cursor:pointer;color:var(--dim);font-size:14px;padding:2px 4px;border-radius:4px" onmouseover="this.style.color='var(--cyan)'" onmouseout="this.style.color='var(--dim)'">\u{1F4CB}</button>
           <button class="pm-toggle${pm.enabled ? ' on' : ''}"></button>
         </div>
         <div class="pm-badges">${desigBadge}${targetBadge}</div>
@@ -7180,6 +7184,10 @@
           <span>polled ${lastPoll}</span>
         </div>
       `;
+      card.querySelector('.pm-export-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        openPmExportDialog(pm);
+      });
       card.querySelector('.pm-toggle').addEventListener('click', (e) => {
         e.stopPropagation();
         if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'pm:toggle', id: pm.id }));
@@ -7202,6 +7210,12 @@
     if (editingPmId && confirm('This will forget all previously seen issues. The next poll will create tasks for everything matching the source query. Continue?')) {
       if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'pm:reset', id: editingPmId }));
       closePmDialog();
+    }
+  });
+  document.getElementById('pm-form-export').addEventListener('click', () => {
+    if (editingPmId) {
+      const pm = pmList.find(p => p.id === editingPmId);
+      if (pm) { closePmDialog(); openPmExportDialog(pm); }
     }
   });
   document.getElementById('pm-form-delete').addEventListener('click', () => {
@@ -7509,6 +7523,7 @@
     togglePmSourceFields();
     // Show/hide edit-mode actions
     const isEdit = !!pm;
+    document.getElementById('pm-form-export').style.display = isEdit ? '' : 'none';
     document.getElementById('pm-form-rescan').style.display = isEdit ? '' : 'none';
     document.getElementById('pm-form-reset').style.display = isEdit ? '' : 'none';
     document.getElementById('pm-form-delete').style.display = isEdit ? '' : 'none';
@@ -7516,6 +7531,96 @@
   }
 
   function closePmDialog() { pmDialog.classList.remove('visible'); editingPmId = null; }
+
+  // ── PM Export Dialog ──────────────────────────────
+  const pmExportDialog = document.getElementById('pm-export-dialog');
+  let exportingPm = null;
+  let exportSkillsList = [];
+
+  document.getElementById('pm-export-cancel').addEventListener('click', closePmExportDialog);
+  pmExportDialog.addEventListener('click', (e) => { if (e.target === pmExportDialog) closePmExportDialog(); });
+
+  document.getElementById('pm-export-copy').addEventListener('click', () => {
+    const textarea = document.getElementById('pm-export-prompt');
+    navigator.clipboard.writeText(textarea.value).then(() => {
+      const btn = document.getElementById('pm-export-copy');
+      const orig = btn.textContent;
+      btn.textContent = 'Copied!';
+      btn.style.background = 'var(--green)';
+      setTimeout(() => { btn.textContent = orig; btn.style.background = ''; }, 1500);
+    }).catch(() => {
+      // Fallback: select all text
+      const textarea2 = document.getElementById('pm-export-prompt');
+      textarea2.select();
+      document.execCommand('copy');
+    });
+  });
+
+  function openPmExportDialog(pm) {
+    exportingPm = pm;
+    document.getElementById('pm-export-title').textContent = 'Export Project Manager — ' + pm.name;
+    const promptArea = document.getElementById('pm-export-prompt');
+    promptArea.value = 'Loading...';
+    pmExportDialog.classList.add('visible');
+
+    // Request skills list
+    if (ws && ws.readyState === 1) {
+      ws.send(JSON.stringify({ type: 'pm:skills' }));
+    }
+
+    // Request initial export (no skills selected)
+    requestPmExport([]);
+  }
+
+  function closePmExportDialog() {
+    pmExportDialog.classList.remove('visible');
+    exportingPm = null;
+    exportSkillsList = [];
+  }
+
+  function requestPmExport(skillPaths) {
+    if (!exportingPm || !ws || ws.readyState !== 1) return;
+    ws.send(JSON.stringify({ type: 'pm:export', id: exportingPm.id, skillPaths }));
+  }
+
+  function renderExportSkills(skills) {
+    exportSkillsList = skills;
+    const container = document.getElementById('pm-export-skills-list');
+    if (!container) return;
+    if (!skills.length) {
+      container.innerHTML = '<span style="color:var(--dim);font-size:12px">No skills found in ~/.claude/skills/</span>';
+      return;
+    }
+    container.innerHTML = '';
+    for (const skill of skills) {
+      const label = document.createElement('label');
+      label.style.cssText = 'display:flex;align-items:center;gap:4px;padding:4px 8px;background:var(--surface);border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:12px;user-select:none';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.value = skill.path;
+      cb.style.cssText = 'margin:0';
+      cb.addEventListener('change', () => {
+        const selected = Array.from(container.querySelectorAll('input:checked')).map(i => i.value);
+        requestPmExport(selected);
+      });
+      label.appendChild(cb);
+      label.appendChild(document.createTextNode(skill.name));
+      if (skill.description) {
+        label.title = skill.description;
+      }
+      container.appendChild(label);
+    }
+  }
+
+  // Handle export WS responses (wired into the main message handler below)
+  function handleExportMessage(msg) {
+    if (msg.type === 'pm:export:result') {
+      const promptArea = document.getElementById('pm-export-prompt');
+      if (promptArea) promptArea.value = msg.prompt;
+    } else if (msg.type === 'pm:skills') {
+      renderExportSkills(msg.skills || []);
+    }
+  }
 
   // ── Git files sidebar (compact file list in terminal view) ──
   function renderGitFilesSidebar(data, listId) {

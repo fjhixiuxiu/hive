@@ -283,6 +283,176 @@ class ProjectManager extends EventEmitter {
     return scored.slice(0, limit).map(({ score, ...rest }) => rest);
   }
 
+  // ── Export ─────────────────────────────────────────
+
+  exportPM(id, skillPaths) {
+    const pm = this.pms.get(id);
+    if (!pm) return null;
+
+    // Build clean PM config (strip runtime fields)
+    const exportConfig = {
+      name: pm.name,
+      source: pm.source,
+      designation: pm.designation,
+      instructions: pm.instructions,
+      targetSession: pm.targetSession,
+      autoThreshold: pm.autoThreshold,
+      pollInterval: pm.pollInterval,
+      schedule: pm.schedule,
+      taskFormat: pm.taskFormat,
+      checklistTemplate: pm.checklistTemplate,
+      mcpEnabled: pm.mcpEnabled,
+      learningEnabled: pm.learningEnabled,
+      learningPrompt: pm.learningPrompt,
+      completionConditions: pm.completionConditions,
+      continueConditions: pm.continueConditions,
+      boardStates: pm.boardStates,
+      actions: pm.actions,
+      memory: pm.memory || [],
+    };
+
+    // Get linked designation def
+    let designationDef = null;
+    if (pm.designation) {
+      designationDef = this.taskQueue.designationDefs.get(pm.designation) || null;
+    }
+
+    // Read agent file contents
+    const agentFiles = [];
+    if (designationDef && designationDef.agentFiles) {
+      for (const filePath of designationDef.agentFiles) {
+        try {
+          const content = fs.readFileSync(filePath, 'utf8');
+          const name = path.basename(filePath);
+          agentFiles.push({ name, path: filePath, content });
+        } catch {
+          agentFiles.push({ name: path.basename(filePath), path: filePath, content: null });
+        }
+      }
+    }
+
+    // Read selected skill contents
+    const skills = [];
+    if (Array.isArray(skillPaths)) {
+      for (const skillPath of skillPaths) {
+        try {
+          const content = fs.readFileSync(skillPath, 'utf8');
+          const name = path.basename(path.dirname(skillPath));
+          skills.push({ name, content });
+        } catch {
+          // skip unreadable skills
+        }
+      }
+    }
+
+    // Build the prompt
+    return this._buildExportPrompt(exportConfig, designationDef, agentFiles, skills);
+  }
+
+  _buildExportPrompt(config, designationDef, agentFiles, skills) {
+    const sections = [];
+    let sectionNum = 0;
+    const hasAgentFiles = agentFiles.length > 0;
+    const hasDesignation = !!designationDef;
+
+    // Extract instructions from config to handle separately
+    const instructions = config.instructions || '';
+    const configWithoutInstructions = { ...config, instructions: hasAgentFiles || instructions ? '(see Instructions section below)' : '' };
+
+    // Preamble with API reference
+    const port = parseInt(process.env.WEB_PORT) || 3000;
+    sections.push(`I need you to set up a Project Manager in hive. Follow the sections below — skip any that don't apply.
+
+**Important:** Before creating anything, check if a PM with the same name or a designation with the same name already exists. If so, update the existing one instead of creating a duplicate.
+
+**API Reference** (WebSocket on ws://localhost:${port}):
+- Check existing PMs: send \`{ "type": "pm:list" }\` → receive \`{ "type": "pm:list", "pms": [...] }\`
+- Create PM: send \`{ "type": "pm:create", "config": { ...pmConfig } }\`
+- Update PM: send \`{ "type": "pm:update", "id": "<pmId>", "updates": { ...changes } }\`
+- Check designations: send \`{ "type": "designationDefs:get" }\` → receive \`{ "type": "designationDefs:list", "defs": [...] }\`
+- Create/update designation: send \`{ "type": "designationDef:set", "name": "...", "agentFiles": [...], "description": "...", "color": "..." }\`
+- Get agent roots: send \`{ "type": "agentRoots:get" }\` → receive \`{ "type": "agentRoots:list", "roots": [...] }\``);
+
+    // Agent files (only if there are any)
+    if (hasAgentFiles) {
+      sectionNum++;
+      let agentSection = `## ${sectionNum}. Agent Files\n\nWrite the following agent file(s) to the first available agent root directory (query \`agentRoots:get\` to find it). If no agent roots are configured, ask the user where to save them.\n`;
+      for (const af of agentFiles) {
+        if (af.content) {
+          agentSection += `\n### ${af.name}\n\n\`\`\`markdown\n${af.content}\n\`\`\`\n`;
+        } else {
+          agentSection += `\n### ${af.name}\n\n*(File could not be read from: ${af.path})*\n`;
+        }
+      }
+      sections.push(agentSection);
+    }
+
+    // Designation (only if there is one)
+    if (hasDesignation) {
+      sectionNum++;
+      const defExport = {
+        name: designationDef.name,
+        description: designationDef.description || '',
+        color: designationDef.color || 'orange',
+      };
+      if (hasAgentFiles) {
+        defExport.agentFiles = agentFiles.map(f => f.name);
+      }
+      let desigNote = '';
+      if (hasAgentFiles) {
+        desigNote = `\n\nNote: The \`agentFiles\` values above are filenames — after writing them to the agent root, use their full absolute paths when sending the \`designationDef:set\` message.`;
+      }
+      sections.push(`## ${sectionNum}. Designation\n\nCreate or update this designation via \`designationDef:set\`:\n\n\`\`\`json\n${JSON.stringify(defExport, null, 2)}\n\`\`\`${desigNote}`);
+    }
+
+    // PM config (instructions extracted out)
+    sectionNum++;
+    sections.push(`## ${sectionNum}. PM Configuration\n\nCreate or update a PM named "${config.name}" via \`pm:create\` or \`pm:update\`:\n\n\`\`\`json\n${JSON.stringify(configWithoutInstructions, null, 2)}\n\`\`\`\n\nNote: The PM will be created in disabled state.`);
+
+    // Instructions as separate section (avoids JSON escaping nightmare)
+    if (instructions) {
+      sectionNum++;
+      sections.push(`## ${sectionNum}. Instructions\n\nThe \`instructions\` field for this PM contains markdown with code blocks. To avoid escaping issues, write it to the PM config using a file-based approach or set it programmatically.\n\nFull instructions content:\n\n---\n${instructions}\n---\n\nSet this as the PM's \`instructions\` field after creation via \`pm:update\`.`);
+    }
+
+    // Memory note
+    if (config.memory && config.memory.length > 0) {
+      sectionNum++;
+      sections.push(`## ${sectionNum}. PM Learnings\n\nThe PM has ${config.memory.length} learned insight(s) included in the PM configuration above. These are from previous task executions and may contain useful context. **Review them for any sensitive data before sharing.**`);
+    }
+
+    // Skills
+    if (skills.length > 0) {
+      sectionNum++;
+      let skillSection = `## ${sectionNum}. Skills Reference\n\nThe following skills are used by this PM's workflow. They are normally loaded via Claude Code skills system. If these skills are not installed on the target system, the content is embedded below for reference:\n`;
+      for (const skill of skills) {
+        skillSection += `\n### Skill: ${skill.name}\n\n\`\`\`markdown\n${skill.content}\n\`\`\`\n`;
+      }
+      sections.push(skillSection);
+    }
+
+    // Verification spec
+    sectionNum++;
+    const verifyChecks = [];
+    if (hasDesignation) {
+      verifyChecks.push(`- Designation "${designationDef.name}" exists (query \`designationDefs:get\`)`);
+    }
+    verifyChecks.push(`- PM "${config.name}" exists and is disabled (query \`pm:list\`)`);
+    if (instructions) {
+      // Pick a few keywords from instructions for verification
+      const instrPreview = instructions.slice(0, 100).replace(/\n/g, ' ').trim();
+      verifyChecks.push(`- PM instructions field is populated (starts with: "${instrPreview}...")`);
+    }
+    if (hasAgentFiles) {
+      for (const af of agentFiles) {
+        verifyChecks.push(`- Agent file "${af.name}" exists in agent root directory`);
+      }
+    }
+    sections.push(`## ${sectionNum}. Verification\n\nAfter setup, verify:\n${verifyChecks.join('\n')}`);
+
+    return sections.join('\n\n');
+  }
+
   // ── Serialization ───────────────────────────────────
 
   serialize() {

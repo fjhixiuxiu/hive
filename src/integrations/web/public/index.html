@@ -1059,9 +1059,31 @@
       <button class="dialog-btn primary" id="pm-form-save">Save</button>
       <button class="dialog-btn" id="pm-form-cancel">Cancel</button>
       <span style="flex:1"></span>
+      <button class="dialog-btn" id="pm-form-export" style="display:none">Export</button>
       <button class="dialog-btn" id="pm-form-rescan" style="display:none">Scan Now</button>
       <button class="dialog-btn" id="pm-form-reset" style="display:none;color:var(--orange)">Reset</button>
       <button class="dialog-btn" id="pm-form-delete" style="display:none;color:var(--red)">Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- PM export dialog -->
+<div class="dialog-overlay" id="pm-export-dialog">
+  <div class="dialog" style="max-width:700px">
+    <div class="dialog-title" id="pm-export-title">Export Project Manager</div>
+    <div style="padding:0 4px">
+      <div class="pm-form-field full-width" id="pm-export-skills-section">
+        <label class="pm-form-label">Include Skills <span style="color:var(--dim)">(optional — from ~/.claude/skills/)</span></label>
+        <div id="pm-export-skills-list" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px"></div>
+      </div>
+      <div class="pm-form-field full-width" style="margin-top:12px">
+        <label class="pm-form-label">Export Prompt <span style="color:var(--dim)">(review and edit before copying)</span></label>
+        <textarea id="pm-export-prompt" rows="16" style="width:100%;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:10px;font-family:monospace;font-size:12px;resize:vertical;line-height:1.5"></textarea>
+      </div>
+    </div>
+    <div class="dialog-actions">
+      <button class="dialog-btn primary" id="pm-export-copy">Copy to Clipboard</button>
+      <button class="dialog-btn" id="pm-export-cancel">Close</button>
     </div>
   </div>
 </div>
