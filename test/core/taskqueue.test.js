@@ -245,6 +245,73 @@ describe('TaskQueue', () => {
     });
   });
 
+  describe('renameTask', () => {
+    it('updates task text on a queued task', () => {
+      const task = tq.createTask('Original title', 'auto', null, null);
+      const renamed = tq.renameTask(task.id, 'New title');
+      expect(renamed).not.toBeNull();
+      expect(renamed.text).toBe('New title');
+      expect(tq.tasks.get(task.id).text).toBe('New title');
+    });
+
+    it('updates task text on a dispatched task', () => {
+      const task = tq.createTask('Original title', 'manual', null, null);
+      task.status = 'dispatched';
+      task.assignedTo = 1;
+      const renamed = tq.renameTask(task.id, 'Dispatched rename');
+      expect(renamed).not.toBeNull();
+      expect(renamed.text).toBe('Dispatched rename');
+    });
+
+    it('updates task text on a snoozed task', () => {
+      const task = tq.createTask('Snooze me', 'auto', null, null);
+      task.status = 'snoozed';
+      const renamed = tq.renameTask(task.id, 'Snoozed rename');
+      expect(renamed).not.toBeNull();
+      expect(renamed.text).toBe('Snoozed rename');
+    });
+
+    it('returns null for non-existent task', () => {
+      expect(tq.renameTask('999', 'anything')).toBeNull();
+    });
+
+    it('returns null for empty text', () => {
+      const task = tq.createTask('Original', 'auto', null, null);
+      expect(tq.renameTask(task.id, '')).toBeNull();
+      expect(tq.renameTask(task.id, '   ')).toBeNull();
+      expect(tq.tasks.get(task.id).text).toBe('Original');
+    });
+
+    it('returns null for non-string text', () => {
+      const task = tq.createTask('Original', 'auto', null, null);
+      expect(tq.renameTask(task.id, null)).toBeNull();
+      expect(tq.renameTask(task.id, undefined)).toBeNull();
+      expect(tq.tasks.get(task.id).text).toBe('Original');
+    });
+
+    it('trims whitespace from new title', () => {
+      const task = tq.createTask('Original', 'auto', null, null);
+      const renamed = tq.renameTask(task.id, '  Trimmed title  ');
+      expect(renamed.text).toBe('Trimmed title');
+    });
+
+    it('emits task:updated event', () => {
+      const task = tq.createTask('Original', 'auto', null, null);
+      const handler = vi.fn();
+      tq.on('task:updated', handler);
+      tq.renameTask(task.id, 'Updated');
+      expect(handler).toHaveBeenCalledWith(expect.objectContaining({ text: 'Updated' }));
+    });
+
+    it('persists state after rename', () => {
+      const task = tq.createTask('Original', 'auto', null, null);
+      const writeSpy = vi.spyOn(fs, 'writeFileSync');
+      writeSpy.mockClear();
+      tq.renameTask(task.id, 'Persisted');
+      expect(writeSpy).toHaveBeenCalled();
+    });
+  });
+
   describe('feed', () => {
     it('adds entries on task operations', () => {
       tq.createTask('Test task', 'auto', null, null);

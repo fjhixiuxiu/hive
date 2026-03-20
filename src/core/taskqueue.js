@@ -238,6 +238,22 @@ class TaskQueue extends EventEmitter {
   }
 
   /**
+   * Rename a task (update its text). Works on any status.
+   * Returns the updated task or null if not found.
+   */
+  renameTask(taskId, newText) {
+    const task = this.tasks.get(taskId);
+    if (!task) return null;
+    if (!newText || typeof newText !== 'string') return null;
+    const trimmed = newText.trim();
+    if (!trimmed) return null;
+    task.text = trimmed;
+    this.emit('task:updated', task);
+    this._saveState();
+    return task;
+  }
+
+  /**
    * Manually dispatch a queued task to a specific session.
    */
   async dispatchTaskTo(taskId, sessionNum) {

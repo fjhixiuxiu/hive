@@ -5191,6 +5191,7 @@
         <button class="task-detail-action primary" data-action="done">Done</button>
         <button class="task-detail-action" data-action="requeue">Requeue</button>
         <button class="task-detail-action" data-action="snooze">Snooze</button>
+        <button class="task-detail-action" data-action="rename">Rename</button>
         <button class="task-detail-action danger" data-action="cancel">Cancel</button>
       `;
     } else if (task.status === 'queued') {
@@ -5198,6 +5199,7 @@
         <button class="task-detail-action primary" data-action="assign">Assign</button>
         <button class="task-detail-action" data-action="edit">Edit</button>
         <button class="task-detail-action" data-action="snooze">Snooze</button>
+        <button class="task-detail-action" data-action="rename">Rename</button>
         <button class="task-detail-action danger" data-action="cancel">Cancel</button>
       `;
     } else if (task.status === 'snoozed') {
@@ -5205,6 +5207,7 @@
       actionsHtml = `
         ${wakeTime ? `<span style="font-size:11px;color:var(--yellow)">Wakes ${wakeTime}</span>` : ''}
         <button class="task-detail-action primary" data-action="wake">Wake Now</button>
+        <button class="task-detail-action" data-action="rename">Rename</button>
         <button class="task-detail-action danger" data-action="cancel">Cancel</button>
       `;
     } else {
@@ -5681,6 +5684,9 @@
         break;
       case 'edit':
         openTaskDialog(task.id);
+        break;
+      case 'rename':
+        openRenameDialog(task.id);
         break;
       case 'resume':
         if (task.assignedTo) {
@@ -6319,6 +6325,42 @@
   });
 
   document.getElementById('task-confirm-cancel').addEventListener('click', closeTaskConfirmDialog);
+
+  // --- Rename dialog ---
+  function openRenameDialog(taskId) {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+    const input = document.getElementById('task-rename-input');
+    input.value = task.text || '';
+    document.getElementById('task-rename-dialog').dataset.taskId = taskId;
+    document.getElementById('task-rename-dialog').classList.add('visible');
+    setTimeout(() => { input.focus(); input.select(); }, 50);
+  }
+
+  function closeRenameDialog() {
+    document.getElementById('task-rename-dialog').classList.remove('visible');
+  }
+
+  document.getElementById('task-rename-submit').addEventListener('click', () => {
+    const dialog = document.getElementById('task-rename-dialog');
+    const taskId = dialog.dataset.taskId;
+    const newText = document.getElementById('task-rename-input').value.trim();
+    if (!newText || !taskId || !ws || ws.readyState !== 1) return;
+    ws.send(JSON.stringify({ type: 'task:rename', taskId, text: newText }));
+    showToast('Renamed', 'Task title updated', 'success');
+    closeRenameDialog();
+  });
+
+  document.getElementById('task-rename-cancel').addEventListener('click', closeRenameDialog);
+
+  document.getElementById('task-rename-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      document.getElementById('task-rename-submit').click();
+    } else if (e.key === 'Escape') {
+      closeRenameDialog();
+    }
+  });
 
   function getActiveTaskForActions(ctx) {
     if (ctx === 'tasks') {
