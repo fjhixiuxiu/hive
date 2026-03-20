@@ -461,6 +461,22 @@ function createMessageHandler(deps) {
         break;
       }
 
+      case 'task:rename': {
+        if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'create-tasks')) break;
+        const newText = (msg.text || '').trim();
+        if (!newText) {
+          ws.send(JSON.stringify({ type: 'error', message: 'New title cannot be empty' }));
+          break;
+        }
+        const renamedTask = taskQueue.renameTask(msg.taskId, newText);
+        if (renamedTask) {
+          broadcast({ type: 'task:updated', task: renamedTask });
+          ws.send(JSON.stringify({ type: 'task:renamed', taskId: msg.taskId }));
+        }
+        break;
+      }
+
       case 'task:snapshot': {
         if (!taskQueue) break;
         const snapTask = taskQueue.tasks.get(msg.taskId);
