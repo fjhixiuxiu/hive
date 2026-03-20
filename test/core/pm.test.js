@@ -191,7 +191,7 @@ describe('ProjectManager', () => {
       });
       pm.toggle(created.id);
       expect(taskQueue.createTask).toHaveBeenCalledWith(
-        'Do the thing', 'manual', null, null,
+        'Do the thing', 'auto', null, null,
         expect.objectContaining({ source: 'pm:Manual Task' }),
       );
     });
