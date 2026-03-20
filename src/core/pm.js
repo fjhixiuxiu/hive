@@ -601,7 +601,7 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
 
     const key = `manual-${id}-${Date.now()}`;
     pm.seenKeys.push(key);
-    const mode = 'manual'; // manual tasks always go to manual queue
+    const mode = pm.targetSession ? 'manual' : 'auto';
     let taskText = text;
     if (pm.taskFormat) {
       taskText = pm.taskFormat.replace('{key}', key).replace('{summary}', text);
