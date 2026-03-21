@@ -21,6 +21,7 @@ const {
   capturePaneAnsi,
 } = require('./ws-helpers');
 const createMessageHandler = require('./ws-handlers');
+const VoiceAgent = require('../voice');
 
 /**
  * Create and start the web dashboard server.
@@ -395,6 +396,13 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
 
   wss.on('connection', handleWsConnection);
 
+  // -- Voice agent setup ---------------------------------------------------
+  const voiceAgent = new VoiceAgent({
+    taskQueue, watcher,
+    knowledgeBase: pmManager ? (entry) => pmManager.addKnowledge(entry) : null,
+  });
+  const voiceAudioWss = voiceAgent.setupAudioBridge();
+
   // -- Message handlers (extracted to ws-handlers.js) ----------------------
 
   const handleMessage = createMessageHandler({
@@ -403,7 +411,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     clearTermSub, clearConsoleSub, termSubs, consoleSubs,
     clearCardSub, clearAllCardSubs, cardTermSubs,
     sendFleetStatus, broadcastFleetStatus, sendInitialState, _previewCache,
-    commands, clients, wsUser, workers, mcpClients,
+    commands, clients, wsUser, workers, mcpClients, voiceAgent,
   });
 
   // ── Session 0 helper: resolve session (fleet or hive-console) ──
@@ -678,9 +686,16 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
   for (const host of bindHosts) {
     const httpServer = http.createServer(app);
     httpServer.on('upgrade', (request, socket, head) => {
-      wss.handleUpgrade(request, socket, head, (ws) => {
-        wss.emit('connection', ws, request);
-      });
+      const pathname = new URL(request.url, 'http://localhost').pathname;
+      if (pathname === '/voice/audio') {
+        voiceAudioWss.handleUpgrade(request, socket, head, (ws) => {
+          voiceAudioWss.emit('connection', ws, request);
+        });
+      } else {
+        wss.handleUpgrade(request, socket, head, (ws) => {
+          wss.emit('connection', ws, request);
+        });
+      }
     });
     httpServer.listen(port, host, () => {
       log.info(`Web dashboard: http://${host}:${port}`);
@@ -743,7 +758,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     for (const s of servers) s.close();
   }
 
-  return { app, servers, wss, close };
+  return { app, servers, wss, voiceAgent, close };
 }
 
 module.exports = { createWebServer };
