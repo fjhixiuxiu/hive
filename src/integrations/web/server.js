@@ -398,10 +398,24 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
 
   // -- Voice agent setup ---------------------------------------------------
   const voiceAgent = new VoiceAgent({
-    taskQueue, watcher,
+    taskQueue, watcher, router,
     knowledgeBase: pmManager ? (entry) => pmManager.addKnowledge(entry) : null,
   });
   const voiceAudioWss = voiceAgent.setupAudioBridge();
+
+  // Broadcast voice events to dashboard clients
+  voiceAgent.on('transcript', (entry) => {
+    broadcast({ type: 'voice:transcript:entry', entry });
+  });
+  voiceAgent.on('response', (text) => {
+    broadcast({ type: 'voice:response', text });
+  });
+  voiceAgent.on('joined', () => {
+    broadcast({ type: 'voice:status', status: voiceAgent.getStatus() });
+  });
+  voiceAgent.on('left', () => {
+    broadcast({ type: 'voice:status', status: voiceAgent.getStatus() });
+  });
 
   // -- Message handlers (extracted to ws-handlers.js) ----------------------
 
@@ -420,6 +434,11 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       const exists = await tmux.hasSession(HIVE_CONSOLE_SESSION);
       if (!exists) return null;
       return { name: HIVE_CONSOLE_SESSION, nodeId: 'local' };
+    }
+    if (String(msg.session) === 'hive-voice') {
+      const exists = await tmux.hasSession('hive-voice');
+      if (!exists) return null;
+      return { name: 'hive-voice', nodeId: 'local' };
     }
     return fleet.findSession(config, router, msg.session);
   }

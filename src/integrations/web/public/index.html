@@ -174,6 +174,10 @@
     </button>
     <!-- Secondary nav -->
     <div class="nav-divider"></div>
+    <button class="nav-btn" data-tab="voice-panel" data-tooltip="Voice agent &amp; meeting">
+      <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg></span>Voice
+      <span class="nav-badge" id="voice-badge"></span>
+    </button>
     <button class="nav-btn" data-tab="ideas-panel" data-tooltip="Brainstorm &amp; idea backlog">
       <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg></span>Ideas
     </button>
@@ -634,7 +638,60 @@
       </div>
     </div>
 
-    <!-- PMs panel -->
+    <!-- Voice panel -->
+    <div id="voice-panel" class="panel">
+      <div class="voice-header">
+        <span class="voice-title">Voice Agent</span>
+        <span class="voice-status-pill" id="voice-status-pill">Inactive</span>
+      </div>
+      <!-- Join controls -->
+      <div class="voice-join-section" id="voice-join-section">
+        <div class="voice-join-row">
+          <input id="voice-meeting-url" type="text" placeholder="Zoom meeting URL..." autocomplete="off">
+          <button id="voice-join-btn" class="voice-action-btn voice-join">Join</button>
+        </div>
+        <label class="voice-opt"><input type="checkbox" id="voice-report-on-join" checked> Deliver standup on join</label>
+      </div>
+      <!-- Active meeting controls (shown when in meeting) -->
+      <div class="voice-active-section" id="voice-active-section" style="display:none">
+        <div class="voice-meeting-info">
+          <span class="voice-meeting-label">Connected to:</span>
+          <span class="voice-meeting-url" id="voice-meeting-display"></span>
+        </div>
+        <div class="voice-controls">
+          <button id="voice-leave-btn" class="voice-action-btn voice-leave">Leave Meeting</button>
+        </div>
+        <div class="voice-speak-row">
+          <input id="voice-speak-input" type="text" placeholder="Type to speak in meeting..." autocomplete="off">
+          <button id="voice-speak-btn" class="voice-action-btn">Speak</button>
+        </div>
+      </div>
+      <!-- Session info -->
+      <div class="voice-session-info" id="voice-session-info">
+        <div class="voice-info-row"><span class="voice-info-label">Claude Session:</span> <span id="voice-session-name">hive-voice</span></div>
+        <div class="voice-info-row"><span class="voice-info-label">Audio Bridge:</span> <span id="voice-bridge-status">--</span></div>
+        <div class="voice-info-row"><span class="voice-info-label">Transcriber:</span> <span id="voice-transcriber-status">--</span></div>
+      </div>
+      <!-- Claude session terminal -->
+      <div class="voice-terminal-header">
+        <span>Claude Session</span>
+        <div class="voice-terminal-tabs">
+          <button class="voice-tab active" data-voice-tab="terminal">Terminal</button>
+          <button class="voice-tab" data-voice-tab="transcript">Transcript</button>
+        </div>
+      </div>
+      <div class="voice-terminal-wrap" id="voice-terminal-wrap">
+        <div id="voice-terminal"></div>
+      </div>
+      <!-- Transcript (toggled) -->
+      <div class="voice-transcript-wrap" id="voice-transcript-wrap" style="display:none">
+        <div class="voice-transcript-count-bar">
+          <span class="voice-transcript-count" id="voice-transcript-count">0 entries</span>
+        </div>
+        <div class="voice-transcript" id="voice-transcript"></div>
+      </div>
+    </div>
+
     <!-- Ideas panel -->
     <div id="ideas-panel" class="panel">
       <div style="display:flex;align-items:center;padding:10px 12px 6px;gap:8px">

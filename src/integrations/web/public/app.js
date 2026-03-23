@@ -625,6 +625,7 @@
     const xt = theme === 'light' ? XTERM_LIGHT : XTERM_DARK;
     if (term) term.options.theme = xt;
     if (consoleTerm) consoleTerm.options.theme = xt;
+    if (voiceTerm) voiceTerm.options.theme = xt;
     if (tasksSessionTerm) tasksSessionTerm.options.theme = xt;
     if (taskDetailTerm) taskDetailTerm.options.theme = xt;
   }
@@ -682,7 +683,7 @@
   // ── URL routing ─────────────────────────────────
   const TAB_TO_HASH = {
     'fleet-panel': '/fleet', 'tasks-panel': '/tasks', 'feed-panel': '/feed',
-    'ideas-panel': '/ideas', 'more-panel': '/admin', 'session-panel': '/session',
+    'voice-panel': '/voice', 'ideas-panel': '/ideas', 'more-panel': '/admin', 'session-panel': '/session',
   };
   const HASH_TO_TAB = {};
   for (const [tab, hash] of Object.entries(TAB_TO_HASH)) HASH_TO_TAB[hash] = tab;
@@ -794,6 +795,11 @@
     if (tab === 'session-panel' && planSidebarOpen) startPlanPolling();
     if (tab === 'fleet-panel') renderGrid();
     if (tab === 'ideas-panel' && ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'idea:list' }));
+    if (tab === 'voice-panel') initVoicePanel();
+    else if (voiceTerm && ws && ws.readyState === 1) {
+      // Unsubscribe from voice terminal when leaving voice panel
+      ws.send(JSON.stringify({ type: 'terminal:unsubscribe', session: 'hive-voice' }));
+    }
     if (tab === 'more-panel') { renderDesignationGrid(); renderAgentRoots(); renderDesigDefs(); renderPMs(); renderUsers(); renderChecklistTemplates(); }
     const spawnBtn = document.getElementById('spawn-btn');
     if (spawnBtn) spawnBtn.classList.toggle('visible', tab === 'fleet-panel');
@@ -1075,6 +1081,14 @@
             } else {
               writeConsoleContent(msg.content);
             }
+          }
+        }
+        // Voice session terminal data
+        if (voiceTerm && activeTab === 'voice-panel' && String(msg.session) === 'hive-voice') {
+          if (msg.cols && msg.cols > 0 && msg.cols !== voiceTerm.cols) voiceTerm.resize(msg.cols, voiceTerm.rows);
+          if (msg.content !== voiceLastContent) {
+            if (voiceScrolledUp) { voicePending = msg.content; }
+            else { writeVoiceContent(msg.content); }
           }
         }
         // Card terminal data (terminals view mode)
@@ -1473,6 +1487,14 @@
       case 'idea:error':
         showToast('Idea Error', msg.error, 'error');
         break;
+      // ── Voice agent ───────────────────────────
+      case 'voice:status': updateVoiceStatus(msg.status); break;
+      case 'voice:joining': updateVoiceJoining(msg.url); break;
+      case 'voice:transcript': loadVoiceTranscript(msg.transcript || []); break;
+      case 'voice:transcript:entry': appendVoiceTranscript(msg.entry); break;
+      case 'voice:response': appendVoiceResponse(msg.text); break;
+      case 'voice:error': showToast('Voice Error', msg.error, 'error'); break;
+      case 'voice:debug': updateVoiceDebug(msg.debug); break;
       case 'update:status': {
         const branchEl = document.getElementById('update-branch');
         const commitEl = document.getElementById('update-commit');
@@ -2232,7 +2254,7 @@
     } else if (linesFromBottom > 3) { userScrolledUp = true; scrollIndicator(true); }
   }
 
-  let _termWriteRAF = null;
+  var _termWriteRAF = null;
   function writeTerminalContent(content) {
     if (!term) return;
     lastContent = content; writingContent = true;
@@ -2654,7 +2676,7 @@
     }
   }
 
-  let _consWriteRAF = null;
+  var _consWriteRAF = null;
   function writeConsoleContent(content) {
     if (!consoleTerm) return;
     consoleLastContent = content;
@@ -3455,7 +3477,7 @@
     modeToggle.className = mode === 'tell' ? 'tell' : '';
   });
 
-  let lastSentMessage = '';
+  var lastSentMessage = '';
   function sendMessage() {
     const text = msgInput.value.trim();
     const hasImages = attachedImages.length > 0;
@@ -3942,7 +3964,7 @@
     } else if (!show && el) { el.remove(); }
   }
 
-  let _tsWriteRAF = null;
+  var _tsWriteRAF = null;
   function writeTasksSessionContent(content) {
     ensureTasksSessionTerm();
     tsLastContent = content; tsWriting = true;
@@ -4189,7 +4211,7 @@
 
   // Wire mode toggle + send for tasks session
   const tsModeToggle = document.getElementById('ts-mode-toggle');
-  const tsMsgInput = document.getElementById('ts-msg-input');
+  var tsMsgInput = document.getElementById('ts-msg-input');
   const tsSendBtn = document.getElementById('ts-send-btn');
   tsMsgInput.addEventListener('input', () => autoGrow(tsMsgInput));
 
@@ -4284,8 +4306,8 @@
     tsModeToggle.classList.toggle('tell', tasksSessionMode === 'tell');
   });
 
-  let tsLastSentMessage = '';
-  let tsPendingSession = null; // track which session the tasks panel sent to
+  var tsLastSentMessage = '';
+  var tsPendingSession = null; // track which session the tasks panel sent to
 
   function sendTasksMessage() {
     const text = tsMsgInput.value.trim();
@@ -4830,7 +4852,7 @@
 
   // ── Board PM multi-select ─────────────────────────
   const boardPmBtn = document.getElementById('board-pm-btn');
-  const boardPmDropdown = document.getElementById('board-pm-dropdown');
+  var boardPmDropdown = document.getElementById('board-pm-dropdown');
 
   if (boardPmBtn) boardPmBtn.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -5151,9 +5173,9 @@
   let taskDetailMode = 'ask'; // 'ask' or 'tell'
   let tdHistoryIdx = -1;
   let tdHistoryDraft = '';
-  let tdActivePane = null;
-  let tdSessionPanes = [];
-  let tdClaudePaneIdx = null;
+  var tdActivePane = null;
+  var tdSessionPanes = [];
+  var tdClaudePaneIdx = null;
 
   function openTaskDetail(taskId) {
     const task = tasks.find(t => t.id === taskId);
@@ -5587,7 +5609,7 @@
     }
   }
 
-  let _tdWriteRAF = null;
+  var _tdWriteRAF = null;
   function writeTaskDetailContent(content) {
     if (!taskDetailTerm) return;
     taskDetailLastContent = content;
@@ -6719,7 +6741,7 @@
   });
 
   // ── MCP Restart confirmation ──────────────────────
-  const mcpRestartDialog = document.getElementById('mcp-restart-dialog');
+  var mcpRestartDialog = document.getElementById('mcp-restart-dialog');
   function showMcpRestartConfirm(count) {
     document.getElementById('mcp-restart-msg').textContent = count != null
       ? `MCP config deployed to ${count} session(s). Sessions need to restart to pick up the new tools.`
@@ -7046,7 +7068,7 @@
   const spawnDialog = document.getElementById('spawn-dialog');
   const spawnBtn = document.getElementById('spawn-btn');
   let selectedSpawnSlot = null;
-  let spawnToast = null;
+  var spawnToast = null;
 
   spawnBtn.addEventListener('click', () => {
     if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'spawn:slots' }));
@@ -8274,6 +8296,222 @@
   })();
 
   Tooltip.init();
+
+  // ── Voice panel ─────────────────────────────────────
+  let voiceStatus = { active: false };
+  let voiceMeetingUrl = '';
+  let voiceTranscriptEntries = [];
+  let voicePollTimer = null;
+  var voiceTerm = null;
+  var voiceFit = null;
+  var voiceLastContent = '';
+  var voiceScrolledUp = false;
+  var voicePending = null;
+  let voiceActiveTab = 'terminal'; // 'terminal' or 'transcript'
+
+  function initVoicePanel() {
+    // Request current status
+    if (ws && ws.readyState === 1) {
+      ws.send(JSON.stringify({ type: 'voice:status' }));
+      ws.send(JSON.stringify({ type: 'voice:transcript' }));
+    }
+    renderVoicePanel();
+    initVoiceTerminal();
+    // Poll for status updates while on voice tab
+    if (voicePollTimer) clearInterval(voicePollTimer);
+    voicePollTimer = setInterval(() => {
+      if (activeTab !== 'voice-panel') { clearInterval(voicePollTimer); voicePollTimer = null; return; }
+      if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'voice:status' }));
+    }, 5000);
+  }
+
+  function initVoiceTerminal() {
+    const container = document.getElementById('voice-terminal');
+    if (!container) return;
+    if (!voiceTerm) {
+      voiceTerm = new Terminal({
+        theme: currentTheme === 'light' ? XTERM_LIGHT : XTERM_DARK,
+        fontSize: 12, fontFamily: "'SF Mono', 'Menlo', 'Monaco', 'Courier New', monospace",
+        disableStdin: true, scrollback: 5000, convertEol: true, allowProposedApi: true,
+      });
+      voiceFit = new FitAddon.FitAddon();
+      voiceTerm.loadAddon(voiceFit);
+      voiceTerm.loadAddon(new WebLinksAddon.WebLinksAddon((e, uri) => window.open(uri, '_blank')));
+      enableTerminalCopy(voiceTerm);
+      voiceTerm.open(container);
+      // Scroll lock
+      voiceTerm.element.addEventListener('wheel', () => {
+        setTimeout(() => {
+          if (!voiceTerm) return;
+          voiceScrolledUp = voiceTerm.buffer.active.viewportY < voiceTerm.buffer.active.baseY;
+        }, 50);
+      });
+    }
+    requestAnimationFrame(() => {
+      if (voiceFit) voiceFit.fit();
+      // Subscribe to terminal data for hive-voice session
+      if (ws && ws.readyState === 1) {
+        ws.send(JSON.stringify({ type: 'terminal:subscribe', session: 'hive-voice', pane: 1 }));
+      }
+    });
+  }
+
+  function writeVoiceContent(content) {
+    if (!voiceTerm) return;
+    voiceTerm.clear();
+    voiceTerm.write(content);
+    voiceLastContent = content;
+  }
+
+  function updateVoiceStatus(status) {
+    voiceStatus = status || { active: false };
+    renderVoicePanel();
+    // Update badge
+    const badge = $('#voice-badge');
+    if (badge) {
+      if (voiceStatus.active) { badge.textContent = ''; badge.classList.add('visible'); badge.style.background = 'var(--green)'; badge.style.minWidth = '8px'; badge.style.height = '8px'; }
+      else { badge.classList.remove('visible'); badge.style = ''; }
+    }
+  }
+
+  function updateVoiceJoining(url) {
+    voiceMeetingUrl = url;
+    const pill = $('#voice-status-pill');
+    if (pill) { pill.textContent = 'Joining...'; pill.className = 'voice-status-pill joining'; }
+  }
+
+  function renderVoicePanel() {
+    const pill = $('#voice-status-pill');
+    const joinSection = $('#voice-join-section');
+    const activeSection = $('#voice-active-section');
+    const meetingDisplay = $('#voice-meeting-display');
+    const bridgeEl = $('#voice-bridge-status');
+    const transcriberEl = $('#voice-transcriber-status');
+
+    if (pill) {
+      if (voiceStatus.active) { pill.textContent = 'In Meeting'; pill.className = 'voice-status-pill active'; }
+      else { pill.textContent = 'Inactive'; pill.className = 'voice-status-pill'; }
+    }
+    if (joinSection) joinSection.style.display = voiceStatus.active ? 'none' : '';
+    if (activeSection) activeSection.style.display = voiceStatus.active ? '' : 'none';
+    if (meetingDisplay) meetingDisplay.textContent = voiceMeetingUrl || '--';
+    if (bridgeEl) bridgeEl.textContent = voiceStatus.audioBridgeConnected ? 'Connected' : 'Disconnected';
+    if (transcriberEl) transcriberEl.textContent = voiceStatus.transcriptLength != null ? `${voiceStatus.transcriptLength} entries` : '--';
+  }
+
+  function loadVoiceTranscript(entries) {
+    voiceTranscriptEntries = entries;
+    const container = $('#voice-transcript');
+    if (!container) return;
+    if (!entries.length) {
+      container.innerHTML = '<div class="voice-empty">No transcript yet — join a meeting to start</div>';
+      const countEl = $('#voice-transcript-count');
+      if (countEl) countEl.textContent = '0 entries';
+      return;
+    }
+    container.innerHTML = '';
+    for (const entry of entries) {
+      const el = document.createElement('div');
+      el.className = 'voice-entry';
+      const speaker = entry.speaker != null ? `Speaker ${entry.speaker}` : 'Unknown';
+      el.innerHTML = `<span class="voice-speaker">[${speaker}]</span> <span class="voice-text">${escapeHtml(entry.text)}</span>`;
+      container.appendChild(el);
+    }
+    container.scrollTop = container.scrollHeight;
+    const countEl = $('#voice-transcript-count');
+    if (countEl) countEl.textContent = `${entries.length} entries`;
+  }
+
+  function appendVoiceTranscript(entry) {
+    voiceTranscriptEntries.push(entry);
+    const container = $('#voice-transcript');
+    if (!container) return;
+    const el = document.createElement('div');
+    el.className = 'voice-entry';
+    const speaker = entry.speaker != null ? `Speaker ${entry.speaker}` : 'Unknown';
+    el.innerHTML = `<span class="voice-speaker">[${speaker}]</span> <span class="voice-text">${escapeHtml(entry.text)}</span>`;
+    container.appendChild(el);
+    container.scrollTop = container.scrollHeight;
+    const countEl = $('#voice-transcript-count');
+    if (countEl) countEl.textContent = `${voiceTranscriptEntries.length} entries`;
+    // Remove empty state
+    const empty = container.querySelector('.voice-empty');
+    if (empty) empty.remove();
+  }
+
+  function appendVoiceResponse(text) {
+    const container = $('#voice-transcript');
+    if (!container) return;
+    const el = document.createElement('div');
+    el.className = 'voice-entry voice-hive';
+    el.innerHTML = `<span class="voice-speaker">[Hive]</span> <span class="voice-text">${escapeHtml(text)}</span>`;
+    container.appendChild(el);
+    container.scrollTop = container.scrollHeight;
+  }
+
+  function updateVoiceDebug(debug) {
+    // Update session info
+    const bridgeEl = $('#voice-bridge-status');
+    const transcriberEl = $('#voice-transcriber-status');
+    if (bridgeEl) bridgeEl.textContent = debug.audioBridgeConnected ? 'Connected' : 'Disconnected';
+    if (transcriberEl) transcriberEl.textContent = debug.transcriberRunning ? 'Running' : 'Stopped';
+  }
+
+  function escapeHtml(str) {
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  // Voice tab switching (terminal vs transcript)
+  document.addEventListener('click', (e) => {
+    const voiceTab = e.target.closest('.voice-tab');
+    if (voiceTab) {
+      const tab = voiceTab.dataset.voiceTab;
+      if (!tab) return;
+      voiceActiveTab = tab;
+      document.querySelectorAll('.voice-tab').forEach(t => t.classList.toggle('active', t.dataset.voiceTab === tab));
+      const termWrap = document.getElementById('voice-terminal-wrap');
+      const txWrap = document.getElementById('voice-transcript-wrap');
+      if (termWrap) termWrap.style.display = tab === 'terminal' ? '' : 'none';
+      if (txWrap) txWrap.style.display = tab === 'transcript' ? '' : 'none';
+      if (tab === 'terminal' && voiceFit) requestAnimationFrame(() => voiceFit.fit());
+    }
+  });
+
+  // Voice panel event listeners
+  document.addEventListener('click', (e) => {
+    if (e.target.id === 'voice-join-btn') {
+      const urlInput = $('#voice-meeting-url');
+      const url = urlInput ? urlInput.value.trim() : '';
+      if (!url) { showToast('Voice', 'Enter a meeting URL', 'error'); return; }
+      const reportOnJoin = $('#voice-report-on-join')?.checked !== false;
+      if (ws && ws.readyState === 1) {
+        ws.send(JSON.stringify({ type: 'voice:join', url, reportOnJoin }));
+        voiceMeetingUrl = url;
+      }
+    }
+    if (e.target.id === 'voice-leave-btn') {
+      if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'voice:leave' }));
+    }
+    if (e.target.id === 'voice-speak-btn') {
+      const input = $('#voice-speak-input');
+      const text = input ? input.value.trim() : '';
+      if (!text) return;
+      if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'voice:speak', text }));
+      input.value = '';
+    }
+  });
+
+  // Enter key for speak input
+  document.addEventListener('keydown', (e) => {
+    if (e.target.id === 'voice-speak-input' && e.key === 'Enter') {
+      e.preventDefault();
+      $('#voice-speak-btn')?.click();
+    }
+    if (e.target.id === 'voice-meeting-url' && e.key === 'Enter') {
+      e.preventDefault();
+      $('#voice-join-btn')?.click();
+    }
+  });
 
   // ── Service worker registration ───────────────────
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
