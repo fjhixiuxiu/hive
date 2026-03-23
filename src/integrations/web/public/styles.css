@@ -2341,72 +2341,224 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   margin-left: 6px; vertical-align: baseline;
 }
 
-/* ── Voice panel ─────────────────────── */
+/* ── Voice / Meetings panel ─────────────────────── */
 .voice-header {
-  display: flex; align-items: center; padding: 10px 14px 8px; gap: 10px;
+  display: flex; align-items: center; padding: 10px 14px 8px; gap: 8px;
   border-bottom: 1px solid var(--bg3);
 }
 .voice-title { font-size: 16px; font-weight: 700; flex: 1; }
+.voice-new-btn {
+  background: var(--purple); color: #fff; border: none; border-radius: 6px;
+  padding: 6px 14px; font-size: var(--fs-xs); font-weight: 600; cursor: pointer;
+  transition: filter 0.15s;
+}
+.voice-new-btn:hover { filter: brightness(1.15); }
+
+/* Meeting list */
+.voice-list { flex: 1; overflow-y: auto; padding: 6px 10px; -webkit-overflow-scrolling: touch; }
+.mtg-card {
+  display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 8px;
+  background: var(--bg2); margin-bottom: 6px; cursor: pointer;
+  border: 1px solid transparent; transition: border-color 0.15s, background 0.15s;
+}
+.mtg-card:hover { border-color: var(--bg3); background: var(--bg3); }
+.mtg-card-live { border-color: rgba(80,250,123,0.3); }
+.mtg-card-live:hover { border-color: rgba(80,250,123,0.5); }
+.mtg-card-icon {
+  width: 32px; height: 32px; border-radius: 8px; background: var(--bg3);
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  color: var(--dim); font-size: 14px;
+}
+.mtg-card-live .mtg-card-icon { background: rgba(80,250,123,0.12); color: var(--green); }
+.mtg-card-body { flex: 1; min-width: 0; }
+.mtg-card-title { font-size: var(--fs-sm); font-weight: 600; color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mtg-card-meta { font-size: 11px; color: var(--dim); margin-top: 2px; display: flex; gap: 8px; flex-wrap: wrap; }
+.mtg-card-meta span { white-space: nowrap; }
+.mtg-card-time { font-size: var(--fs-xs); color: var(--dim); flex-shrink: 0; text-align: right; }
+.mtg-card-pill {
+  font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+  padding: 2px 6px; border-radius: 8px; display: inline-block;
+}
+.mtg-card-pill.live { background: rgba(80,250,123,0.15); color: var(--green); }
+
+/* Join dialog fields */
+.mtg-dialog-field { margin-bottom: 12px; }
+.mtg-dialog-field label { display: block; font-size: var(--fs-xs); font-weight: 600; margin-bottom: 4px; color: var(--fg); }
+.mtg-dialog-field input {
+  width: 100%; background: var(--bg); border: 1px solid var(--bg3); border-radius: 6px;
+  color: var(--fg); padding: 8px 10px; font-size: var(--fs-sm); font-family: inherit;
+  box-sizing: border-box; transition: border-color 0.2s;
+}
+.mtg-dialog-field input:focus { border-color: var(--purple); outline: none; }
+.mtg-optional { font-weight: 400; color: var(--dim); }
+.voice-opt { display: block; margin: 8px 0 14px; font-size: var(--fs-xs); color: var(--dim); cursor: pointer; }
+.voice-opt input { margin-right: 4px; }
+
+/* Meeting detail slide-out panel */
+#mtg-detail-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 200;
+  opacity: 0; pointer-events: none; transition: opacity 0.25s ease;
+}
+#mtg-detail-overlay.open { opacity: 1; pointer-events: auto; }
+#mtg-detail-panel {
+  position: fixed; top: 0; right: 0; bottom: 0; width: min(720px, calc(100vw - 60px));
+  background: var(--bg2); z-index: 201; display: flex; flex-direction: column;
+  transform: translateX(100%); transition: transform 0.25s ease;
+  border-left: 1px solid var(--bg3);
+}
+#mtg-detail-panel.open { transform: translateX(0); }
+#mtg-detail-header {
+  display: flex; align-items: center; gap: 8px; padding: 10px 14px;
+  border-bottom: 1px solid var(--bg3); flex-shrink: 0;
+}
+#mtg-detail-back, #mtg-detail-close {
+  background: none; border: none; color: var(--dim); font-size: 18px;
+  cursor: pointer; padding: 4px 8px; border-radius: 4px; line-height: 1;
+}
+#mtg-detail-back:hover, #mtg-detail-close:hover { color: var(--fg); background: var(--bg3); }
+#mtg-detail-title-wrap { flex: 1; min-width: 0; }
+#mtg-detail-title { font-size: var(--fs-md); font-weight: 700; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#mtg-detail-url { font-size: 11px; color: var(--cyan); display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#mtg-detail-elapsed { font-size: var(--fs-xs); color: var(--dim); font-variant-numeric: tabular-nums; flex-shrink: 0; }
+
+/* Status pill (reused) */
 .voice-status-pill {
   font-size: var(--fs-xs); font-weight: 600; padding: 2px 10px; border-radius: 10px;
-  background: var(--bg3); color: var(--dim);
+  background: var(--bg3); color: var(--dim); transition: all 0.3s ease; flex-shrink: 0;
 }
 .voice-status-pill.active { background: rgba(80,250,123,0.15); color: var(--green); }
 .voice-status-pill.joining { background: rgba(255,184,108,0.15); color: var(--orange); }
+.voice-status-pill.speaking { background: rgba(189,147,249,0.2); color: var(--purple); animation: voice-pulse 1.5s ease-in-out infinite; }
 
-.voice-join-section, .voice-active-section { padding: 10px 14px; border-bottom: 1px solid var(--bg3); }
-.voice-join-row, .voice-speak-row { display: flex; gap: 8px; }
-.voice-join-row input, .voice-speak-row input {
-  flex: 1; background: var(--bg); border: 1px solid var(--bg3); border-radius: 6px;
-  color: var(--fg); padding: 8px 10px; font-size: var(--fs-sm); font-family: inherit;
+/* Stats bar */
+#mtg-detail-stats-bar {
+  display: flex; align-items: center; gap: 12px; padding: 8px 14px;
+  border-bottom: 1px solid var(--bg3); flex-shrink: 0; flex-wrap: wrap;
 }
-.voice-join-row input:focus, .voice-speak-row input:focus { border-color: var(--purple); outline: none; }
-.voice-action-btn {
-  background: var(--purple); color: #fff; border: none; border-radius: 6px;
-  padding: 8px 16px; font-size: var(--fs-sm); font-weight: 600; cursor: pointer;
-  white-space: nowrap;
+.voice-stats { display: flex; gap: 12px; flex-shrink: 0; }
+.voice-stat { display: flex; flex-direction: column; align-items: center; min-width: 38px; }
+.voice-stat-value { font-size: 16px; font-weight: 700; color: var(--fg); line-height: 1.2; }
+.voice-stat-label { font-size: 9px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.3px; }
+.voice-speaking-dot {
+  display: inline-block; width: 10px; height: 10px; border-radius: 50%;
+  background: var(--dim); transition: background 0.3s;
 }
-.voice-action-btn:hover { filter: brightness(1.1); }
-.voice-action-btn.voice-leave { background: var(--red); }
-.voice-action-btn.voice-leave:hover { filter: brightness(1.1); }
-.voice-opt { display: block; margin-top: 8px; font-size: var(--fs-xs); color: var(--dim); cursor: pointer; }
-.voice-opt input { margin-right: 4px; }
+.voice-speaking-dot.active { background: var(--green); animation: voice-pulse 1.2s ease-in-out infinite; }
+.voice-session-bar { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
+.voice-session-tag {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 10px; color: var(--dim); background: var(--bg);
+  padding: 2px 8px; border-radius: 10px; font-weight: 500;
+}
+.voice-dot {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--dim);
+  flex-shrink: 0; transition: background 0.3s;
+}
+.voice-dot.on { background: var(--green); }
+.voice-dot.off { background: var(--red); }
 
-.voice-meeting-info { margin-bottom: 10px; }
-.voice-meeting-label { font-size: var(--fs-xs); color: var(--dim); }
-.voice-meeting-url { font-size: var(--fs-sm); color: var(--cyan); word-break: break-all; }
-.voice-controls { display: flex; gap: 8px; margin-bottom: 10px; }
-.voice-speak-row { margin-top: 8px; }
+/* Task notification toast */
+.voice-task-toast {
+  padding: 6px 14px; font-size: var(--fs-xs); color: var(--green);
+  background: rgba(80,250,123,0.08); border-bottom: 1px solid rgba(80,250,123,0.15);
+  animation: voice-toast-in 0.3s ease-out; flex-shrink: 0;
+}
+@keyframes voice-toast-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 
-.voice-session-info { padding: 10px 14px; border-bottom: 1px solid var(--bg3); }
-.voice-info-row { font-size: var(--fs-xs); color: var(--dim); padding: 2px 0; display: flex; gap: 6px; }
-.voice-info-label { color: var(--fg); font-weight: 600; min-width: 110px; }
-
+/* Tabs (reused in detail panel) */
 .voice-terminal-header {
   display: flex; align-items: center; padding: 6px 14px; gap: 8px;
-  border-bottom: 1px solid var(--bg3); font-size: var(--fs-sm); font-weight: 600;
+  border-bottom: 1px solid var(--bg3); flex-shrink: 0;
 }
-.voice-terminal-tabs { margin-left: auto; display: flex; gap: 2px; }
+.voice-terminal-tabs { display: flex; gap: 2px; }
 .voice-tab {
   background: none; border: 1px solid var(--bg3); color: var(--dim); font-size: var(--fs-xs);
   padding: 3px 10px; cursor: pointer; border-radius: 4px; font-weight: 600;
+  transition: all 0.15s;
 }
 .voice-tab:hover { background: var(--bg3); }
 .voice-tab.active { background: var(--purple); color: #fff; border-color: var(--purple); }
-.voice-terminal-wrap { flex: 1; overflow: hidden; background: var(--bg); }
-#voice-terminal { height: 100%; }
-.voice-transcript-wrap { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-.voice-transcript-count-bar {
-  padding: 4px 14px; font-size: var(--fs-xs); color: var(--dim); border-bottom: 1px solid var(--bg3);
-}
+.voice-tab .voice-tab-count { font-weight: 400; opacity: 0.7; margin-left: 4px; }
 
+/* Terminal */
+.voice-terminal-wrap { flex: 1; overflow: hidden; background: var(--bg); }
+#mtg-terminal { height: 100%; }
+
+/* Transcript */
+.voice-transcript-wrap { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 .voice-transcript {
   flex: 1; overflow-y: auto; padding: 8px 14px; font-size: var(--fs-xs);
   font-family: 'SF Mono', 'Menlo', monospace; -webkit-overflow-scrolling: touch;
 }
-.voice-entry { padding: 3px 0; line-height: 1.5; }
+.voice-entry { padding: 4px 0; line-height: 1.5; display: flex; gap: 8px; align-items: baseline; }
+.voice-entry-time { font-size: 9px; color: var(--dim); flex-shrink: 0; min-width: 32px; font-variant-numeric: tabular-nums; opacity: 0.6; }
+.voice-entry-body { flex: 1; min-width: 0; }
 .voice-entry .voice-speaker { color: var(--purple); font-weight: 600; }
 .voice-entry .voice-text { color: var(--fg); }
-.voice-entry.voice-hive { background: rgba(189,147,249,0.06); border-radius: 4px; padding: 4px 6px; margin: 2px -6px; }
+.voice-entry.voice-hive { background: rgba(189,147,249,0.06); border-radius: 4px; padding: 5px 8px; margin: 2px -8px; }
 .voice-entry.voice-hive .voice-speaker { color: var(--green); }
-.voice-empty { color: var(--dim); font-style: italic; padding: 20px 0; text-align: center; font-family: inherit; }
+.voice-entry.voice-new { animation: voice-entry-in 0.3s ease-out; }
+@keyframes voice-entry-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.voice-empty { color: var(--dim); font-style: italic; padding: 30px 0; text-align: center; font-family: inherit; font-size: var(--fs-sm); }
+
+/* Keys bar in detail panel */
+#mtg-keys-bar {
+  display: flex; gap: 4px; padding: 4px 14px; border-top: 1px solid var(--bg3);
+  flex-wrap: wrap; flex-shrink: 0;
+}
+
+/* Input bar in detail panel */
+#mtg-input-bar {
+  display: flex; gap: 8px; padding: 8px 14px; border-top: 1px solid var(--bg3);
+  align-items: flex-end; flex-shrink: 0;
+}
+#mtg-input-bar textarea {
+  flex: 1; background: var(--bg); border: 1px solid var(--bg3); border-radius: 6px;
+  color: var(--fg); padding: 8px 10px; font-size: var(--fs-sm); font-family: inherit;
+  resize: none; transition: border-color 0.2s;
+}
+#mtg-input-bar textarea:focus { border-color: var(--purple); outline: none; }
+#mtg-mode-toggle {
+  background: var(--bg3); border: none; color: var(--fg); font-size: var(--fs-xs);
+  font-weight: 600; padding: 6px 10px; border-radius: 6px; cursor: pointer;
+  min-width: 36px; transition: background 0.15s;
+}
+#mtg-mode-toggle.tell { background: var(--orange); color: var(--bg); }
+#mtg-send {
+  background: var(--green); color: var(--bg); border: none; border-radius: 6px;
+  padding: 8px 14px; font-size: var(--fs-sm); font-weight: 600; cursor: pointer;
+  transition: filter 0.15s;
+}
+#mtg-send:hover { filter: brightness(1.1); }
+
+/* Speak bar in detail panel */
+#mtg-speak-bar {
+  display: flex; gap: 8px; padding: 8px 14px; border-top: 1px solid var(--bg3);
+  align-items: center; flex-shrink: 0;
+}
+#mtg-speak-bar input {
+  flex: 1; background: var(--bg); border: 1px solid var(--bg3); border-radius: 6px;
+  color: var(--fg); padding: 7px 10px; font-size: var(--fs-sm); font-family: inherit;
+  transition: border-color 0.2s;
+}
+#mtg-speak-bar input:focus { border-color: var(--purple); outline: none; }
+.voice-action-btn {
+  background: var(--purple); color: #fff; border: none; border-radius: 6px;
+  padding: 7px 14px; font-size: var(--fs-sm); font-weight: 600; cursor: pointer;
+  white-space: nowrap; transition: filter 0.15s, transform 0.1s;
+}
+.voice-action-btn:hover { filter: brightness(1.15); }
+.voice-action-btn:active { transform: scale(0.97); }
+.voice-action-btn.voice-leave { background: var(--red); }
+
+/* Pulse animation */
+@keyframes voice-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}

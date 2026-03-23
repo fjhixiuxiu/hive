@@ -4,6 +4,7 @@ node_modules/
 test-bot.js
 .hive-state.json
 .hive-knowledge.json
+.hive-meetings.json
 .hive-setup.json
 backups/
 .claude/

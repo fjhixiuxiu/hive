@@ -625,7 +625,7 @@
     const xt = theme === 'light' ? XTERM_LIGHT : XTERM_DARK;
     if (term) term.options.theme = xt;
     if (consoleTerm) consoleTerm.options.theme = xt;
-    if (voiceTerm) voiceTerm.options.theme = xt;
+    if (mtgTerm) mtgTerm.options.theme = xt;
     if (tasksSessionTerm) tasksSessionTerm.options.theme = xt;
     if (taskDetailTerm) taskDetailTerm.options.theme = xt;
   }
@@ -796,9 +796,9 @@
     if (tab === 'fleet-panel') renderGrid();
     if (tab === 'ideas-panel' && ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'idea:list' }));
     if (tab === 'voice-panel') initVoicePanel();
-    else if (voiceTerm && ws && ws.readyState === 1) {
-      // Unsubscribe from voice terminal when leaving voice panel
-      ws.send(JSON.stringify({ type: 'terminal:unsubscribe', session: 'hive-voice' }));
+    else if (mtgDetailOpen) {
+      // Close meeting detail when leaving voice panel
+      closeMeetingDetail();
     }
     if (tab === 'more-panel') { renderDesignationGrid(); renderAgentRoots(); renderDesigDefs(); renderPMs(); renderUsers(); renderChecklistTemplates(); }
     const spawnBtn = document.getElementById('spawn-btn');
@@ -1083,12 +1083,12 @@
             }
           }
         }
-        // Voice session terminal data
-        if (voiceTerm && activeTab === 'voice-panel' && String(msg.session) === 'hive-voice') {
-          if (msg.cols && msg.cols > 0 && msg.cols !== voiceTerm.cols) voiceTerm.resize(msg.cols, voiceTerm.rows);
-          if (msg.content !== voiceLastContent) {
-            if (voiceScrolledUp) { voicePending = msg.content; }
-            else { writeVoiceContent(msg.content); }
+        // Voice session terminal data (meeting detail panel)
+        if (mtgTerm && mtgDetailOpen && String(msg.session) === 'hive-voice') {
+          if (msg.cols && msg.cols > 0 && msg.cols !== mtgTerm.cols) mtgTerm.resize(msg.cols, mtgTerm.rows);
+          if (msg.content !== mtgLastContent) {
+            if (mtgScrolledUp) { mtgPending = msg.content; }
+            else { writeMtgContent(msg.content); }
           }
         }
         // Card terminal data (terminals view mode)
@@ -1490,9 +1490,13 @@
       // ── Voice agent ───────────────────────────
       case 'voice:status': updateVoiceStatus(msg.status); break;
       case 'voice:joining': updateVoiceJoining(msg.url); break;
-      case 'voice:transcript': loadVoiceTranscript(msg.transcript || []); break;
+      case 'voice:meetings': renderMeetingList(msg.meetings, msg.status); break;
+      case 'voice:meeting:detail': renderMtgDetail(msg.meeting); break;
+      case 'voice:transcript': break; // replaced by voice:meeting:detail
       case 'voice:transcript:entry': appendVoiceTranscript(msg.entry); break;
       case 'voice:response': appendVoiceResponse(msg.text); break;
+      case 'voice:speaking': updateVoiceSpeaking(msg.speaking); break;
+      case 'voice:task-created': showVoiceTaskToast(msg.task); break;
       case 'voice:error': showToast('Voice Error', msg.error, 'error'); break;
       case 'voice:debug': updateVoiceDebug(msg.debug); break;
       case 'update:status': {
@@ -8297,221 +8301,549 @@
 
   Tooltip.init();
 
-  // ── Voice panel ─────────────────────────────────────
+  // ── Voice / Meetings panel ──────────────────────────
   let voiceStatus = { active: false };
-  let voiceMeetingUrl = '';
-  let voiceTranscriptEntries = [];
-  let voicePollTimer = null;
-  var voiceTerm = null;
-  var voiceFit = null;
-  var voiceLastContent = '';
-  var voiceScrolledUp = false;
-  var voicePending = null;
-  let voiceActiveTab = 'terminal'; // 'terminal' or 'transcript'
-
-  function initVoicePanel() {
-    // Request current status
-    if (ws && ws.readyState === 1) {
-      ws.send(JSON.stringify({ type: 'voice:status' }));
-      ws.send(JSON.stringify({ type: 'voice:transcript' }));
-    }
-    renderVoicePanel();
-    initVoiceTerminal();
-    // Poll for status updates while on voice tab
-    if (voicePollTimer) clearInterval(voicePollTimer);
-    voicePollTimer = setInterval(() => {
-      if (activeTab !== 'voice-panel') { clearInterval(voicePollTimer); voicePollTimer = null; return; }
-      if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'voice:status' }));
-    }, 5000);
-  }
-
-  function initVoiceTerminal() {
-    const container = document.getElementById('voice-terminal');
-    if (!container) return;
-    if (!voiceTerm) {
-      voiceTerm = new Terminal({
-        theme: currentTheme === 'light' ? XTERM_LIGHT : XTERM_DARK,
-        fontSize: 12, fontFamily: "'SF Mono', 'Menlo', 'Monaco', 'Courier New', monospace",
-        disableStdin: true, scrollback: 5000, convertEol: true, allowProposedApi: true,
-      });
-      voiceFit = new FitAddon.FitAddon();
-      voiceTerm.loadAddon(voiceFit);
-      voiceTerm.loadAddon(new WebLinksAddon.WebLinksAddon((e, uri) => window.open(uri, '_blank')));
-      enableTerminalCopy(voiceTerm);
-      voiceTerm.open(container);
-      // Scroll lock
-      voiceTerm.element.addEventListener('wheel', () => {
-        setTimeout(() => {
-          if (!voiceTerm) return;
-          voiceScrolledUp = voiceTerm.buffer.active.viewportY < voiceTerm.buffer.active.baseY;
-        }, 50);
-      });
-    }
-    requestAnimationFrame(() => {
-      if (voiceFit) voiceFit.fit();
-      // Subscribe to terminal data for hive-voice session
-      if (ws && ws.readyState === 1) {
-        ws.send(JSON.stringify({ type: 'terminal:subscribe', session: 'hive-voice', pane: 1 }));
-      }
-    });
-  }
-
-  function writeVoiceContent(content) {
-    if (!voiceTerm) return;
-    voiceTerm.clear();
-    voiceTerm.write(content);
-    voiceLastContent = content;
-  }
-
-  function updateVoiceStatus(status) {
-    voiceStatus = status || { active: false };
-    renderVoicePanel();
-    // Update badge
-    const badge = $('#voice-badge');
-    if (badge) {
-      if (voiceStatus.active) { badge.textContent = ''; badge.classList.add('visible'); badge.style.background = 'var(--green)'; badge.style.minWidth = '8px'; badge.style.height = '8px'; }
-      else { badge.classList.remove('visible'); badge.style = ''; }
-    }
-  }
-
-  function updateVoiceJoining(url) {
-    voiceMeetingUrl = url;
-    const pill = $('#voice-status-pill');
-    if (pill) { pill.textContent = 'Joining...'; pill.className = 'voice-status-pill joining'; }
-  }
-
-  function renderVoicePanel() {
-    const pill = $('#voice-status-pill');
-    const joinSection = $('#voice-join-section');
-    const activeSection = $('#voice-active-section');
-    const meetingDisplay = $('#voice-meeting-display');
-    const bridgeEl = $('#voice-bridge-status');
-    const transcriberEl = $('#voice-transcriber-status');
-
-    if (pill) {
-      if (voiceStatus.active) { pill.textContent = 'In Meeting'; pill.className = 'voice-status-pill active'; }
-      else { pill.textContent = 'Inactive'; pill.className = 'voice-status-pill'; }
-    }
-    if (joinSection) joinSection.style.display = voiceStatus.active ? 'none' : '';
-    if (activeSection) activeSection.style.display = voiceStatus.active ? '' : 'none';
-    if (meetingDisplay) meetingDisplay.textContent = voiceMeetingUrl || '--';
-    if (bridgeEl) bridgeEl.textContent = voiceStatus.audioBridgeConnected ? 'Connected' : 'Disconnected';
-    if (transcriberEl) transcriberEl.textContent = voiceStatus.transcriptLength != null ? `${voiceStatus.transcriptLength} entries` : '--';
-  }
-
-  function loadVoiceTranscript(entries) {
-    voiceTranscriptEntries = entries;
-    const container = $('#voice-transcript');
-    if (!container) return;
-    if (!entries.length) {
-      container.innerHTML = '<div class="voice-empty">No transcript yet — join a meeting to start</div>';
-      const countEl = $('#voice-transcript-count');
-      if (countEl) countEl.textContent = '0 entries';
-      return;
-    }
-    container.innerHTML = '';
-    for (const entry of entries) {
-      const el = document.createElement('div');
-      el.className = 'voice-entry';
-      const speaker = entry.speaker != null ? `Speaker ${entry.speaker}` : 'Unknown';
-      el.innerHTML = `<span class="voice-speaker">[${speaker}]</span> <span class="voice-text">${escapeHtml(entry.text)}</span>`;
-      container.appendChild(el);
-    }
-    container.scrollTop = container.scrollHeight;
-    const countEl = $('#voice-transcript-count');
-    if (countEl) countEl.textContent = `${entries.length} entries`;
-  }
-
-  function appendVoiceTranscript(entry) {
-    voiceTranscriptEntries.push(entry);
-    const container = $('#voice-transcript');
-    if (!container) return;
-    const el = document.createElement('div');
-    el.className = 'voice-entry';
-    const speaker = entry.speaker != null ? `Speaker ${entry.speaker}` : 'Unknown';
-    el.innerHTML = `<span class="voice-speaker">[${speaker}]</span> <span class="voice-text">${escapeHtml(entry.text)}</span>`;
-    container.appendChild(el);
-    container.scrollTop = container.scrollHeight;
-    const countEl = $('#voice-transcript-count');
-    if (countEl) countEl.textContent = `${voiceTranscriptEntries.length} entries`;
-    // Remove empty state
-    const empty = container.querySelector('.voice-empty');
-    if (empty) empty.remove();
-  }
-
-  function appendVoiceResponse(text) {
-    const container = $('#voice-transcript');
-    if (!container) return;
-    const el = document.createElement('div');
-    el.className = 'voice-entry voice-hive';
-    el.innerHTML = `<span class="voice-speaker">[Hive]</span> <span class="voice-text">${escapeHtml(text)}</span>`;
-    container.appendChild(el);
-    container.scrollTop = container.scrollHeight;
-  }
-
-  function updateVoiceDebug(debug) {
-    // Update session info
-    const bridgeEl = $('#voice-bridge-status');
-    const transcriberEl = $('#voice-transcriber-status');
-    if (bridgeEl) bridgeEl.textContent = debug.audioBridgeConnected ? 'Connected' : 'Disconnected';
-    if (transcriberEl) transcriberEl.textContent = debug.transcriberRunning ? 'Running' : 'Stopped';
-  }
+  let mtgList = [];
+  let mtgDetailOpen = false;
+  let mtgDetailId = null;
+  let mtgDetailData = null;
+  let mtgPollTimer = null;
+  let mtgElapsedTimer = null;
+  let mtgTaskToastTimer = null;
+  let mtgActiveTab = 'terminal';
+  let mtgMode = 'ask';
+  let mtgHistoryIdx = -1;
+  let mtgHistoryDraft = '';
+  let mtgSpeaking = false;
+  var mtgTerm = null;
+  var mtgFit = null;
+  var mtgLastContent = '';
+  var mtgScrolledUp = false;
+  var mtgPending = null;
+  const mtgAttachedImages = [];
 
   function escapeHtml(str) {
     return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
 
-  // Voice tab switching (terminal vs transcript)
-  document.addEventListener('click', (e) => {
-    const voiceTab = e.target.closest('.voice-tab');
-    if (voiceTab) {
-      const tab = voiceTab.dataset.voiceTab;
-      if (!tab) return;
-      voiceActiveTab = tab;
-      document.querySelectorAll('.voice-tab').forEach(t => t.classList.toggle('active', t.dataset.voiceTab === tab));
-      const termWrap = document.getElementById('voice-terminal-wrap');
-      const txWrap = document.getElementById('voice-transcript-wrap');
-      if (termWrap) termWrap.style.display = tab === 'terminal' ? '' : 'none';
-      if (txWrap) txWrap.style.display = tab === 'transcript' ? '' : 'none';
-      if (tab === 'terminal' && voiceFit) requestAnimationFrame(() => voiceFit.fit());
+  function mtgFormatElapsed(ms) {
+    const s = Math.floor(ms / 1000);
+    const m = Math.floor(s / 60);
+    const h = Math.floor(m / 60);
+    if (h > 0) return h + 'h ' + (m % 60) + 'm';
+    if (m > 0) return m + 'm ' + (s % 60) + 's';
+    return s + 's';
+  }
+
+  function mtgFormatDate(ts) {
+    if (!ts) return '';
+    const d = new Date(ts);
+    const now = new Date();
+    const diff = now - d;
+    if (diff < 60000) return 'now';
+    if (diff < 3600000) return Math.floor(diff / 60000) + 'm ago';
+    if (diff < 86400000 && d.getDate() === now.getDate()) {
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     }
+    if (diff < 172800000) return 'Yesterday';
+    return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  }
+
+  function mtgFormatTimeAgo(ts) {
+    if (!ts) return '';
+    const diff = Date.now() - ts;
+    if (diff < 60000) return 'now';
+    const m = Math.floor(diff / 60000);
+    if (m < 60) return m + 'm';
+    return Math.floor(m / 60) + 'h' + (m % 60) + 'm';
+  }
+
+  // ── Meeting list ───────────────────────────────────
+
+  function initVoicePanel() {
+    if (ws && ws.readyState === 1) {
+      ws.send(JSON.stringify({ type: 'voice:meetings' }));
+    }
+    if (mtgPollTimer) clearInterval(mtgPollTimer);
+    mtgPollTimer = setInterval(() => {
+      if (activeTab !== 'voice-panel') { clearInterval(mtgPollTimer); mtgPollTimer = null; return; }
+      if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'voice:meetings' }));
+    }, 5000);
+  }
+
+  function renderMeetingList(meetings, status) {
+    mtgList = meetings || [];
+    voiceStatus = status || voiceStatus;
+    const container = $('#voice-list');
+    if (!container) return;
+
+    // Update sidebar badge
+    const badge = $('#voice-badge');
+    if (badge) {
+      if (voiceStatus.active) { badge.textContent = ''; badge.classList.add('visible'); badge.style.background = 'var(--green)'; badge.style.minWidth = '8px'; badge.style.height = '8px'; }
+      else { badge.classList.remove('visible'); badge.style = ''; }
+    }
+
+    if (!meetings.length && !voiceStatus.active) {
+      container.innerHTML = '<div class="voice-empty">No meetings yet — click "+ New Meeting" to start</div>';
+      return;
+    }
+
+    container.innerHTML = '';
+
+    // Active meeting card (always first)
+    if (voiceStatus.active && voiceStatus.meetingId) {
+      const card = document.createElement('div');
+      card.className = 'mtg-card mtg-card-live';
+      card.dataset.meetingId = voiceStatus.meetingId;
+      const elapsed = voiceStatus.joinedAt ? mtgFormatElapsed(Date.now() - voiceStatus.joinedAt) : '';
+      card.innerHTML = '<div class="mtg-card-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg></div>'
+        + '<div class="mtg-card-body"><div class="mtg-card-title">' + escapeHtml(voiceStatus.meetingName || 'Meeting') + ' <span class="mtg-card-pill live">LIVE</span></div>'
+        + '<div class="mtg-card-meta"><span>' + (voiceStatus.transcriptLength || 0) + ' entries</span><span>' + (voiceStatus.tasksCreated || 0) + ' tasks</span></div></div>'
+        + '<div class="mtg-card-time">' + elapsed + '</div>';
+      container.appendChild(card);
+    }
+
+    // Past meetings
+    for (const m of meetings) {
+      // Skip if this is the active meeting already shown
+      if (voiceStatus.active && voiceStatus.meetingId === m.id) continue;
+      const card = document.createElement('div');
+      card.className = 'mtg-card';
+      card.dataset.meetingId = m.id;
+      const duration = m.endedAt && m.startedAt ? mtgFormatElapsed(m.endedAt - m.startedAt) : '';
+      const dateStr = mtgFormatDate(m.startedAt);
+      card.innerHTML = '<div class="mtg-card-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg></div>'
+        + '<div class="mtg-card-body"><div class="mtg-card-title">' + escapeHtml(m.name || 'Meeting') + '</div>'
+        + '<div class="mtg-card-meta"><span>' + (m.transcriptCount || 0) + ' entries</span><span>' + (m.tasksCreated || 0) + ' tasks</span>' + (duration ? '<span>' + duration + '</span>' : '') + '</div></div>'
+        + '<div class="mtg-card-time">' + dateStr + '</div>';
+      container.appendChild(card);
+    }
+  }
+
+  // ── Join dialog ────────────────────────────────────
+
+  function openJoinDialog() {
+    const overlay = document.getElementById('meeting-join-overlay');
+    overlay.classList.add('visible');
+    document.getElementById('mtg-join-url').value = '';
+    document.getElementById('mtg-join-name').value = '';
+    document.getElementById('mtg-join-url').focus();
+  }
+
+  function closeJoinDialog() {
+    document.getElementById('meeting-join-overlay').classList.remove('visible');
+  }
+
+  function confirmJoin() {
+    const url = document.getElementById('mtg-join-url').value.trim();
+    if (!url) { showToast('Voice', 'Enter a meeting URL', 'error'); return; }
+    const name = document.getElementById('mtg-join-name').value.trim() || undefined;
+    const reportOnJoin = document.getElementById('mtg-join-standup').checked;
+    if (ws && ws.readyState === 1) {
+      ws.send(JSON.stringify({ type: 'voice:join', url, name, reportOnJoin }));
+    }
+    closeJoinDialog();
+  }
+
+  document.getElementById('voice-new-btn').addEventListener('click', openJoinDialog);
+  document.getElementById('mtg-join-cancel').addEventListener('click', closeJoinDialog);
+  document.getElementById('mtg-join-confirm').addEventListener('click', confirmJoin);
+  document.getElementById('meeting-join-overlay').addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) closeJoinDialog();
+  });
+  document.getElementById('mtg-join-url').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); confirmJoin(); }
   });
 
-  // Voice panel event listeners
-  document.addEventListener('click', (e) => {
-    if (e.target.id === 'voice-join-btn') {
-      const urlInput = $('#voice-meeting-url');
-      const url = urlInput ? urlInput.value.trim() : '';
-      if (!url) { showToast('Voice', 'Enter a meeting URL', 'error'); return; }
-      const reportOnJoin = $('#voice-report-on-join')?.checked !== false;
-      if (ws && ws.readyState === 1) {
-        ws.send(JSON.stringify({ type: 'voice:join', url, reportOnJoin }));
-        voiceMeetingUrl = url;
+  // ── Meeting detail panel ───────────────────────────
+
+  function openMeetingDetail(meetingId) {
+    mtgDetailId = meetingId;
+    mtgDetailOpen = true;
+    mtgActiveTab = 'terminal';
+    mtgSpeaking = false;
+    document.getElementById('mtg-detail-panel').classList.add('open');
+    document.getElementById('mtg-detail-overlay').classList.add('open');
+
+    // Reset tabs
+    document.querySelectorAll('[data-mtg-tab]').forEach(t => t.classList.toggle('active', t.dataset.mtgTab === 'terminal'));
+    document.getElementById('mtg-terminal-wrap').style.display = '';
+    document.getElementById('mtg-transcript-wrap').style.display = 'none';
+
+    // Request detail
+    if (ws && ws.readyState === 1) {
+      ws.send(JSON.stringify({ type: 'voice:meeting:detail', id: meetingId }));
+    }
+
+    // Init terminal for active meetings
+    const isActive = voiceStatus.active && voiceStatus.meetingId === meetingId;
+    const statsBar = document.getElementById('mtg-detail-stats-bar');
+    const speakBar = document.getElementById('mtg-speak-bar');
+    const inputBar = document.getElementById('mtg-input-bar');
+    const keysBar = document.getElementById('mtg-keys-bar');
+    const tabsBar = document.getElementById('mtg-tabs-bar');
+
+    if (isActive) {
+      statsBar.style.display = '';
+      speakBar.style.display = '';
+      inputBar.style.display = '';
+      keysBar.style.display = '';
+      tabsBar.style.display = '';
+      initMtgTerminal();
+      startMtgElapsedTimer();
+      renderMtgDetailStatus();
+    } else {
+      // Past meeting — show transcript only, hide terminal/input
+      statsBar.style.display = 'none';
+      speakBar.style.display = 'none';
+      inputBar.style.display = 'none';
+      keysBar.style.display = 'none';
+      // Switch to transcript tab
+      mtgActiveTab = 'transcript';
+      document.querySelectorAll('[data-mtg-tab]').forEach(t => t.classList.toggle('active', t.dataset.mtgTab === 'transcript'));
+      document.getElementById('mtg-terminal-wrap').style.display = 'none';
+      document.getElementById('mtg-transcript-wrap').style.display = '';
+      tabsBar.style.display = 'none';
+    }
+  }
+
+  function closeMeetingDetail() {
+    mtgDetailOpen = false;
+    mtgDetailId = null;
+    mtgDetailData = null;
+    document.getElementById('mtg-detail-panel').classList.remove('open');
+    document.getElementById('mtg-detail-overlay').classList.remove('open');
+    stopMtgElapsedTimer();
+    // Unsubscribe from terminal
+    if (ws && ws.readyState === 1) {
+      ws.send(JSON.stringify({ type: 'terminal:unsubscribe', session: 'hive-voice' }));
+    }
+  }
+
+  document.getElementById('mtg-detail-back').addEventListener('click', closeMeetingDetail);
+  document.getElementById('mtg-detail-close').addEventListener('click', closeMeetingDetail);
+  document.getElementById('mtg-detail-overlay').addEventListener('click', closeMeetingDetail);
+
+  function renderMtgDetail(meeting) {
+    if (!meeting) return;
+    mtgDetailData = meeting;
+    document.getElementById('mtg-detail-title').textContent = meeting.name || 'Meeting';
+    document.getElementById('mtg-detail-url').textContent = meeting.url || '';
+
+    if (meeting.active) {
+      const pill = document.getElementById('mtg-detail-pill');
+      pill.textContent = 'In Meeting';
+      pill.className = 'voice-status-pill active';
+    } else {
+      const pill = document.getElementById('mtg-detail-pill');
+      const duration = meeting.endedAt && meeting.startedAt ? mtgFormatElapsed(meeting.endedAt - meeting.startedAt) : '';
+      pill.textContent = duration || 'Ended';
+      pill.className = 'voice-status-pill';
+    }
+
+    // Render transcript
+    renderMtgTranscript(meeting.transcript || [], meeting.responses || []);
+  }
+
+  function renderMtgDetailStatus() {
+    if (!mtgDetailOpen) return;
+    const pill = document.getElementById('mtg-detail-pill');
+    if (pill && !mtgSpeaking) {
+      if (voiceStatus.active) { pill.textContent = 'In Meeting'; pill.className = 'voice-status-pill active'; }
+      else { pill.textContent = 'Inactive'; pill.className = 'voice-status-pill'; }
+    }
+    // Stats
+    const st = document.getElementById('mtg-stat-transcript');
+    const tt = document.getElementById('mtg-stat-tasks');
+    if (st) st.textContent = String(voiceStatus.transcriptLength || 0);
+    if (tt) tt.textContent = String(voiceStatus.tasksCreated || 0);
+    // Dots
+    const dotS = document.getElementById('mtg-dot-session');
+    const dotB = document.getElementById('mtg-dot-bridge');
+    const dotT = document.getElementById('mtg-dot-transcriber');
+    if (dotS) dotS.className = 'voice-dot ' + (voiceStatus.active ? 'on' : '');
+    if (dotB) dotB.className = 'voice-dot ' + (voiceStatus.audioBridgeConnected ? 'on' : (voiceStatus.active ? 'off' : ''));
+    if (dotT) dotT.className = 'voice-dot ' + ((voiceStatus.transcriptLength || 0) > 0 ? 'on' : (voiceStatus.active ? 'off' : ''));
+  }
+
+  function renderMtgTranscript(transcript, responses) {
+    const container = document.getElementById('mtg-transcript');
+    if (!container) return;
+    if (!transcript.length && !responses.length) {
+      container.innerHTML = '<div class="voice-empty">No transcript yet</div>';
+      return;
+    }
+    // Merge transcript entries and hive responses by timestamp
+    const items = [];
+    for (const e of transcript) items.push({ type: 'entry', data: e, ts: e._ts || 0 });
+    for (const r of responses) items.push({ type: 'response', data: r, ts: r._ts || 0 });
+    items.sort((a, b) => a.ts - b.ts);
+
+    container.innerHTML = '';
+    for (const item of items) {
+      const el = document.createElement('div');
+      if (item.type === 'response') {
+        el.className = 'voice-entry voice-hive';
+        el.innerHTML = '<span class="voice-entry-time">' + mtgFormatTimeAgo(item.ts) + '</span>'
+          + '<span class="voice-entry-body"><span class="voice-speaker">[Hive]</span> <span class="voice-text">' + escapeHtml(item.data.text) + '</span></span>';
+      } else {
+        const speaker = item.data.speaker != null ? 'Speaker ' + item.data.speaker : 'Unknown';
+        el.className = 'voice-entry';
+        el.innerHTML = '<span class="voice-entry-time">' + mtgFormatTimeAgo(item.ts) + '</span>'
+          + '<span class="voice-entry-body"><span class="voice-speaker">[' + speaker + ']</span> <span class="voice-text">' + escapeHtml(item.data.text) + '</span></span>';
       }
+      container.appendChild(el);
     }
-    if (e.target.id === 'voice-leave-btn') {
-      if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'voice:leave' }));
+    container.scrollTop = container.scrollHeight;
+
+    // Update tab count
+    const tabBtn = document.querySelector('[data-mtg-tab="transcript"]');
+    if (tabBtn) tabBtn.innerHTML = 'Transcript <span class="voice-tab-count">' + transcript.length + '</span>';
+  }
+
+  // ── Meeting detail terminal ────────────────────────
+
+  function initMtgTerminal() {
+    const container = document.getElementById('mtg-terminal');
+    if (!container) return;
+    if (!mtgTerm) {
+      mtgTerm = new Terminal({
+        theme: currentTheme === 'light' ? XTERM_LIGHT : XTERM_DARK,
+        fontSize: 12, fontFamily: "'SF Mono', 'Menlo', 'Monaco', 'Courier New', monospace",
+        disableStdin: true, scrollback: 5000, convertEol: true, allowProposedApi: true,
+      });
+      mtgFit = new FitAddon.FitAddon();
+      mtgTerm.loadAddon(mtgFit);
+      mtgTerm.loadAddon(new WebLinksAddon.WebLinksAddon((e, uri) => window.open(uri, '_blank')));
+      enableTerminalCopy(mtgTerm);
+      mtgTerm.open(container);
+      mtgTerm.element.addEventListener('wheel', () => {
+        setTimeout(() => {
+          if (!mtgTerm) return;
+          mtgScrolledUp = mtgTerm.buffer.active.viewportY < mtgTerm.buffer.active.baseY;
+        }, 50);
+      });
     }
-    if (e.target.id === 'voice-speak-btn') {
-      const input = $('#voice-speak-input');
-      const text = input ? input.value.trim() : '';
-      if (!text) return;
-      if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'voice:speak', text }));
-      input.value = '';
+    requestAnimationFrame(() => {
+      if (mtgFit) mtgFit.fit();
+      if (ws && ws.readyState === 1) {
+        ws.send(JSON.stringify({ type: 'terminal:subscribe', session: 'hive-voice', pane: 1 }));
+        ws.send(JSON.stringify({ type: 'terminal:resize', session: 'hive-voice', cols: mtgTerm.cols, rows: mtgTerm.rows }));
+      }
+    });
+    document.getElementById('mtg-input').focus();
+  }
+
+  function writeMtgContent(content) {
+    if (!mtgTerm) return;
+    mtgTerm.clear();
+    mtgTerm.write(content);
+    mtgLastContent = content;
+  }
+
+  // ── Elapsed timer ──────────────────────────────────
+
+  function startMtgElapsedTimer() {
+    if (mtgElapsedTimer) clearInterval(mtgElapsedTimer);
+    mtgElapsedTimer = setInterval(() => {
+      const el = document.getElementById('mtg-detail-elapsed');
+      if (!el || !voiceStatus.joinedAt) return;
+      el.textContent = mtgFormatElapsed(Date.now() - voiceStatus.joinedAt);
+    }, 1000);
+  }
+
+  function stopMtgElapsedTimer() {
+    if (mtgElapsedTimer) { clearInterval(mtgElapsedTimer); mtgElapsedTimer = null; }
+    const el = document.getElementById('mtg-detail-elapsed');
+    if (el) el.textContent = '';
+  }
+
+  // ── Send message to Claude in voice session ────────
+
+  function sendMtgMessage() {
+    const input = document.getElementById('mtg-input');
+    const text = input.value.trim();
+    const hasImages = mtgAttachedImages.length > 0;
+    if (!text && !hasImages) return;
+    if (!ws || ws.readyState !== 1) return;
+    let message = text;
+    if (hasImages) {
+      const paths = mtgAttachedImages.map(i => i.path).join(', ');
+      const prefix = '[Attached images: ' + paths + ']';
+      message = text ? prefix + '\n\n' + text : prefix + '\n\nLook at the attached screenshot.';
+      clearAttachments(mtgAttachedImages, document.getElementById('mtg-attachment-strip'));
+    }
+    const msgType = mtgMode === 'ask' ? 'ask' : 'tell';
+    ws.send(JSON.stringify({ type: msgType, session: 'hive-voice', message }));
+    pushMsgHistory('hive-voice', text);
+    mtgHistoryIdx = -1;
+    mtgHistoryDraft = '';
+    input.value = '';
+    showToast('Sent', (msgType === 'ask' ? 'Asked' : 'Told') + ' voice session', 'success');
+  }
+
+  document.getElementById('mtg-send').addEventListener('click', sendMtgMessage);
+  document.getElementById('mtg-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMtgMessage(); return; }
+    if (e.key === 'Escape') { closeMeetingDetail(); return; }
+    // Up/Down arrow history
+    const input = e.target;
+    const h = msgHistory['hive-voice'] || [];
+    if (!h.length) return;
+    if (e.key === 'ArrowUp') {
+      const beforeCursor = input.value.substring(0, input.selectionStart);
+      if (beforeCursor.includes('\n')) return;
+      e.preventDefault();
+      if (mtgHistoryIdx === -1) mtgHistoryDraft = input.value;
+      if (mtgHistoryIdx < h.length - 1) mtgHistoryIdx++;
+      input.value = h[h.length - 1 - mtgHistoryIdx];
+    } else if (e.key === 'ArrowDown') {
+      const afterCursor = input.value.substring(input.selectionEnd);
+      if (afterCursor.includes('\n')) return;
+      if (mtgHistoryIdx <= -1) return;
+      e.preventDefault();
+      mtgHistoryIdx--;
+      input.value = mtgHistoryIdx === -1 ? mtgHistoryDraft : h[h.length - 1 - mtgHistoryIdx];
     }
   });
 
-  // Enter key for speak input
-  document.addEventListener('keydown', (e) => {
-    if (e.target.id === 'voice-speak-input' && e.key === 'Enter') {
-      e.preventDefault();
-      $('#voice-speak-btn')?.click();
-    }
-    if (e.target.id === 'voice-meeting-url' && e.key === 'Enter') {
-      e.preventDefault();
-      $('#voice-join-btn')?.click();
+  // Mode toggle (Ask/Tell)
+  const mtgModeToggle = document.getElementById('mtg-mode-toggle');
+  mtgModeToggle.addEventListener('click', () => {
+    mtgMode = mtgMode === 'ask' ? 'tell' : 'ask';
+    mtgModeToggle.textContent = mtgMode === 'ask' ? 'Ask' : 'Tell';
+    mtgModeToggle.classList.toggle('tell', mtgMode === 'tell');
+  });
+
+  // Keys bar
+  document.querySelectorAll('[data-mtg-key]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (!ws || ws.readyState !== 1) return;
+      ws.send(JSON.stringify({ type: 'keys', session: 'hive-voice', keys: [btn.dataset.mtgKey], pane: 1 }));
+    });
+  });
+
+  // Drag-drop images
+  setupDragDrop(document.getElementById('mtg-input'), mtgAttachedImages, document.getElementById('mtg-attachment-strip'));
+
+  // ── Speak / Leave buttons ──────────────────────────
+
+  document.getElementById('mtg-speak-btn').addEventListener('click', () => {
+    const input = document.getElementById('mtg-speak-input');
+    const text = input ? input.value.trim() : '';
+    if (!text) return;
+    if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'voice:speak', text }));
+    input.value = '';
+  });
+
+  document.getElementById('mtg-leave-btn').addEventListener('click', () => {
+    if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'voice:leave' }));
+  });
+
+  document.getElementById('mtg-speak-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); document.getElementById('mtg-speak-btn').click(); }
+  });
+
+  // ── Tab switching (terminal / transcript) ──────────
+
+  document.addEventListener('click', (e) => {
+    const tab = e.target.closest('[data-mtg-tab]');
+    if (tab) {
+      const t = tab.dataset.mtgTab;
+      if (!t) return;
+      mtgActiveTab = t;
+      document.querySelectorAll('[data-mtg-tab]').forEach(b => b.classList.toggle('active', b.dataset.mtgTab === t));
+      document.getElementById('mtg-terminal-wrap').style.display = t === 'terminal' ? '' : 'none';
+      document.getElementById('mtg-transcript-wrap').style.display = t === 'transcript' ? '' : 'none';
+      if (t === 'terminal' && mtgFit) requestAnimationFrame(() => mtgFit.fit());
     }
   });
+
+  // ── Click on meeting card → open detail ────────────
+
+  document.addEventListener('click', (e) => {
+    const card = e.target.closest('.mtg-card');
+    if (card && card.dataset.meetingId) {
+      openMeetingDetail(card.dataset.meetingId);
+    }
+  });
+
+  // ── WS event handlers ─────────────────────────────
+
+  function updateVoiceStatus(status) {
+    voiceStatus = status || { active: false };
+    // Re-render list
+    renderMeetingList(mtgList, voiceStatus);
+    // Update detail panel if open
+    if (mtgDetailOpen) renderMtgDetailStatus();
+  }
+
+  function updateVoiceJoining(url) {
+    const pill = document.getElementById('mtg-detail-pill');
+    if (pill) { pill.textContent = 'Joining...'; pill.className = 'voice-status-pill joining'; }
+  }
+
+  function updateVoiceSpeaking(isSpeaking) {
+    mtgSpeaking = isSpeaking;
+    if (!mtgDetailOpen) return;
+    const pill = document.getElementById('mtg-detail-pill');
+    const dot = document.getElementById('mtg-speaking-indicator');
+    const label = document.getElementById('mtg-speaking-label');
+    if (isSpeaking) {
+      if (pill) { pill.textContent = 'Speaking'; pill.className = 'voice-status-pill speaking'; }
+      if (dot) dot.classList.add('active');
+      if (label) label.textContent = 'speaking';
+    } else {
+      if (pill && voiceStatus.active) { pill.textContent = 'In Meeting'; pill.className = 'voice-status-pill active'; }
+      if (dot) dot.classList.remove('active');
+      if (label) label.textContent = 'listening';
+    }
+  }
+
+  function showVoiceTaskToast(task) {
+    const toast = document.getElementById('mtg-task-toast');
+    if (!toast || !mtgDetailOpen) return;
+    toast.textContent = 'Task created: ' + (task.title || task.id || 'new task');
+    toast.style.display = '';
+    if (mtgTaskToastTimer) clearTimeout(mtgTaskToastTimer);
+    mtgTaskToastTimer = setTimeout(() => { toast.style.display = 'none'; }, 5000);
+  }
+
+  function appendVoiceTranscript(entry) {
+    if (!mtgDetailOpen) return;
+    const container = document.getElementById('mtg-transcript');
+    if (!container) return;
+    const empty = container.querySelector('.voice-empty');
+    if (empty) empty.remove();
+    const el = document.createElement('div');
+    const speaker = entry.speaker != null ? 'Speaker ' + entry.speaker : 'Unknown';
+    el.className = 'voice-entry voice-new';
+    el.innerHTML = '<span class="voice-entry-time">' + mtgFormatTimeAgo(Date.now()) + '</span>'
+      + '<span class="voice-entry-body"><span class="voice-speaker">[' + speaker + ']</span> <span class="voice-text">' + escapeHtml(entry.text) + '</span></span>';
+    container.appendChild(el);
+    container.scrollTop = container.scrollHeight;
+  }
+
+  function appendVoiceResponse(text) {
+    if (!mtgDetailOpen) return;
+    const container = document.getElementById('mtg-transcript');
+    if (!container) return;
+    const el = document.createElement('div');
+    el.className = 'voice-entry voice-hive voice-new';
+    el.innerHTML = '<span class="voice-entry-time">' + mtgFormatTimeAgo(Date.now()) + '</span>'
+      + '<span class="voice-entry-body"><span class="voice-speaker">[Hive]</span> <span class="voice-text">' + escapeHtml(text) + '</span></span>';
+    container.appendChild(el);
+    container.scrollTop = container.scrollHeight;
+  }
+
+  function updateVoiceDebug(debug) {
+    if (!mtgDetailOpen) return;
+    const dotB = document.getElementById('mtg-dot-bridge');
+    const dotT = document.getElementById('mtg-dot-transcriber');
+    if (dotB) dotB.className = 'voice-dot ' + (debug.audioBridgeConnected ? 'on' : 'off');
+    if (dotT) dotT.className = 'voice-dot ' + (debug.transcriberRunning ? 'on' : 'off');
+  }
 
   // ── Service worker registration ───────────────────
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});

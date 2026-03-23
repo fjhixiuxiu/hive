@@ -411,10 +411,20 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     broadcast({ type: 'voice:response', text });
   });
   voiceAgent.on('joined', () => {
-    broadcast({ type: 'voice:status', status: voiceAgent.getStatus() });
+    const status = voiceAgent.getStatus();
+    broadcast({ type: 'voice:status', status });
+    broadcast({ type: 'voice:meetings', meetings: voiceAgent.getMeetings(), status });
   });
   voiceAgent.on('left', () => {
-    broadcast({ type: 'voice:status', status: voiceAgent.getStatus() });
+    const status = voiceAgent.getStatus();
+    broadcast({ type: 'voice:status', status });
+    broadcast({ type: 'voice:meetings', meetings: voiceAgent.getMeetings(), status });
+  });
+  voiceAgent.on('speaking', (isSpeaking) => {
+    broadcast({ type: 'voice:speaking', speaking: isSpeaking });
+  });
+  voiceAgent.on('task-created', (task) => {
+    broadcast({ type: 'voice:task-created', task });
   });
 
   // -- Message handlers (extracted to ws-handlers.js) ----------------------

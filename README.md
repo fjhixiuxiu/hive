@@ -48,6 +48,15 @@ If you run multiple Claude Code sessions in parallel (code reviews, feature work
 - **Configurable instructions** — Each PM has a name, poll interval, and instructions template
 - **Enable/disable** — Toggle PMs on and off from the dashboard
 
+### Voice Agent
+- **Join meetings** — Hive joins Zoom or Google Meet via Playwright, listens to the conversation, and responds when addressed
+- **Meeting history** — Past meetings saved with full transcripts; browse and review from the Meetings tab
+- **Live transcript** — Real-time speaker-diarized transcript powered by Deepgram Nova-2
+- **Conversational AI** — A dedicated Claude Code session (`hive-voice`) decides when to speak and what to say
+- **Task creation** — Say "Hive, create a task for..." in the meeting and it queues work for your fleet
+- **Standup reports** — Optionally delivers a fleet status report when joining a meeting
+- **Interactive terminal** — Full terminal access to the voice Claude session from the meeting detail panel (Ask/Tell, keys bar, message history, image drag-drop)
+
 ### Multi-Computer Fleet
 - **Remote workers** — Run `hive-worker` on additional machines to extend your fleet across computers
 - **WebSocket RPC** — Workers connect to the hive server and execute tmux/file commands on their local sessions
@@ -108,6 +117,7 @@ Each tmux session runs Claude Code in a pane. hive reads terminal content via `t
 - **Claude Code** running in a pane within each tmux session
 - **gh** CLI for PR/CI data (optional)
 - Optional: Telegram bot token for the Telegram integration
+- Optional (voice agent): **sox**, **BlackHole**, **Deepgram API key** — see [Voice Agent Setup](#voice-agent-setup)
 
 ### Installing tmux and tmuxinator
 
@@ -180,6 +190,9 @@ TELEGRAM_CHAT_ID=your-chat-id
 
 # Optional — Remote workers (multi-computer setup)
 # HIVE_WORKER_SECRET=your-shared-secret
+
+# Optional — Voice agent (meeting transcription + TTS)
+# DEEPGRAM_API_KEY=your-deepgram-api-key
 ```
 
 ### `hive.config.js`
@@ -352,6 +365,14 @@ hive/
 │       ├── telegram/            # Telegram bot integration
 │       │   ├── bot.js           # Bot setup and middleware
 │       │   └── commands.js      # /fleet, /peek, /ask, /tell, etc.
+│       ├── voice/               # Voice agent (meeting participation)
+│       │   ├── index.js         # VoiceAgent — orchestration, meeting history, Claude relay
+│       │   ├── meeting.js       # Playwright browser automation + audio bridge injection
+│       │   ├── transcriber.js   # Deepgram Nova-2 STT (WebSocket streaming)
+│       │   ├── tts.js           # Deepgram Aura TTS (REST API)
+│       │   ├── standup.js       # Fleet status report generation
+│       │   ├── listener.js      # Keyword-based trigger detection (legacy, not used by main agent)
+│       │   └── chrome-ext/      # Chrome extension for tab audio capture fallback
 │       └── web/                 # Web dashboard integration
 │           ├── server.js        # Express + WebSocket server, all message handlers
 │           └── public/
@@ -527,6 +548,148 @@ hive's core layer (`fleet`, `relay`, `tmux`, `watcher`, `taskqueue`) is integrat
 5. Listen to watcher events: `session:idle`, `session:working`, `ci:changed`
 6. Listen to taskQueue events: `task:created`, `task:completed`, `feed:new`, `approval:new`
 7. Wire it into `src/index.js`
+
+## Voice Agent Setup
+
+The voice agent lets Hive join video calls, listen to the conversation via real-time transcription, and respond with synthesized speech. It runs a dedicated Claude Code session (`hive-voice`) that receives transcript batches and decides whether to speak.
+
+### Prerequisites
+
+| Dependency | Purpose | Install |
+|---|---|---|
+| **Deepgram API key** | Speech-to-text (Nova-2) and text-to-speech (Aura) | Sign up at [deepgram.com](https://deepgram.com), create an API key |
+| **sox** | Plays TTS audio to the virtual audio device | `brew install sox` |
+| **BlackHole 2ch** | Virtual audio device — routes Hive's voice into the meeting | Download from [existential.audio/blackhole](https://existential.audio/blackhole/) |
+| **Playwright** | Browser automation for joining Zoom/Meet | Auto-installed via `npm install` |
+
+### Step 1: Install system dependencies
+
+```bash
+# sox — audio playback tool
+brew install sox
+
+# BlackHole — virtual audio device
+# Download the installer from https://existential.audio/blackhole/
+# Run the .pkg, then reboot (or log out/in) to load the audio driver
+```
+
+Verify BlackHole is installed:
+
+```bash
+# Should show "BlackHole 2ch" in the output
+sox --help 2>&1 | head -1   # confirms sox is installed
+# Check System Preferences > Sound > Output for "BlackHole 2ch"
+```
+
+### Step 2: Configure Deepgram
+
+Add your Deepgram API key to `.env`:
+
+```bash
+DEEPGRAM_API_KEY=your-deepgram-api-key
+```
+
+The same key is used for both speech-to-text (transcription) and text-to-speech (Hive's voice). Deepgram offers a free tier with enough credits to test.
+
+**Models used:**
+- **STT:** `nova-2` — real-time WebSocket streaming, speaker diarization, smart formatting
+- **TTS:** `aura-orion-en` — deep, professional voice (configurable)
+
+### Step 3: Install Playwright browsers
+
+```bash
+npx playwright install chromium
+```
+
+Playwright launches a visible Chromium browser to join meetings. The `--use-fake-ui-for-media-stream` flag auto-accepts microphone/camera permission prompts.
+
+### Step 4: Test it
+
+1. Start hive: `npm start`
+2. Open the dashboard and go to the **Meetings** tab
+3. Click **+ New Meeting**, paste a Zoom URL, give it a name
+4. Click **Join** — Hive opens a browser, joins the call, and starts transcribing
+5. Say "Hey Hive, what's the fleet status?" — Hive responds via TTS
+6. Click the meeting card to open the detail panel with live terminal + transcript
+
+### How it works
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  Zoom / Google Meet (in Playwright Chromium)                  │
+│  ┌──────────────────────┐     ┌────────────────────────────┐ │
+│  │ Meeting audio         │────>│ Audio bridge script         │ │
+│  │ (WebRTC tracks)       │     │ (injected via addInitScript)│ │
+│  └──────────────────────┘     └──────────┬─────────────────┘ │
+└──────────────────────────────────────────┼───────────────────┘
+                                           │ 16kHz PCM via WebSocket
+                                           ▼
+┌──────────────────────────────────────────────────────────────┐
+│  Hive server                                                  │
+│  ┌────────────────┐   ┌──────────────┐   ┌────────────────┐ │
+│  │ Audio bridge WS │──>│ Transcriber   │──>│ VoiceAgent     │ │
+│  │ /voice/audio    │   │ (Deepgram     │   │ (silence       │ │
+│  └────────────────┘   │  Nova-2 STT)  │   │  detection →   │ │
+│                        └──────────────┘   │  Claude relay)  │ │
+│                                            └───────┬────────┘ │
+│                                                    │          │
+│                   ┌────────────────────────────────┘          │
+│                   ▼                                           │
+│  ┌────────────────────────┐   ┌──────────────────────────┐  │
+│  │ TTS (Deepgram Aura)    │──>│ sox → BlackHole 2ch      │  │
+│  │ text → 24kHz PCM       │   │ (audio routed to meeting) │  │
+│  └────────────────────────┘   └──────────────────────────┘  │
+│                                                               │
+│  ┌────────────────────────┐                                  │
+│  │ hive-voice tmux session│  Claude Code with voice prompt   │
+│  │ (receives transcripts, │  Decides: respond or SILENT      │
+│  │  generates responses)  │  Can create tasks via [CREATE_TASK:] │
+│  └────────────────────────┘                                  │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**Audio flow:**
+1. Playwright browser joins the meeting and intercepts audio via `AudioContext` / `RTCPeerConnection`
+2. Browser-side script downsamples to 16kHz mono PCM and streams to `/voice/audio` WebSocket
+3. Server pipes audio to Deepgram Nova-2 for real-time transcription with speaker diarization
+4. After a 3-second silence gap, the buffered transcript is sent to the `hive-voice` Claude session
+5. Claude decides to respond (spoken aloud) or reply `SILENT` (not addressed)
+6. TTS converts Claude's response to 24kHz PCM audio
+7. `sox` plays the audio to BlackHole 2ch virtual device
+8. The browser reads BlackHole as its "microphone", routing Hive's voice into the meeting
+
+**Without BlackHole:** TTS plays through system speakers instead. Meeting participants won't hear Hive directly, but you'll hear it locally. This is fine for testing.
+
+### Meeting history
+
+Meetings are persisted to `.hive-meetings.json` (gitignored). Each meeting stores:
+- Meeting name, URL, start/end timestamps
+- Full transcript with speaker labels and timestamps
+- Hive's responses with timestamps
+- Number of tasks created during the meeting
+
+Browse past meetings from the Meetings tab. Click any meeting to view its transcript. Active meetings also show the live Claude terminal with full interactive input.
+
+### Configuration options
+
+The voice agent is configured via constructor options in `src/integrations/web/server.js`:
+
+| Option | Default | Description |
+|---|---|---|
+| `voice` | `aura-orion-en` | Deepgram TTS voice name ([available voices](https://developers.deepgram.com/docs/tts-models)) |
+| `reportOnJoin` | `true` | Auto-deliver a fleet standup report when joining a meeting |
+| `maxDuration` | `3600000` (1 hour) | Auto-leave after this duration (ms) |
+
+### Troubleshooting
+
+| Problem | Cause | Fix |
+|---|---|---|
+| No audio captured | Audio bridge WebSocket didn't connect | Check browser console for `[hive-bridge]` logs. Ensure `/voice/audio` endpoint is reachable |
+| Transcript empty | Deepgram not receiving audio | Verify `DEEPGRAM_API_KEY` is set. Check server logs for `[voice] Audio chunks received` |
+| Hive doesn't speak | BlackHole not installed or sox missing | Install both; check `sox` is in PATH. Hive falls back to system speakers if BlackHole is absent |
+| Claude not responding | `hive-voice` session didn't start | Check `tmux ls` for `hive-voice`. Ensure Claude Code is installed and authenticated |
+| "Could not start video source" | Tab self-capture not supported | Normal — the AudioContext fallback handles this. Check for `Strategy 3 active` in browser console |
+| Meeting join fails | Zoom UI changed or passcode required | Check Playwright browser window. If Zoom requires a passcode, pass it via the join dialog |
 
 ## Authentication
 

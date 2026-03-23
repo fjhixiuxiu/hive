@@ -15,9 +15,13 @@ const log = require('../../core/log');
 
 const VOICE_SESSION = 'hive-voice';
 const VOICE_SESSION_DIR = path.join(__dirname, '..', '..', '..');
+const MEETINGS_FILE = path.join(__dirname, '..', '..', '..', '.hive-meetings.json');
 
 // Silence gap before sending buffered transcript to Claude (ms)
 const SILENCE_GAP = 3000;
+
+// Max meetings to keep in history
+const MAX_MEETINGS = 50;
 
 /**
  * Voice Agent — orchestrates meeting joining, standup reporting,
@@ -50,15 +54,99 @@ class VoiceAgent extends EventEmitter {
 
     // State
     this.active = false;
+    this.joinedAt = null;
+    this.meetingUrl = null;
     this.audioBridgeWss = null;
     this.audioBridgeClients = new Set();
     this._maxDurationTimer = null;
     this._speaking = false; // true while TTS is playing
+    this._tasksCreated = 0;
 
     // Transcript buffer for speech-pause detection
     this._transcriptBuffer = [];
     this._silenceTimer = null;
     this._processingTranscript = false;
+
+    // Meeting history
+    this._currentMeetingId = null;
+    this._currentTranscript = [];
+    this._currentResponses = [];
+    this.meetings = [];
+    this._loadMeetings();
+  }
+
+  // ── Meeting history persistence ──────────────────────────
+
+  _loadMeetings() {
+    try {
+      if (fs.existsSync(MEETINGS_FILE)) {
+        this.meetings = JSON.parse(fs.readFileSync(MEETINGS_FILE, 'utf8'));
+        log.info(`[voice] Loaded ${this.meetings.length} past meetings`);
+      }
+    } catch (e) {
+      log.warn(`[voice] Failed to load meetings: ${e.message}`);
+      this.meetings = [];
+    }
+  }
+
+  _saveMeetings() {
+    try {
+      fs.writeFileSync(MEETINGS_FILE, JSON.stringify(this.meetings, null, 2));
+    } catch (e) {
+      log.warn(`[voice] Failed to save meetings: ${e.message}`);
+    }
+  }
+
+  _deriveMeetingName(url) {
+    try {
+      const u = new URL(url);
+      if (u.hostname.includes('zoom')) return 'Zoom Meeting';
+      if (u.hostname.includes('meet.google')) return 'Google Meet';
+      if (u.hostname.includes('teams')) return 'Teams Meeting';
+      return u.hostname;
+    } catch { return 'Meeting'; }
+  }
+
+  getMeetings() {
+    return this.meetings.map(m => ({
+      id: m.id,
+      name: m.name,
+      url: m.url,
+      startedAt: m.startedAt,
+      endedAt: m.endedAt,
+      transcriptCount: (m.transcript || []).length,
+      responseCount: (m.responses || []).length,
+      tasksCreated: m.tasksCreated || 0,
+    }));
+  }
+
+  getMeeting(id) {
+    // Active meeting
+    if (this._currentMeetingId === id && this.active) {
+      return {
+        id,
+        name: this._currentMeetingName,
+        url: this.meetingUrl,
+        startedAt: this.joinedAt,
+        endedAt: null,
+        transcript: this._currentTranscript,
+        responses: this._currentResponses,
+        tasksCreated: this._tasksCreated || 0,
+        active: true,
+      };
+    }
+    // Past meeting
+    return this.meetings.find(m => m.id === id) || null;
+  }
+
+  renameMeeting(id, name) {
+    if (this._currentMeetingId === id) {
+      this._currentMeetingName = name;
+      return true;
+    }
+    const m = this.meetings.find(m => m.id === id);
+    if (m) { m.name = name; this._saveMeetings(); return true; }
+    return false;
   }
 
   /**
@@ -202,6 +290,13 @@ class VoiceAgent extends EventEmitter {
 
     log.info(`[voice] ===== Starting voice agent for: ${meetingUrl} =====`);
     this.active = true;
+    this.joinedAt = Date.now();
+    this.meetingUrl = meetingUrl;
+    this._tasksCreated = 0;
+    this._currentMeetingId = `mtg-${this.joinedAt}`;
+    this._currentMeetingName = opts.name || this._deriveMeetingName(meetingUrl);
+    this._currentTranscript = [];
+    this._currentResponses = [];
 
     // Ensure voice session exists
     await this._ensureVoiceSession();
@@ -216,8 +311,10 @@ class VoiceAgent extends EventEmitter {
     // Create transcriber
     this.transcriber = new Transcriber();
 
-    // Wire transcriber to speech-pause buffer
+    // Wire transcriber to speech-pause buffer + meeting history
     this.transcriber.on('transcript', (entry) => {
+      entry._ts = Date.now();
+      this._currentTranscript.push(entry);
       this._onTranscript(entry);
       this.emit('transcript', entry);
     });
@@ -330,13 +427,15 @@ class VoiceAgent extends EventEmitter {
         const task = this.taskQueue.createTask(taskText, 'auto', null, null, {
           source: `pm:${this.pmName}`,
         });
+        this._tasksCreated = (this._tasksCreated || 0) + 1;
         log.info(`[voice] Task created: T:${task.id} — "${taskMatch[1]}"`);
-        this.emit('task-created', task);
+        this.emit('task-created', { id: task.id, title: taskMatch[1] });
       }
 
       // Strip any [CREATE_TASK:...] tags from spoken response
       const spokenResponse = response.replace(/\[CREATE_TASK:[^\]]*\]/gi, '').trim();
       if (spokenResponse) {
+        this._currentResponses.push({ text: spokenResponse, _ts: Date.now() });
         this.emit('response', spokenResponse);
         await this._speak(spokenResponse);
       }
@@ -352,6 +451,7 @@ class VoiceAgent extends EventEmitter {
    */
   async _speak(text) {
     this._speaking = true;
+    this.emit('speaking', true);
     try {
       const chunks = this.tts.splitText(text);
       for (const chunk of chunks) {
@@ -362,6 +462,7 @@ class VoiceAgent extends EventEmitter {
       log.error(`[voice] TTS error: ${e.message}`);
     } finally {
       this._speaking = false;
+      this.emit('speaking', false);
     }
   }
 
@@ -457,7 +558,31 @@ class VoiceAgent extends EventEmitter {
     }
 
     this._transcriptBuffer = [];
+
+    // Save meeting to history
+    if (this._currentMeetingId) {
+      this.meetings.unshift({
+        id: this._currentMeetingId,
+        name: this._currentMeetingName || 'Meeting',
+        url: this.meetingUrl,
+        startedAt: this.joinedAt,
+        endedAt: Date.now(),
+        transcript: this._currentTranscript,
+        responses: this._currentResponses,
+        tasksCreated: this._tasksCreated || 0,
+      });
+      if (this.meetings.length > MAX_MEETINGS) this.meetings.length = MAX_MEETINGS;
+      this._saveMeetings();
+      log.info(`[voice] Meeting saved: ${this._currentMeetingId} (${this._currentTranscript.length} entries)`);
+    }
+
     this.active = false;
+    this.joinedAt = null;
+    this.meetingUrl = null;
+    this._currentMeetingId = null;
+    this._currentMeetingName = null;
+    this._currentTranscript = [];
+    this._currentResponses = [];
     this.emit('left');
     log.info('[voice] ===== Voice agent stopped =====');
   }
@@ -465,7 +590,13 @@ class VoiceAgent extends EventEmitter {
   getStatus() {
     return {
       active: this.active,
-      transcriptLength: this.transcriber?.transcript?.length || 0,
+      meetingId: this._currentMeetingId,
+      meetingName: this._currentMeetingName,
+      joinedAt: this.joinedAt,
+      meetingUrl: this.meetingUrl,
+      speaking: this._speaking,
+      tasksCreated: this._tasksCreated || 0,
+      transcriptLength: this._currentTranscript?.length || 0,
       audioBridgeConnected: this.audioBridgeClients?.size > 0,
     };
   }
