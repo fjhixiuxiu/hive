@@ -30,6 +30,20 @@ function createMessageHandler(deps) {
     commands, clients, wsUser, workers, mcpClients,
   } = deps;
 
+  // Per-session working directory overrides (session num → absolute path).
+  // Set via mcp:set_working_dir when a Claude session works in a directory
+  // different from its configured repoDir (e.g. a git worktree).
+  const workingDirOverrides = new Map();
+
+  /**
+   * Resolve the effective repo directory for a session.
+   * Checks working dir overrides first, then falls back to config.sessions.repoDir.
+   */
+  function resolveRepoDir(num, nc) {
+    if (num && workingDirOverrides.has(num)) return workingDirOverrides.get(num);
+    return num ? nc.sessions.repoDir(num) : null;
+  }
+
   return async function handleMessage(ws, msg, user) {
     switch (msg.type) {
       case 'ping':
@@ -379,7 +393,7 @@ function createMessageHandler(deps) {
         const node = router.getNode(nodeId);
         const nc = fleet.getNodeConfig(config, nodeId);
         const num = fleet.sessionNum(name, nc.sessions.namePrefix);
-        const repoDir = num ? nc.sessions.repoDir(num) : null;
+        const repoDir = resolveRepoDir(num, nc);
         if (!repoDir) {
           ws.send(JSON.stringify({ type: 'git:info', session: msg.session, log: [], diffStat: [], stagedStat: [], changedFiles: [], branchDiff: null }));
           return;
@@ -391,7 +405,8 @@ function createMessageHandler(deps) {
           git.getChangedFiles(node, repoDir),
           git.getBranchDiff(node, repoDir),
         ]);
-        ws.send(JSON.stringify({ type: 'git:info', session: msg.session, log, diffStat, stagedStat, changedFiles, branchDiff }));
+        const workingDir = num && workingDirOverrides.has(num) ? workingDirOverrides.get(num) : null;
+        ws.send(JSON.stringify({ type: 'git:info', session: msg.session, log, diffStat, stagedStat, changedFiles, branchDiff, workingDir }));
         break;
       }
 
@@ -405,7 +420,7 @@ function createMessageHandler(deps) {
         const node = router.getNode(nodeId);
         const nc = fleet.getNodeConfig(config, nodeId);
         const num = fleet.sessionNum(name, nc.sessions.namePrefix);
-        const repoDir = num ? nc.sessions.repoDir(num) : null;
+        const repoDir = resolveRepoDir(num, nc);
         let diff = '';
         if (repoDir) {
           if (msg.commit) {
@@ -428,7 +443,7 @@ function createMessageHandler(deps) {
         const node = router.getNode(nodeId);
         const nc = fleet.getNodeConfig(config, nodeId);
         const num = fleet.sessionNum(name, nc.sessions.namePrefix);
-        const repoDir = num ? nc.sessions.repoDir(num) : null;
+        const repoDir = resolveRepoDir(num, nc);
         const files = repoDir ? await git.getCommitFiles(node, repoDir, msg.hash) : [];
         ws.send(JSON.stringify({ type: 'git:commit', session: msg.session, hash: msg.hash, files }));
         break;
@@ -1670,6 +1685,21 @@ function createMessageHandler(deps) {
         const updated = taskQueue.setSessionContext(msg.session, updates);
         broadcast({ type: 'context:updated', session: Number(msg.session), context: updated });
         ws.send(JSON.stringify({ _reqId: msg._reqId, ok: true, context: updated }));
+        break;
+      }
+
+      case 'mcp:set_working_dir': {
+        const num = Number(msg.session);
+        const dir = msg.dir;
+        if (!dir || typeof dir !== 'string') {
+          ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'dir must be a non-empty string' }));
+          break;
+        }
+        const resolved = dir.replace(/^~/, os.homedir());
+        workingDirOverrides.set(num, resolved);
+        broadcast({ type: 'working_dir:updated', session: num, dir: resolved });
+        log.info(`Session ${num} working dir set to ${resolved}`);
+        ws.send(JSON.stringify({ _reqId: msg._reqId, ok: true, dir: resolved }));
         break;
       }
 

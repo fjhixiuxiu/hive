@@ -7901,6 +7901,15 @@
       if (title) title.addEventListener('click', () => section.classList.toggle('collapsed'));
     }
 
+    // Working directory override indicator
+    if (data.workingDir) {
+      const wdDiv = document.createElement('div');
+      wdDiv.className = 'git-working-dir';
+      const short = data.workingDir.replace(/^\/Users\/[^/]+\//, '~/');
+      wdDiv.innerHTML = `<span class="git-wd-label">repo</span> <span class="git-wd-path" title="${esc(data.workingDir)}">${esc(short)}</span>`;
+      scroll.appendChild(wdDiv);
+    }
+
     // 1. Uncommitted changed files (most important — first)
     const files = data.changedFiles || [];
     if (files.length) {

@@ -504,6 +504,18 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
                  max-height: 40vh; border-right: none;
                  border-bottom: 1px solid var(--bg3); }
 }
+.git-working-dir {
+  font-size: var(--fs-sm); padding: 6px 10px; margin-bottom: 10px;
+  background: var(--bg2); border-radius: 6px; display: flex; align-items: center; gap: 6px;
+  overflow: hidden;
+}
+.git-wd-label {
+  font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+  color: var(--dim); white-space: nowrap;
+}
+.git-wd-path {
+  color: var(--accent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .git-section { margin-bottom: 16px; }
 .git-section-title {
   font-size: var(--fs-sm); font-weight: 700; text-transform: uppercase; letter-spacing: 1px;

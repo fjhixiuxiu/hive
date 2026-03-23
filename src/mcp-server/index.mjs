@@ -248,6 +248,24 @@ if (!enabledTools || enabledTools.includes('hive_set_context')) {
   );
 }
 
+// Tool: hive_set_working_dir
+if (!enabledTools || enabledTools.includes('hive_set_working_dir')) {
+  server.tool(
+    'hive_set_working_dir',
+    'Tell hive which git repository you are actually working in. Use this when you are working in a directory different from your default repo (e.g. a git worktree). This enables the hive dashboard to show the correct git diff and commit history for your session.',
+    { dir: z.string().describe('Absolute path to the git repository you are working in (e.g. "/Users/me/projects/webplatform-worktree/DEV-123")') },
+    async ({ dir }) => {
+      try {
+        const resp = await sendRequest('mcp:set_working_dir', { dir });
+        return { content: [{ type: 'text', text: resp.ok ? `Working directory set to ${resp.dir}` : (resp.error || 'Failed') }] };
+      } catch (err) {
+        return { content: [{ type: 'text', text: `Error: ${err.message}` }], isError: true };
+      }
+    }
+  );
+}
+
+
 // ── Start ─────────────────────────────────────────────
 const transport = new StdioServerTransport();
 await server.connect(transport);
