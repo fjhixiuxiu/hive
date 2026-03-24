@@ -1,6 +1,14 @@
 'use strict';
 
-const { DeepgramClient } = require('@deepgram/sdk');
+// Lazy-require — @deepgram/sdk is an optional dependency only needed at runtime
+let DeepgramClient;
+function getDeepgramClient() {
+  if (!DeepgramClient) {
+    try { DeepgramClient = require('@deepgram/sdk').DeepgramClient; }
+    catch { throw new Error('@deepgram/sdk is required for transcription — install it with: npm i @deepgram/sdk'); }
+  }
+  return DeepgramClient;
+}
 const { EventEmitter } = require('events');
 const log = require('../../core/log');
 
@@ -26,7 +34,7 @@ class Transcriber extends EventEmitter {
     if (this.apiKey && !process.env.DEEPGRAM_API_KEY) {
       process.env.DEEPGRAM_API_KEY = this.apiKey;
     }
-    this.client = this.apiKey ? new DeepgramClient() : null;
+    this.client = this.apiKey ? new (getDeepgramClient())() : null;
     this.connection = null;
     this.running = false;
     this.transcript = []; // rolling transcript buffer
