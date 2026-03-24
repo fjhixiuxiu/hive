@@ -135,6 +135,33 @@ module.exports = {
     jobPath: 'job/webplatform/job', // PR jobs at {baseUrl}/{jobPath}/PR-{prNum}/
   },
 
+  // ── Voice agent ──────────────────────────────────────
+  voice: {
+    // System prompt for the voice Claude session (null = use default)
+    // The default prompt teaches Claude it's in a meeting, can read .hive-state.json,
+    // and can use action tags like [CREATE_TASK: ...], [COMPLETE_TASK: id], etc.
+    systemPrompt: null,
+
+    // MCP tools to enable for the voice session (null = all hive tools)
+    // Example: ['hive_get_task', 'hive_get_sessions', 'hive_share_knowledge']
+    mcpTools: null,
+
+    // TTS voice (Deepgram Aura voice ID)
+    ttsVoice: 'aura-orion-en',
+
+    // Whether to deliver a standup report when joining a meeting
+    reportOnJoin: true,
+
+    // Maximum meeting duration before auto-leave (ms, 0 = no limit)
+    maxDuration: 3600000, // 1 hour
+
+    // Silence gap before sending buffered transcript to Claude (ms)
+    silenceGap: 3000,
+
+    // Max meetings to keep in history
+    maxMeetings: 50,
+  },
+
   // ── Web dashboard links ───────────────────────────────
   // URL templates for PR and CI links in the dashboard.
   // Use ${prNum} and ${ciBuild} as placeholders.

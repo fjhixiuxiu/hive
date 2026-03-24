@@ -174,6 +174,10 @@
     </button>
     <!-- Secondary nav -->
     <div class="nav-divider"></div>
+    <button class="nav-btn" data-tab="voice-panel" data-tooltip="Voice agent &amp; meeting">
+      <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg></span>Voice
+      <span class="nav-badge" id="voice-badge"></span>
+    </button>
     <button class="nav-btn" data-tab="ideas-panel" data-tooltip="Brainstorm &amp; idea backlog">
       <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg></span>Ideas
     </button>
@@ -634,7 +638,17 @@
       </div>
     </div>
 
-    <!-- PMs panel -->
+    <!-- Voice panel -->
+    <div id="voice-panel" class="panel">
+      <div class="voice-header">
+        <span class="voice-title">Meetings</span>
+        <button class="voice-new-btn" id="voice-new-btn">+ New Meeting</button>
+      </div>
+      <div class="voice-list" id="voice-list">
+        <div class="voice-empty">No meetings yet</div>
+      </div>
+    </div>
+
     <!-- Ideas panel -->
     <div id="ideas-panel" class="panel">
       <div style="display:flex;align-items:center;padding:10px 12px 6px;gap:8px">
@@ -1346,6 +1360,97 @@
     <button id="task-detail-mode-toggle">Ask</button>
     <textarea id="task-detail-input" rows="3" placeholder="Message Claude..." autocomplete="off"></textarea>
     <button id="task-detail-send">Send</button>
+  </div>
+</div>
+
+<!-- Join Meeting dialog -->
+<div class="dialog-overlay" id="meeting-join-overlay">
+  <div class="dialog" id="meeting-join-dialog">
+    <div class="dialog-title">Join Meeting</div>
+    <div class="mtg-dialog-field">
+      <label>Meeting URL</label>
+      <input id="mtg-join-url" type="text" placeholder="https://zoom.us/j/..." autocomplete="off">
+    </div>
+    <div class="mtg-dialog-field">
+      <label>Meeting name <span class="mtg-optional">(optional)</span></label>
+      <input id="mtg-join-name" type="text" placeholder="e.g. Daily Standup" autocomplete="off">
+    </div>
+    <label class="voice-opt"><input type="checkbox" id="mtg-join-standup" checked> Deliver standup report on join</label>
+    <div class="dialog-actions">
+      <button class="dialog-btn" id="mtg-join-cancel">Cancel</button>
+      <button class="dialog-btn primary" id="mtg-join-confirm">Join</button>
+    </div>
+  </div>
+</div>
+
+<!-- Meeting detail slide-out panel -->
+<div id="mtg-detail-overlay"></div>
+<div id="mtg-detail-panel">
+  <div id="mtg-detail-header">
+    <button id="mtg-detail-back">&larr;</button>
+    <div id="mtg-detail-title-wrap">
+      <span id="mtg-detail-title">Meeting</span>
+      <span id="mtg-detail-url"></span>
+    </div>
+    <span id="mtg-detail-elapsed"></span>
+    <span class="voice-status-pill" id="mtg-detail-pill">Inactive</span>
+    <button id="mtg-detail-close">&times;</button>
+  </div>
+  <!-- Stats bar (active meetings only) -->
+  <div id="mtg-detail-stats-bar" style="display:none">
+    <div class="voice-stats">
+      <div class="voice-stat"><span class="voice-stat-value" id="mtg-stat-transcript">0</span><span class="voice-stat-label">entries</span></div>
+      <div class="voice-stat"><span class="voice-stat-value" id="mtg-stat-tasks">0</span><span class="voice-stat-label">tasks</span></div>
+      <div class="voice-stat"><span class="voice-stat-value voice-speaking-dot" id="mtg-speaking-indicator"></span><span class="voice-stat-label" id="mtg-speaking-label">listening</span></div>
+    </div>
+    <div class="voice-session-bar">
+      <span class="voice-session-tag"><span class="voice-dot" id="mtg-dot-session"></span>session</span>
+      <span class="voice-session-tag"><span class="voice-dot" id="mtg-dot-bridge"></span>bridge</span>
+      <span class="voice-session-tag"><span class="voice-dot" id="mtg-dot-transcriber"></span>transcriber</span>
+    </div>
+  </div>
+  <!-- Task toast -->
+  <div class="voice-task-toast" id="mtg-task-toast" style="display:none"></div>
+  <!-- Tabs -->
+  <div class="voice-terminal-header" id="mtg-tabs-bar">
+    <div class="voice-terminal-tabs">
+      <button class="voice-tab active" data-mtg-tab="terminal">Terminal</button>
+      <button class="voice-tab" data-mtg-tab="transcript">Transcript</button>
+    </div>
+  </div>
+  <!-- Terminal -->
+  <div class="voice-terminal-wrap" id="mtg-terminal-wrap">
+    <div id="mtg-terminal"></div>
+  </div>
+  <!-- Transcript -->
+  <div class="voice-transcript-wrap" id="mtg-transcript-wrap" style="display:none">
+    <div class="voice-transcript" id="mtg-transcript"></div>
+  </div>
+  <!-- Keys bar -->
+  <div id="mtg-keys-bar">
+    <button class="key-btn" data-mtg-key="Enter" data-tooltip="Send Enter key">Enter</button>
+    <button class="key-btn" data-mtg-key="Escape" data-tooltip="Send Escape key">Esc</button>
+    <button class="key-btn" data-mtg-key="C-c" data-tooltip="Interrupt current process">Ctrl-C</button>
+    <button class="key-btn" data-mtg-key="Up" data-tooltip="Previous command">Up</button>
+    <button class="key-btn" data-mtg-key="Down" data-tooltip="Next command">Down</button>
+    <button class="key-btn" data-mtg-key="Tab" data-tooltip="Autocomplete">Tab</button>
+    <button class="key-btn" data-mtg-key="BTab" data-tooltip="Previous option (Shift+Tab)">S-Tab</button>
+    <button class="key-btn" data-mtg-key="y" data-tooltip="Confirm (yes)">y</button>
+    <button class="key-btn" data-mtg-key="n" data-tooltip="Decline (no)">n</button>
+  </div>
+  <!-- Attachment strip -->
+  <div id="mtg-attachment-strip" class="attachment-strip"></div>
+  <!-- Input bar -->
+  <div id="mtg-input-bar">
+    <button id="mtg-mode-toggle">Ask</button>
+    <textarea id="mtg-input" rows="3" placeholder="Message Claude in voice session..." autocomplete="off"></textarea>
+    <button id="mtg-send">Send</button>
+  </div>
+  <!-- Speak row (active meeting only) -->
+  <div id="mtg-speak-bar" style="display:none">
+    <input id="mtg-speak-input" type="text" placeholder="Type to speak in meeting..." autocomplete="off">
+    <button id="mtg-speak-btn" class="voice-action-btn">Speak</button>
+    <button id="mtg-leave-btn" class="voice-action-btn voice-leave">Leave</button>
   </div>
 </div>
 

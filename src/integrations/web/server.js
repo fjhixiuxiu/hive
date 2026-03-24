@@ -21,6 +21,7 @@ const {
   capturePaneAnsi,
 } = require('./ws-helpers');
 const createMessageHandler = require('./ws-handlers');
+const VoiceAgent = require('../voice');
 
 /**
  * Create and start the web dashboard server.
@@ -63,7 +64,14 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     });
   }
 
-  app.use(express.static(path.join(__dirname, 'public')));
+  app.use(express.static(path.join(__dirname, 'public'), {
+    setHeaders: (res, filePath) => {
+      // Prevent browser caching of HTML/JS/CSS during development
+      if (/\.(html|js|css)$/.test(filePath)) {
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      }
+    }
+  }));
 
   // -- Image upload endpoint -----------------------------------------------
   const uploadDir = path.join(os.tmpdir(), 'hive-uploads');
@@ -395,6 +403,40 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
 
   wss.on('connection', handleWsConnection);
 
+  // -- Voice agent setup ---------------------------------------------------
+  const voiceAgent = new VoiceAgent({
+    taskQueue, watcher, router, config,
+    knowledgeBase: pmManager ? (entry) => pmManager.addKnowledge(entry) : null,
+  });
+  const voiceAudioWss = voiceAgent.setupAudioBridge();
+
+  // Broadcast voice events to dashboard clients
+  voiceAgent.on('transcript', (entry) => {
+    broadcast({ type: 'voice:transcript:entry', entry });
+  });
+  voiceAgent.on('response', (text) => {
+    broadcast({ type: 'voice:response', text });
+  });
+  voiceAgent.on('joined', () => {
+    const status = voiceAgent.getStatus();
+    broadcast({ type: 'voice:status', status });
+    broadcast({ type: 'voice:meetings', meetings: voiceAgent.getMeetings(), status });
+  });
+  voiceAgent.on('left', () => {
+    const status = voiceAgent.getStatus();
+    broadcast({ type: 'voice:status', status });
+    broadcast({ type: 'voice:meetings', meetings: voiceAgent.getMeetings(), status });
+  });
+  voiceAgent.on('speaking', (isSpeaking) => {
+    broadcast({ type: 'voice:speaking', speaking: isSpeaking });
+  });
+  voiceAgent.on('task-created', (task) => {
+    broadcast({ type: 'voice:task-created', task });
+  });
+  voiceAgent.on('task-action', (action) => {
+    broadcast({ type: 'voice:task-action', ...action });
+  });
+
   // -- Message handlers (extracted to ws-handlers.js) ----------------------
 
   const handleMessage = createMessageHandler({
@@ -403,7 +445,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     clearTermSub, clearConsoleSub, termSubs, consoleSubs,
     clearCardSub, clearAllCardSubs, cardTermSubs,
     sendFleetStatus, broadcastFleetStatus, sendInitialState, _previewCache,
-    commands, clients, wsUser, workers, mcpClients,
+    commands, clients, wsUser, workers, mcpClients, voiceAgent,
   });
 
   // ── Session 0 helper: resolve session (fleet or hive-console) ──
@@ -412,6 +454,11 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       const exists = await tmux.hasSession(HIVE_CONSOLE_SESSION);
       if (!exists) return null;
       return { name: HIVE_CONSOLE_SESSION, nodeId: 'local' };
+    }
+    if (String(msg.session) === 'hive-voice') {
+      const exists = await tmux.hasSession('hive-voice');
+      if (!exists) return null;
+      return { name: 'hive-voice', nodeId: 'local' };
     }
     return fleet.findSession(config, router, msg.session);
   }
@@ -678,9 +725,16 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
   for (const host of bindHosts) {
     const httpServer = http.createServer(app);
     httpServer.on('upgrade', (request, socket, head) => {
-      wss.handleUpgrade(request, socket, head, (ws) => {
-        wss.emit('connection', ws, request);
-      });
+      const pathname = new URL(request.url, 'http://localhost').pathname;
+      if (pathname === '/voice/audio') {
+        voiceAudioWss.handleUpgrade(request, socket, head, (ws) => {
+          voiceAudioWss.emit('connection', ws, request);
+        });
+      } else {
+        wss.handleUpgrade(request, socket, head, (ws) => {
+          wss.emit('connection', ws, request);
+        });
+      }
     });
     httpServer.listen(port, host, () => {
       log.info(`Web dashboard: http://${host}:${port}`);
@@ -743,7 +797,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     for (const s of servers) s.close();
   }
 
-  return { app, servers, wss, close };
+  return { app, servers, wss, voiceAgent, close };
 }
 
 module.exports = { createWebServer };

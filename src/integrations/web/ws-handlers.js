@@ -27,7 +27,7 @@ function createMessageHandler(deps) {
     clearTermSub, clearConsoleSub, termSubs, consoleSubs,
     clearCardSub, clearAllCardSubs, cardTermSubs,
     sendFleetStatus, broadcastFleetStatus, sendInitialState, _previewCache,
-    commands, clients, wsUser, workers, mcpClients,
+    commands, clients, wsUser, workers, mcpClients, voiceAgent,
   } = deps;
 
   // Per-session working directory overrides (session num → absolute path).
@@ -1751,6 +1751,93 @@ function createMessageHandler(deps) {
           } catch {}
         }
         ws.send(JSON.stringify({ type: 'mcp:removed', count }));
+        break;
+      }
+
+      // ── Voice agent ─────────────────────────────────────
+      case 'voice:join': {
+        if (!checkPermission(ws, user, 'admin')) break;
+        if (!voiceAgent) { ws.send(JSON.stringify({ type: 'error', message: 'Voice agent not available' })); break; }
+        if (voiceAgent.active) { ws.send(JSON.stringify({ type: 'error', message: 'Already in a meeting' })); break; }
+        const meetingUrl = msg.url;
+        if (!meetingUrl) { ws.send(JSON.stringify({ type: 'error', message: 'Meeting URL required' })); break; }
+        voiceAgent.joinMeeting(meetingUrl, {
+          passcode: msg.passcode,
+          botName: msg.botName || 'Hive',
+          name: msg.name || undefined,
+          reportOnJoin: msg.reportOnJoin !== false,
+        }).then(() => {
+          broadcast({ type: 'voice:status', status: voiceAgent.getStatus() });
+        }).catch((err) => {
+          ws.send(JSON.stringify({ type: 'voice:error', error: err.message }));
+        });
+        ws.send(JSON.stringify({ type: 'voice:joining', url: meetingUrl }));
+        break;
+      }
+
+      case 'voice:leave': {
+        if (!checkPermission(ws, user, 'admin')) break;
+        if (!voiceAgent || !voiceAgent.active) { ws.send(JSON.stringify({ type: 'error', message: 'Not in a meeting' })); break; }
+        voiceAgent.leaveMeeting().then(() => {
+          broadcast({ type: 'voice:status', status: voiceAgent.getStatus() });
+        });
+        break;
+      }
+
+      case 'voice:status': {
+        const status = voiceAgent ? voiceAgent.getStatus() : { active: false };
+        ws.send(JSON.stringify({ type: 'voice:status', status }));
+        break;
+      }
+
+      case 'voice:speak': {
+        if (!checkPermission(ws, user, 'admin')) break;
+        if (!voiceAgent || !voiceAgent.active) { ws.send(JSON.stringify({ type: 'error', message: 'Not in a meeting' })); break; }
+        if (!msg.text) break;
+        voiceAgent._speak(msg.text).catch(err => {
+          ws.send(JSON.stringify({ type: 'voice:error', error: err.message }));
+        });
+        break;
+      }
+
+      case 'voice:transcript': {
+        if (!voiceAgent || !voiceAgent.transcriber) {
+          ws.send(JSON.stringify({ type: 'voice:transcript', transcript: [] }));
+          break;
+        }
+        ws.send(JSON.stringify({ type: 'voice:transcript', transcript: voiceAgent.transcriber.transcript }));
+        break;
+      }
+
+      case 'voice:meetings': {
+        const meetings = voiceAgent ? voiceAgent.getMeetings() : [];
+        const status = voiceAgent ? voiceAgent.getStatus() : { active: false };
+        ws.send(JSON.stringify({ type: 'voice:meetings', meetings, status }));
+        break;
+      }
+
+      case 'voice:meeting:detail': {
+        if (!voiceAgent || !msg.id) { ws.send(JSON.stringify({ type: 'voice:meeting:detail', meeting: null })); break; }
+        const meeting = voiceAgent.getMeeting(msg.id);
+        ws.send(JSON.stringify({ type: 'voice:meeting:detail', meeting }));
+        break;
+      }
+
+      case 'voice:meeting:rename': {
+        if (!checkPermission(ws, user, 'admin')) break;
+        if (!voiceAgent || !msg.id || !msg.name) break;
+        voiceAgent.renameMeeting(msg.id, msg.name);
+        ws.send(JSON.stringify({ type: 'voice:meetings', meetings: voiceAgent.getMeetings(), status: voiceAgent.getStatus() }));
+        break;
+      }
+
+      case 'voice:debug': {
+        if (!voiceAgent) { ws.send(JSON.stringify({ type: 'voice:debug', debug: { active: false } })); break; }
+        voiceAgent.getDebug().then(debug => {
+          ws.send(JSON.stringify({ type: 'voice:debug', debug }));
+        }).catch(err => {
+          ws.send(JSON.stringify({ type: 'voice:debug', debug: { error: err.message } }));
+        });
         break;
       }
     }

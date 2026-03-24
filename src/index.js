@@ -4,6 +4,12 @@ const path = require('path');
 const fs = require('fs');
 const log = require('./core/log');
 
+// Prevent unhandled WebSocket/SDK errors from crashing the process
+process.on('uncaughtException', (err) => {
+  log.error(`[uncaught] ${err.message}`);
+  if (err.stack) log.error(err.stack);
+});
+
 // Load .env from project root
 const envPath = path.join(__dirname, '..', '.env');
 if (fs.existsSync(envPath)) {
