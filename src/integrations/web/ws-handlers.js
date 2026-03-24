@@ -736,6 +736,15 @@ function createMessageHandler(deps) {
         break;
       }
 
+      case 'autoCreateSessions:toggle': {
+        if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'dispatch')) break;
+        taskQueue.autoCreateSessions = !taskQueue.autoCreateSessions;
+        taskQueue._saveState();
+        broadcast({ type: 'autoCreateSessions:status', enabled: taskQueue.autoCreateSessions });
+        break;
+      }
+
       case 'kill': {
         if (!checkPermission(ws, user, 'restart')) break;
         const found = await fleet.findSession(config, router, msg.session);

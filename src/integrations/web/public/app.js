@@ -126,6 +126,7 @@
   let taskMode = 'auto';
   let vimMode = false;
   let taskAutoComplete = true;
+  let autoCreateSessions = false;
   let manualTarget = null;
   let activeTaskTab = 'inprogress';
   let tasksViewMode = 'list'; // 'list' or 'board'
@@ -1290,6 +1291,12 @@
         taskAutoComplete = msg.enabled;
         const btn = document.getElementById('toggle-task-autocomplete');
         if (btn) btn.classList.toggle('on', taskAutoComplete);
+        break;
+      }
+      case 'autoCreateSessions:status': {
+        autoCreateSessions = msg.enabled;
+        const btn = document.getElementById('toggle-auto-create-sessions');
+        if (btn) btn.classList.toggle('on', autoCreateSessions);
         break;
       }
       case 'spawn:slots':
@@ -2968,6 +2975,9 @@
   });
   document.getElementById('toggle-task-autocomplete').addEventListener('click', function() {
     if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'taskAutoComplete:toggle' }));
+  });
+  document.getElementById('toggle-auto-create-sessions').addEventListener('click', function() {
+    if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'autoCreateSessions:toggle' }));
   });
   // Initialize toggle button states
   document.getElementById('toggle-nav-buttons').classList.toggle('on', showNavButtons);

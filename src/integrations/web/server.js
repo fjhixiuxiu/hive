@@ -223,6 +223,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       ws.send(JSON.stringify({ type: 'designations:status', designations: taskQueue.getDesignations() }));
       ws.send(JSON.stringify({ type: 'vim:status', enabled: taskQueue.vimMode }));
       ws.send(JSON.stringify({ type: 'taskAutoComplete:status', enabled: taskQueue.taskAutoComplete }));
+      ws.send(JSON.stringify({ type: 'autoCreateSessions:status', enabled: taskQueue.autoCreateSessions }));
       ws.send(JSON.stringify({ type: 'designationDefs:list', defs: taskQueue.getDesignationDefs() }));
       ws.send(JSON.stringify({ type: 'agentRoots:list', roots: taskQueue.getAgentRoots() }));
       ws.send(JSON.stringify({ type: 'agentFiles:list', files: taskQueue.agentFilesList }));

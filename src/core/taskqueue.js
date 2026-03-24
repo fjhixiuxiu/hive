@@ -41,6 +41,7 @@ class TaskQueue extends EventEmitter {
     this.spawnSlotMax = 32;
     this.vimMode = false;
     this.taskAutoComplete = true; // when false, tasks require manual completion
+    this.autoCreateSessions = false; // when true, auto-dispatch can spawn new sessions
     this._snoozeTimers = new Map(); // taskId → setTimeout handle
     this.checklistTemplates = new Map(); // name → { name, items: [string] }
     this.sessionContext = new Map();    // session num -> { plan: '/path', pr: 'url', jira: 'KEY', ... }
@@ -618,6 +619,7 @@ class TaskQueue extends EventEmitter {
       }
 
       // Auto-create session for undesignated tasks with no matching idle session
+      if (!this.autoCreateSessions) return;
       const remainingTasks = queuedTasks.filter(t => t.status === 'queued' && !t.designation);
       if (remainingTasks.length > 0) {
         // Check all sessions (not just idle ones) — an undesignated session may be booting
@@ -1052,6 +1054,7 @@ class TaskQueue extends EventEmitter {
       }
       if (data.vimMode !== undefined) this.vimMode = data.vimMode;
       if (data.taskAutoComplete !== undefined) this.taskAutoComplete = data.taskAutoComplete;
+      if (data.autoCreateSessions !== undefined) this.autoCreateSessions = data.autoCreateSessions;
       if (data.spawnSlotMin !== undefined) this.spawnSlotMin = data.spawnSlotMin;
       if (data.spawnSlotMax !== undefined) this.spawnSlotMax = data.spawnSlotMax;
       if (data.sessionContext && typeof data.sessionContext === 'object') {
@@ -1127,6 +1130,7 @@ class TaskQueue extends EventEmitter {
       feed: this.feed,
       vimMode: this.vimMode,
       taskAutoComplete: this.taskAutoComplete,
+      autoCreateSessions: this.autoCreateSessions,
       spawnSlotMin: this.spawnSlotMin,
       spawnSlotMax: this.spawnSlotMax,
       checklistTemplates: this.getChecklistTemplates(),

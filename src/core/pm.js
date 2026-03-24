@@ -640,7 +640,7 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
     );
     if (existing) return;
 
-    // Find any idle session (bypass auto-mode requirement)
+    // Find an idle auto-session to dispatch to
     const fleet = require('./fleet');
     const sessions = await fleet.getFleetStatus(
       this.taskQueue.config,
@@ -649,6 +649,7 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
     const idle = sessions.find(
       (s) =>
         s.state === 'idle' &&
+        this.taskQueue.autoSessions.has(s.num) &&
         !this.taskQueue.dispatchLock.has(s.num) &&
         !this.taskQueue.activeTaskBySession.has(s.num) &&
         (!pm.designation ||
