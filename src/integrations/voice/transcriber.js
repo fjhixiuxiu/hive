@@ -160,6 +160,12 @@ class Transcriber extends EventEmitter {
    */
   stop() {
     if (this.connection) {
+      // Attach a no-op error handler to the underlying WS to prevent unhandled 'error' crashes
+      // during async teardown (e.g. Deepgram SDK timeout closing a not-yet-open socket)
+      try {
+        const ws = this.connection._socket || this.connection.ws;
+        if (ws && typeof ws.on === 'function') ws.on('error', () => {});
+      } catch (_) { /* ignore */ }
       try { this.connection.close(); } catch (e) { /* ignore */ }
       this.connection = null;
     }

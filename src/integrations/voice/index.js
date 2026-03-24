@@ -17,11 +17,16 @@ const VOICE_SESSION = 'hive-voice';
 const VOICE_SESSION_DIR = path.join(__dirname, '..', '..', '..');
 const MEETINGS_FILE = path.join(__dirname, '..', '..', '..', '.hive-meetings.json');
 
-// Silence gap before sending buffered transcript to Claude (ms)
-const SILENCE_GAP = 3000;
-
-// Max meetings to keep in history
-const MAX_MEETINGS = 50;
+// Defaults (overridden by config.voice)
+const DEFAULTS = {
+  systemPrompt: null,       // null = use built-in default
+  mcpTools: null,           // null = all hive MCP tools
+  ttsVoice: 'aura-orion-en',
+  reportOnJoin: true,
+  maxDuration: 3600000,     // 1 hour
+  silenceGap: 3000,         // ms before sending buffered transcript
+  maxMeetings: 50,
+};
 
 /**
  * Voice Agent — orchestrates meeting joining, standup reporting,
@@ -30,6 +35,8 @@ const MAX_MEETINGS = 50;
  * Brain: a dedicated Claude Code session ("hive-voice") that receives
  * transcripts and decides whether/how to respond. No regex triggers —
  * Claude handles intent detection and natural conversation.
+ *
+ * Configuration: set config.voice in hive.config.js to override defaults.
  */
 class VoiceAgent extends EventEmitter {
   constructor(opts = {}) {
@@ -39,18 +46,24 @@ class VoiceAgent extends EventEmitter {
     this.router = opts.router;
     this.pmName = opts.pmName || 'Voice Meeting';
     this.knowledgeBase = opts.knowledgeBase;
+    this.config = opts.config || {};
+
+    // Merge voice config with defaults
+    const vc = { ...DEFAULTS, ...this.config.voice };
 
     // Sub-components (created on join)
     this.meeting = null;
-    this.tts = new TTS({
-      voice: opts.voice || 'aura-orion-en',
-    });
+    this.tts = new TTS({ voice: vc.ttsVoice });
     this.standup = new StandupReport();
     this.transcriber = null;
 
-    // Config
-    this.reportOnJoin = opts.reportOnJoin !== false;
-    this.maxDuration = opts.maxDuration || 3600000; // 1 hour
+    // Config (from voice config block)
+    this.reportOnJoin = vc.reportOnJoin;
+    this.maxDuration = vc.maxDuration;
+    this._silenceGap = vc.silenceGap;
+    this._maxMeetings = vc.maxMeetings;
+    this._customSystemPrompt = vc.systemPrompt;
+    this._mcpTools = vc.mcpTools;
 
     // State
     this.active = false;
@@ -189,6 +202,18 @@ class VoiceAgent extends EventEmitter {
 
     const result = await sessionManager.createSession(VOICE_SESSION, VOICE_SESSION_DIR, { panes: 1 }, { cols: 80, rows: 50 });
     if (result.created) {
+      // Set up hive MCP server so the voice session has fleet tools
+      const port = this.config?.web?.port || 3000;
+      const token = process.env.HIVE_TOKEN || '';
+      sessionManager.writeMcpConfig(
+        VOICE_SESSION_DIR,
+        `ws://127.0.0.1:${port}`,
+        token,
+        VOICE_SESSION,
+        this._mcpTools, // null = all tools
+      );
+      log.info(`[voice] MCP config written (tools: ${this._mcpTools ? this._mcpTools.join(', ') : 'all'})`);
+
       // Write a launcher script with heredoc to avoid shell-quoting issues
       // (system prompt has parens, quotes, brackets that break tmux send-keys)
       const launchScript = path.join(require('os').tmpdir(), 'hive-voice-launch.sh');
@@ -216,18 +241,39 @@ class VoiceAgent extends EventEmitter {
    * System prompt for the voice Claude session.
    */
   _getSystemPrompt() {
+    if (this._customSystemPrompt) return this._customSystemPrompt;
+
     return [
       'You are Hive, an AI engineering fleet manager, speaking in a live meeting.',
       'You hear meeting transcripts and decide whether to respond.',
       '',
-      'RULES:',
+      'RESPONSE RULES:',
       '- If someone addresses you (Hive/hive/hi/hey hive or similar), respond.',
       '- If no one is talking to you, reply with exactly: SILENT',
-      '- Keep responses under 2 sentences. Be concise — this is spoken aloud.',
+      '- Keep responses under 2 sentences. Be concise — this is spoken aloud via TTS.',
       '- No markdown, no code blocks, no bullet points. Plain conversational English.',
-      '- You can answer questions about fleet status, tasks, PRs, and dev work.',
-      '- You can create tasks when asked (say "I\'ll queue that up" and include [CREATE_TASK: description] in your response).',
       '- If you don\'t know something, say so briefly.',
+      '',
+      'HIVE STATE — you have full access to the fleet:',
+      '- Read .hive-state.json in the project root to see all tasks, sessions, and fleet state.',
+      '- Key fields in the state file:',
+      '  tasks[]: id, text, status (queued/dispatched/completed/failed/cancelled), assignedTo (session number), workState, source, sourcePR, createdAt, completedAt',
+      '  autoSessions[]: session numbers in auto-dispatch mode',
+      '  designations: { sessionNum: designationName } — named roles like "iOS", "Hive", "Android"',
+      '  sessionContext: { sessionNum: { planText, pr, jira, branch } } — what each session is working on',
+      '  feed[]: recent activity log entries',
+      '  spawnedAgents: { sessionNum: { repoDir, name } }',
+      '  pms[]: project managers with their instructions and sources',
+      '',
+      'When asked about tasks, fleet status, what sessions are doing, PRs, etc. — read the state file and answer from it.',
+      'You also have hive MCP tools available (hive_get_task, hive_get_sessions, hive_share_knowledge, etc.) — use them for live data.',
+      '',
+      'ACTIONS — include these tags in your response to take actions:',
+      '- [CREATE_TASK: description] — create a new task in the queue',
+      '- [COMPLETE_TASK: id] — mark a task as completed',
+      '- [CANCEL_TASK: id] — cancel a queued or dispatched task',
+      '- [DISPATCH_TASK: id TO session] — dispatch a queued task to a session number',
+      'Action tags are stripped before speaking. You can include multiple actions in one response.',
     ].join('\n');
   }
 
@@ -324,13 +370,24 @@ class VoiceAgent extends EventEmitter {
       await this.meeting.join(meetingUrl, { passcode: opts.passcode });
       await this._waitForAudioBridge(10000);
 
-      // Deliver standup report if configured
-      if (this.reportOnJoin !== false) {
-        log.info('[voice] Generating standup report...');
-        const reportText = await this.standup.generate(this.taskQueue, this.watcher);
-        log.info(`[voice] Report: ${reportText.substring(0, 200)}...`);
-        await new Promise(r => setTimeout(r, 3000));
-        await this._speak(reportText);
+      // Prime Claude session with standup data so it's ready when called on
+      const shouldReport = opts.reportOnJoin !== undefined ? opts.reportOnJoin : this.reportOnJoin;
+      if (shouldReport) {
+        log.info('[voice] Priming Claude session with standup data...');
+        const reportData = await this.standup.generate(this.taskQueue, this.watcher);
+        // Use relay.tell (fire-and-forget) to prime context without waiting for a response
+        const node = this.router.getNode('local');
+        const cfg = this.config || this.taskQueue?.config;
+        if (cfg && node) {
+          await relay.tell(cfg, node, VOICE_SESSION, [
+            'You just joined a meeting. Here is your standup update — keep it ready.',
+            'When someone calls on you (e.g. "Hive, your turn" or "Hive, what\'s your update?"),',
+            'deliver this as a concise spoken summary. Do NOT speak until called on.',
+            '',
+            reportData,
+          ].join('\n'));
+          log.info('[voice] Standup data primed — waiting to be called on');
+        }
       }
 
       // Max duration timer
@@ -364,9 +421,9 @@ class VoiceAgent extends EventEmitter {
 
     this._transcriptBuffer.push(entry);
 
-    // Reset the silence timer — fires after SILENCE_GAP ms of no new transcripts
+    // Reset the silence timer — fires after silence gap of no new transcripts
     if (this._silenceTimer) clearTimeout(this._silenceTimer);
-    this._silenceTimer = setTimeout(() => this._onSilence(), SILENCE_GAP);
+    this._silenceTimer = setTimeout(() => this._onSilence(), this._silenceGap);
   }
 
   /**
@@ -386,63 +443,129 @@ class VoiceAgent extends EventEmitter {
         })
         .join('\n');
 
-      log.info(`[voice] Sending to Claude: "${transcriptText.substring(0, 200)}"`);
-
-      // Send to Claude via relay.ask()
-      const config = this.taskQueue?.config;
-      if (!config) {
-        log.warn('[voice] No config available, cannot relay to Claude');
-        return;
-      }
-
-      const node = this.router.getNode('local');
       const message = this._buildContextMessage(transcriptText);
-
-      const result = await relay.ask(config, node, VOICE_SESSION, message, {
-        force: true, // always send, don't check idle state
-      });
-
-      if (!result.success) {
-        log.warn(`[voice] Claude response failed: ${result.error}`);
-        return;
-      }
-
-      // Extract Claude's actual response from the pane capture.
-      // The full capture includes startup noise, previous exchanges, and the
-      // current transcript. Claude's response follows the last [Speaker ...] line.
-      const rawResponse = (result.response || '').trim();
-      const response = this._extractClaudeResponse(rawResponse, transcriptText);
-      log.info(`[voice] Claude response: "${response.substring(0, 200)}"`);
-
-      // Check for SILENT — Claude chose not to respond
-      if (!response || response === 'SILENT' || response.startsWith('SILENT')) {
-        log.info('[voice] Claude: SILENT (not addressed)');
-        return;
-      }
-
-      // Check for task creation
-      const taskMatch = response.match(/\[CREATE_TASK:\s*(.+?)\]/i);
-      if (taskMatch && this.taskQueue) {
-        const taskText = `[voice-meeting] ${taskMatch[1]}`;
-        const task = this.taskQueue.createTask(taskText, 'auto', null, null, {
-          source: `pm:${this.pmName}`,
-        });
-        this._tasksCreated = (this._tasksCreated || 0) + 1;
-        log.info(`[voice] Task created: T:${task.id} — "${taskMatch[1]}"`);
-        this.emit('task-created', { id: task.id, title: taskMatch[1] });
-      }
-
-      // Strip any [CREATE_TASK:...] tags from spoken response
-      const spokenResponse = response.replace(/\[CREATE_TASK:[^\]]*\]/gi, '').trim();
-      if (spokenResponse) {
-        this._currentResponses.push({ text: spokenResponse, _ts: Date.now() });
-        this.emit('response', spokenResponse);
-        await this._speak(spokenResponse);
-      }
+      await this._sendToSession(message, transcriptText);
     } catch (e) {
       log.error(`[voice] Transcript processing error: ${e.message}`);
     } finally {
       this._processingTranscript = false;
+    }
+  }
+
+  /**
+   * Send a message to the Claude voice session, handle the response
+   * (action tags, TTS), and return the spoken text (if any).
+   *
+   * @param {string} message - the message to send to Claude
+   * @param {string} [sentTranscript] - original transcript text for response extraction
+   */
+  async _sendToSession(message, sentTranscript) {
+    const config = this.config || this.taskQueue?.config;
+    if (!config) {
+      log.warn('[voice] No config available, cannot relay to Claude');
+      return null;
+    }
+
+    log.info(`[voice] Sending to Claude: "${message.substring(0, 200)}"`);
+
+    const node = this.router.getNode('local');
+    const result = await relay.ask(config, node, VOICE_SESSION, message, {
+      force: true, // always send, don't check idle state
+    });
+
+    if (!result.success) {
+      log.warn(`[voice] Claude response failed: ${result.error}`);
+      return null;
+    }
+
+    // Extract Claude's actual response from the pane capture
+    const rawResponse = (result.response || '').trim();
+    const response = sentTranscript
+      ? this._extractClaudeResponse(rawResponse, sentTranscript)
+      : rawResponse;
+    log.info(`[voice] Claude response: "${response.substring(0, 200)}"`);
+
+    // Check for SILENT — Claude chose not to respond
+    if (!response || response === 'SILENT' || response.startsWith('SILENT')) {
+      log.info('[voice] Claude: SILENT (not addressed)');
+      return null;
+    }
+
+    // Process action tags from Claude's response
+    this._processActions(response);
+
+    // Strip all action tags before speaking
+    const spokenResponse = response
+      .replace(/\[CREATE_TASK:[^\]]*\]/gi, '')
+      .replace(/\[COMPLETE_TASK:[^\]]*\]/gi, '')
+      .replace(/\[CANCEL_TASK:[^\]]*\]/gi, '')
+      .replace(/\[DISPATCH_TASK:[^\]]*\]/gi, '')
+      .trim();
+    if (spokenResponse) {
+      this._currentResponses.push({ text: spokenResponse, _ts: Date.now() });
+      this.emit('response', spokenResponse);
+      await this._speak(spokenResponse);
+    }
+    return spokenResponse || null;
+  }
+
+  /**
+   * Process action tags from Claude's response.
+   */
+  _processActions(response) {
+    if (!this.taskQueue) return;
+
+    // [CREATE_TASK: description]
+    const createMatches = response.matchAll(/\[CREATE_TASK:\s*(.+?)\]/gi);
+    for (const match of createMatches) {
+      const taskText = `[voice-meeting] ${match[1]}`;
+      const task = this.taskQueue.createTask(taskText, 'auto', null, null, {
+        source: `pm:${this.pmName}`,
+      });
+      this._tasksCreated = (this._tasksCreated || 0) + 1;
+      log.info(`[voice] Task created: T:${task.id} — "${match[1]}"`);
+      this.emit('task-created', { id: task.id, title: match[1] });
+    }
+
+    // [COMPLETE_TASK: id]
+    const completeMatches = response.matchAll(/\[COMPLETE_TASK:\s*(\d+)\]/gi);
+    for (const match of completeMatches) {
+      const task = this.taskQueue.completeTask(match[1], 'Completed via voice meeting');
+      if (task) {
+        log.info(`[voice] Task completed: T:${match[1]}`);
+        this.emit('task-action', { action: 'completed', id: match[1] });
+      } else {
+        log.warn(`[voice] Could not complete task T:${match[1]} — not found or not dispatched`);
+      }
+    }
+
+    // [CANCEL_TASK: id]
+    const cancelMatches = response.matchAll(/\[CANCEL_TASK:\s*(\d+)\]/gi);
+    for (const match of cancelMatches) {
+      const task = this.taskQueue.cancelTask(match[1]);
+      if (task) {
+        log.info(`[voice] Task cancelled: T:${match[1]}`);
+        this.emit('task-action', { action: 'cancelled', id: match[1] });
+      } else {
+        log.warn(`[voice] Could not cancel task T:${match[1]} — not found`);
+      }
+    }
+
+    // [DISPATCH_TASK: id TO session]
+    const dispatchMatches = response.matchAll(/\[DISPATCH_TASK:\s*(\d+)\s+TO\s+(\d+)\]/gi);
+    for (const match of dispatchMatches) {
+      const taskId = match[1];
+      const sessionNum = parseInt(match[2], 10);
+      this.taskQueue.dispatchTaskTo(taskId, sessionNum).then(task => {
+        if (task) {
+          log.info(`[voice] Task dispatched: T:${taskId} → S:${sessionNum}`);
+          this.emit('task-action', { action: 'dispatched', id: taskId, session: sessionNum });
+        } else {
+          log.warn(`[voice] Could not dispatch T:${taskId} to S:${sessionNum}`);
+        }
+      }).catch(e => {
+        log.error(`[voice] Dispatch failed for T:${taskId}: ${e.message}`);
+      });
     }
   }
 
@@ -571,7 +694,7 @@ class VoiceAgent extends EventEmitter {
         responses: this._currentResponses,
         tasksCreated: this._tasksCreated || 0,
       });
-      if (this.meetings.length > MAX_MEETINGS) this.meetings.length = MAX_MEETINGS;
+      if (this.meetings.length > this._maxMeetings) this.meetings.length = this._maxMeetings;
       this._saveMeetings();
       log.info(`[voice] Meeting saved: ${this._currentMeetingId} (${this._currentTranscript.length} entries)`);
     }

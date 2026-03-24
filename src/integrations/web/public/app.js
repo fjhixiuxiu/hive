@@ -8845,6 +8845,6 @@
     if (dotT) dotT.className = 'voice-dot ' + (debug.transcriberRunning ? 'on' : 'off');
   }
 
-  // ── Service worker registration ───────────────────
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+  // ── Unregister any stale service workers ──────────
+  if ('serviceWorker' in navigator) navigator.serviceWorker.getRegistrations().then(regs => regs.forEach(r => r.unregister())).catch(() => {});
 })();

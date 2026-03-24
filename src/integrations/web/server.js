@@ -64,7 +64,14 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     });
   }
 
-  app.use(express.static(path.join(__dirname, 'public')));
+  app.use(express.static(path.join(__dirname, 'public'), {
+    setHeaders: (res, filePath) => {
+      // Prevent browser caching of HTML/JS/CSS during development
+      if (/\.(html|js|css)$/.test(filePath)) {
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      }
+    }
+  }));
 
   // -- Image upload endpoint -----------------------------------------------
   const uploadDir = path.join(os.tmpdir(), 'hive-uploads');
@@ -398,7 +405,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
 
   // -- Voice agent setup ---------------------------------------------------
   const voiceAgent = new VoiceAgent({
-    taskQueue, watcher, router,
+    taskQueue, watcher, router, config,
     knowledgeBase: pmManager ? (entry) => pmManager.addKnowledge(entry) : null,
   });
   const voiceAudioWss = voiceAgent.setupAudioBridge();
@@ -425,6 +432,9 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
   });
   voiceAgent.on('task-created', (task) => {
     broadcast({ type: 'voice:task-created', task });
+  });
+  voiceAgent.on('task-action', (action) => {
+    broadcast({ type: 'voice:task-action', ...action });
   });
 
   // -- Message handlers (extracted to ws-handlers.js) ----------------------
