@@ -1,7 +1,15 @@
 'use strict';
 
 const path = require('path');
-const { chromium } = require('playwright');
+// Lazy-require playwright — it's a heavy optional dependency only needed at runtime
+let chromium;
+function getChromium() {
+  if (!chromium) {
+    try { chromium = require('playwright').chromium; }
+    catch { throw new Error('playwright is required for voice meetings — install it with: npm i playwright'); }
+  }
+  return chromium;
+}
 const { EventEmitter } = require('events');
 const log = require('../../core/log');
 
@@ -39,7 +47,7 @@ class MeetingJoiner extends EventEmitter {
     const userDataDir = path.join(require('os').tmpdir(), 'hive-chrome-' + Date.now());
 
     // Must use launchPersistentContext for Chrome extension support
-    this.context = await chromium.launchPersistentContext(userDataDir, {
+    this.context = await getChromium().launchPersistentContext(userDataDir, {
       headless: false,
       args: [
         '--use-fake-ui-for-media-stream',      // auto-accept mic/camera
