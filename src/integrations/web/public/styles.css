@@ -264,8 +264,13 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 #grid.grid.cols-6 { grid-template-columns: repeat(6, 1fr) !important; }
 /* Live mode: wider cards by default to fit terminals */
 #grid.grid.live.cols-auto { grid-template-columns: repeat(auto-fill, minmax(480px, 1fr)) !important; }
-#grid.grid.live .card { cursor: default; flex-direction: column; gap: 0; }
+/* Each grid row is half the viewport — 2 cols × 2 rows = 4 cards visible at a time */
+#grid.grid.live { grid-auto-rows: 50vh; }
+#grid.grid.live .card { cursor: default; flex-direction: column; gap: 0; overflow: hidden; min-height: 0; }
 #grid.grid.live .card-top { cursor: pointer; padding: 6px 0 4px; }
+/* Terminal fills remaining card height via flexbox */
+#grid.grid.live .card-terminals-row { flex: 1; min-height: 0; }
+#grid.grid.live .card-terminal { height: 100%; }
 /* List mode */
 #grid.list { display: block; padding: 6px 10px; }
 @media (min-width: 600px) { #grid.list { padding: 6px 12px; } }
@@ -1477,7 +1482,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   text-transform: uppercase; letter-spacing: 0.5px;
   padding: 2px 0 3px; border-bottom: 1px solid var(--bg3); margin-bottom: 4px;
 }
-.card-terminal { width: 100%; height: 240px; overflow: hidden; border-radius: 4px; background: var(--bg); cursor: pointer; }
+.card-terminal { width: 100%; height: 300px; overflow: hidden; border-radius: 4px; background: var(--bg); cursor: pointer; }
 .card-terminal * { pointer-events: none; }
 .card-focused { box-shadow: 0 0 0 2px var(--purple) !important; }
 /* ── Color swatch picker ── */
