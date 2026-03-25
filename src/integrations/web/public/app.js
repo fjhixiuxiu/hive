@@ -1177,8 +1177,7 @@
             if (ct._raf) cancelAnimationFrame(ct._raf);
             ct._raf = requestAnimationFrame(() => {
               ct._raf = null;
-              ct.term.reset();
-              ct.term.write(msg.content, () => ct.term.scrollToBottom());
+              ct.term.write('\x1b[H\x1b[J' + msg.content, () => ct.term.scrollToBottom());
             });
           }
         }
@@ -2484,8 +2483,7 @@
     if (_termWriteRAF) cancelAnimationFrame(_termWriteRAF);
     _termWriteRAF = requestAnimationFrame(() => {
       _termWriteRAF = null;
-      term.reset();
-      term.write(content, () => {
+      term.write('\x1b[H\x1b[J' + content, () => {
         term.scrollToBottom();
         writingContent = false;
         if (readingMode) document.getElementById('reading-content').textContent = extractTerminalText();
@@ -3007,8 +3005,7 @@
     if (_consWriteRAF) cancelAnimationFrame(_consWriteRAF);
     _consWriteRAF = requestAnimationFrame(() => {
       _consWriteRAF = null;
-      consoleTerm.reset();
-      consoleTerm.write(content, () => {
+      consoleTerm.write('\x1b[H\x1b[J' + content, () => {
         consoleTerm.scrollToBottom();
         consoleWriting = false;
       });
@@ -4893,8 +4890,7 @@
     if (_tsWriteRAF) cancelAnimationFrame(_tsWriteRAF);
     _tsWriteRAF = requestAnimationFrame(() => {
       _tsWriteRAF = null;
-      tasksSessionTerm.reset();
-      tasksSessionTerm.write(content, () => {
+      tasksSessionTerm.write('\x1b[H\x1b[J' + content, () => {
         tasksSessionTerm.scrollToBottom();
         tsWriting = false;
       });
@@ -5096,13 +5092,11 @@
   function showTaskSnapshotContent(taskId, content, cols) {
     ensureTasksSessionTerm();
     if (!content) {
-      tasksSessionTerm.reset();
-      tasksSessionTerm.write('\r\n  No snapshot saved for this task\r\n');
+      tasksSessionTerm.write('\x1b[H\x1b[J\r\n  No snapshot saved for this task\r\n');
       return;
     }
     if (cols && cols > 0) { tsPaneCols = cols; if (cols !== tasksSessionTerm.cols) tasksSessionTerm.resize(cols, tasksSessionTerm.rows); }
-    tasksSessionTerm.reset();
-    tasksSessionTerm.write(content);
+    tasksSessionTerm.write('\x1b[H\x1b[J' + content);
     requestAnimationFrame(() => tasksSessionTerm.scrollToBottom());
   }
 
@@ -6865,8 +6859,7 @@
     if (_tdWriteRAF) cancelAnimationFrame(_tdWriteRAF);
     _tdWriteRAF = requestAnimationFrame(() => {
       _tdWriteRAF = null;
-      taskDetailTerm.reset();
-      taskDetailTerm.write(content, () => {
+      taskDetailTerm.write('\x1b[H\x1b[J' + content, () => {
         taskDetailTerm.scrollToBottom();
         taskDetailWriting = false;
       });
