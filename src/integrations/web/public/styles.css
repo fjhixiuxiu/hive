@@ -2364,6 +2364,12 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   border-bottom: 1px solid var(--bg3);
 }
 .voice-title { font-size: 16px; font-weight: 700; flex: 1; }
+.voice-session-btn {
+  background: var(--surface); color: var(--fg); border: 1px solid var(--border); border-radius: 6px;
+  padding: 6px 14px; font-size: var(--fs-xs); font-weight: 600; cursor: pointer;
+  transition: filter 0.15s;
+}
+.voice-session-btn:hover { filter: brightness(1.15); }
 .voice-new-btn {
   background: var(--purple); color: #fff; border: none; border-radius: 6px;
   padding: 6px 14px; font-size: var(--fs-xs); font-weight: 600; cursor: pointer;
