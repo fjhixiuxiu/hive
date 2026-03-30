@@ -801,7 +801,8 @@ function createMessageHandler(deps) {
       case 'spawn:slots': {
         if (!taskQueue) break;
         const slots = await taskQueue.getAvailableSlots();
-        ws.send(JSON.stringify({ type: 'spawn:slots', slots, slotMin: taskQueue.spawnSlotMin, slotMax: taskQueue.spawnSlotMax }));
+        const repoBase = config.sessions.repoBase || '';
+        ws.send(JSON.stringify({ type: 'spawn:slots', slots, slotMin: taskQueue.spawnSlotMin, slotMax: taskQueue.spawnSlotMax, repoBase }));
         break;
       }
 

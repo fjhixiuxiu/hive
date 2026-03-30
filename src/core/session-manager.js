@@ -132,10 +132,10 @@ async function startClaude(name, claudePane = 1, claudeCmd = 'claude --continue'
 async function createAllSessions(config) {
   const results = { created: [], skipped: [], failed: [] };
   const size = config.tmux?.defaultSize || { cols: 200, rows: 50 };
-  const defaultLayout = {
-    panes: 3,
+  const defaultLayout = config.tmux?.defaultLayout || {
+    panes: 2,
     tmuxLayout: 'main-vertical',
-    claudePaneWidth: '50%',
+    claudePaneWidth: '60%',
   };
 
   // Determine session list from config

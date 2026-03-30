@@ -1302,6 +1302,10 @@
       case 'spawn:slots':
         if (msg.slotMin !== undefined) spawnSlotMin = msg.slotMin;
         if (msg.slotMax !== undefined) spawnSlotMax = msg.slotMax;
+        if (msg.repoBase) {
+          const base = msg.repoBase.replace(/^\/Users\/[^/]+/, '~');
+          document.getElementById('spawn-base-dir').value = base;
+        }
         renderSpawnSlots(msg.slots || [], msg.slotMin, msg.slotMax);
         break;
       case 'spawn:config':
