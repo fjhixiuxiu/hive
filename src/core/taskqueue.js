@@ -642,7 +642,7 @@ class TaskQueue extends EventEmitter {
               const prefix = this.config.sessions?.namePrefix || '';
               const sessionName = `${prefix}${num}`;
               log.info(`[auto-dispatch] No idle undesignated session — creating session ${num}`);
-              await sessionManager.createSession(sessionName, repoDir, { panes: 3, tmuxLayout: 'main-vertical', claudePaneWidth: '50%' }, size);
+              await sessionManager.createSession(sessionName, repoDir, this.config.tmux?.defaultLayout || { panes: 2, tmuxLayout: 'main-vertical', claudePaneWidth: '60%' }, size);
               await sessionManager.startClaude(sessionName, this.config.sessions.claudePane, 'claude');
               this.autoSessions.add(num);
               this._saveState();
@@ -762,7 +762,7 @@ class TaskQueue extends EventEmitter {
     const sessionName = `${prefix}${num}`;
     log.info(`[spawn] creating session ${sessionName} at ${repoDir}`);
     try {
-      await sessionManager.createSession(sessionName, repoDir, { panes: 3, tmuxLayout: 'main-vertical', claudePaneWidth: '50%' }, size);
+      await sessionManager.createSession(sessionName, repoDir, this.config.tmux?.defaultLayout || { panes: 2, tmuxLayout: 'main-vertical', claudePaneWidth: '60%' }, size);
       await sessionManager.startClaude(sessionName, this.config.sessions.claudePane, 'claude');
       log.info(`[spawn] session ${sessionName} created`);
     } catch (err) {
@@ -816,7 +816,7 @@ class TaskQueue extends EventEmitter {
       }
       const sessionName = `${prefix}${num}`;
       try {
-        await sessionManager.createSession(sessionName, info.repoDir, { panes: 3, tmuxLayout: 'main-vertical', claudePaneWidth: '50%' }, size);
+        await sessionManager.createSession(sessionName, info.repoDir, this.config.tmux?.defaultLayout || { panes: 2, tmuxLayout: 'main-vertical', claudePaneWidth: '60%' }, size);
         await sessionManager.startClaude(sessionName, this.config.sessions.claudePane);
         log.info(`[respawn] session ${sessionName} (${info.name}) restarted`);
         results.respawned.push(num);

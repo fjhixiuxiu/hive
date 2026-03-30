@@ -81,6 +81,7 @@ module.exports = {
   tmux: {
     defaultSize: { cols: 200, rows: 50 },
     defaultCommand: 'env -u CLAUDECODE bash --login',
+    defaultLayout: { panes: 2, tmuxLayout: 'main-vertical', claudePaneWidth: '60%' },
   },
 
   // ── Idle detection ──────────────────────────────────────

@@ -24,8 +24,7 @@ windows:
           then claude --continue;
           else claude;
           fi
-        -                    # Pane 2 (top-right) — dev server
-        -                    # Pane 3 (bottom-right) — shell
+        -                    # Pane 2 (right) — shell
 
 on_project_exit:
   - tmux select-layout -t <%= @settings["N"] %> main-vertical 2>/dev/null || true
