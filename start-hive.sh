@@ -21,20 +21,24 @@ cd "$HIVE_DIR"
 # Parse flags
 NO_SESSIONS=false
 RESTART=false
+FORCE=false
 for arg in "$@"; do
   case "$arg" in
     --no-sessions) NO_SESSIONS=true ;;
     --restart)     RESTART=true ;;
+    --force)       FORCE=true; RESTART=true ;;
   esac
 done
 
 if [ "$NO_SESSIONS" = false ]; then
-  node start-sessions.js
+  SESSION_ARGS=""
+  [ "$FORCE" = true ] && SESSION_ARGS="--force"
+  node start-sessions.js $SESSION_ARGS
 else
   echo "Skipping session startup (--no-sessions)"
 fi
 
-# Kill existing hive-server if --restart
+# Kill existing hive-server if --restart (--force implies --restart)
 if [ "$RESTART" = true ] && tmux has-session -t hive-server 2>/dev/null; then
   echo "Stopping existing hive server..."
   tmux kill-session -t hive-server
