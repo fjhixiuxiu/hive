@@ -193,8 +193,12 @@ class VoiceAgent extends EventEmitter {
   }
 
   /**
-   * Ensure the hive-voice tmux session exists with Claude running.
+   * Public: ensure the hive-voice tmux session exists with Claude running.
+   * Called from WS handler for voice:ensure-session so the session
+   * can be accessed outside of meetings.
    */
+  async ensureSession() { return this._ensureVoiceSession(); }
+
   async _ensureVoiceSession() {
     if (!await sessionManager.isTmuxAvailable()) {
       throw new Error('tmux not available');
@@ -253,6 +257,12 @@ class VoiceAgent extends EventEmitter {
       '- Keep responses under 2 sentences. Be concise — this is spoken aloud via TTS.',
       '- No markdown, no code blocks, no bullet points. Plain conversational English.',
       '- If you don\'t know something, say so briefly.',
+      '',
+      'FIRST INTERACTION:',
+      '- The first time you are called on in a meeting, briefly introduce yourself.',
+      '  Example: "Hey everyone, I\'m Hive — I manage the engineering fleet. Here\'s where we\'re at..."',
+      '- Then deliver any standup data you were primed with.',
+      '- After the first introduction, just be conversational — no need to re-introduce.',
       '',
       'HIVE STATE — you have full access to the fleet:',
       '- Read .hive-state.json in the project root to see all tasks, sessions, and fleet state.',

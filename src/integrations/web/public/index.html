@@ -642,6 +642,7 @@
     <div id="voice-panel" class="panel">
       <div class="voice-header">
         <span class="voice-title">Meetings</span>
+        <button class="voice-session-btn" id="voice-session-btn">Voice Session</button>
         <button class="voice-new-btn" id="voice-new-btn">+ New Meeting</button>
       </div>
       <div class="voice-list" id="voice-list">
@@ -876,6 +877,10 @@
     <div class="pm-form-field pm-fields-jira full-width">
       <label class="pm-form-label">JQL Query</label>
       <input class="pm-form-input" id="pm-form-jql" type="text" placeholder="project = DEV AND status = Open" autocomplete="off">
+    </div>
+    <div class="pm-form-field pm-fields-github full-width" style="display:none">
+      <label class="pm-form-label">Search Query <span style="color:var(--dim)">(GitHub search syntax, optional — overrides fields below)</span></label>
+      <input class="pm-form-input" id="pm-form-gh-query" type="text" placeholder="is:open is:pr author:nukulb repo:mavencare/webplatform -label:DRAFT" autocomplete="off">
     </div>
     <div class="pm-form-field pm-fields-github full-width" style="display:none">
       <label class="pm-form-label">Repo (owner/name)</label>

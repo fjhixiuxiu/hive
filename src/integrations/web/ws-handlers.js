@@ -1840,6 +1840,15 @@ function createMessageHandler(deps) {
         });
         break;
       }
+      case 'voice:ensure-session': {
+        if (!voiceAgent) { ws.send(JSON.stringify({ type: 'voice:ensure-session', ok: false, error: 'Voice agent not available' })); break; }
+        voiceAgent.ensureSession().then(() => {
+          ws.send(JSON.stringify({ type: 'voice:ensure-session', ok: true }));
+        }).catch(err => {
+          ws.send(JSON.stringify({ type: 'voice:ensure-session', ok: false, error: err.message }));
+        });
+        break;
+      }
     }
   };
 }

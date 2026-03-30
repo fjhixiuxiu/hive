@@ -7417,6 +7417,7 @@
         break;
       case 'github-issues':
       case 'github-prs':
+        source.query = document.getElementById('pm-form-gh-query').value.trim();
         source.repo = document.getElementById('pm-form-gh-repo').value.trim();
         source.labels = document.getElementById('pm-form-gh-labels').value.trim();
         source.excludeLabels = document.getElementById('pm-form-gh-exclude-labels').value.trim();
@@ -7425,7 +7426,7 @@
         if (sourceType === 'github-prs') {
           source.base = document.getElementById('pm-form-gh-base').value.trim();
         }
-        if (!source.repo) { showToast('Error', 'Repo required', 'error'); return; }
+        if (!source.query && !source.repo) { showToast('Error', 'Search query or repo required', 'error'); return; }
         break;
       case 'github-re-reviews':
         source.repo = document.getElementById('pm-form-gh-repo').value.trim();
@@ -7538,6 +7539,7 @@
     // Populate source-specific fields
     const src = pm ? pm.source : {};
     document.getElementById('pm-form-jql').value = src.jql || '';
+    document.getElementById('pm-form-gh-query').value = src.query || '';
     document.getElementById('pm-form-gh-repo').value = src.repo || '';
     document.getElementById('pm-form-gh-labels').value = src.labels || '';
     document.getElementById('pm-form-gh-exclude-labels').value = src.excludeLabels || '';
@@ -8506,6 +8508,41 @@
   document.getElementById('mtg-join-url').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); confirmJoin(); }
   });
+
+  // ── Voice session panel (no meeting) ─────────────────
+
+  document.getElementById('voice-session-btn').addEventListener('click', openVoiceSession);
+
+  function openVoiceSession() {
+    mtgDetailId = '__session__';
+    mtgDetailOpen = true;
+    mtgActiveTab = 'terminal';
+    document.getElementById('mtg-detail-panel').classList.add('open');
+    document.getElementById('mtg-detail-overlay').classList.add('open');
+
+    // Header
+    document.getElementById('mtg-detail-title').textContent = 'Voice Session';
+    document.getElementById('mtg-detail-url').textContent = 'hive-voice';
+    document.getElementById('mtg-detail-elapsed').textContent = '';
+    const pill = document.getElementById('mtg-detail-pill');
+    pill.textContent = 'Session';
+    pill.className = 'voice-status-pill active';
+
+    // Show terminal + input, hide meeting-specific stuff
+    document.getElementById('mtg-detail-stats-bar').style.display = 'none';
+    document.getElementById('mtg-speak-bar').style.display = 'none';
+    document.getElementById('mtg-input-bar').style.display = '';
+    document.getElementById('mtg-keys-bar').style.display = '';
+    document.getElementById('mtg-tabs-bar').style.display = 'none';
+    document.getElementById('mtg-terminal-wrap').style.display = '';
+    document.getElementById('mtg-transcript-wrap').style.display = 'none';
+
+    // Ensure session exists, then init terminal
+    if (ws && ws.readyState === 1) {
+      ws.send(JSON.stringify({ type: 'voice:ensure-session' }));
+    }
+    initMtgTerminal();
+  }
 
   // ── Meeting detail panel ───────────────────────────
 

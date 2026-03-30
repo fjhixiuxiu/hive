@@ -171,6 +171,20 @@ async function _fetchJira(source) {
 }
 
 async function _fetchGithubIssues(source) {
+  // Raw query mode — pass directly to Search API
+  if (source.query) {
+    const q = source.query.includes('is:issue') ? source.query : `is:issue ${source.query}`;
+    const params = new URLSearchParams({ q, per_page: '50', sort: 'created', order: 'desc' });
+    const urlStr = `https://api.github.com/search/issues?${params}`;
+    const data = await this._httpRequest(urlStr, this._githubHeaders());
+    return (data && data.items ? data.items : []).map(item => ({
+      key: `${item.repository_url ? item.repository_url.replace('https://api.github.com/repos/', '') : 'unknown'}#${item.number}`,
+      summary: item.title,
+      issueType: 'issue',
+      storyPoints: null,
+    }));
+  }
+
   if (!source.repo) throw new Error('GitHub repo not configured');
   const params = new URLSearchParams({ per_page: '50' });
   if (source.labels) params.set('labels', source.labels);
@@ -195,6 +209,11 @@ async function _fetchGithubIssues(source) {
 }
 
 async function _fetchGithubPrs(source) {
+  // Raw query mode — pass directly to Search API
+  if (source.query) {
+    return this._fetchGithubPrsViaSearch(source);
+  }
+
   if (!source.repo) throw new Error('GitHub repo not configured');
 
   const hasLabels = source.labels && source.labels.trim();
@@ -234,35 +253,43 @@ async function _fetchGithubPrs(source) {
 }
 
 async function _fetchGithubPrsViaSearch(source) {
-  // Build GitHub Search query: is:pr + repo + state + labels + excludeLabels + base + author
-  const parts = ['is:pr', `repo:${source.repo}`];
-  if (source.state && source.state !== 'all') parts.push(`is:${source.state}`);
-  if (source.labels) {
-    for (const l of source.labels.split(',').map(s => s.trim()).filter(Boolean)) {
-      parts.push(l.includes(' ') ? `label:"${l}"` : `label:${l}`);
+  let q;
+  if (source.query) {
+    // Raw query — use directly, ensure is:pr is included
+    q = source.query.includes('is:pr') ? source.query : `is:pr ${source.query}`;
+  } else {
+    // Build GitHub Search query: is:pr + repo + state + labels + excludeLabels + base + author
+    const parts = ['is:pr', `repo:${source.repo}`];
+    if (source.state && source.state !== 'all') parts.push(`is:${source.state}`);
+    if (source.labels) {
+      for (const l of source.labels.split(',').map(s => s.trim()).filter(Boolean)) {
+        parts.push(l.includes(' ') ? `label:"${l}"` : `label:${l}`);
+      }
     }
-  }
-  if (source.excludeLabels) {
-    for (const l of source.excludeLabels.split(',').map(s => s.trim()).filter(Boolean)) {
-      parts.push(l.includes(' ') ? `-label:"${l}"` : `-label:${l}`);
+    if (source.excludeLabels) {
+      for (const l of source.excludeLabels.split(',').map(s => s.trim()).filter(Boolean)) {
+        parts.push(l.includes(' ') ? `-label:"${l}"` : `-label:${l}`);
+      }
     }
+    if (source.base) parts.push(`base:${source.base}`);
+    if (source.author) parts.push(`author:${source.author}`);
+    parts.push('-is:draft');
+    q = parts.join(' ');
   }
-  if (source.base) parts.push(`base:${source.base}`);
-  if (source.author) parts.push(`author:${source.author}`);
-  parts.push('-is:draft');
-
-  const q = parts.join(' ');
   const params = new URLSearchParams({ q, per_page: '50', sort: 'created', order: 'desc' });
   const urlStr = `https://api.github.com/search/issues?${params}`;
   const data = await this._httpRequest(urlStr, this._githubHeaders());
   const items = data && data.items ? data.items : [];
 
-  return items.map(item => ({
-    key: `${source.repo}#${item.number}`,
-    summary: item.title,
-    issueType: 'pr',
-    storyPoints: null,
-  }));
+  return items.map(item => {
+    const repo = source.repo || (item.repository_url ? item.repository_url.replace('https://api.github.com/repos/', '') : 'unknown');
+    return {
+      key: `${repo}#${item.number}`,
+      summary: item.title,
+      issueType: 'pr',
+      storyPoints: null,
+    };
+  });
 }
 
 async function _fetchJenkins(source) {
