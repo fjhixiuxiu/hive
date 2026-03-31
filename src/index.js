@@ -90,6 +90,10 @@ try {
 const { createSlackBot } = require('./integrations/slack/bot');
 const slackBot = createSlackBot(taskQueue, config, router, pmManager);
 
+// Start GitHub bot (optional — needs GITHUB_APP_ID + GITHUB_APP_PRIVATE_KEY_PATH)
+const { createGithubBot } = require('./integrations/github/bot');
+const githubBot = createGithubBot(taskQueue, config, router, pmManager);
+
 // Start Web dashboard
 const {createWebServer} = require('./integrations/web/server');
 const webServer = createWebServer(
@@ -105,6 +109,7 @@ process.on('SIGINT', () => {
     log.info('\nShutting down...');
     pmManager.stopAll();
     watcher.stop();
+    if (githubBot) githubBot.stop();
     if (webServer) webServer.close();
     process.exit(0);
 });
@@ -112,6 +117,7 @@ process.on('SIGINT', () => {
 process.on('SIGTERM', () => {
     pmManager.stopAll();
     watcher.stop();
+    if (githubBot) githubBot.stop();
     if (webServer) webServer.close();
     process.exit(0);
 });
