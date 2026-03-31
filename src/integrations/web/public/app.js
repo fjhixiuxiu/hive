@@ -7361,7 +7361,7 @@
     const type = document.getElementById('pm-form-source').value;
     const isGithub = type === 'github-issues' || type === 'github-prs' || type === 'github-re-reviews';
     const isReReviews = type === 'github-re-reviews';
-    const types = ['jira', 'github', 'github-prs', 're-reviews', 'manual', 'command', 'script', 'jenkins', 'zoho', 'slack'];
+    const types = ['jira', 'github', 'github-prs', 're-reviews', 'manual', 'command', 'script', 'jenkins', 'zoho', 'slack', 'github-mentions'];
     for (const t of types) {
       let show = false;
       if (t === type) show = true;
@@ -7378,11 +7378,11 @@
         if (i > 0) el.style.display = 'none';
       });
     }
-    // Hide schedule for slack (no polling); manual supports cron schedule
+    // Hide schedule for slack/github-mentions (no polling); manual supports cron schedule
     const schedField = document.getElementById('pm-form-schedule-field');
-    if (schedField) schedField.style.display = (type === 'slack') ? 'none' : '';
+    if (schedField) schedField.style.display = (type === 'slack' || type === 'github-mentions') ? 'none' : '';
     const threshField = document.getElementById('pm-form-threshold').closest('.pm-form-field');
-    if (threshField) threshField.style.display = (type === 'manual' || type === 'command' || type === 'script' || type === 'slack') ? 'none' : '';
+    if (threshField) threshField.style.display = (type === 'manual' || type === 'command' || type === 'script' || type === 'slack' || type === 'github-mentions') ? 'none' : '';
     const instrField = document.getElementById('pm-form-instructions').closest('.pm-form-field');
     if (instrField) instrField.style.display = type === 'command' ? 'none' : '';
     const mcpField = document.getElementById('pm-form-mcp-field');
@@ -7457,6 +7457,11 @@
         break;
       case 'slack':
         source.channel = document.getElementById('pm-form-slack-channel').value.trim() || null;
+        break;
+      case 'github-mentions':
+        const reposRaw = document.getElementById('pm-form-gh-mentions-repos').value.trim();
+        source.repos = reposRaw ? reposRaw.split(',').map(r => r.trim()).filter(Boolean) : [];
+        if (!source.repos.length) { showToast('Error', 'At least one repo required', 'error'); return; }
         break;
       case 'manual':
         source.text = document.getElementById('pm-form-manual-text').value.trim();
@@ -7563,6 +7568,7 @@
     document.getElementById('pm-form-script-action').value = src.scriptAction || 'feed';
     document.getElementById('pm-form-manual-text').value = src.text || '';
     document.getElementById('pm-form-slack-channel').value = src.channel || '';
+    document.getElementById('pm-form-gh-mentions-repos').value = (src.repos || []).join(', ');
     document.getElementById('pm-form-jenkins-path').value = src.jobPath || '';
     document.getElementById('pm-form-zoho-dept').value = src.department || '';
     document.getElementById('pm-form-zoho-status').value = src.status || '';

@@ -10,6 +10,7 @@ backups/
 .claude/
 coverage/
 .playwright-mcp/
+*.pem
 
 # Terraform
 cloud/terraform/.terraform/

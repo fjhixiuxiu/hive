@@ -172,6 +172,8 @@ class ProjectManager extends EventEmitter {
     if (pm.enabled) {
       this._poll(id).catch(err => log.error(`Scan Now error for ${pm.name}:`, err.message));
     }
+    // Emit rescan event so external bots (GitHub, etc.) can react
+    this.emit('pm:rescan', pm);
     log.info(`[pm] Scan Now triggered for "${pm.name}"`);
   }
 
@@ -527,8 +529,8 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
     if (!pm) return;
     this._stopPolling(id); // clear any existing
 
-    // Slack source: config-only, no polling (bot reads PM on demand)
-    if (pm.source.type === 'slack') {
+    // Slack/GitHub mentions source: config-only, no polling (bot reads PM on demand)
+    if (pm.source.type === 'slack' || pm.source.type === 'github-mentions') {
       return;
     }
 
@@ -739,7 +741,7 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
   async _poll(id) {
     const pm = this.pms.get(id);
     if (!pm || !pm.enabled) return;
-    if (pm.source.type === 'slack') return; // config-only, no polling
+    if (pm.source.type === 'slack' || pm.source.type === 'github-mentions') return; // config-only, no polling
 
     try {
       let issues;

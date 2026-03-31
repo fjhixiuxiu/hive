@@ -873,6 +873,7 @@
         <option value="command">Command</option>
         <option value="script">Script</option>
         <option value="slack">Slack</option>
+        <option value="github-mentions">GitHub @Mentions</option>
         <option value="manual">Manual</option>
         <option value="jenkins">Jenkins (Tests)</option>
         <option value="zoho">Zoho (Support)</option>
@@ -948,6 +949,11 @@
       <label class="pm-form-label">Channel ID <span style="color:var(--dim)">(optional)</span></label>
       <input class="pm-form-input" id="pm-form-slack-channel" type="text" placeholder="Leave blank for all channels" autocomplete="off">
       <span style="font-size:11px;color:var(--dim);margin-top:4px;display:block;">Tasks from @hive in this channel use this PM's routing config (designation, target session, instructions, checklist).</span>
+    </div>
+    <div class="pm-form-field pm-fields-github-mentions full-width" style="display:none">
+      <label class="pm-form-label">Repos <span style="color:var(--dim)">(comma-separated)</span></label>
+      <input class="pm-form-input" id="pm-form-gh-mentions-repos" type="text" placeholder="mavencare/webplatform2, nukulb/hive" autocomplete="off">
+      <span style="font-size:11px;color:var(--dim);margin-top:4px;display:block;">Repos to watch for @mentions of the GitHub App bot. Tasks use this PM's routing config.</span>
     </div>
     <div class="pm-form-field pm-fields-jenkins full-width" style="display:none">
       <label class="pm-form-label">Job Path</label>
