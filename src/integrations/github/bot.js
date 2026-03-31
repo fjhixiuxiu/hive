@@ -163,7 +163,7 @@ function createGithubBot(taskQueue, config, router, pmManager) {
           const found = await fleet.findSession(config, router, existingTask.assignedTo);
           if (found) {
             const node = router.getNode(found.nodeId);
-            const result = await relay.tell(config, node, found.name, text, { vimMode: taskQueue.vimMode });
+            const result = await relay.tell(config, node, found.name, text + '\n\nReply back on the thread when done.', { vimMode: taskQueue.vimMode });
             if (result.success) {
               await auth.addReaction(repo, comment.id, 'eyes', isReview).catch(() => {});
               log.info(`[github] Follow-up relayed to session ${existingTask.assignedTo} for ${repo}#${issueNumber}`);
