@@ -38,11 +38,16 @@ function createGithubBot(taskQueue, config, router, pmManager) {
 
   function stripMention(text) {
     if (!text) return '';
-    // Remove @bot-name[bot] or @bot-name mentions
-    return text
-      .replace(/@viv-dev-agents\[bot\]/gi, '')
-      .replace(/@viv-dev-agents/gi, '')
-      .trim();
+    // Remove @bot-name[bot] or @bot-name mentions (dynamic from GitHub App identity)
+    const name = (botUsername || '').replace('[bot]', '');
+    if (name) {
+      const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return text
+        .replace(new RegExp(`@${escaped}\\[bot\\]`, 'gi'), '')
+        .replace(new RegExp(`@${escaped}`, 'gi'), '')
+        .trim();
+    }
+    return text.trim();
   }
 
   function findActiveTaskForIssue(repo, issueNumber) {
