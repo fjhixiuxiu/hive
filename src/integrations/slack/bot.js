@@ -205,7 +205,7 @@ function createSlackBot(taskQueue, config, router, pmManager) {
             const found = await fleet.findSession(config, router, activeTask.assignedTo);
             if (found) {
               const node = router.getNode(found.nodeId);
-              const result = await relay.tell(config, node, found.name, text, { vimMode: taskQueue.vimMode });
+              const result = await relay.tell(config, node, found.name, text + '\n\nReply back on the thread when done.', { vimMode: taskQueue.vimMode });
               if (result.success) {
                 await say({
                   text: `:bee: Sent to session ${activeTask.assignedTo}:\n> ${text}`,
