@@ -57,6 +57,7 @@ class Watcher extends EventEmitter {
     this._pendingWorking = new Map(); // num -> count of consecutive working polls
     this.prevCI = new Map();       // num -> CI result string
     this.prevReview = new Map();   // num -> review status string
+    this.prevBranch = new Map();   // num -> branch name
     this.detectedWaiting = new Set(); // session nums waiting for user (approvals or questions)
     this.sessionActivity = new Map(); // num -> timestamp of last meaningful activity
   }
@@ -112,6 +113,7 @@ class Watcher extends EventEmitter {
       // cycle before completion fires.
       if (s.state === 'idle') this.notifiedIdle.add(s.num);
       if (s.pr) this.prevCI.set(s.num, s.pr.ciResult);
+      if (s.branch) this.prevBranch.set(s.num, s.branch);
     }
     // Seed git info for all sessions (runs once, in background)
     for (const s of sessions) {
@@ -232,6 +234,17 @@ class Watcher extends EventEmitter {
         }
         this.prevReview.set(s.num, currReview);
       }
+
+      // Branch change detection
+      const prevBranch = this.prevBranch.get(s.num);
+      const currBranch = s.branch;
+      if (currBranch && prevBranch && prevBranch !== currBranch) {
+        this.emit('branch:changed', {
+          session: s, name: s.name, num: s.num,
+          from: prevBranch, to: currBranch, pr: s.pr || null,
+        });
+      }
+      if (currBranch) this.prevBranch.set(s.num, currBranch);
 
       // Clear waiting flag when session starts working (user answered the question/approval)
       if (currState === 'working' && prevState !== 'working') {

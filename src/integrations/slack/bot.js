@@ -99,13 +99,24 @@ function createSlackBot(taskQueue, config, router, pmManager) {
   }
 
   // Find an active (queued/dispatched) task linked to a Slack thread
-  function findActiveTaskForThread(threadTs) {
+  function findActiveTaskForThread(threadTs, channel) {
     if (!taskQueue || !threadTs) return null;
     const tasks = taskQueue.getTasksList();
-    return tasks.find(t =>
+    // Direct match on task.slackThreadTs (existing behavior)
+    const directMatch = tasks.find(t =>
       (t.status === 'queued' || t.status === 'dispatched') &&
       t.slackThreadTs === threadTs
     );
+    if (directMatch) return directMatch;
+
+    // Fallback: check session context for dispatched tasks (e.g. PM-created tasks linked to a thread)
+    const threadKey = channel ? `${channel}:${threadTs}` : null;
+    if (!threadKey) return null;
+    return tasks.find(t => {
+      if (t.status !== 'dispatched' || !t.assignedTo) return false;
+      const ctx = taskQueue.getSessionContext(t.assignedTo);
+      return ctx.slackThread === threadKey;
+    }) || null;
   }
 
   // Find a PM with source.type === 'slack' matching the channel
@@ -172,7 +183,7 @@ function createSlackBot(taskQueue, config, router, pmManager) {
         await say({ text: 'Use this command in a task thread.', thread_ts: event.ts });
         return;
       }
-      const activeTask = findActiveTaskForThread(event.thread_ts);
+      const activeTask = findActiveTaskForThread(event.thread_ts, event.channel);
       if (!activeTask) {
         await say({ text: 'No active task in this thread.', thread_ts: event.thread_ts });
         return;
@@ -197,7 +208,7 @@ function createSlackBot(taskQueue, config, router, pmManager) {
 
     // ── Follow-up: active task in this thread? Relay or append ──
     if (threadTs) {
-      const activeTask = findActiveTaskForThread(threadTs);
+      const activeTask = findActiveTaskForThread(threadTs, event.channel);
       if (activeTask) {
         if (activeTask.status === 'dispatched' && activeTask.assignedTo) {
           // Running on a session — relay directly

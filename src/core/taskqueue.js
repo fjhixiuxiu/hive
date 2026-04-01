@@ -561,6 +561,13 @@ class TaskQueue extends EventEmitter {
     this.activeTaskBySession.set(sessionNum, task.id);
     this.lastDispatchedAt.set(sessionNum, Date.now());
 
+    // Auto-set slack thread in session context if task has one
+    if (task.slackChannel && task.slackThreadTs) {
+      this.setSessionContext(sessionNum, {
+        slackThread: `${task.slackChannel}:${task.slackThreadTs}`,
+      });
+    }
+
     this.emit('task:dispatched', task);
     this.pushFeed('task', sessionNum,
       `Task dispatched to session ${sessionNum}: "${task.text}"`);
@@ -1289,6 +1296,17 @@ class TaskQueue extends EventEmitter {
 
       if (data.to === 'CHANGES_REQUESTED') {
         this.evaluateRules('review:changes_requested', data);
+      }
+    });
+
+    // Auto-sync branch/PR into session context when branch changes
+    this.watcher.on('branch:changed', (data) => {
+      if (!this.activeTaskBySession.has(data.num)) return;
+      const updates = {};
+      if (data.to) updates.branch = data.to;
+      if (data.pr && data.pr.prNum) updates.pr = `PR #${data.pr.prNum}`;
+      if (Object.keys(updates).length) {
+        this.setSessionContext(data.num, updates);
       }
     });
   }

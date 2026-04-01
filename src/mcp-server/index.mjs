@@ -90,7 +90,7 @@ if (!enabledTools || enabledTools.includes('hive_get_task')) {
 if (!enabledTools || enabledTools.includes('hive_complete_task')) {
   server.tool(
     'hive_complete_task',
-    'Mark your current task as complete',
+    'Mark your current task as complete. Before completing, ensure you have set context (PR URL, branch) via hive_set_context if applicable.',
     { summary: z.string().optional().describe('Brief summary of what was done') },
     async ({ summary }) => {
       try {
@@ -238,8 +238,8 @@ if (!enabledTools || enabledTools.includes('hive_get_context')) {
 if (!enabledTools || enabledTools.includes('hive_set_context')) {
   server.tool(
     'hive_set_context',
-    'Share context with hive (plan file path, PR URL, JIRA key, etc.). Set a value to null to remove it.',
-    { updates: z.record(z.string(), z.union([z.string(), z.null()])).describe('Key-value pairs to set (e.g. { "plan": "/path/to/plan.md", "pr": "https://github.com/..." })') },
+    'Share context with hive. IMPORTANT: You MUST call this when you open or start working on a PR (set "pr"), switch branches (set "branch"), or are discussing work in a Slack thread (set "slackThread"). Set a value to null to remove it.',
+    { updates: z.record(z.string(), z.union([z.string(), z.null()])).describe('Key-value pairs to set (e.g. { "pr": "https://github.com/owner/repo/pull/123", "branch": "feat/my-branch", "slackThread": "CHANNEL_ID:THREAD_TS", "plan": "/path/to/plan.md" })') },
     async ({ updates }) => {
       try {
         const resp = await sendRequest('mcp:set_context', { updates });
