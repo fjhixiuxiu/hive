@@ -95,6 +95,9 @@ if (!enabledTools || enabledTools.includes('hive_complete_task')) {
     async ({ summary }) => {
       try {
         const resp = await sendRequest('mcp:complete_task', { summary });
+        if (resp.pending) {
+          return { content: [{ type: 'text', text: 'Task completion pending human approval. The task owner will review and approve or reject. Continue working if needed.' }] };
+        }
         return { content: [{ type: 'text', text: resp.ok ? 'Task marked as complete' : (resp.error || 'Failed') }] };
       } catch (err) {
         return { content: [{ type: 'text', text: `Error: ${err.message}` }], isError: true };

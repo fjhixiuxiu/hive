@@ -1234,6 +1234,13 @@
         if (idx >= 0) tasks[idx] = msg.task; else tasks.unshift(msg.task);
         renderTasks(); updateTasksBadge(); updateSessionTaskButtons(); break;
       }
+      case 'task:pending-complete': {
+        const idx = tasks.findIndex(t => t.id === msg.task.id);
+        if (idx >= 0) tasks[idx] = msg.task; else tasks.unshift(msg.task);
+        renderTasks(); updateTasksBadge(); updateSessionTaskButtons();
+        showToast('Pending Approval', `Task on S:${msg.task.assignedTo} awaiting human approval`, 'warning');
+        break;
+      }
       case 'task:snapshot': {
         showTaskSnapshotContent(msg.taskId, msg.content, msg.cols);
         break;
@@ -3813,12 +3820,14 @@
     taskMode = 'auto'; manualTarget = null;
     document.getElementById('task-dialog-auto-btn').classList.add('selected');
     document.getElementById('task-dialog-manual-btn').classList.remove('selected');
+    document.getElementById('task-dialog-require-human-close').checked = false;
     taskDialogPicker.classList.remove('visible');
   });
   document.getElementById('task-dialog-manual-btn').addEventListener('click', () => {
     taskMode = 'manual';
     document.getElementById('task-dialog-manual-btn').classList.add('selected');
     document.getElementById('task-dialog-auto-btn').classList.remove('selected');
+    document.getElementById('task-dialog-require-human-close').checked = true;
     taskDialogPicker.classList.add('visible');
     renderDialogSessionPicker();
   });
@@ -3858,6 +3867,7 @@
       desigEl.value = task.designation || '';
       taskMode = task.mode || 'auto';
       manualTarget = task.targetSession || null;
+      document.getElementById('task-dialog-require-human-close').checked = !!task.requireHumanClose;
     } else {
       titleEl.textContent = 'Create Task';
       saveBtn.textContent = 'Create';
@@ -3865,6 +3875,7 @@
       desigEl.value = '';
       taskMode = 'auto';
       manualTarget = null;
+      document.getElementById('task-dialog-require-human-close').checked = true; // manual default
     }
     document.getElementById('task-dialog-auto-btn').classList.toggle('selected', taskMode === 'auto');
     document.getElementById('task-dialog-manual-btn').classList.toggle('selected', taskMode === 'manual');
@@ -3880,11 +3891,12 @@
     if (taskMode === 'manual' && !manualTarget) { showToast('Select session', 'Tap an idle session number', 'error'); return; }
     const desig = document.getElementById('task-dialog-designation').value || undefined;
 
+    const requireHumanClose = document.getElementById('task-dialog-require-human-close').checked;
     if (editingTaskId) {
-      ws.send(JSON.stringify({ type: 'task:update', taskId: editingTaskId, updates: { text, mode: taskMode, targetSession: taskMode === 'manual' ? manualTarget : null, designation: desig || null } }));
+      ws.send(JSON.stringify({ type: 'task:update', taskId: editingTaskId, updates: { text, mode: taskMode, targetSession: taskMode === 'manual' ? manualTarget : null, designation: desig || null, requireHumanClose } }));
       showToast('Task updated', text.substring(0, 40), 'success');
     } else {
-      ws.send(JSON.stringify({ type: 'task:create', text, mode: taskMode, targetSession: taskMode === 'manual' ? manualTarget : undefined, designation: desig }));
+      ws.send(JSON.stringify({ type: 'task:create', text, mode: taskMode, targetSession: taskMode === 'manual' ? manualTarget : undefined, designation: desig, requireHumanClose }));
       showToast('Task created', text.substring(0, 40), 'success');
     }
     taskDialog.classList.remove('visible');
@@ -4630,6 +4642,24 @@
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'task:complete', taskId: btn.dataset.id }));
+      });
+    });
+
+    // Wire approve buttons (pending-complete tasks)
+    tasksScroll.querySelectorAll('.task-approve-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'task:approve-complete', taskId: btn.dataset.id }));
+        showToast('Approved', 'Task completion approved', 'success');
+      });
+    });
+
+    // Wire reject buttons (pending-complete tasks)
+    tasksScroll.querySelectorAll('.task-reject-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'task:reject-complete', taskId: btn.dataset.id }));
+        showToast('Rejected', 'Task continues — session notified', 'success');
       });
     });
 
@@ -5882,6 +5912,12 @@
     const checked = selectedTaskIds.has(t.id) ? ' checked' : '';
     const hex = taskHexSvg(t);
 
+    // Pending-complete indicator
+    let pendingBadge = '';
+    if (t.pendingResult) {
+      pendingBadge = `<span class="task-wait" style="color:var(--yellow);font-weight:600">pending approval</span>`;
+    }
+
     // Waiting indicator for dispatched tasks
     let waitBadge = '';
     if (tabType === 'inprogress' && t.lastActivityAt) {
@@ -5900,13 +5936,17 @@
     let actions = '';
     if (tabType === 'inprogress') {
       const sessionBadge = t.assignedTo ? `<span class="task-session-badge">S:${t.assignedTo}</span>` : '';
+      const pendingBtns = t.pendingResult ? [
+        hasPerm('cancel') ? `<button class="task-approve-btn" data-id="${t.id}" style="background:var(--green);color:#fff">Approve</button>` : '',
+        hasPerm('cancel') ? `<button class="task-reject-btn" data-id="${t.id}" style="background:var(--red);color:#fff">Reject</button>` : '',
+      ].filter(Boolean).join('') : '';
       const btns = [
         hasPerm('dispatch') ? `<button class="task-snooze-btn" data-id="${t.id}">Snooze</button>` : '',
         hasPerm('dispatch') ? `<button class="task-requeue-btn" data-id="${t.id}">Requeue</button>` : '',
         hasPerm('cancel') ? `<button class="task-done-btn" data-id="${t.id}">Done</button>` : '',
         hasPerm('cancel') ? `<button class="task-cancel" data-id="${t.id}">Cancel</button>` : '',
       ].filter(Boolean).join('');
-      actions = `<div class="task-actions">${sessionBadge}${btns}</div>`;
+      actions = `<div class="task-actions">${sessionBadge}${pendingBtns}${btns}</div>`;
     } else if (tabType === 'queued') {
       const btns = [
         hasPerm('create-tasks') ? `<button class="task-edit-btn" data-id="${t.id}">Edit</button>` : '',
@@ -5937,7 +5977,7 @@
     }
 
     return `<div class="task-card-row"><input type="checkbox" class="task-checkbox" data-id="${t.id}"${checked}><div class="task-card ${t.status}${selected}" data-id="${t.id}">
-      <div class="task-top"><span class="task-hex">${hex}</span><div class="task-body"><div class="task-text">${esc(t.text)}</div><div class="task-info">${sourceBadge}${waitBadge}<span class="task-time">${timeStr}</span></div></div></div>${actions}</div></div>`;
+      <div class="task-top"><span class="task-hex">${hex}</span><div class="task-body"><div class="task-text">${esc(t.text)}</div><div class="task-info">${sourceBadge}${pendingBadge}${waitBadge}<span class="task-time">${timeStr}</span></div></div></div>${actions}</div></div>`;
   }
 
   // ── Comment panel (rendered into tab content divs) ─────
@@ -7492,6 +7532,7 @@
       taskFormat: document.getElementById('pm-form-taskformat').value.trim() || null,
       instructions: document.getElementById('pm-form-instructions').value.trim(),
       mcpEnabled: document.getElementById('pm-form-mcp-enabled').checked,
+      requireHumanClose: document.getElementById('pm-form-require-human-close').checked,
       learningEnabled: document.getElementById('pm-form-learning-enabled').checked,
       learningPrompt: document.getElementById('pm-form-learning-prompt').value.trim(),
       checklistTemplate: document.getElementById('pm-form-checklist-tpl').value || null,
@@ -7585,6 +7626,7 @@
     document.getElementById('pm-form-taskformat').value = pm ? (pm.taskFormat || '') : '';
     document.getElementById('pm-form-instructions').value = pm ? (pm.instructions || '') : '';
     document.getElementById('pm-form-mcp-enabled').checked = pm ? !!pm.mcpEnabled : false;
+    document.getElementById('pm-form-require-human-close').checked = pm ? !!pm.requireHumanClose : false;
     document.getElementById('pm-form-learning-enabled').checked = pm ? !!pm.learningEnabled : false;
     document.getElementById('pm-form-learning-prompt').value = pm ? (pm.learningPrompt || '') : '';
     document.getElementById('pm-form-learning-prompt-wrap').style.display = (pm && pm.learningEnabled) ? '' : 'none';

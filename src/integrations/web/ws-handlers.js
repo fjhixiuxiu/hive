@@ -453,7 +453,12 @@ function createMessageHandler(deps) {
       case 'task:create': {
         if (!taskQueue) break;
         if (!checkPermission(ws, user, 'create-tasks')) break;
-        const task = taskQueue.createTask(msg.text, msg.mode, msg.targetSession, msg.designation, { createdBy: user?.login || null });
+        // Manual tasks default to requireHumanClose: true unless explicitly unchecked
+        const requireHumanClose = msg.requireHumanClose !== undefined ? msg.requireHumanClose : (msg.mode === 'manual');
+        const task = taskQueue.createTask(msg.text, msg.mode, msg.targetSession, msg.designation, {
+          createdBy: user?.login || null,
+          requireHumanClose,
+        });
         ws.send(JSON.stringify({ type: 'task:created', task }));
         break;
       }
@@ -562,8 +567,24 @@ function createMessageHandler(deps) {
             }
           } catch {}
         }
-        const task = taskQueue.completeTask(msg.taskId, msg.result || 'Manually completed', snap, snapCols);
-        if (task) broadcast({ type: 'task:completed', task });
+        const task = taskQueue.completeTask(msg.taskId, msg.result || 'Manually completed', snap, snapCols, { force: true });
+        if (task && task !== 'pending') broadcast({ type: 'task:completed', task });
+        break;
+      }
+
+      case 'task:approve-complete': {
+        if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'cancel')) break;
+        const approved = taskQueue.approveComplete(msg.taskId);
+        if (approved) broadcast({ type: 'task:completed', task: approved });
+        break;
+      }
+
+      case 'task:reject-complete': {
+        if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'cancel')) break;
+        const rejected = taskQueue.rejectComplete(msg.taskId);
+        if (rejected) broadcast({ type: 'task:dispatched', task: rejected });
         break;
       }
 
@@ -1579,9 +1600,13 @@ function createMessageHandler(deps) {
         const sessionNum = msg.session;
         const taskId = taskQueue.activeTaskBySession.get(sessionNum);
         if (!taskId) { ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'No active task for this session' })); break; }
-        const task = taskQueue.completeTask(taskId, msg.summary || 'Completed via MCP');
-        if (task) {
-          broadcast({ type: 'task:completed', task });
+        const result = taskQueue.completeTask(taskId, msg.summary || 'Completed via MCP');
+        if (result === 'pending') {
+          const pendingTask = taskQueue.tasks.get(taskId);
+          broadcast({ type: 'task:pending-complete', task: pendingTask });
+          ws.send(JSON.stringify({ _reqId: msg._reqId, ok: true, pending: true, message: 'Task completion pending human approval' }));
+        } else if (result) {
+          broadcast({ type: 'task:completed', task: result });
           ws.send(JSON.stringify({ _reqId: msg._reqId, ok: true }));
         } else {
           ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'Could not complete task' }));

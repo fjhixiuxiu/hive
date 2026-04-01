@@ -608,7 +608,7 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
     if (pm.taskFormat) {
       taskText = pm.taskFormat.replace('{key}', key).replace('{summary}', text);
     }
-    const task = this.taskQueue.createTask(taskText, mode, pm.targetSession || null, pm.designation, { source: `pm:${pm.name}` });
+    const task = this.taskQueue.createTask(taskText, mode, pm.targetSession || null, pm.designation, { source: `pm:${pm.name}`, requireHumanClose: !!pm.requireHumanClose });
     this._seedChecklist(pm, task);
     pm.tasksCreated++;
     pm.lastPoll = Date.now();
@@ -664,6 +664,7 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
         'auto',
         idle.num,
         pm.designation,
+        { source: `pm:${pm.name}`, requireHumanClose: !!pm.requireHumanClose },
       );
       this._seedChecklist(pm, task);
       pm.tasksCreated++;
@@ -673,7 +674,7 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
         `PM "${pm.name}" dispatched ${command} to session ${idle.num}`,
       );
     } else {
-      const task = this.taskQueue.createTask(command, 'auto', null, pm.designation);
+      const task = this.taskQueue.createTask(command, 'auto', null, pm.designation, { source: `pm:${pm.name}`, requireHumanClose: !!pm.requireHumanClose });
       this._seedChecklist(pm, task);
       pm.tasksCreated++;
       this.taskQueue.pushFeed(
@@ -788,7 +789,7 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
         } else {
           text = `[${issue.key}] ${issue.summary}`;
         }
-        const meta = { source: `pm:${pm.name}` };
+        const meta = { source: `pm:${pm.name}`, requireHumanClose: !!pm.requireHumanClose };
 
         // Attach actionContext for PR-sourced tasks
         if (pm.source.type === 'github-prs' || pm.source.type === 'github-re-reviews') {
