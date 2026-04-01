@@ -515,6 +515,10 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
         lastPoll: data.lastPoll || null,
         lastError: data.lastError || null,
       };
+      // Config-only sources don't poll — clear stale poll errors
+      if (pm.source.type === 'slack' || pm.source.type === 'github-mentions' || pm.source.type === 'slack-channel-monitor') {
+        pm.lastError = null;
+      }
       this.pms.set(id, pm);
       if (pm.enabled) {
         this._startPolling(id);

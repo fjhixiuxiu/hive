@@ -7403,7 +7403,8 @@
       const pmdc = pm.designation ? getDesigColor(pm.designation) : null;
       const desigBadge = pm.designation ? `<span class="task-designation" style="background:${pmdc.bg};color:${pmdc.fg}">${esc(pm.designation)}</span>` : '';
       const targetBadge = pm.targetSession ? `<span class="task-designation" style="background:rgba(139,233,253,0.15);color:var(--cyan)">→${pm.targetSession}</span>` : '';
-      const sched = pm.schedule ? 'cron: ' + esc(pm.schedule) : pm.pollInterval ? 'every ' + (pm.pollInterval < 60000 ? (pm.pollInterval/1000)+'s' : (pm.pollInterval/60000)+'m') : '';
+      const isConfigOnly = pm.source.type === 'slack' || pm.source.type === 'github-mentions' || pm.source.type === 'slack-channel-monitor';
+      const sched = isConfigOnly ? '' : pm.schedule ? 'cron: ' + esc(pm.schedule) : pm.pollInterval ? 'every ' + (pm.pollInterval < 60000 ? (pm.pollInterval/1000)+'s' : (pm.pollInterval/60000)+'m') : '';
       const lastPoll = pm.lastPoll ? timeAgo(pm.lastPoll) : 'never';
       card.innerHTML = `
         <div style="display:flex;align-items:center;gap:8px">
