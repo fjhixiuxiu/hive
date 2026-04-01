@@ -130,6 +130,100 @@ function createSlackBot(taskQueue, config, router, pmManager) {
     return pms.find(pm => !pm.source.channel) || null;
   }
 
+  // ── Channel Monitor PM helpers ──────────────────────
+  // Debounce state: threadKey → { messages: [], timer, pm }
+  const _monitorDebounce = new Map();
+  // Rate limit state: pmId:channel → { count, resetAt }
+  const _monitorRateLimit = new Map();
+
+  /**
+   * Find an enabled channel-monitor PM that watches this channel.
+   */
+  function findChannelMonitorPM(channel) {
+    if (!pmManager) return null;
+    const pms = pmManager.getAll().filter(pm =>
+      pm.enabled &&
+      pm.source.type === 'slack-channel-monitor' &&
+      pm.source.channels &&
+      pm.source.channels.includes(channel)
+    );
+    return pms[0] || null;
+  }
+
+  /**
+   * Check rate limit for a channel monitor PM.
+   * Returns true if under the limit.
+   */
+  function checkMonitorRateLimit(pm, channel) {
+    const maxPerHour = pm.source.maxRelaysPerHour || 30;
+    const key = `${pm.id}:${channel}`;
+    const now = Date.now();
+    let entry = _monitorRateLimit.get(key);
+    if (!entry || now >= entry.resetAt) {
+      entry = { count: 0, resetAt: now + 3600000 };
+      _monitorRateLimit.set(key, entry);
+    }
+    if (entry.count >= maxPerHour) return false;
+    entry.count++;
+    return true;
+  }
+
+  /**
+   * Relay a batch of debounced messages to the monitor PM's session.
+   */
+  async function relayToMonitorSession(pm, threadKey, messages) {
+    const sessionName = `hive-pm-${pm.id}`;
+    const node = router.getNode('local');
+    if (!node) {
+      console.error('[slack-monitor] No local node available');
+      return;
+    }
+
+    // Ensure the PM session exists
+    try {
+      await pmManager.ensureMonitorSession(pm, config);
+    } catch (err) {
+      console.error(`[slack-monitor] Failed to ensure session for PM "${pm.name}": ${err.message}`);
+      return;
+    }
+
+    // Format the batch into a single message
+    const parts = messages.map(m => `${m.author}: ${m.text}`).join('\n');
+    const channel = messages[0]?.channel || '';
+    const threadTs = messages[0]?.threadTs || messages[0]?.ts || '';
+    const isThread = !!messages[0]?.threadTs;
+    const permalink = messages[0]?.permalink || '';
+
+    // Check for existing active task for this thread
+    const existingTask = threadTs ? findActiveTaskForThread(threadTs, channel) : null;
+    let existingContext = '';
+    if (existingTask) {
+      existingContext = `\nContext: There is already an active task (#${existingTask.id}) on S:${existingTask.assignedTo || 'queued'} for this thread.`;
+    }
+
+    const formatted = [
+      `New message${messages.length > 1 ? 's' : ''} in channel ${channel}:`,
+      isThread ? `Thread: ${permalink || threadTs}` : `Channel message: ${permalink || ''}`,
+      '',
+      parts,
+      existingContext,
+      '',
+      '---',
+      'Decide: Does this need a new task, a follow-up to an existing task, or no action?',
+    ].join('\n');
+
+    try {
+      const result = await relay.tell(config, node, sessionName, formatted, {});
+      if (result.success) {
+        console.log(`[slack-monitor] Relayed ${messages.length} message(s) to PM "${pm.name}" session`);
+      } else {
+        console.error(`[slack-monitor] Relay failed: ${result.error}`);
+      }
+    } catch (err) {
+      console.error(`[slack-monitor] Relay error: ${err.message}`);
+    }
+  }
+
   // ── Shared handler for both @mentions and DMs ──────
   async function handleMessage(event, say) {
     try {
@@ -367,6 +461,67 @@ function createSlackBot(taskQueue, config, router, pmManager) {
     } catch (err) {
       console.error(`[slack] Auto-relay error: ${err.message}`);
     }
+  });
+
+  // ── Channel Monitor: watch configured channels for actionable messages ──
+  app.event('message', async ({ event }) => {
+    // Skip bot messages, edits, joins, etc.
+    if (event.bot_id || event.subtype) return;
+    // Skip DMs (handled by DM handler above)
+    if (event.channel_type === 'im') return;
+    // Skip @mentions (handled by app_mention above)
+    if ((event.text || '').match(/<@[A-Z0-9]+>/)) return;
+
+    const channel = event.channel;
+    const pm = findChannelMonitorPM(channel);
+    if (!pm) return; // No monitor PM for this channel
+
+    const threadTs = event.thread_ts || null;
+    const messageTs = event.ts;
+
+    // Skip threads that already have an active task (auto-relay handles those)
+    if (pm.source.ignoreThreadsWithActiveTasks !== false && threadTs) {
+      const activeTask = findActiveTaskForThread(threadTs, channel);
+      if (activeTask) return;
+    }
+
+    // Rate limit check
+    if (!checkMonitorRateLimit(pm, channel)) {
+      console.log(`[slack-monitor] Rate limit reached for PM "${pm.name}" on channel ${channel}`);
+      return;
+    }
+
+    // Resolve author
+    const authorName = await userName(event.user);
+    const text = (event.text || '').trim();
+    if (!text) return;
+
+    const permalink = await getPermalink(channel, messageTs);
+
+    const entry = { author: authorName, text, channel, ts: messageTs, threadTs, permalink };
+
+    // Debounce: batch thread messages
+    const debounceMs = pm.source.threadDebounceMs || 60000;
+    const threadKey = threadTs ? `${channel}:${threadTs}` : `${channel}:${messageTs}`;
+
+    let bucket = _monitorDebounce.get(threadKey);
+    if (bucket) {
+      // Add to existing batch, reset timer
+      bucket.messages.push(entry);
+      clearTimeout(bucket.timer);
+    } else {
+      bucket = { messages: [entry], timer: null, pm };
+      _monitorDebounce.set(threadKey, bucket);
+    }
+
+    // Set timer to flush the batch
+    bucket.timer = setTimeout(async () => {
+      const batch = _monitorDebounce.get(threadKey);
+      _monitorDebounce.delete(threadKey);
+      if (batch && batch.messages.length > 0) {
+        await relayToMonitorSession(pm, threadKey, batch.messages);
+      }
+    }, threadTs ? debounceMs : 5000); // Top-level messages: short delay (5s). Thread replies: full debounce.
   });
 
   // ── Reply back to Slack when task completes ──────────

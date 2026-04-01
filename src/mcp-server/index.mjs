@@ -238,7 +238,7 @@ if (!enabledTools || enabledTools.includes('hive_get_context')) {
 if (!enabledTools || enabledTools.includes('hive_set_context')) {
   server.tool(
     'hive_set_context',
-    'Share context with hive. IMPORTANT: You MUST call this when you open or start working on a PR (set "pr"), switch branches (set "branch"), or are discussing work in a Slack thread (set "slackThread"). Set a value to null to remove it.',
+    'Share context with hive. IMPORTANT: You MUST call this when you: (1) open or start working on a PR (set "pr"), (2) switch branches (set "branch"), (3) post to or engage in a Slack thread (set "slackThread" to "CHANNEL_ID:THREAD_TS") — this enables automatic routing of follow-up thread messages to your session. Set a value to null to remove it.',
     { updates: z.record(z.string(), z.union([z.string(), z.null()])).describe('Key-value pairs to set (e.g. { "pr": "https://github.com/owner/repo/pull/123", "branch": "feat/my-branch", "slackThread": "CHANNEL_ID:THREAD_TS", "plan": "/path/to/plan.md" })') },
     async ({ updates }) => {
       try {
@@ -268,6 +268,35 @@ if (!enabledTools || enabledTools.includes('hive_set_working_dir')) {
   );
 }
 
+
+// Tool: hive_create_task
+if (!enabledTools || enabledTools.includes('hive_create_task')) {
+  server.tool(
+    'hive_create_task',
+    'Create a new task in the hive queue for another session to pick up. Use this when you identify actionable work that needs to be done by a worker session.',
+    {
+      text: z.string().describe('Task description with full context'),
+      designation: z.string().optional().describe('Routing designation (e.g. "Dev", "Support", "Reviews")'),
+      slackChannel: z.string().optional().describe('Slack channel ID for thread routing'),
+      slackThreadTs: z.string().optional().describe('Slack thread timestamp for follow-up routing'),
+      requireHumanClose: z.boolean().optional().describe('Require human approval to complete'),
+      targetSession: z.number().optional().describe('Specific session number to dispatch to'),
+    },
+    async ({ text, designation, slackChannel, slackThreadTs, requireHumanClose, targetSession }) => {
+      try {
+        const resp = await sendRequest('mcp:create_task', {
+          text, designation, slackChannel, slackThreadTs, requireHumanClose, targetSession,
+        });
+        if (resp.ok) {
+          return { content: [{ type: 'text', text: `Task created: #${resp.taskId}` }] };
+        }
+        return { content: [{ type: 'text', text: resp.error || 'Failed to create task' }], isError: true };
+      } catch (err) {
+        return { content: [{ type: 'text', text: `Error: ${err.message}` }], isError: true };
+      }
+    }
+  );
+}
 
 // ── Start ─────────────────────────────────────────────
 const transport = new StdioServerTransport();
