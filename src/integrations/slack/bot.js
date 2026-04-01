@@ -338,6 +338,37 @@ function createSlackBot(taskQueue, config, router, pmManager) {
     await handleMessage(event, say);
   });
 
+  // ── Auto-relay: thread messages in tracked threads (no @mention needed) ──
+  app.event('message', async ({ event, say }) => {
+    // Only channel thread replies (not DMs, not top-level)
+    if (event.channel_type === 'im' || !event.thread_ts) return;
+    // Skip bot messages, edits, and @mentions (handled above)
+    if (event.bot_id || event.subtype) return;
+    const text = (event.text || '').trim();
+    if (!text) return;
+    // Skip if this is an @mention of the bot (already handled by app_mention)
+    if (text.match(/<@[A-Z0-9]+>/)) return;
+
+    // Only relay if this thread is linked to an active dispatched task
+    const activeTask = findActiveTaskForThread(event.thread_ts, event.channel);
+    if (!activeTask || activeTask.status !== 'dispatched' || !activeTask.assignedTo) return;
+
+    try {
+      const authorName = await userName(event.user);
+      const found = await fleet.findSession(config, router, activeTask.assignedTo);
+      if (!found) return;
+      const node = router.getNode(found.nodeId);
+      const result = await relay.tell(config, node, found.name,
+        `Slack thread update from ${authorName}:\n${text}\n\nReply back on the thread when done.`,
+        { vimMode: taskQueue.vimMode });
+      if (result.success) {
+        console.log(`[slack] Auto-relayed thread message to S:${activeTask.assignedTo} from ${authorName}`);
+      }
+    } catch (err) {
+      console.error(`[slack] Auto-relay error: ${err.message}`);
+    }
+  });
+
   // ── Reply back to Slack when task completes ──────────
   if (taskQueue) {
     taskQueue.on('task:completed', async (task) => {
