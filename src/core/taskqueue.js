@@ -95,7 +95,8 @@ class TaskQueue extends EventEmitter {
           const task = this.tasks.get(taskId);
           if (s && s.state === 'idle' && (!task || task.status !== 'dispatched')) {
             staleCount++;
-            log.info(`[reconcile] S:${num} is idle with stale task mapping (status=${task?.status}), clearing lock`);
+            log.info(`[reconcile] S:${num} is idle with stale task mapping (task=${taskId}, status=${task?.status}), clearing lock`);
+            log.info(`[taskmap] S:${num} ✕ task ${taskId} (reconcile — stale)`);
             this.dispatchLock.delete(num);
             this.activeTaskBySession.delete(num);
           } else if (s && task?.status === 'dispatched') {
@@ -207,6 +208,7 @@ class TaskQueue extends EventEmitter {
       assignee: (meta && meta.assignee) || null,
     };
     this.tasks.set(task.id, task);
+    log.info(`[taskmap] S:${sessionNum} ← task ${task.id} (createTaskOnSession)`);
     this.activeTaskBySession.set(sessionNum, task.id);
     this.dispatchLock.add(sessionNum);
     this.emit('task:created', task);
@@ -277,6 +279,7 @@ class TaskQueue extends EventEmitter {
     const task = this.tasks.get(taskId);
     if (!task || task.status !== 'dispatched') return null;
     if (task.assignedTo) {
+      log.info(`[taskmap] S:${task.assignedTo} ✕ task ${task.id} (requeue)`);
       this.activeTaskBySession.delete(task.assignedTo);
       this.dispatchLock.delete(task.assignedTo);
     }
@@ -303,6 +306,7 @@ class TaskQueue extends EventEmitter {
     }
 
     if (task.status === 'dispatched' && task.assignedTo) {
+      log.info(`[taskmap] S:${task.assignedTo} ✕ task ${task.id} (cancel)`);
       this.activeTaskBySession.delete(task.assignedTo);
     }
     task.status = 'cancelled';
@@ -393,6 +397,7 @@ class TaskQueue extends EventEmitter {
     task.completedAt = null;
     task.lastActivityAt = Date.now();
 
+    log.info(`[taskmap] S:${task.assignedTo} ← task ${task.id} (resume)`);
     this.activeTaskBySession.set(task.assignedTo, task.id);
     // Don't set dispatchLock — manual tasks don't hold the lock
 
@@ -438,6 +443,7 @@ class TaskQueue extends EventEmitter {
 
     const sessionNum = task.assignedTo;
     if (sessionNum) {
+      log.info(`[taskmap] S:${sessionNum} ✕ task ${task.id} (complete, "${(task.text || '').slice(0, 60)}")`);
       this.activeTaskBySession.delete(sessionNum);
       this.dispatchLock.delete(sessionNum);
       this.lastCompletedAt.set(sessionNum, Date.now());
@@ -486,6 +492,7 @@ class TaskQueue extends EventEmitter {
     task.result = error;
 
     if (task.assignedTo) {
+      log.info(`[taskmap] S:${task.assignedTo} ✕ task ${task.id} (fail: ${error})`);
       this.activeTaskBySession.delete(task.assignedTo);
       this.dispatchLock.delete(task.assignedTo);
       this.lastCompletedAt.set(task.assignedTo, Date.now());
@@ -529,6 +536,11 @@ class TaskQueue extends EventEmitter {
     task.lastActivityAt = Date.now();
     // Update watcher activity timestamp on dispatch
     if (this.watcher) this.watcher.sessionActivity.set(sessionNum, Date.now());
+    const prevTaskId = this.activeTaskBySession.get(sessionNum);
+    if (prevTaskId && prevTaskId !== task.id) {
+      log.warn(`[taskmap] S:${sessionNum} OVERWRITE task ${prevTaskId} → ${task.id} (dispatch)`);
+    }
+    log.info(`[taskmap] S:${sessionNum} ← task ${task.id} (dispatch, "${(task.text || '').slice(0, 60)}")`);
     this.activeTaskBySession.set(sessionNum, task.id);
     this.lastDispatchedAt.set(sessionNum, Date.now());
 
@@ -588,6 +600,7 @@ class TaskQueue extends EventEmitter {
   cleanupSession(num) {
     const taskId = this.activeTaskBySession.get(num);
     if (taskId) {
+      log.info(`[taskmap] S:${num} ✕ task ${taskId} (cleanupSession — session killed)`);
       this.failTask(taskId, 'Session killed');
     }
     this.activeTaskBySession.delete(num);
@@ -1137,6 +1150,7 @@ class TaskQueue extends EventEmitter {
           // Preserve dispatched tasks and their session assignments across restarts.
           // The session is still running in tmux — don't reset to queued or send /clear.
           if (t.status === 'dispatched' && t.assignedTo) {
+            log.info(`[taskmap] S:${t.assignedTo} ← task ${t.id} (loadState restore)`);
             this.activeTaskBySession.set(t.assignedTo, t.id);
             this.dispatchLock.add(t.assignedTo);
           }
