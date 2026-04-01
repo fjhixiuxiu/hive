@@ -882,6 +882,15 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
           if (!prInfo) continue;
           const url = `https://api.github.com/repos/${prInfo.repo}/pulls/${prInfo.prNumber}`;
           const pr = await this._httpRequest(url, this._githubHeaders());
+          // Guard: verify session is actually on this PR's branch before completing
+          if (task.assignedTo && pr.head && pr.head.ref) {
+            const ctx = this.taskQueue.getSessionContext(task.assignedTo);
+            const sessionBranch = ctx.branch;
+            if (sessionBranch && sessionBranch !== pr.head.ref) {
+              log.warn(`[pm] Skipping completion for task ${task.id}: session S:${task.assignedTo} on branch "${sessionBranch}" but PR #${prInfo.prNumber} is on "${pr.head.ref}"`);
+              continue;
+            }
+          }
           if (cond.states.includes('merged') && pr.merged) {
             return `PR #${prInfo.prNumber} merged`;
           }
