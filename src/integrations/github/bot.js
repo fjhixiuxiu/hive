@@ -257,6 +257,7 @@ function createGithubBot(taskQueue, config, router, pmManager) {
       task = taskQueue.createTask(fullText, mode, targetSession, designation, {
         source: `github:${author}`,
         createdBy: author,
+        requireHumanClose: pm ? !!pm.requireHumanClose : false,
       });
 
       // Store GitHub metadata

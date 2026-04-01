@@ -272,6 +272,7 @@ function createSlackBot(taskQueue, config, router, pmManager) {
       task = taskQueue.createTask(fullText, mode, targetSession, designation, {
         source: `slack:${authorName}`,
         createdBy: authorName,
+        requireHumanClose: slackPm ? !!slackPm.requireHumanClose : false,
       });
 
       // Set Slack fields IMMEDIATELY so they're included in any subsequent save

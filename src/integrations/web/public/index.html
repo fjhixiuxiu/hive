@@ -1017,6 +1017,11 @@
     </div>
     <div class="pm-form-field full-width">
       <label style="font-size:13px;color:var(--fg);cursor:pointer;display:flex;align-items:center;gap:6px">
+        <input type="checkbox" id="pm-form-require-human-close"> Require human approval to close tasks
+      </label>
+    </div>
+    <div class="pm-form-field full-width">
+      <label style="font-size:13px;color:var(--fg);cursor:pointer;display:flex;align-items:center;gap:6px">
         <input type="checkbox" id="pm-form-learning-enabled" onchange="document.getElementById('pm-form-learning-prompt-wrap').style.display=this.checked?'':'none'"> Enable learning (accumulate insights across tasks)
       </label>
       <div id="pm-form-learning-prompt-wrap" style="display:none;margin-top:8px">
@@ -1142,6 +1147,10 @@
       </div>
     </div>
     <div id="task-dialog-picker"></div>
+    <div class="task-dialog-field" style="flex-direction:row; align-items:center; gap:8px;">
+      <input type="checkbox" id="task-dialog-require-human-close" checked>
+      <label for="task-dialog-require-human-close" style="font-size:13px; color:var(--text-secondary);">Require human approval to close</label>
+    </div>
     <div class="dialog-actions">
       <button class="dialog-btn primary" id="task-dialog-save">Create</button>
       <button class="dialog-btn" id="task-dialog-cancel">Cancel</button>

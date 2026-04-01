@@ -158,6 +158,9 @@ class TaskQueue extends EventEmitter {
       workState: (meta && meta.workState) || null,
       workStateManual: false,
       assignee: (meta && meta.assignee) || null,
+      requireHumanClose: meta?.requireHumanClose !== undefined ? !!meta.requireHumanClose : false,
+      pendingResult: null,       // set when MCP tries to complete a requireHumanClose task
+      pendingCompleteAt: null,
     };
     this.tasks.set(task.id, task);
     this.emit('task:created', task);
@@ -223,6 +226,9 @@ class TaskQueue extends EventEmitter {
     }
     if ('assignee' in updates) {
       task.assignee = updates.assignee;
+    }
+    if ('requireHumanClose' in updates) {
+      task.requireHumanClose = !!updates.requireHumanClose;
     }
 
     // Other fields only on queued/snoozed tasks
@@ -396,14 +402,36 @@ class TaskQueue extends EventEmitter {
     return task;
   }
 
-  completeTask(taskId, result, snapshot, snapshotCols) {
+  /**
+   * Complete a task.
+   * @param {string} taskId
+   * @param {string} result - summary text
+   * @param {string} [snapshot] - terminal snapshot
+   * @param {number} [snapshotCols]
+   * @param {object} [opts] - { force: true } to bypass requireHumanClose
+   * @returns {object|null|'pending'} task, null if not found, or 'pending' if awaiting human approval
+   */
+  completeTask(taskId, result, snapshot, snapshotCols, opts) {
     const task = this.tasks.get(taskId);
     if (!task || task.status !== 'dispatched') return null;
+
+    // Gate: requireHumanClose blocks MCP-initiated completions
+    if (task.requireHumanClose && !(opts && opts.force)) {
+      task.pendingResult = result || 'Completed via MCP';
+      task.pendingCompleteAt = Date.now();
+      this.emit('task:pending-complete', task);
+      this.pushFeed('task', task.assignedTo,
+        `Task pending approval: "${task.text.substring(0, 60)}..."`);
+      this._saveState();
+      return 'pending';
+    }
 
     task.status = 'completed';
     task.workStateManual = false;
     task.completedAt = Date.now();
     task.result = result || null;
+    task.pendingResult = null;
+    task.pendingCompleteAt = null;
     task.snapshot = snapshot || null;
     task.snapshotCols = snapshotCols || 0;
 
@@ -422,6 +450,24 @@ class TaskQueue extends EventEmitter {
     // Dispatch next queued task now that a session is free
     this._tryAutoDispatch().catch(err =>
       log.error('Auto-dispatch error:', err.message));
+    return task;
+  }
+
+  approveComplete(taskId) {
+    const task = this.tasks.get(taskId);
+    if (!task || !task.pendingResult) return null;
+    return this.completeTask(taskId, task.pendingResult, null, 0, { force: true });
+  }
+
+  rejectComplete(taskId) {
+    const task = this.tasks.get(taskId);
+    if (!task || !task.pendingResult) return null;
+    task.pendingResult = null;
+    task.pendingCompleteAt = null;
+    this.pushFeed('task', task.assignedTo,
+      `Task completion rejected — task continues on S:${task.assignedTo}`);
+    this._saveState();
+    this.emit('task:reject-complete', task);
     return task;
   }
 
