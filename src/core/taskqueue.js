@@ -443,8 +443,6 @@ class TaskQueue extends EventEmitter {
       this.lastCompletedAt.set(sessionNum, Date.now());
       // Clear session context so stale PR/branch/plan data doesn't leak into next task
       this.clearSessionContext(sessionNum);
-      // Reset session repo to default branch (main or master) in background
-      this._resetSessionBranch(sessionNum);
     }
 
     const duration = task.dispatchedAt
@@ -458,32 +456,6 @@ class TaskQueue extends EventEmitter {
     this._tryAutoDispatch().catch(err =>
       log.error('Auto-dispatch error:', err.message));
     return task;
-  }
-
-  /**
-   * Reset session repo to default branch (main or master) after task completion.
-   * Fire-and-forget — errors are logged but don't block anything.
-   */
-  _resetSessionBranch(sessionNum) {
-    const repoDir = this.config.sessions.repoDir(sessionNum);
-    if (!repoDir) return;
-    const node = this.router.getNode('local');
-    if (!node) return;
-
-    (async () => {
-      try {
-        // Detect default branch
-        const hasMain = await node.exec(`git -C "${repoDir}" rev-parse --verify main 2>/dev/null`);
-        const base = hasMain ? 'main' : 'master';
-        const currentBranch = await node.exec(`git -C "${repoDir}" rev-parse --abbrev-ref HEAD 2>/dev/null`);
-        if (currentBranch && currentBranch.trim() === base) return; // already on default branch
-        await node.exec(`git -C "${repoDir}" checkout ${base} 2>/dev/null`);
-        await node.exec(`git -C "${repoDir}" pull --ff-only 2>/dev/null`);
-        log.info(`[cleanup] S:${sessionNum} reset to ${base}`);
-      } catch (err) {
-        log.warn(`[cleanup] S:${sessionNum} branch reset failed: ${err.message}`);
-      }
-    })();
   }
 
   approveComplete(taskId) {
@@ -518,7 +490,6 @@ class TaskQueue extends EventEmitter {
       this.dispatchLock.delete(task.assignedTo);
       this.lastCompletedAt.set(task.assignedTo, Date.now());
       this.clearSessionContext(task.assignedTo);
-      this._resetSessionBranch(task.assignedTo);
     }
 
     this.emit('task:failed', task);
