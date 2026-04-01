@@ -73,6 +73,11 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     }
   }));
 
+  // SPA fallback — serve index.html for /ui/* routes so browser refreshes work
+  app.get('/ui/*', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  });
+
   // -- Image upload endpoint -----------------------------------------------
   const uploadDir = path.join(os.tmpdir(), 'hive-uploads');
   fs.mkdirSync(uploadDir, { recursive: true });

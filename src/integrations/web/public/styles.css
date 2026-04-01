@@ -732,6 +732,28 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .plan-toggle:hover { color: var(--fg); background: var(--bg3); }
 .plan-toggle.active { color: var(--purple); }
 
+/* ── Font size controls ── */
+.font-size-controls {
+  display: flex; align-items: center; gap: 2px;
+  border-left: 1px solid var(--bg3); padding: 0 6px; flex-shrink: 0;
+}
+.font-size-btn {
+  background: var(--bg3); border: 1px solid var(--bg4, #444); color: var(--fg);
+  font-size: var(--fs-sm); font-weight: 700; cursor: pointer;
+  padding: 3px 7px; border-radius: 4px; line-height: 1;
+  transition: background 0.15s, color 0.15s;
+}
+.font-size-btn:hover { background: var(--bg4, #565f89); color: #fff; }
+.font-size-btn:active { transform: scale(0.92); }
+.font-size-label {
+  font-size: var(--fs-sm); color: var(--fg); min-width: 18px;
+  text-align: center; font-variant-numeric: tabular-nums;
+  user-select: none; font-weight: 600;
+}
+.fleet-toolbar .font-size-controls,
+#session-actions .font-size-controls { border-left: none; }
+.tasks-session-tabs .font-size-controls { border-left: none; margin-left: auto; }
+
 /* ── Sidebar diff pane (shown as pane tab) ── */
 .sidebar-diff-pane {
   flex: 1; display: none; flex-direction: column; overflow: hidden;

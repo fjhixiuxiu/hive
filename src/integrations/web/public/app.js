@@ -1918,7 +1918,7 @@
       // First time: create and open the terminal
       const t = new Terminal({
         theme: currentTheme === 'light' ? XTERM_LIGHT : XTERM_DARK,
-        fontSize: 11,
+        fontSize: fleetFontSize,
         fontFamily: "'SF Mono', 'Menlo', 'Monaco', 'Courier New', monospace",
         disableStdin: true,
         scrollback: 500,
@@ -2142,10 +2142,12 @@
     liveTerminals = !liveTerminals;
     localStorage.setItem('hive_live_terminals', liveTerminals);
     fleetLiveBtn.classList.toggle('active', liveTerminals);
+    document.getElementById('fleet-font-controls').style.display = liveTerminals ? '' : 'none';
     renderGrid();
   });
   // Apply saved state on load
   fleetLiveBtn.classList.toggle('active', liveTerminals);
+  document.getElementById('fleet-font-controls').style.display = liveTerminals ? '' : 'none';
   updateGridControls();
 
   function renderFleetSearchResults(query, results) {
@@ -2228,7 +2230,7 @@
     if (!term) {
       term = new Terminal({
         theme: currentTheme === 'light' ? XTERM_LIGHT : XTERM_DARK,
-        fontSize: 13, fontFamily: "'SF Mono', 'Menlo', 'Monaco', 'Courier New', monospace",
+        fontSize: sessionFontSize, fontFamily: "'SF Mono', 'Menlo', 'Monaco', 'Courier New', monospace",
         disableStdin: true, scrollback: 5000, convertEol: true, allowProposedApi: true,
       });
       fitAddon = new FitAddon.FitAddon();
@@ -2779,6 +2781,90 @@
     applyTheme(currentTheme === 'dark' ? 'light' : 'dark');
   });
   applyTheme(currentTheme); // set icon and xterm themes on load
+
+  // ── Font size controls ──────────────────────────────
+  const FONT_MIN = 8, FONT_MAX = 24;
+  const savedSessionFont = parseInt(localStorage.getItem('hive:fontSize:session'), 10) || 13;
+  const savedTsFont = parseInt(localStorage.getItem('hive:fontSize:tasks'), 10) || 13;
+  const savedFleetFont = parseInt(localStorage.getItem('hive:fontSize:fleet'), 10) || 11;
+  const savedTdFont = parseInt(localStorage.getItem('hive:fontSize:taskDetail'), 10) || 12;
+  let sessionFontSize = savedSessionFont;
+  let tsFontSize = savedTsFont;
+  let fleetFontSize = savedFleetFont;
+  let tdFontSize = savedTdFont;
+
+  function updateFontLabel(id, size) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = size;
+  }
+
+  function applySessionFontSize(size) {
+    sessionFontSize = Math.max(FONT_MIN, Math.min(FONT_MAX, size));
+    localStorage.setItem('hive:fontSize:session', sessionFontSize);
+    updateFontLabel('session-font-label', sessionFontSize);
+    if (term) {
+      term.options.fontSize = sessionFontSize;
+      requestAnimationFrame(() => fitTerminal());
+    }
+  }
+
+  function applyTsFontSize(size) {
+    tsFontSize = Math.max(FONT_MIN, Math.min(FONT_MAX, size));
+    localStorage.setItem('hive:fontSize:tasks', tsFontSize);
+    updateFontLabel('ts-font-label', tsFontSize);
+    if (tasksSessionTerm) {
+      tasksSessionTerm.options.fontSize = tsFontSize;
+      requestAnimationFrame(() => fitTasksTerminal());
+    }
+  }
+
+  function applyFleetFontSize(size) {
+    fleetFontSize = Math.max(FONT_MIN, Math.min(FONT_MAX, size));
+    localStorage.setItem('hive:fontSize:fleet', fleetFontSize);
+    updateFontLabel('fleet-font-label', fleetFontSize);
+    for (const ct of cardTerminals.values()) {
+      ct.term.options.fontSize = fleetFontSize;
+      try { ct.fit.fit(); } catch (_) {}
+    }
+  }
+
+  function applyTdFontSize(size) {
+    tdFontSize = Math.max(FONT_MIN, Math.min(FONT_MAX, size));
+    localStorage.setItem('hive:fontSize:taskDetail', tdFontSize);
+    updateFontLabel('td-font-label', tdFontSize);
+    if (taskDetailTerm) {
+      taskDetailTerm.options.fontSize = tdFontSize;
+      try { taskDetailFitAddon.fit(); } catch (_) {}
+    }
+  }
+
+  // Initialize labels
+  updateFontLabel('session-font-label', sessionFontSize);
+  updateFontLabel('ts-font-label', tsFontSize);
+  updateFontLabel('fleet-font-label', fleetFontSize);
+  updateFontLabel('td-font-label', tdFontSize);
+
+  // Wire up click handlers via event delegation
+  document.getElementById('session-font-controls').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-action]');
+    if (!btn) return;
+    applySessionFontSize(sessionFontSize + (btn.dataset.action === 'font-up' ? 1 : -1));
+  });
+  document.getElementById('ts-font-controls').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-action]');
+    if (!btn) return;
+    applyTsFontSize(tsFontSize + (btn.dataset.action === 'font-up' ? 1 : -1));
+  });
+  document.getElementById('fleet-font-controls').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-action]');
+    if (!btn) return;
+    applyFleetFontSize(fleetFontSize + (btn.dataset.action === 'font-up' ? 1 : -1));
+  });
+  document.getElementById('td-font-controls').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-action]');
+    if (!btn) return;
+    applyTdFontSize(tdFontSize + (btn.dataset.action === 'font-up' ? 1 : -1));
+  });
 
   // Console event listeners
   document.getElementById('console-btn').addEventListener('click', toggleConsole);
@@ -3955,7 +4041,7 @@
     container.innerHTML = '';
     tasksSessionTerm = new Terminal({
       theme: currentTheme === 'light' ? XTERM_LIGHT : XTERM_DARK,
-      fontSize: 13, fontFamily: "'SF Mono', 'Menlo', 'Monaco', 'Courier New', monospace",
+      fontSize: tsFontSize, fontFamily: "'SF Mono', 'Menlo', 'Monaco', 'Courier New', monospace",
       disableStdin: true, scrollback: 5000, convertEol: true, allowProposedApi: true,
     });
     tasksSessionFit = new FitAddon.FitAddon();
@@ -5351,7 +5437,7 @@
       }
       termContainer.innerHTML = '';
       taskDetailTerm = new Terminal({
-        fontSize: 12, fontFamily: "'SF Mono', Menlo, Monaco, monospace",
+        fontSize: tdFontSize, fontFamily: "'SF Mono', Menlo, Monaco, monospace",
         theme: currentTheme === 'light' ? XTERM_LIGHT : XTERM_DARK,
         scrollback: 5000, convertEol: true, cursorBlink: false, disableStdin: true,
       });
