@@ -1747,6 +1747,28 @@ function createMessageHandler(deps) {
         break;
       }
 
+      case 'mcp:create_task': {
+        if (!taskQueue) { ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'No task queue' })); break; }
+        const text = msg.text;
+        if (!text || typeof text !== 'string') {
+          ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'text is required' }));
+          break;
+        }
+        const mode = msg.targetSession ? 'manual' : 'auto';
+        const task = taskQueue.createTask(text, mode, msg.targetSession || null, msg.designation || null, {
+          source: `mcp:session-${msg.session}`,
+          createdBy: `Session ${msg.session}`,
+          requireHumanClose: msg.requireHumanClose !== undefined ? !!msg.requireHumanClose : false,
+        });
+        if (msg.slackChannel) task.slackChannel = msg.slackChannel;
+        if (msg.slackThreadTs) task.slackThreadTs = msg.slackThreadTs;
+        if (msg.slackChannel || msg.slackThreadTs) taskQueue._saveState();
+        console.log(`[mcp] create_task from S:${msg.session} → task ${task.id} ("${text.slice(0, 60)}")`);
+        broadcast({ type: 'task:created', task });
+        ws.send(JSON.stringify({ _reqId: msg._reqId, ok: true, taskId: task.id }));
+        break;
+      }
+
       case 'mcp:deploy': {
         if (!checkPermission(ws, user, 'admin')) break;
         const sessionMgr = require('../../core/session-manager');

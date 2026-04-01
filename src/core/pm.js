@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const cron = require('node-cron');
 const log = require('./log');
+const sessionManager = require('./session-manager');
 const pmSources = require('./pm-sources');
 
 const KB_FILE = path.join(process.cwd(), '.hive-knowledge.json');
@@ -530,7 +531,7 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
     this._stopPolling(id); // clear any existing
 
     // Slack/GitHub mentions source: config-only, no polling (bot reads PM on demand)
-    if (pm.source.type === 'slack' || pm.source.type === 'github-mentions') {
+    if (pm.source.type === 'slack' || pm.source.type === 'github-mentions' || pm.source.type === 'slack-channel-monitor') {
       return;
     }
 
@@ -742,7 +743,7 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
   async _poll(id) {
     const pm = this.pms.get(id);
     if (!pm || !pm.enabled) return;
-    if (pm.source.type === 'slack' || pm.source.type === 'github-mentions') return; // config-only, no polling
+    if (pm.source.type === 'slack' || pm.source.type === 'github-mentions' || pm.source.type === 'slack-channel-monitor') return; // config-only, no polling
 
     try {
       let issues;
@@ -1127,6 +1128,75 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
     } catch {
       // No KB file yet — that's fine
     }
+  }
+
+  // ── Channel Monitor PM session ──────────────────────
+
+  /**
+   * Ensure the tmux session for a channel-monitor PM exists with Claude running.
+   * Called by bot.js before relaying messages. Idempotent.
+   */
+  async ensureMonitorSession(pm, config) {
+    if (pm.source.type !== 'slack-channel-monitor') return;
+
+    const sessionName = `hive-pm-${pm.id}`;
+    const sessionDir = path.join(__dirname, '..', '..'); // hive project root
+
+    const result = await sessionManager.createSession(sessionName, sessionDir, { panes: 1 }, { cols: 80, rows: 50 });
+    if (result.created) {
+      // Write MCP config so the PM session can use hive tools
+      const port = config?.web?.port || process.env.WEB_PORT || 3000;
+      const token = process.env.HIVE_TOKEN || process.env.WEB_TOKEN || '';
+      const mcpTools = ['hive_get_task', 'hive_create_task', 'hive_get_sessions', 'hive_get_knowledge', 'hive_post_update', 'hive_set_context'];
+      sessionManager.writeMcpConfig(sessionDir, `ws://127.0.0.1:${port}`, token, sessionName, mcpTools);
+
+      // Build system prompt
+      const systemPrompt = pm.source.systemPrompt || this._defaultMonitorPrompt(pm);
+
+      // Write launch script (avoids shell quoting issues with complex prompts)
+      const launchScript = path.join(require('os').tmpdir(), `hive-pm-${pm.id}-launch.sh`);
+      fs.writeFileSync(launchScript, [
+        '#!/bin/zsh -l',
+        "read -r -d '' PROMPT << 'PROMPT_END'",
+        systemPrompt,
+        'PROMPT_END',
+        'claude --dangerously-skip-permissions --append-system-prompt "$PROMPT"',
+        '',
+      ].join('\n'));
+      fs.chmodSync(launchScript, 0o755);
+
+      await sessionManager.startClaude(sessionName, 1, `bash ${launchScript}`);
+      log.info(`[pm] Created monitor session "${sessionName}" for PM "${pm.name}"`);
+
+      // Give Claude time to start up
+      await new Promise(r => setTimeout(r, 8000));
+    } else {
+      log.info(`[pm] Monitor session "${sessionName}" already exists`);
+    }
+  }
+
+  _defaultMonitorPrompt(pm) {
+    const channels = (pm.source.channels || []).join(', ');
+    return [
+      `You are a Slack channel monitor for the hive fleet. Your job is to watch messages from Slack channels and decide if they need engineering action.`,
+      ``,
+      `You monitor channels: ${channels}`,
+      ``,
+      `You have access to hive MCP tools. Use them to:`,
+      `- hive_get_sessions: See what sessions are currently working on`,
+      `- hive_create_task: Create a new task when you identify actionable work`,
+      `- hive_get_knowledge: Check if there's existing knowledge about a topic`,
+      ``,
+      `Rules:`,
+      `- Only create tasks for messages that need actual engineering work`,
+      `- Check hive_get_sessions first to see if work is already in progress`,
+      `- If a message is a follow-up to existing work, do NOT create a new task`,
+      `- If unclear whether something is actionable, err on the side of ignoring`,
+      `- Never do the work yourself — only triage and route`,
+      `- Include full context in task descriptions so workers have what they need`,
+      `- When creating tasks, set the slackChannel and slackThreadTs so replies route back`,
+      `- Default designation: "${pm.designation || 'Dev'}"`,
+    ].join('\n');
   }
 
   stopAll() {
