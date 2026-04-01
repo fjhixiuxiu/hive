@@ -1591,6 +1591,7 @@ function createMessageHandler(deps) {
         const sessionNum = msg.session;
         const taskId = taskQueue.activeTaskBySession.get(sessionNum);
         const task = taskId ? taskQueue.tasks.get(taskId) : null;
+        console.log(`[mcp] get_task S:${sessionNum} → ${taskId ? `task ${taskId} ("${(task?.text || '').slice(0, 60)}")` : 'no task'}`);
         ws.send(JSON.stringify({ _reqId: msg._reqId, task: task ? { id: task.id, text: task.text, status: task.status, designation: task.designation, checklist: task.checklist || [] } : null }));
         break;
       }
@@ -1599,6 +1600,7 @@ function createMessageHandler(deps) {
         if (!taskQueue) { ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'No task queue' })); break; }
         const sessionNum = msg.session;
         const taskId = taskQueue.activeTaskBySession.get(sessionNum);
+        console.log(`[mcp] complete_task S:${sessionNum} → ${taskId ? `task ${taskId}` : 'NO TASK'} summary="${(msg.summary || '').slice(0, 80)}"`);
         if (!taskId) { ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'No active task for this session' })); break; }
         const result = taskQueue.completeTask(taskId, msg.summary || 'Completed via MCP');
         if (result === 'pending') {
