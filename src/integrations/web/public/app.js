@@ -6886,6 +6886,8 @@
     { name: 'hive_set_context', desc: 'Share context with hive (plan file path, PR URL, JIRA key, etc.)' },
     { name: 'hive_share_knowledge', desc: 'Share an insight with the fleet knowledge base' },
     { name: 'hive_get_knowledge', desc: 'Query the fleet knowledge base for insights about files or domains' },
+    { name: 'hive_set_working_dir', desc: 'Tell hive which git repo you are working in (e.g. a worktree)' },
+    { name: 'hive_create_task', desc: 'Create a new task in the hive queue for another session to pick up' },
   ];
 
   function renderMcpTools(enabledTools) {
