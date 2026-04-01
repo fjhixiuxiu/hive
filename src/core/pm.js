@@ -947,6 +947,24 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
       // Only nudge idle sessions — don't interrupt active work
       if (!idleSet.has(task.assignedTo)) continue;
 
+      // Guard: verify session is actually on the PR's branch before nudging
+      const session = sessions.find(s => s.num === task.assignedTo);
+      const ctx = this.taskQueue.getSessionContext(task.assignedTo);
+      const sessionBranch = ctx.branch || session?.branch;
+      if (sessionBranch) {
+        const prInfo = this._parsePRFromKey(task.sourceKey);
+        if (prInfo) {
+          try {
+            const prUrl = `https://api.github.com/repos/${prInfo.repo}/pulls/${prInfo.prNumber}`;
+            const pr = await this._httpRequest(prUrl, this._githubHeaders());
+            if (pr.head?.ref && sessionBranch !== pr.head.ref) {
+              log.warn(`[pm] Skipping continue nudge for task ${task.id}: S:${task.assignedTo} on "${sessionBranch}" but PR #${prInfo.prNumber} is on "${pr.head.ref}"`);
+              continue;
+            }
+          } catch {} // if API fails, proceed with nudge
+        }
+      }
+
       // Debounce: skip if checked within last 5 minutes
       const lastCheck = this._lastContinueCheck.get(task.sourceKey);
       if (lastCheck && (now - lastCheck) < 5 * 60 * 1000) continue;
