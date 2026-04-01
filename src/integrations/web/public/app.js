@@ -2505,7 +2505,9 @@
     const sBanner = document.getElementById('session-off-banner');
     const termWrapEl = document.getElementById('terminal-wrap');
     if (sBanner && currentSession) {
-      const s = fleetData.find(x => String(x.num) === currentSession);
+      // Non-fleet sessions (PM sessions, voice, etc.) — never show off banner
+      const isNonFleet = String(currentSession).startsWith('hive-');
+      const s = isNonFleet ? null : fleetData.find(x => String(x.num) === currentSession);
       const isOff = s && s.state === 'off';
       sBanner.classList.toggle('visible', isOff);
       if (termWrapEl) termWrapEl.style.display = isOff ? 'none' : '';
@@ -7477,6 +7479,10 @@
     document.getElementById('session-terminal-content').classList.add('active');
     document.getElementById('session-git-content').classList.remove('active');
     closeAllCommentsDrawers();
+    // Hide the off-banner — PM sessions aren't in fleetData so default to showing terminal
+    const offBanner = document.getElementById('session-off-banner');
+    if (offBanner) offBanner.classList.remove('visible');
+    if (termWrap) termWrap.style.display = '';
     switchTab('session-panel');
     if (!term) {
       term = new Terminal({
