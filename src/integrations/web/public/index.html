@@ -888,6 +888,7 @@
         <option value="command">Command</option>
         <option value="script">Script</option>
         <option value="slack">Slack</option>
+        <option value="slack-channel-monitor">Slack Channel Monitor</option>
         <option value="github-mentions">GitHub @Mentions</option>
         <option value="manual">Manual</option>
         <option value="jenkins">Jenkins (Tests)</option>
@@ -964,6 +965,23 @@
       <label class="pm-form-label">Channel ID <span style="color:var(--dim)">(optional)</span></label>
       <input class="pm-form-input" id="pm-form-slack-channel" type="text" placeholder="Leave blank for all channels" autocomplete="off">
       <span style="font-size:11px;color:var(--dim);margin-top:4px;display:block;">Tasks from @hive in this channel use this PM's routing config (designation, target session, instructions, checklist).</span>
+    </div>
+    <div class="pm-form-field pm-fields-slack-channel-monitor full-width" style="display:none">
+      <label class="pm-form-label">Channel IDs <span style="color:var(--dim)">(comma-separated)</span></label>
+      <input class="pm-form-input" id="pm-form-monitor-channels" type="text" placeholder="C08LPA0N9J8, C09NJ2GP0B1" autocomplete="off">
+      <span style="font-size:11px;color:var(--dim);margin-top:4px;display:block;">Slack channel IDs to watch. All messages (not just @mentions) are triaged by a dedicated Claude session.</span>
+    </div>
+    <div class="pm-form-field pm-fields-slack-channel-monitor full-width" style="display:none">
+      <label class="pm-form-label">System Prompt <span style="color:var(--dim)">(optional — leave blank for default)</span></label>
+      <textarea class="pm-form-input" id="pm-form-monitor-prompt" rows="4" placeholder="Custom instructions for the triage session..." style="resize:vertical;font-family:inherit"></textarea>
+    </div>
+    <div class="pm-form-field pm-fields-slack-channel-monitor" style="display:none">
+      <label class="pm-form-label">Thread Debounce (ms)</label>
+      <input class="pm-form-input" id="pm-form-monitor-debounce" type="number" value="60000" min="5000" max="300000" autocomplete="off">
+    </div>
+    <div class="pm-form-field pm-fields-slack-channel-monitor" style="display:none">
+      <label class="pm-form-label">Max Relays/Hour</label>
+      <input class="pm-form-input" id="pm-form-monitor-rate-limit" type="number" value="30" min="1" max="200" autocomplete="off">
     </div>
     <div class="pm-form-field pm-fields-github-mentions full-width" style="display:none">
       <label class="pm-form-label">Repos <span style="color:var(--dim)">(comma-separated)</span></label>
