@@ -938,6 +938,17 @@ function createMessageHandler(deps) {
         break;
       }
 
+      case 'pm:ensure-session': {
+        if (!pmManager) break;
+        const ensurePm = pmManager.get(msg.id);
+        if (!ensurePm || ensurePm.source.type !== 'slack-channel-monitor') break;
+        pmManager.ensureMonitorSession(ensurePm, config).catch(err => {
+          console.error(`[pm] ensure-session failed for PM "${ensurePm.name}": ${err.message}`);
+          ws.send(JSON.stringify({ type: 'error', message: `Failed to start PM session: ${err.message}` }));
+        });
+        break;
+      }
+
       case 'pm:rescan': {
         if (!pmManager) break;
         if (!checkPermission(ws, user, 'admin')) break;

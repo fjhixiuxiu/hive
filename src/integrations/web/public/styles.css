@@ -2029,6 +2029,11 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .pm-card:hover { background: var(--bg3); }
 .pm-card.disabled { opacity: 0.5; border-top-color: var(--dim); }
 .pm-card.has-error { border-top-color: var(--red); }
+.pm-card.pm-card-monitor { border-top-color: var(--green); }
+.pm-card.pm-card-monitor::after {
+  content: 'session \u25B6'; font-size: 10px; color: var(--green); opacity: 0.7;
+  text-transform: uppercase; letter-spacing: 0.5px; align-self: flex-end;
+}
 .pm-card-new {
   background: var(--bg2); border-radius: 8px; padding: 12px;
   border: 2px dashed var(--bg3); display: flex; flex-direction: column;

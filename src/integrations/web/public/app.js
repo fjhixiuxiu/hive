@@ -7425,9 +7425,75 @@
         e.stopPropagation();
         if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'pm:toggle', id: pm.id }));
       });
-      card.addEventListener('click', () => openPmDialog(pm));
+      if (pm.source.type === 'slack-channel-monitor' && pm.enabled) {
+        // Channel monitor PMs open the session panel on click, long-press opens edit dialog
+        card.addEventListener('click', () => openPmSessionPanel(pm));
+        card.addEventListener('contextmenu', (e) => { e.preventDefault(); openPmDialog(pm); });
+        // Visual indicator that it opens a session
+        card.style.cursor = 'pointer';
+        card.classList.add('pm-card-monitor');
+      } else {
+        card.addEventListener('click', () => openPmDialog(pm));
+      }
       grid.appendChild(card);
     }
+  }
+
+  /**
+   * Open the session panel to show a channel-monitor PM's Claude session.
+   * Reuses the existing session panel with the PM's tmux session name.
+   */
+  function openPmSessionPanel(pm) {
+    const sessionName = `hive-pm-${pm.id}`;
+    // Ensure the session exists first
+    if (ws && ws.readyState === 1) {
+      ws.send(JSON.stringify({ type: 'pm:ensure-session', id: pm.id }));
+    }
+    // Build a synthetic session object for openSession
+    currentSession = sessionName;
+    paneCols = 0;
+    sessionTitle.textContent = pm.name;
+    sessionBranch.textContent = 'channel monitor';
+    updateSessionStatusLine();
+    document.getElementById('session-activity').textContent = '';
+    previousTab = activeTab;
+    userScrolledUp = false;
+    pendingContent = null;
+    lastContent = '';
+    activePane = null;
+    sessionPanes = [];
+    claudePaneIdx = null;
+    panesCollapsed = false;
+    tsPanesCollapsed = false;
+    renderPaneTabs();
+    updateInputForPane(true);
+    activeSessionTab = 'terminal';
+    $$('.session-tab').forEach(t => t.classList.toggle('active', t.dataset.stab === 'terminal'));
+    document.getElementById('session-terminal-content').classList.add('active');
+    document.getElementById('session-git-content').classList.remove('active');
+    closeAllCommentsDrawers();
+    switchTab('session-panel');
+    if (!term) {
+      term = new Terminal({
+        theme: currentTheme === 'light' ? XTERM_LIGHT : XTERM_DARK,
+        fontSize: sessionFontSize, fontFamily: "'SF Mono', 'Menlo', 'Monaco', 'Courier New', monospace",
+        disableStdin: true, scrollback: 5000, convertEol: true, allowProposedApi: true,
+      });
+      fitAddon = new FitAddon.FitAddon();
+      term.loadAddon(fitAddon);
+      term.loadAddon(new WebLinksAddon.WebLinksAddon((e, uri) => window.open(uri, '_blank')));
+      enableTerminalCopy(term);
+      term.open(termWrap);
+    }
+    requestAnimationFrame(() => {
+      fitTerminal();
+      term.clear();
+      const subscribe = () => {
+        if (!ws || ws.readyState !== 1 || !currentSession) return;
+        ws.send(JSON.stringify({ type: 'terminal:subscribe', session: currentSession, pane: 1, cols: term.cols, rows: term.rows }));
+      };
+      if (isAlive(subscribe)) subscribe();
+    });
   }
 
   // PM form dialog
@@ -7491,7 +7557,7 @@
     const type = document.getElementById('pm-form-source').value;
     const isGithub = type === 'github-issues' || type === 'github-prs' || type === 'github-re-reviews';
     const isReReviews = type === 'github-re-reviews';
-    const types = ['jira', 'github', 'github-prs', 're-reviews', 'manual', 'command', 'script', 'jenkins', 'zoho', 'slack', 'github-mentions'];
+    const types = ['jira', 'github', 'github-prs', 're-reviews', 'manual', 'command', 'script', 'jenkins', 'zoho', 'slack', 'slack-channel-monitor', 'github-mentions'];
     for (const t of types) {
       let show = false;
       if (t === type) show = true;
@@ -7508,11 +7574,11 @@
         if (i > 0) el.style.display = 'none';
       });
     }
-    // Hide schedule for slack/github-mentions (no polling); manual supports cron schedule
+    // Hide schedule for slack/github-mentions/channel-monitor (no polling); manual supports cron schedule
     const schedField = document.getElementById('pm-form-schedule-field');
-    if (schedField) schedField.style.display = (type === 'slack' || type === 'github-mentions') ? 'none' : '';
+    if (schedField) schedField.style.display = (type === 'slack' || type === 'github-mentions' || type === 'slack-channel-monitor') ? 'none' : '';
     const threshField = document.getElementById('pm-form-threshold').closest('.pm-form-field');
-    if (threshField) threshField.style.display = (type === 'manual' || type === 'command' || type === 'script' || type === 'slack' || type === 'github-mentions') ? 'none' : '';
+    if (threshField) threshField.style.display = (type === 'manual' || type === 'command' || type === 'script' || type === 'slack' || type === 'github-mentions' || type === 'slack-channel-monitor') ? 'none' : '';
     const instrField = document.getElementById('pm-form-instructions').closest('.pm-form-field');
     if (instrField) instrField.style.display = type === 'command' ? 'none' : '';
     const mcpField = document.getElementById('pm-form-mcp-field');
@@ -7588,6 +7654,18 @@
       case 'slack':
         source.channel = document.getElementById('pm-form-slack-channel').value.trim() || null;
         break;
+      case 'slack-channel-monitor': {
+        const chRaw = document.getElementById('pm-form-monitor-channels').value.trim();
+        source.channels = chRaw ? chRaw.split(',').map(c => c.trim()).filter(Boolean) : [];
+        if (!source.channels.length) { showToast('Error', 'At least one channel ID required', 'error'); return; }
+        const monPrompt = document.getElementById('pm-form-monitor-prompt').value.trim();
+        if (monPrompt) source.systemPrompt = monPrompt;
+        source.threadDebounceMs = parseInt(document.getElementById('pm-form-monitor-debounce').value) || 60000;
+        source.maxRelaysPerHour = parseInt(document.getElementById('pm-form-monitor-rate-limit').value) || 30;
+        source.ignoreThreadsWithActiveTasks = true;
+        source.ignoreBots = true;
+        break;
+      }
       case 'github-mentions':
         const reposRaw = document.getElementById('pm-form-gh-mentions-repos').value.trim();
         source.repos = reposRaw ? reposRaw.split(',').map(r => r.trim()).filter(Boolean) : [];
@@ -7700,6 +7778,10 @@
     document.getElementById('pm-form-manual-text').value = src.text || '';
     document.getElementById('pm-form-slack-channel').value = src.channel || '';
     document.getElementById('pm-form-gh-mentions-repos').value = (src.repos || []).join(', ');
+    document.getElementById('pm-form-monitor-channels').value = (src.channels || []).join(', ');
+    document.getElementById('pm-form-monitor-prompt').value = src.systemPrompt || '';
+    document.getElementById('pm-form-monitor-debounce').value = src.threadDebounceMs || 60000;
+    document.getElementById('pm-form-monitor-rate-limit').value = src.maxRelaysPerHour || 30;
     document.getElementById('pm-form-jenkins-path').value = src.jobPath || '';
     document.getElementById('pm-form-zoho-dept').value = src.department || '';
     document.getElementById('pm-form-zoho-status').value = src.status || '';

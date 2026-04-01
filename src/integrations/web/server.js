@@ -466,6 +466,13 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       if (!exists) return null;
       return { name: 'hive-voice', nodeId: 'local' };
     }
+    // PM monitor sessions: hive-pm-{id}
+    if (String(msg.session).startsWith('hive-pm-')) {
+      const sessionName = String(msg.session);
+      const exists = await tmux.hasSession(sessionName);
+      if (!exists) return null;
+      return { name: sessionName, nodeId: 'local' };
+    }
     return fleet.findSession(config, router, msg.session);
   }
 
