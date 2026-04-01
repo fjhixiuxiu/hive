@@ -7428,15 +7428,17 @@
         e.stopPropagation();
         if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'pm:toggle', id: pm.id }));
       });
+      card.addEventListener('click', () => openPmDialog(pm));
       if (pm.source.type === 'slack-channel-monitor' && pm.enabled) {
-        // Channel monitor PMs open the session panel on click, long-press opens edit dialog
-        card.addEventListener('click', () => openPmSessionPanel(pm));
-        card.addEventListener('contextmenu', (e) => { e.preventDefault(); openPmDialog(pm); });
-        // Visual indicator that it opens a session
-        card.style.cursor = 'pointer';
         card.classList.add('pm-card-monitor');
-      } else {
-        card.addEventListener('click', () => openPmDialog(pm));
+        const sessionLink = document.createElement('span');
+        sessionLink.className = 'pm-session-link';
+        sessionLink.textContent = 'session \u25B6';
+        sessionLink.addEventListener('click', (e) => {
+          e.stopPropagation();
+          openPmSessionPanel(pm);
+        });
+        card.appendChild(sessionLink);
       }
       grid.appendChild(card);
     }
