@@ -57,7 +57,7 @@ function sendRequest(type, payload = {}, timeoutMs = 10000) {
       clearTimeout(timer);
       resolve(msg);
     });
-    ws.send(JSON.stringify({ type, _reqId: id, session: Number(session), ...payload }));
+    ws.send(JSON.stringify({ type, _reqId: id, session: Number(session) || session, ...payload }));
   });
 }
 
@@ -276,7 +276,7 @@ if (!enabledTools || enabledTools.includes('hive_create_task')) {
     'Create a new task in the hive queue for another session to pick up. Use this when you identify actionable work that needs to be done by a worker session.',
     {
       text: z.string().describe('Task description with full context'),
-      designation: z.string().optional().describe('Routing designation (e.g. "Dev", "Support", "Reviews")'),
+      designation: z.string().optional().describe('Routing designation — leave empty/omit to let any idle session pick it up. Only set if you know the exact designation name.'),
       slackChannel: z.string().optional().describe('Slack channel ID for thread routing'),
       slackThreadTs: z.string().optional().describe('Slack thread timestamp for follow-up routing'),
       requireHumanClose: z.boolean().optional().describe('Require human approval to complete'),

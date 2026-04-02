@@ -1766,9 +1766,29 @@ function createMessageHandler(deps) {
           break;
         }
         const mode = msg.targetSession ? 'manual' : 'auto';
-        const task = taskQueue.createTask(text, mode, msg.targetSession || null, msg.designation || null, {
-          source: `mcp:session-${msg.session}`,
-          createdBy: `Session ${msg.session}`,
+        // Validate designation against real designations — drop if no session has it
+        let designation = msg.designation || null;
+        if (designation) {
+          const knownDesigs = new Set(taskQueue.designations.values());
+          if (!knownDesigs.has(designation)) {
+            console.log(`[mcp] Dropping unknown designation "${designation}" — no session has it`);
+            designation = null;
+          }
+        }
+        // Resolve source label — if session is a PM session (hive-pm-*), use PM name
+        let sourceLabel = `mcp:session-${msg.session}`;
+        let createdByLabel = `Session ${msg.session}`;
+        const pmMatch = typeof msg.session === 'string' && msg.session.match(/^hive-pm-(\d+)$/);
+        if (pmMatch && pmManager) {
+          const pmObj = pmManager.get(pmMatch[1]);
+          if (pmObj) {
+            sourceLabel = `pm:${pmObj.name}`;
+            createdByLabel = `PM: ${pmObj.name}`;
+          }
+        }
+        const task = taskQueue.createTask(text, mode, msg.targetSession || null, designation, {
+          source: sourceLabel,
+          createdBy: createdByLabel,
           requireHumanClose: msg.requireHumanClose !== undefined ? !!msg.requireHumanClose : false,
         });
         if (msg.slackChannel) task.slackChannel = msg.slackChannel;

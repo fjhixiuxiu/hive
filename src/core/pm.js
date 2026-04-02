@@ -1199,7 +1199,7 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
       `- Never do the work yourself — only triage and route`,
       `- Include full context in task descriptions so workers have what they need`,
       `- When creating tasks, set the slackChannel and slackThreadTs so replies route back`,
-      `- Default designation: "${pm.designation || 'Dev'}"`,
+      `- Do NOT set a designation on tasks unless you know the exact designation name. Leave it empty/null so any idle session can pick it up.`,
     ].join('\n');
   }
 

@@ -474,7 +474,7 @@ function createSlackBot(taskQueue, config, router, pmManager) {
 
     const channel = event.channel;
     const pm = findChannelMonitorPM(channel);
-    if (!pm) return; // No monitor PM for this channel
+    if (!pm) return;
 
     const threadTs = event.thread_ts || null;
     const messageTs = event.ts;
