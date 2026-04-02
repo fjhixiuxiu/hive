@@ -7674,7 +7674,7 @@
         source.threadDebounceMs = parseInt(document.getElementById('pm-form-monitor-debounce').value) || 60000;
         source.maxRelaysPerHour = parseInt(document.getElementById('pm-form-monitor-rate-limit').value) || 30;
         source.ignoreThreadsWithActiveTasks = true;
-        source.ignoreBots = true;
+        source.ignoreBots = document.getElementById('pm-form-monitor-ignore-bots').checked;
         break;
       }
       case 'github-mentions':
@@ -7793,6 +7793,7 @@
     document.getElementById('pm-form-monitor-prompt').value = src.systemPrompt || '';
     document.getElementById('pm-form-monitor-debounce').value = src.threadDebounceMs || 60000;
     document.getElementById('pm-form-monitor-rate-limit').value = src.maxRelaysPerHour || 30;
+    document.getElementById('pm-form-monitor-ignore-bots').checked = src.ignoreBots !== false;
     document.getElementById('pm-form-jenkins-path').value = src.jobPath || '';
     document.getElementById('pm-form-zoho-dept').value = src.department || '';
     document.getElementById('pm-form-zoho-status').value = src.status || '';

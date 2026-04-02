@@ -983,6 +983,13 @@
       <label class="pm-form-label">Max Relays/Hour</label>
       <input class="pm-form-input" id="pm-form-monitor-rate-limit" type="number" value="30" min="1" max="200" autocomplete="off">
     </div>
+    <div class="pm-form-field pm-fields-slack-channel-monitor" style="display:none">
+      <label class="pm-form-label" style="display:flex;align-items:center;gap:8px;cursor:pointer">
+        <input type="checkbox" id="pm-form-monitor-ignore-bots" checked>
+        Ignore Bot Messages
+      </label>
+      <span style="font-size:11px;color:var(--dim);margin-top:4px;display:block;">Uncheck to let this PM see messages posted by bots (e.g. CI alerts, automated reports)</span>
+    </div>
     <div class="pm-form-field pm-fields-github-mentions full-width" style="display:none">
       <label class="pm-form-label">Repos <span style="color:var(--dim)">(comma-separated)</span></label>
       <input class="pm-form-input" id="pm-form-gh-mentions-repos" type="text" placeholder="mavencare/webplatform2, nukulb/hive" autocomplete="off">
