@@ -465,8 +465,8 @@ function createSlackBot(taskQueue, config, router, pmManager) {
 
   // ── Channel Monitor: watch configured channels for actionable messages ──
   app.event('message', async ({ event }) => {
-    // Skip bot messages, edits, joins, etc.
-    if (event.bot_id || event.subtype) return;
+    // Skip edits, joins, etc. (but not bot messages — PM config controls that)
+    if (event.subtype) return;
     // Skip DMs (handled by DM handler above)
     if (event.channel_type === 'im') return;
     // Skip @mentions (handled by app_mention above)
@@ -475,6 +475,9 @@ function createSlackBot(taskQueue, config, router, pmManager) {
     const channel = event.channel;
     const pm = findChannelMonitorPM(channel);
     if (!pm) return;
+
+    // Skip bot messages if PM has ignoreBots enabled (default: true)
+    if (event.bot_id && pm.source.ignoreBots !== false) return;
 
     const threadTs = event.thread_ts || null;
     const messageTs = event.ts;
