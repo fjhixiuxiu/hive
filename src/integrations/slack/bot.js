@@ -451,7 +451,7 @@ function createSlackBot(taskQueue, config, router, pmManager) {
     const text = (event.text || '').trim();
     if (!text) return;
     // Skip if this is an @mention of the bot (already handled by app_mention)
-    if (text.match(/<@[A-Z0-9]+>/)) return;
+    if (botUserId && text.includes(`<@${botUserId}>`)) return;
 
     // Only relay if this thread is linked to an active dispatched task
     const activeTask = findActiveTaskForThread(event.thread_ts, event.channel);
@@ -479,8 +479,8 @@ function createSlackBot(taskQueue, config, router, pmManager) {
     if (event.subtype) return;
     // Skip DMs (handled by DM handler above)
     if (event.channel_type === 'im') return;
-    // Skip @mentions (handled by app_mention above)
-    if ((event.text || '').match(/<@[A-Z0-9]+>/)) return;
+    // Skip @mentions of the bot (handled by app_mention above) — but allow mentions of other users
+    if (botUserId && (event.text || '').includes(`<@${botUserId}>`)) return;
 
     const channel = event.channel;
     const pm = findChannelMonitorPM(channel);
@@ -610,9 +610,17 @@ function createSlackBot(taskQueue, config, router, pmManager) {
     }
   }, HEALTH_INTERVAL);
 
-  // Start the bot
-  app.start().then(() => {
+  // Start the bot and resolve bot user ID for @mention filtering
+  let botUserId = null;
+  app.start().then(async () => {
     console.log('Slack bot started (Socket Mode)');
+    try {
+      const authResult = await app.client.auth.test();
+      botUserId = authResult.user_id;
+      console.log(`[slack] Bot user ID: ${botUserId}`);
+    } catch (err) {
+      console.error(`[slack] Could not resolve bot user ID: ${err.message}`);
+    }
   }).catch(err => {
     console.error('Slack bot failed to start:', err.message);
   });
