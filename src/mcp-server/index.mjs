@@ -45,9 +45,16 @@ function connectWs() {
   });
 }
 
-function sendRequest(type, payload = {}, timeoutMs = 10000) {
+async function sendRequest(type, payload = {}, timeoutMs = 10000) {
+  // Retry with backoff if WS isn't ready (e.g. server restart)
+  if (!wsReady) {
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+      if (wsReady) break;
+    }
+    if (!wsReady) throw new Error('Not connected to hive');
+  }
   return new Promise((resolve, reject) => {
-    if (!wsReady) return reject(new Error('Not connected to hive'));
     const id = ++reqId;
     const timer = setTimeout(() => {
       pending.delete(id);
