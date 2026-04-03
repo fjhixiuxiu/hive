@@ -667,6 +667,39 @@ function createMessageHandler(deps) {
         break;
       }
 
+      case 'broadcast:keys': {
+        if (!checkPermission(ws, user, 'send-messages')) break;
+        const keys = msg.keys || [];
+        if (!keys.length) break;
+        const sessions = await fleet.getFleetStatus(config, router);
+        let targets;
+        if (msg.sessions && msg.sessions.length) {
+          targets = sessions.filter(s => msg.sessions.includes(s.num));
+        } else if (msg.target === 'idle') {
+          targets = sessions.filter(s => s.state === 'idle');
+        } else if (msg.target === 'working') {
+          targets = sessions.filter(s => s.state === 'working');
+        } else {
+          targets = sessions.filter(s => s.state !== 'off');
+        }
+        let sent = 0, failed = 0;
+        for (const s of targets) {
+          try {
+            const node = router.getNode(s.nodeId || 'local');
+            if (!node) { failed++; continue; }
+            const paneTarget = `${s.name}:.${config.sessions.claudePane}`;
+            for (const key of keys) {
+              await node.exec(`tmux send-keys -t "${paneTarget}" ${key}`);
+            }
+            sent++;
+          } catch { failed++; }
+        }
+        if (ws.readyState === 1) {
+          ws.send(JSON.stringify({ type: 'broadcast:done', sent, failed, keys: true }));
+        }
+        break;
+      }
+
       case 'approval:respond': {
         if (!taskQueue) break;
         if (!checkPermission(ws, user, 'send-messages')) break;

@@ -6990,6 +6990,17 @@
     showToast('Broadcasting', `"${message.substring(0, 30)}..." to ${target}`, 'success');
   });
 
+  // Broadcast keys
+  for (const btn of document.querySelectorAll('.broadcast-key-btn')) {
+    btn.addEventListener('click', () => {
+      const key = btn.dataset.bkey;
+      const target = $('#broadcast-target').value;
+      if (!ws || ws.readyState !== 1) return;
+      ws.send(JSON.stringify({ type: 'broadcast:keys', keys: [key], target }));
+      showToast('Keys broadcast', `${key} → ${target}`, 'success');
+    });
+  }
+
   // Auto-pilot rules
   function renderRules() {
     const list = $('#rules-list'); list.innerHTML = '';
