@@ -28,6 +28,7 @@ function createSlackBot(taskQueue, config, router, pmManager) {
     token: botToken,
     appToken,
     socketMode: true,
+    ignoreSelf: false, // Allow bot's own messages through — channel monitors may need them
     clientOptions: {
       slackApiUrl: 'https://slack.com/api/',
     },
@@ -201,6 +202,11 @@ function createSlackBot(taskQueue, config, router, pmManager) {
       existingContext = `\nContext: There is already an active task (#${existingTask.id}) on S:${existingTask.assignedTo || 'queued'} for this thread.`;
     }
 
+    // Build the custom instructions snippet (from PM config or default)
+    const customInstructions = pm.source.systemPrompt
+      ? `\nPM Instructions: ${pm.source.systemPrompt}`
+      : '';
+
     const formatted = [
       `New message${messages.length > 1 ? 's' : ''} in channel ${channel}:`,
       isThread ? `Thread: ${permalink || threadTs}` : `Channel message: ${permalink || ''}`,
@@ -210,6 +216,10 @@ function createSlackBot(taskQueue, config, router, pmManager) {
       '',
       '---',
       'Decide: Does this need a new task, a follow-up to an existing task, or no action?',
+      customInstructions,
+      '',
+      `If creating a task, you MUST pass slackChannel="${channel}" and slackThreadTs="${threadTs || messages[0]?.ts || ''}" so replies route back to Slack.`,
+      `Do NOT set a designation on tasks — leave it empty so any idle session picks it up.`,
     ].join('\n');
 
     try {

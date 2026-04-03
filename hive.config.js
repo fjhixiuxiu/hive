@@ -23,6 +23,9 @@ function buildRoles() {
     5: 'Slot 5', 6: 'Slot 6', 7: 'Slot 7', 8: 'Slot 8',
     9: 'Slot 9', 10: 'Slot 10', 11: 'Slot 11', 12: 'Slot 12',
     13: 'Slot 13', 14: 'Slot 14', 15: 'Slot 15', 16: 'Slot 16',
+    22: 'Slot 22', 23: 'Slot 23',
+    24: 'Slot 24', 25: 'Slot 25', 26: 'Slot 26', 27: 'Slot 27',
+    28: 'Slot 28', 29: 'Slot 29', 30: 'Slot 30', 31: 'Slot 31', 32: 'Slot 32',
   };
 }
 
