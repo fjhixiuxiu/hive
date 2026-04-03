@@ -468,6 +468,17 @@
           </select>
           <input id="broadcast-input" type="text" placeholder="Message to broadcast..." autocomplete="off">
           <button id="broadcast-send">Send Broadcast</button>
+          <div id="broadcast-keys-bar" style="margin-top:8px;display:flex;gap:4px;flex-wrap:wrap">
+            <button class="key-btn broadcast-key-btn" data-bkey="Enter" data-tooltip="Send Enter to all">Enter</button>
+            <button class="key-btn broadcast-key-btn" data-bkey="Escape" data-tooltip="Send Escape to all">Esc</button>
+            <button class="key-btn broadcast-key-btn" data-bkey="C-c" data-tooltip="Send Ctrl-C to all">Ctrl-C</button>
+            <button class="key-btn broadcast-key-btn" data-bkey="Up" data-tooltip="Send Up to all">Up</button>
+            <button class="key-btn broadcast-key-btn" data-bkey="Down" data-tooltip="Send Down to all">Down</button>
+            <button class="key-btn broadcast-key-btn" data-bkey="Tab" data-tooltip="Send Tab to all">Tab</button>
+            <button class="key-btn broadcast-key-btn" data-bkey="BTab" data-tooltip="Send Shift+Tab to all">S-Tab</button>
+            <button class="key-btn broadcast-key-btn" data-bkey="y" data-tooltip="Send y to all">y</button>
+            <button class="key-btn broadcast-key-btn" data-bkey="n" data-tooltip="Send n to all">n</button>
+          </div>
         </div>
       </div>
       <div class="more-tab-panel" id="more-automation">
