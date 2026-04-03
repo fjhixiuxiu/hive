@@ -1612,7 +1612,28 @@ function createMessageHandler(deps) {
         const sessionNum = msg.session;
         const taskId = taskQueue.activeTaskBySession.get(sessionNum);
         console.log(`[mcp] complete_task S:${sessionNum} → ${taskId ? `task ${taskId}` : 'NO TASK'} summary="${(msg.summary || '').slice(0, 80)}"`);
-        if (!taskId) { ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'No active task for this session' })); break; }
+        if (!taskId) {
+          // Race condition: idle watcher may have auto-completed the task before MCP call arrived.
+          // If a task was recently completed for this session, treat it as success.
+          const lastCompleted = taskQueue.lastCompletedAt.get(sessionNum);
+          if (lastCompleted && Date.now() - lastCompleted < 30000) {
+            console.log(`[mcp] complete_task S:${sessionNum} — no active task but recently auto-completed (${Math.round((Date.now() - lastCompleted) / 1000)}s ago), returning ok`);
+            // Retroactively attach the MCP summary to the completed task
+            if (msg.summary) {
+              for (const [, task] of taskQueue.tasks) {
+                if (task.assignedTo === sessionNum && task.status === 'done' && !task.summary) {
+                  task.summary = msg.summary;
+                  broadcast({ type: 'task:updated', task });
+                  break;
+                }
+              }
+            }
+            ws.send(JSON.stringify({ _reqId: msg._reqId, ok: true }));
+            break;
+          }
+          ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'No active task for this session' }));
+          break;
+        }
         const result = taskQueue.completeTask(taskId, msg.summary || 'Completed via MCP');
         if (result === 'pending') {
           const pendingTask = taskQueue.tasks.get(taskId);
