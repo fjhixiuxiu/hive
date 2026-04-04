@@ -7001,6 +7001,21 @@
     });
   }
 
+  // Quick-bar key buttons (Home screen)
+  for (const btn of document.querySelectorAll('.quick-key-btn')) {
+    btn.addEventListener('click', () => {
+      const key = btn.dataset.qkey;
+      if (!ws || ws.readyState !== 1) return;
+      if (quickSessions.size) {
+        ws.send(JSON.stringify({ type: 'broadcast:keys', keys: [key], sessions: [...quickSessions].map(Number) }));
+        showToast('Key sent', `${key} → ${[...quickSessions].sort((a,b)=>a-b).join(', ')}`, 'success');
+      } else {
+        ws.send(JSON.stringify({ type: 'broadcast:keys', keys: [key], target: 'all' }));
+        showToast('Key sent', `${key} → all`, 'success');
+      }
+    });
+  }
+
   // Auto-pilot rules
   function renderRules() {
     const list = $('#rules-list'); list.innerHTML = '';
