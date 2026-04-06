@@ -4418,6 +4418,14 @@
   setupDragDrop(tsMsgInput, tsAttachedImages, tsAttachmentStrip);
   setupDragDrop(document.getElementById('task-detail-input'), tdAttachedImages, tdAttachmentStrip);
 
+  // Image upload button (mobile-friendly file picker)
+  const imgUploadInput = document.getElementById('img-upload');
+  document.getElementById('img-upload-btn').addEventListener('click', () => imgUploadInput.click());
+  imgUploadInput.addEventListener('change', () => {
+    if (imgUploadInput.files.length) handleImageFiles(imgUploadInput.files, attachedImages, attachmentStrip);
+    imgUploadInput.value = '';
+  });
+
   tsModeToggle.addEventListener('click', () => {
     tasksSessionMode = tasksSessionMode === 'ask' ? 'tell' : 'ask';
     tsModeToggle.textContent = tasksSessionMode === 'ask' ? 'Ask' : 'Tell';
