@@ -806,7 +806,11 @@
       <div id="input-bar">
         <button id="mode-toggle" data-tooltip="Ask: wait for approval before running. Tell: run immediately">Ask</button>
         <textarea id="msg-input" rows="4" placeholder="Message Claude..." autocomplete="off"></textarea>
-        <button id="send-btn" data-tooltip="Send message to this session">Send</button>
+        <input type="file" id="img-upload" accept="image/*" multiple style="display:none">
+        <div class="send-col">
+          <button id="img-upload-btn" class="img-upload-btn" data-tooltip="Attach image">&#128247;</button>
+          <button id="send-btn" data-tooltip="Send message to this session">Send</button>
+        </div>
       </div>
     </div>
   </div>
