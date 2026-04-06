@@ -92,6 +92,19 @@
   let currentSession = null;
   let mode = 'ask';
   let askPending = false;
+
+  // ── Local storage draft persistence ──────────────────
+  function saveDraft(key, value) {
+    try { if (value) localStorage.setItem(key, value); else localStorage.removeItem(key); } catch (e) { /* quota exceeded */ }
+  }
+  function loadDraft(key) {
+    try { return localStorage.getItem(key) || ''; } catch (e) { return ''; }
+  }
+  function clearDraft(key) {
+    try { localStorage.removeItem(key); } catch (e) { /* ignore */ }
+  }
+  function sessionDraftKey(_panel, sessionNum) { return `hive-draft:session:${sessionNum}`; }
+  const TASK_DRAFT_KEY = 'hive-draft:task-dialog';
   let fleetData = [];
   let linkTemplates = {};
   let term = null;
@@ -2192,7 +2205,15 @@
   var lastContent = '';
 
   function openSession(s, fromRoute) {
+    // Save draft from previous session before switching
+    if (currentSession && msgInput.value.trim()) {
+      saveDraft(sessionDraftKey('fleet', currentSession), msgInput.value);
+    } else if (currentSession) {
+      clearDraft(sessionDraftKey('fleet', currentSession));
+    }
     currentSession = String(s.num);
+    // Restore draft for newly opened session
+    msgInput.value = loadDraft(sessionDraftKey('fleet', currentSession));
     paneCols = 0; // reset until we get pane width from server
     sessionTitle.textContent = `Session ${s.num}`;
     sessionBranch.textContent = shortBranch(s.branch);
@@ -3904,10 +3925,12 @@
     msgHistoryDraft = '';
     msgInput.value = '';
     msgInput.style.height = 'auto';
+    if (currentSession) clearDraft(sessionDraftKey('fleet', currentSession));
     updateSessionStatusLine();
   }
 
   sendBtn.addEventListener('click', sendMessage);
+  msgInput.addEventListener('input', () => { if (currentSession) saveDraft(sessionDraftKey('fleet', currentSession), msgInput.value); });
   msgInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); return; }
     if (!currentSession) return;
@@ -4245,7 +4268,7 @@
     } else {
       titleEl.textContent = 'Create Task';
       saveBtn.textContent = 'Create';
-      textEl.value = '';
+      textEl.value = loadDraft(TASK_DRAFT_KEY);
       desigEl.value = '';
       taskMode = 'auto';
       manualTarget = null;
@@ -4271,12 +4294,14 @@
       showToast('Task updated', text.substring(0, 40), 'success');
     } else {
       ws.send(JSON.stringify({ type: 'task:create', text, mode: taskMode, targetSession: taskMode === 'manual' ? manualTarget : undefined, designation: desig, requireHumanClose }));
+      clearDraft(TASK_DRAFT_KEY);
       showToast('Task created', text.substring(0, 40), 'success');
     }
     taskDialog.classList.remove('visible');
     editingTaskId = null;
   });
   document.getElementById('task-dialog-cancel').addEventListener('click', () => { taskDialog.classList.remove('visible'); editingTaskId = null; });
+  document.getElementById('task-dialog-text').addEventListener('input', (e) => { if (!editingTaskId) saveDraft(TASK_DRAFT_KEY, e.target.value); });
   document.getElementById('task-dialog-text').addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); document.getElementById('task-dialog-save').click(); }
   });
@@ -4440,11 +4465,19 @@
 
   function openTaskSession(sessionNum) {
     const sameSession = tasksSessionNum === String(sessionNum);
+    // Save draft from previous tasks-session before switching
+    if (tasksSessionNum && tsMsgInput.value.trim()) {
+      saveDraft(sessionDraftKey('tasks', tasksSessionNum), tsMsgInput.value);
+    } else if (tasksSessionNum) {
+      clearDraft(sessionDraftKey('tasks', tasksSessionNum));
+    }
     // Unsubscribe from previous (even if same — forces re-subscribe for fresh data)
     if (tasksSessionNum && ws && ws.readyState === 1) {
       ws.send(JSON.stringify({ type: 'terminal:unsubscribe' }));
     }
     tasksSessionNum = String(sessionNum);
+    // Restore draft for newly opened tasks-session
+    tsMsgInput.value = loadDraft(sessionDraftKey('tasks', tasksSessionNum));
     if (!sameSession) {
       tsPaneCols = 0; // reset until we get pane width from server
       tsUserScrolledUp = false; tsPendingContent = null; tsLastContent = '';
@@ -4745,10 +4778,12 @@
     msgHistoryDraft = '';
     tsMsgInput.value = '';
     tsMsgInput.style.height = 'auto';
+    if (tasksSessionNum) clearDraft(sessionDraftKey('tasks', tasksSessionNum));
     updateTasksStatusLine();
     showToast('Sent', `${tasksSessionMode === 'ask' ? 'Ask' : 'Tell'} → session ${tasksSessionNum}`, 'success');
   }
   tsSendBtn.addEventListener('click', sendTasksMessage);
+  tsMsgInput.addEventListener('input', () => { if (tasksSessionNum) saveDraft(sessionDraftKey('tasks', tasksSessionNum), tsMsgInput.value); });
   tsMsgInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendTasksMessage(); return; }
     if (!tasksSessionNum) return;
@@ -5754,7 +5789,7 @@
       taskDetailSession = String(task.assignedTo);
       tdActivePane = null; tdSessionPanes = []; tdClaudePaneIdx = null;
       renderPaneTabs('td');
-      document.getElementById('task-detail-input').value = '';
+      document.getElementById('task-detail-input').value = loadDraft(sessionDraftKey('task-detail', taskDetailSession));
       // Render slash command bar (reuse tsCommands from tasks session)
       renderTaskDetailCmdBar();
       // Subscribe immediately so data starts flowing
@@ -6220,11 +6255,12 @@
     tdHistoryIdx = -1;
     tdHistoryDraft = '';
     input.value = '';
+    if (taskDetailSession) clearDraft(sessionDraftKey('task-detail', taskDetailSession));
     showToast('Sent', `${msgType === 'ask' ? 'Asked' : 'Told'} session ${taskDetailSession}`, 'success');
   }
   document.getElementById('task-detail-send').addEventListener('click', sendTaskDetailMessage);
 
-
+  document.getElementById('task-detail-input').addEventListener('input', (e) => { if (taskDetailSession) saveDraft(sessionDraftKey('task-detail', taskDetailSession), e.target.value); });
   document.getElementById('task-detail-input').addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendTaskDetailMessage(); return; }
     if (e.key === 'Escape') { closeTaskDetail(); return; }
