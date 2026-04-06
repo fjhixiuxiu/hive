@@ -717,14 +717,27 @@
           <button id="session-task-cancel" class="session-task-btn cancel" style="display:none" data-tooltip="Cancel task">Cancel</button>
           <button id="restart-btn" data-tooltip="Restart Claude in this session">Restart</button>
           <button id="kill-btn" data-tooltip="Kill this tmux session">Close</button>
+          <button id="reading-btn" data-tooltip="Reading mode">&#x1F4D6;</button>
+          <button id="expand-btn" data-tooltip="Fullscreen">&#x26F6;</button>
+          <button id="actions-overflow-btn" data-tooltip="Actions">&#x22EF;</button>
+          <div id="actions-overflow-menu"></div>
         </div>
       </div>
       <div id="mini-fleet-strip" style="display:none"></div>
       <div id="session-nav-bar" style="display:none">
-        <button id="nav-prev" class="session-nav-btn">&larr; Prev</button>
-        <button id="nav-next" class="session-nav-btn">Next &rarr;</button>
-        <button id="nav-next-idle" class="session-nav-btn idle">Next Idle</button>
-        <button id="nav-next-desig" class="session-nav-btn desig" data-tooltip="Next session in same designation">Next Desig</button>
+        <div class="nav-btn-group">
+          <button id="nav-prev" class="session-nav-btn">&larr; Prev</button>
+          <button id="nav-prev-dropdown" class="session-nav-btn nav-dropdown-chevron">&#x25BC;</button>
+          <div id="nav-prev-menu" class="nav-dropdown-menu"></div>
+        </div>
+        <button id="nav-next-idle" class="session-nav-btn nav-expanded idle">Next Idle</button>
+        <button id="nav-next-desig" class="session-nav-btn nav-expanded desig" data-tooltip="Next session in same designation">Next Desig</button>
+        <button id="nav-next-repo" class="session-nav-btn nav-expanded repo">Next Repo</button>
+        <div class="nav-btn-group">
+          <button id="nav-next" class="session-nav-btn">Next &rarr;</button>
+          <button id="nav-next-dropdown" class="session-nav-btn nav-dropdown-chevron">&#x25BC;</button>
+          <div id="nav-next-menu" class="nav-dropdown-menu"></div>
+        </div>
       </div>
       <div class="session-tabs">
         <button class="session-tab active" data-stab="terminal">Terminal</button>
@@ -753,6 +766,7 @@
             <button class="off-start-btn" id="session-off-start">Start Claude</button>
           </div>
           <div id="terminal-wrap"></div>
+          <div id="reading-pane"><pre id="reading-content"></pre></div>
           <div class="sidebar-diff-pane" id="sidebar-diff-pane">
             <div class="diff-file-header" id="sidebar-diff-filename"></div>
             <div class="diff-body" id="sidebar-diff-content"></div>
@@ -799,6 +813,7 @@
         <button class="key-btn num-key" data-key="2" data-tooltip="Select option 2">2</button>
         <button class="key-btn num-key" data-key="3" data-tooltip="Select option 3">3</button>
         <button class="key-btn num-key" data-key="4" data-tooltip="Select option 4">4</button>
+        <button class="key-btn cmd-bar-toggle" id="cmd-bar-toggle" data-tooltip="Slash commands">/</button>
       </div>
       <div id="cmd-bar"></div>
       <div id="session-status-line"></div>

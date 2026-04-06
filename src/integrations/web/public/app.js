@@ -207,6 +207,7 @@
   let allUsers = []; // all users (admin only)
   let showNavButtons = localStorage.getItem('hive_show_nav_buttons') !== 'false';
   let showFleetStrip = localStorage.getItem('hive_show_fleet_strip') === 'true';
+  let readingMode = false;
   let fleetViewMode = localStorage.getItem('hive_fleet_view') || 'grid';
   // Migrate old 'terminals' mode → grid + live
   if (fleetViewMode === 'terminals') { fleetViewMode = 'grid'; localStorage.setItem('hive_fleet_view', 'grid'); }
@@ -1002,7 +1003,7 @@
           }
         }
         // Update session nav strip and idle button
-        if (activeTab === 'session-panel') { updateMiniFleetStrip(); updateNavIdleButton(); }
+        if (activeTab === 'session-panel') { updateMiniFleetStrip(); updateExpandedNavButtons(); }
         // Auto-refresh git tab if active
         if (activeTab === 'session-panel' && activeSessionTab === 'git' && currentSession && ws && ws.readyState === 1) {
           ws.send(JSON.stringify({ type: 'git:info', session: currentSession }));
@@ -2290,6 +2291,7 @@
       term.write(content, () => {
         term.scrollToBottom();
         writingContent = false;
+        if (readingMode) document.getElementById('reading-content').textContent = extractTerminalText();
       });
     });
   }
@@ -2485,7 +2487,25 @@
       }
     }
 
+    // Last sent timestamp
+    const sentAt = lastSentTime[s.num];
+    if (sentAt) {
+      const ago = _timeAgo(sentAt);
+      chips.push(`<span class="status-chip last-sent" title="${sentAt.toLocaleString()}">Sent ${ago}</span>`);
+    }
+
     return chips.join('');
+  }
+
+  function _timeAgo(date) {
+    const secs = Math.floor((Date.now() - date.getTime()) / 1000);
+    if (secs < 5) return 'just now';
+    if (secs < 60) return secs + 's ago';
+    const mins = Math.floor(secs / 60);
+    if (mins < 60) return mins + 'm ago';
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return hrs + 'h ago';
+    return Math.floor(hrs / 24) + 'd ago';
   }
 
   function updateSessionStatusLine() {
@@ -2493,6 +2513,8 @@
     if (!bar) return;
     bar.innerHTML = currentSession ? renderStatusChips(currentSession) : '';
   }
+  // Refresh "Sent X ago" chips every 30s
+  setInterval(() => { updateSessionStatusLine(); updateTasksStatusLine(); }, 30000);
 
   function updateTasksStatusLine() {
     const bar = document.getElementById('ts-status-line');
@@ -2923,6 +2945,17 @@
     if (ws && ws.readyState === 1 && currentSession) {
       ws.send(JSON.stringify({ type: 'terminal:unsubscribe' }));
     }
+    // Exit fullscreen/reading mode if active
+    const panel = document.getElementById('session-panel');
+    if (panel.classList.contains('fullscreen')) {
+      panel.classList.remove('fullscreen');
+      document.getElementById('expand-btn').innerHTML = '&#x26F6;';
+    }
+    if (readingMode) {
+      readingMode = false;
+      panel.classList.remove('reading-mode');
+    }
+    closeAllCommentsDrawers();
     currentSession = null;
     askPending = false; msgInput.disabled = false; sendBtn.disabled = false; msgInput.value = '';
     switchTab(previousTab); // switchTab pushes hash
@@ -2931,6 +2964,12 @@
   backBtn.addEventListener('click', closeSession);
 
   // ── Session navigation (Prev / Next / Next Idle / Mini fleet strip) ──
+  function _repoBaseName(repoDir) {
+    if (!repoDir) return 'unknown';
+    const last = repoDir.replace(/\/+$/, '').split('/').pop() || '';
+    return last.replace(/\d+$/, '') || last;
+  }
+
   function getSortedSessionList() {
     return fleetData.filter(s => s.state !== 'off').sort((a, b) => a.num - b.num);
   }
@@ -3005,6 +3044,89 @@
     btn.disabled = !hasSibling;
   }
 
+  function navNextRepo() {
+    const curSession = fleetData.find(s => String(s.num) === currentSession);
+    if (!curSession) return;
+    const curRepo = _repoBaseName(curSession.repoDir);
+    const sorted = getSortedSessionList();
+    if (sorted.length === 0) return;
+    const idx = sorted.findIndex(s => String(s.num) === currentSession);
+    for (let i = 1; i <= sorted.length; i++) {
+      const candidate = sorted[(idx + i) % sorted.length];
+      if (_repoBaseName(candidate.repoDir) === curRepo && String(candidate.num) !== currentSession) {
+        navigateToSession(candidate);
+        return;
+      }
+    }
+  }
+
+  function navPrevIdle() {
+    const sorted = getSortedSessionList();
+    if (sorted.length === 0) return;
+    const idx = sorted.findIndex(s => String(s.num) === currentSession);
+    for (let i = 1; i <= sorted.length; i++) {
+      const candidate = sorted[((idx - i) % sorted.length + sorted.length) % sorted.length];
+      if (candidate.state === 'idle') { navigateToSession(candidate); return; }
+    }
+  }
+
+  function navPrevDesig() {
+    const curDesig = designations[currentSession] || '';
+    const sorted = getSortedSessionList();
+    if (sorted.length === 0) return;
+    const idx = sorted.findIndex(s => String(s.num) === currentSession);
+    for (let i = 1; i <= sorted.length; i++) {
+      const candidate = sorted[((idx - i) % sorted.length + sorted.length) % sorted.length];
+      const candDesig = designations[candidate.num] || '';
+      if (candDesig === curDesig && String(candidate.num) !== currentSession) {
+        navigateToSession(candidate);
+        return;
+      }
+    }
+  }
+
+  function navPrevRepo() {
+    const curSession = fleetData.find(s => String(s.num) === currentSession);
+    if (!curSession) return;
+    const curRepo = _repoBaseName(curSession.repoDir);
+    const sorted = getSortedSessionList();
+    if (sorted.length === 0) return;
+    const idx = sorted.findIndex(s => String(s.num) === currentSession);
+    for (let i = 1; i <= sorted.length; i++) {
+      const candidate = sorted[((idx - i) % sorted.length + sorted.length) % sorted.length];
+      if (_repoBaseName(candidate.repoDir) === curRepo && String(candidate.num) !== currentSession) {
+        navigateToSession(candidate);
+        return;
+      }
+    }
+  }
+
+  function updateExpandedNavButtons() {
+    const curDesig = designations[currentSession] || '';
+    const curSession = fleetData.find(s => String(s.num) === currentSession);
+    const curRepo = curSession ? _repoBaseName(curSession.repoDir) : '';
+
+    const idleBtn = document.getElementById('nav-next-idle');
+    const hasIdle = fleetData.some(s => s.state === 'idle' && String(s.num) !== currentSession);
+    idleBtn.disabled = !hasIdle;
+
+    const desigBtn = document.getElementById('nav-next-desig');
+    desigBtn.textContent = 'Next ' + (curDesig || 'Unassigned');
+    if (curDesig) { const dc = getDesigColor(curDesig); desigBtn.style.color = dc.fg; }
+    else { desigBtn.style.color = ''; }
+    desigBtn.disabled = !fleetData.some(s => String(s.num) !== currentSession && (designations[s.num] || '') === curDesig);
+
+    const repoBtn = document.getElementById('nav-next-repo');
+    const activeRepos = new Set(fleetData.filter(s => s.state !== 'off').map(s => _repoBaseName(s.repoDir)));
+    if (activeRepos.size <= 1) {
+      repoBtn.style.display = 'none';
+    } else {
+      repoBtn.style.display = '';
+      repoBtn.textContent = 'Next ' + (curRepo || 'Repo');
+      repoBtn.disabled = !fleetData.some(s => String(s.num) !== currentSession && s.state !== 'off' && _repoBaseName(s.repoDir) === curRepo);
+    }
+  }
+
   function updateMiniFleetStrip() {
     const strip = document.getElementById('mini-fleet-strip');
     if (!showFleetStrip || activeTab !== 'session-panel') { strip.style.display = 'none'; return; }
@@ -3044,7 +3166,7 @@
     const strip = document.getElementById('mini-fleet-strip');
     if (activeTab === 'session-panel') {
       navBar.style.display = showNavButtons ? 'flex' : 'none';
-      if (showNavButtons) { updateNavIdleButton(); updateNavDesigButton(); }
+      if (showNavButtons) { updateExpandedNavButtons(); }
       strip.style.display = showFleetStrip ? 'flex' : 'none';
       if (showFleetStrip) updateMiniFleetStrip();
     } else {
@@ -3058,6 +3180,67 @@
   document.getElementById('nav-next').addEventListener('click', navNext);
   document.getElementById('nav-next-idle').addEventListener('click', navNextIdle);
   document.getElementById('nav-next-desig').addEventListener('click', navNextDesig);
+  document.getElementById('nav-next-repo').addEventListener('click', navNextRepo);
+
+  // Helper to build a nav dropdown menu
+  function buildNavDropdown(menu, triggerBtn, direction) {
+    menu.innerHTML = '';
+    const curSession = fleetData.find(s => String(s.num) === currentSession);
+    const curDesig = designations[currentSession] || '';
+    const curRepo = curSession ? _repoBaseName(curSession.repoDir) : '';
+    const label = direction === 'prev' ? 'Prev' : 'Next';
+
+    const idleBtn = document.createElement('button');
+    idleBtn.textContent = label + ' Idle';
+    idleBtn.className = 'idle-color';
+    idleBtn.disabled = !fleetData.some(s => s.state === 'idle' && String(s.num) !== currentSession);
+    idleBtn.addEventListener('click', () => { menu.classList.remove('visible'); (direction === 'prev' ? navPrevIdle : navNextIdle)(); });
+    menu.appendChild(idleBtn);
+
+    const desigBtn = document.createElement('button');
+    desigBtn.textContent = label + ' ' + (curDesig || 'Unassigned');
+    if (curDesig) { const dc = getDesigColor(curDesig); desigBtn.style.color = dc.fg; }
+    desigBtn.disabled = !fleetData.some(s => String(s.num) !== currentSession && (designations[s.num] || '') === curDesig);
+    desigBtn.addEventListener('click', () => { menu.classList.remove('visible'); (direction === 'prev' ? navPrevDesig : navNextDesig)(); });
+    menu.appendChild(desigBtn);
+
+    const activeRepos = new Set(fleetData.filter(s => s.state !== 'off').map(s => _repoBaseName(s.repoDir)));
+    if (activeRepos.size > 1) {
+      const repoBtn = document.createElement('button');
+      repoBtn.textContent = label + ' ' + (curRepo || 'Repo');
+      repoBtn.className = 'repo-color';
+      repoBtn.disabled = !fleetData.some(s => String(s.num) !== currentSession && s.state !== 'off' && _repoBaseName(s.repoDir) === curRepo);
+      repoBtn.addEventListener('click', () => { menu.classList.remove('visible'); (direction === 'prev' ? navPrevRepo : navNextRepo)(); });
+      menu.appendChild(repoBtn);
+    }
+
+    const rect = triggerBtn.getBoundingClientRect();
+    menu.style.top = rect.bottom + 4 + 'px';
+    menu.style.right = (window.innerWidth - rect.right) + 'px';
+    menu.classList.toggle('visible');
+  }
+
+  // Prev dropdown
+  const prevDropdownBtn = document.getElementById('nav-prev-dropdown');
+  const prevDropdownMenu = document.getElementById('nav-prev-menu');
+  prevDropdownBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    nextDropdownMenu.classList.remove('visible');
+    buildNavDropdown(prevDropdownMenu, prevDropdownBtn, 'prev');
+  });
+  prevDropdownMenu.addEventListener('click', (e) => e.stopPropagation());
+
+  // Next dropdown
+  const nextDropdownBtn = document.getElementById('nav-next-dropdown');
+  const nextDropdownMenu = document.getElementById('nav-next-menu');
+  nextDropdownBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    prevDropdownMenu.classList.remove('visible');
+    buildNavDropdown(nextDropdownMenu, nextDropdownBtn, 'next');
+  });
+  nextDropdownMenu.addEventListener('click', (e) => e.stopPropagation());
+
+  document.addEventListener('click', () => { prevDropdownMenu.classList.remove('visible'); nextDropdownMenu.classList.remove('visible'); });
 
   // More tab toggle handlers
   document.getElementById('toggle-nav-buttons').addEventListener('click', function() {
@@ -3450,6 +3633,26 @@
     });
   });
 
+  // ── Keyboard shortcuts: Cmd/Ctrl+1-4, Cmd/Ctrl+Y/N to send keys to session ──
+  document.addEventListener('keydown', (e) => {
+    if (!currentSession || !ws || ws.readyState !== 1) return;
+    if (!(e.metaKey || e.ctrlKey)) return;
+    const tag = (e.target.tagName || '').toLowerCase();
+    if (tag === 'input' || tag === 'textarea' || e.target.isContentEditable) return;
+
+    let sendKey = null;
+    if (e.key >= '1' && e.key <= '4') sendKey = e.key;
+    else if (e.key.toLowerCase() === 'y') sendKey = 'y';
+    else if (e.key.toLowerCase() === 'n') sendKey = 'n';
+
+    if (sendKey) {
+      e.preventDefault();
+      const keysMsg = { type: 'keys', session: currentSession, keys: [sendKey] };
+      if (activePane !== null) keysMsg.pane = activePane;
+      ws.send(JSON.stringify(keysMsg));
+    }
+  });
+
   // ── VIM toggle ────────────────────────────────
   function updateVimToggles() {
     $$('.vim-toggle').forEach(btn => btn.classList.toggle('active', vimMode));
@@ -3549,8 +3752,84 @@
     showToast('Closing', `Session ${currentSession}`, 'success');
   });
 
-  // ── Command buttons ────────────────────────────
+  // ── Action overflow menu (mobile) ─────────────
+  const overflowBtn = document.getElementById('actions-overflow-btn');
+  const overflowMenu = document.getElementById('actions-overflow-menu');
+
+  overflowBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    overflowMenu.innerHTML = '';
+    const actions = document.getElementById('session-actions');
+    actions.querySelectorAll(':scope > button:not(#actions-overflow-btn):not(#expand-btn):not(#reading-btn)').forEach(btn => {
+      if (btn.style.display === 'none') return;
+      const item = document.createElement('button');
+      item.textContent = btn.textContent;
+      if (btn.id === 'track-btn') item.className = 'track-color';
+      else if (btn.id === 'session-task-done') item.className = 'done-color';
+      else if (btn.id === 'session-task-cancel') item.className = 'close-color';
+      else if (btn.id === 'restart-btn') item.className = 'restart-color';
+      else if (btn.id === 'kill-btn') item.className = 'close-color';
+      item.addEventListener('click', () => { overflowMenu.classList.remove('visible'); btn.click(); });
+      overflowMenu.appendChild(item);
+    });
+    const rect = overflowBtn.getBoundingClientRect();
+    overflowMenu.style.top = rect.bottom + 4 + 'px';
+    overflowMenu.style.right = (window.innerWidth - rect.right) + 'px';
+    overflowMenu.classList.toggle('visible');
+  });
+
+  document.addEventListener('click', () => overflowMenu.classList.remove('visible'));
+  overflowMenu.addEventListener('click', (e) => e.stopPropagation());
+
+  // ── Fullscreen expand (mobile) ──────────────────
+  const expandBtn = document.getElementById('expand-btn');
+  expandBtn.addEventListener('click', () => {
+    const panel = document.getElementById('session-panel');
+    const isFS = panel.classList.toggle('fullscreen');
+    expandBtn.innerHTML = isFS ? '&#x2716;' : '&#x26F6;';
+    expandBtn.title = isFS ? 'Exit fullscreen' : 'Fullscreen';
+    requestAnimationFrame(() => { if (term && fitAddon) fitTerminal(); });
+  });
+
+  // ── Reading mode ──────────────────────────────
+  const readingBtn = document.getElementById('reading-btn');
+
+  function extractTerminalText() {
+    if (!term) return '';
+    const buf = term.buffer.active;
+    const lines = [];
+    for (let i = 0; i <= buf.baseY + buf.cursorY; i++) {
+      const line = buf.getLine(i);
+      if (line) lines.push(line.translateToString(true));
+    }
+    while (lines.length > 0 && lines[lines.length - 1].trim() === '') lines.pop();
+    return lines.join('\n');
+  }
+
+  readingBtn.addEventListener('click', () => {
+    const panel = document.getElementById('session-panel');
+    readingMode = !readingMode;
+    panel.classList.toggle('reading-mode', readingMode);
+    readingBtn.classList.toggle('active', readingMode);
+    readingBtn.title = readingMode ? 'Exit reading mode' : 'Reading mode';
+    if (readingMode) {
+      closeAllCommentsDrawers();
+      document.getElementById('reading-content').textContent = extractTerminalText();
+    } else {
+      requestAnimationFrame(() => { if (term && fitAddon) fitTerminal(); });
+    }
+  });
+
+  // ── Command buttons (collapsible) ──────────────
   var cmdBar = null;
+  var cmdBarVisible = true;
+  document.getElementById('cmd-bar-toggle').addEventListener('click', () => {
+    if (!cmdBar) cmdBar = document.getElementById('cmd-bar');
+    if (!cmdBar) return;
+    cmdBarVisible = !cmdBarVisible;
+    cmdBar.style.display = cmdBarVisible ? '' : 'none';
+    document.getElementById('cmd-bar-toggle').classList.toggle('active', cmdBarVisible);
+  });
   function renderCommands(commands) {
     if (!cmdBar) cmdBar = document.getElementById('cmd-bar');
     if (!cmdBar) return;
@@ -3561,6 +3840,9 @@
       btn.addEventListener('click', () => {
         if (!currentSession || !ws || ws.readyState !== 1) return;
         ws.send(JSON.stringify({ type: 'tell', session: currentSession, message: '/' + cmd.name }));
+        lastSentTime[currentSession] = new Date();
+    localStorage.setItem('hive_last_sent_time', JSON.stringify(lastSentTime));
+        updateSessionStatusLine();
         showToast('Command sent', `/${cmd.name} → session ${currentSession}`, 'success');
       });
       cmdBar.appendChild(btn);
@@ -3590,7 +3872,9 @@
     modeToggle.className = mode === 'tell' ? 'tell' : '';
   });
 
-  var lastSentMessage = '';
+  let lastSentMessage = '';
+  const lastSentTime = {}; // session num → Date
+  try { const saved = JSON.parse(localStorage.getItem('hive_last_sent_time') || '{}'); for (const [k, v] of Object.entries(saved)) lastSentTime[k] = new Date(v); } catch(e) {}
   function sendMessage() {
     const text = msgInput.value.trim();
     const hasImages = attachedImages.length > 0;
@@ -3613,6 +3897,8 @@
       ws.send(JSON.stringify({ type: 'ask', session: currentSession, message }));
     }
     else { ws.send(JSON.stringify({ type: 'tell', session: currentSession, message })); }
+    lastSentTime[currentSession] = new Date();
+    localStorage.setItem('hive_last_sent_time', JSON.stringify(lastSentTime));
     pushMsgHistory(currentSession, text);
     msgHistoryIdx = -1;
     msgHistoryDraft = '';
@@ -7143,7 +7429,7 @@
     for (const def of designationDefs) {
       const row = document.createElement('div'); row.className = 'desig-def-row';
       const fileCount = def.agentFiles ? def.agentFiles.length : 0;
-      const ddc = DESIG_COLORS[def.color] || DESIG_COLORS.orange;
+      const ddc = DESIG_COLORS[def.color] || (def.color && def.color.startsWith('#') ? { fg: def.color, bg: def.color + '26' } : DESIG_COLORS.orange);
       row.innerHTML = `
         <span class="desig-def-name" style="color:${ddc.fg}">${esc(def.name)}</span>
         <span class="desig-def-files">${fileCount} agent file${fileCount !== 1 ? 's' : ''}${def.description ? ' — ' + esc(def.description) : ''}</span>
