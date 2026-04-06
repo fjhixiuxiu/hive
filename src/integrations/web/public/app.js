@@ -7674,6 +7674,7 @@
         source.excludeLabels = document.getElementById('pm-form-gh-exclude-labels').value.trim();
         source.state = document.getElementById('pm-form-gh-state').value;
         source.author = document.getElementById('pm-form-gh-author').value.trim();
+        source.excludeAuthors = document.getElementById('pm-form-gh-exclude-authors').value.trim();
         if (sourceType === 'github-prs') {
           source.base = document.getElementById('pm-form-gh-base').value.trim();
         }
@@ -7814,6 +7815,7 @@
     document.getElementById('pm-form-gh-exclude-labels').value = src.excludeLabels || '';
     document.getElementById('pm-form-gh-state').value = src.state || 'open';
     document.getElementById('pm-form-gh-author').value = src.author || '';
+    document.getElementById('pm-form-gh-exclude-authors').value = src.excludeAuthors || '';
     document.getElementById('pm-form-gh-base').value = src.base || '';
     document.getElementById('pm-form-gh-reviewer').value = src.reviewer || '';
     document.getElementById('pm-form-gh-triggers').value = src.triggerPhrases || '';

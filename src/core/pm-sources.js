@@ -241,9 +241,11 @@ async function _fetchGithubPrs(source) {
 
   const baseSet = new Set(allowedBases);
   const authorFilter = source.author ? source.author.toLowerCase() : null;
+  const excludeSet = new Set((source.excludeAuthors || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean));
   return allPrs
     .filter(pr => baseSet.has(pr.base && pr.base.ref) && !pr.draft)
     .filter(pr => !authorFilter || (pr.user && pr.user.login.toLowerCase() === authorFilter))
+    .filter(pr => !excludeSet.size || !excludeSet.has((pr.user && pr.user.login || '').toLowerCase()))
     .map(pr => ({
       key: `${source.repo}#${pr.number}`,
       summary: pr.title,
@@ -273,6 +275,11 @@ async function _fetchGithubPrsViaSearch(source) {
     }
     if (source.base) parts.push(`base:${source.base}`);
     if (source.author) parts.push(`author:${source.author}`);
+    if (source.excludeAuthors) {
+      for (const a of source.excludeAuthors.split(',').map(s => s.trim()).filter(Boolean)) {
+        parts.push(`-author:${a}`);
+      }
+    }
     parts.push('-is:draft');
     q = parts.join(' ');
   }
@@ -414,9 +421,11 @@ async function _fetchReReviews(source, pmId) {
 
   const results = [];
   const reviewer = source.reviewer.toLowerCase();
+  const excludeSet = new Set((source.excludeAuthors || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean));
 
   for (const pr of prs) {
     if (pr.draft) continue;
+    if (excludeSet.size && excludeSet.has((pr.user && pr.user.login || '').toLowerCase())) continue;
     // Skip PRs not updated since this PM's last poll (2 min buffer for clock/propagation lag)
     if (!this._reReviewPollTimes) this._reReviewPollTimes = {};
     const lastPoll = this._reReviewPollTimes[pmId];
