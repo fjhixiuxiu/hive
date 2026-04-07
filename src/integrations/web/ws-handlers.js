@@ -1400,6 +1400,74 @@ function createMessageHandler(deps) {
         break;
       }
 
+      case 'backup:get': {
+        if (!checkPermission(ws, user, 'admin')) break;
+        const backupCfg = taskQueue.backupConfig || {};
+        // Count backup files (state + knowledge + config)
+        let localStateCount = 0, localKnowledgeCount = 0, localConfigCount = 0;
+        let icloudCount = 0, localLatest = null, icloudLatest = null;
+        try {
+          const allLocal = fs.readdirSync(backupCfg.localDir || '');
+          localStateCount = allLocal.filter(f => f.startsWith('hive-state-')).length;
+          localKnowledgeCount = allLocal.filter(f => f.startsWith('hive-knowledge-')).length;
+          localConfigCount = allLocal.filter(f => f.startsWith('hive-config-')).length;
+          const sorted = allLocal.filter(f => f.startsWith('hive-')).sort();
+          if (sorted.length) {
+            const lastFile = path.join(backupCfg.localDir, sorted[sorted.length - 1]);
+            localLatest = fs.statSync(lastFile).mtime.toISOString();
+          }
+        } catch {}
+        try {
+          const icloudFiles = fs.readdirSync(backupCfg.icloudDir || '').filter(f => f.startsWith('hive-')).sort();
+          icloudCount = icloudFiles.length;
+          if (icloudFiles.length) {
+            const lastFile = path.join(backupCfg.icloudDir, icloudFiles[icloudFiles.length - 1]);
+            icloudLatest = fs.statSync(lastFile).mtime.toISOString();
+          }
+        } catch {}
+        // State file size
+        let stateSize = 0, knowledgeSize = 0;
+        try { stateSize = fs.statSync(path.join(process.cwd(), '.hive-state.json')).size; } catch {}
+        try { knowledgeSize = fs.statSync(path.join(process.cwd(), '.hive-knowledge.json')).size; } catch {}
+        ws.send(JSON.stringify({
+          type: 'backup:status',
+          config: backupCfg,
+          localCount: localStateCount + localKnowledgeCount + localConfigCount,
+          localStateCount, localKnowledgeCount, localConfigCount,
+          localLatest,
+          icloudCount, icloudLatest,
+          stateSize, knowledgeSize,
+        }));
+        break;
+      }
+
+      case 'backup:save': {
+        if (!checkPermission(ws, user, 'admin')) break;
+        const updates = msg.config || {};
+        const cfg = taskQueue.backupConfig || {};
+        if (updates.localDir !== undefined) cfg.localDir = updates.localDir;
+        if (updates.icloudDir !== undefined) cfg.icloudDir = updates.icloudDir;
+        if (updates.retentionDays !== undefined) cfg.retentionDays = Number(updates.retentionDays) || 14;
+        if (updates.icloudRetentionDays !== undefined) cfg.icloudRetentionDays = Number(updates.icloudRetentionDays) || 30;
+        if (updates.cronSchedule !== undefined) cfg.cronSchedule = updates.cronSchedule;
+        taskQueue.backupConfig = cfg;
+        taskQueue._saveState();
+        ws.send(JSON.stringify({ type: 'backup:saved', config: cfg }));
+        break;
+      }
+
+      case 'backup:run': {
+        if (!checkPermission(ws, user, 'admin')) break;
+        const backupScript = path.join(taskQueue.backupConfig.localDir || '', 'backup-hive.sh');
+        try {
+          execSync(`bash "${backupScript}"`, { timeout: 10000 });
+          ws.send(JSON.stringify({ type: 'backup:done', ok: true }));
+        } catch (err) {
+          ws.send(JSON.stringify({ type: 'backup:done', ok: false, error: err.message }));
+        }
+        break;
+      }
+
       case 'update:pull': {
         if (!checkPermission(ws, user, 'admin')) break;
         const hiveDir = path.join(__dirname, '..', '..', '..');

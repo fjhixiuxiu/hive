@@ -442,6 +442,7 @@
 
         <button class="more-tab perm-hidden" data-more-tab="more-users">Users</button>
         <button class="more-tab" data-more-tab="more-update">Update</button>
+        <button class="more-tab" data-more-tab="more-backup">Backup</button>
       </div>
       <div class="more-tab-panel active" id="more-sessions">
         <div class="more-section">
@@ -670,6 +671,60 @@
           <div style="background:var(--card);border-radius:8px;padding:8px;min-height:120px;max-height:300px;overflow-y:auto" id="update-log-wrap">
             <pre id="update-log" style="margin:0;font-family:monospace;font-size:12px;white-space:pre-wrap;color:var(--fg-dim)"></pre>
           </div>
+        </div>
+      </div>
+      <div class="more-tab-panel" id="more-backup">
+        <div class="more-section">
+          <div class="more-section-title">Backup Status</div>
+          <div id="backup-status-card" style="background:var(--card);border-radius:8px;padding:12px;margin-bottom:12px">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+              <div>
+                <span style="font-weight:600;font-size:12px;color:var(--fg-dim)">State file</span>
+                <div id="backup-state-size" style="font-family:monospace;font-size:14px">—</div>
+              </div>
+              <div>
+                <span style="font-weight:600;font-size:12px;color:var(--fg-dim)">Knowledge file</span>
+                <div id="backup-knowledge-size" style="font-family:monospace;font-size:14px">—</div>
+              </div>
+              <div>
+                <span style="font-weight:600;font-size:12px;color:var(--fg-dim)">Local backups</span>
+                <div><span id="backup-local-count" style="font-family:monospace;font-size:14px">—</span></div>
+                <div id="backup-local-breakdown" style="font-size:11px;color:var(--fg-dim)"></div>
+                <div id="backup-local-latest" style="font-size:11px;color:var(--fg-dim)"></div>
+              </div>
+              <div>
+                <span style="font-weight:600;font-size:12px;color:var(--fg-dim)">iCloud backups</span>
+                <div><span id="backup-icloud-count" style="font-family:monospace;font-size:14px">—</span></div>
+                <div id="backup-icloud-latest" style="font-size:11px;color:var(--fg-dim)"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="more-section">
+          <div class="more-section-title">Backup Paths</div>
+          <label style="font-weight:600;font-size:12px;display:block;margin-bottom:2px">Local backup directory</label>
+          <input id="backup-local-dir" type="text" placeholder="/path/to/local/backups" style="width:100%;padding:8px;border-radius:6px;border:1px solid var(--border);background:var(--card);color:var(--fg);font-family:monospace;font-size:13px;margin-bottom:8px;box-sizing:border-box">
+          <label style="font-weight:600;font-size:12px;display:block;margin-bottom:2px">iCloud backup directory</label>
+          <input id="backup-icloud-dir" type="text" placeholder="/path/to/icloud/backups" style="width:100%;padding:8px;border-radius:6px;border:1px solid var(--border);background:var(--card);color:var(--fg);font-family:monospace;font-size:13px;margin-bottom:8px;box-sizing:border-box">
+        </div>
+        <div class="more-section">
+          <div class="more-section-title">Retention</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+            <div>
+              <label style="font-weight:600;font-size:12px;display:block;margin-bottom:2px">Local (days)</label>
+              <input id="backup-retention" type="number" min="1" max="90" value="14" style="width:100%;padding:8px;border-radius:6px;border:1px solid var(--border);background:var(--card);color:var(--fg);font-size:14px;box-sizing:border-box">
+            </div>
+            <div>
+              <label style="font-weight:600;font-size:12px;display:block;margin-bottom:2px">iCloud (days)</label>
+              <input id="backup-icloud-retention" type="number" min="1" max="365" value="30" style="width:100%;padding:8px;border-radius:6px;border:1px solid var(--border);background:var(--card);color:var(--fg);font-size:14px;box-sizing:border-box">
+            </div>
+          </div>
+          <label style="font-weight:600;font-size:12px;display:block;margin-bottom:2px">Cron schedule</label>
+          <input id="backup-cron" type="text" placeholder="7 * * * *" style="width:100%;padding:8px;border-radius:6px;border:1px solid var(--border);background:var(--card);color:var(--fg);font-family:monospace;font-size:13px;margin-bottom:12px;box-sizing:border-box">
+        </div>
+        <div style="display:flex;gap:8px;padding:0 12px 12px">
+          <button id="backup-save-btn" style="flex:1;padding:10px;border:none;border-radius:8px;background:var(--purple);color:#fff;font-size:14px;font-weight:700;cursor:pointer">Save Settings</button>
+          <button id="backup-run-btn" style="flex:1;padding:10px;border:none;border-radius:8px;background:var(--green);color:#fff;font-size:14px;font-weight:700;cursor:pointer">Backup Now</button>
         </div>
       </div>
     </div>

@@ -47,6 +47,15 @@ class TaskQueue extends EventEmitter {
     this.checklistTemplates = new Map(); // name → { name, items: [string] }
     this.sessionContext = new Map();    // session num -> { plan: '/path', pr: 'url', jira: 'KEY', ... }
 
+    // Backup configuration
+    this.backupConfig = {
+      localDir: '/Users/dev/dev/hive-backup-data',
+      icloudDir: '/Users/dev/Library/Mobile Documents/com~apple~CloudDocs/hive-backups',
+      retentionDays: 14,
+      icloudRetentionDays: 30,
+      cronSchedule: '7 * * * *',
+    };
+
     // Configurable work states for the board
     // autoOnStatus: when a task's system status changes to one of these, auto-set workState
     this.workStates = [
@@ -1138,6 +1147,9 @@ class TaskQueue extends EventEmitter {
           this.sessionContext.set(Number(num), ctx);
         }
       }
+      if (data.backupConfig && typeof data.backupConfig === 'object') {
+        this.backupConfig = { ...this.backupConfig, ...data.backupConfig };
+      }
       if (Array.isArray(data.workStates) && data.workStates.length) {
         this.workStates = data.workStates.map(s => ({
           ...s,
@@ -1212,6 +1224,7 @@ class TaskQueue extends EventEmitter {
       spawnSlotMax: this.spawnSlotMax,
       checklistTemplates: this.getChecklistTemplates(),
       sessionContext: this.getAllSessionContexts(),
+      backupConfig: this.backupConfig,
       workStates: this.workStates,
     };
     // Merge PM data if pmManager is attached
@@ -1219,7 +1232,10 @@ class TaskQueue extends EventEmitter {
       data.pms = this._pmManager.serialize();
     }
     try {
-      fs.writeFileSync(STATE_FILE, JSON.stringify(data, null, 2));
+      const json = JSON.stringify(data, null, 2);
+      const tmpFile = STATE_FILE + '.tmp';
+      fs.writeFileSync(tmpFile, json);
+      fs.renameSync(tmpFile, STATE_FILE);
     } catch (err) {
       log.error('Failed to save state:', err.message);
     }
