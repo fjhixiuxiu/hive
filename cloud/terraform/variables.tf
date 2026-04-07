@@ -1,3 +1,15 @@
+variable "hive_name" {
+  description = "Unique name for this hive instance (prefixes all resource names)"
+  type        = string
+  default     = "hive"
+}
+
+variable "secret_name" {
+  description = "Secrets Manager secret name for .env contents"
+  type        = string
+  default     = "hive/env"
+}
+
 variable "env_name" {
   description = "Environment name for tagging"
   type        = string

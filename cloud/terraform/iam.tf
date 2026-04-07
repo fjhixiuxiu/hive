@@ -2,7 +2,7 @@
 # Permissions: Secrets Manager read (scoped) + SSM managed instance core
 
 resource "aws_iam_role" "hive_ec2" {
-  name = "hive-ec2-role"
+  name = "${var.hive_name}-ec2-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -18,14 +18,14 @@ resource "aws_iam_role" "hive_ec2" {
   })
 
   tags = {
-    Name        = "hive-ec2-role"
+    Name        = "${var.hive_name}-ec2-role"
     environment = var.env_name
     customer    = var.customer_name
   }
 }
 
 resource "aws_iam_role_policy" "hive_secrets" {
-  name = "hive-secrets-read"
+  name = "${var.hive_name}-secrets-read"
   role = aws_iam_role.hive_ec2.id
 
   policy = jsonencode({
@@ -37,6 +37,13 @@ resource "aws_iam_role_policy" "hive_secrets" {
           "secretsmanager:GetSecretValue"
         ]
         Resource = "arn:aws:secretsmanager:us-east-1:140947722076:secret:hive/*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "ec2:DescribeTags"
+        ]
+        Resource = "*"
       }
     ]
   })
@@ -48,11 +55,11 @@ resource "aws_iam_role_policy_attachment" "hive_ssm" {
 }
 
 resource "aws_iam_instance_profile" "hive_ec2" {
-  name = "hive-ec2-profile"
+  name = "${var.hive_name}-ec2-profile"
   role = aws_iam_role.hive_ec2.name
 
   tags = {
-    Name        = "hive-ec2-profile"
+    Name        = "${var.hive_name}-ec2-profile"
     environment = var.env_name
     customer    = var.customer_name
   }

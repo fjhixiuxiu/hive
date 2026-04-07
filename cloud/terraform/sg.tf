@@ -2,12 +2,12 @@
 # EC2 reuses the existing toronto-office-prod-ssh SG for SSH access.
 
 resource "aws_security_group" "hive_alb" {
-  name        = "hive-alb-sg"
-  description = "Hive ALB - HTTPS from office IPs"
+  name        = "${var.hive_name}-alb-sg"
+  description = "${var.hive_name} ALB - HTTPS from office IPs"
   vpc_id      = var.vpc_id
 
   tags = {
-    Name        = "hive-alb-sg"
+    Name        = "${var.hive_name}-alb-sg"
     environment = var.env_name
     customer    = var.customer_name
   }
@@ -46,12 +46,12 @@ resource "aws_vpc_security_group_egress_rule" "alb_to_ec2" {
 
 # Security group for EC2 — inbound from ALB on 3000, all outbound
 resource "aws_security_group" "hive_ec2" {
-  name        = "hive-ec2-sg"
-  description = "Hive EC2 - inbound from ALB on 3000"
+  name        = "${var.hive_name}-ec2-sg"
+  description = "${var.hive_name} EC2 - inbound from ALB on 3000"
   vpc_id      = var.vpc_id
 
   tags = {
-    Name        = "hive-ec2-sg"
+    Name        = "${var.hive_name}-ec2-sg"
     environment = var.env_name
     customer    = var.customer_name
   }

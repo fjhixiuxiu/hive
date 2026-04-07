@@ -1,7 +1,7 @@
 # ALB for Hive dashboard — internet-facing, HTTPS only, office IPs restricted via SG.
 
 resource "aws_lb" "hive" {
-  name                       = "hive-alb"
+  name                       = "${var.hive_name}-alb"
   internal                   = false
   load_balancer_type         = "application"
   security_groups            = [aws_security_group.hive_alb.id]
@@ -9,14 +9,14 @@ resource "aws_lb" "hive" {
   enable_deletion_protection = true
 
   tags = {
-    Name        = "hive-alb"
+    Name        = "${var.hive_name}-alb"
     environment = var.env_name
     customer    = var.customer_name
   }
 }
 
 resource "aws_lb_target_group" "hive" {
-  name        = "hive-tg"
+  name        = "${var.hive_name}-tg"
   port        = 3000
   protocol    = "HTTP"
   target_type = "instance"
@@ -40,7 +40,7 @@ resource "aws_lb_target_group" "hive" {
   }
 
   tags = {
-    Name        = "hive-tg"
+    Name        = "${var.hive_name}-tg"
     environment = var.env_name
     customer    = var.customer_name
   }

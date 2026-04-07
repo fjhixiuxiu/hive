@@ -1,14 +1,25 @@
 #!/bin/bash
 # Hive boot script — runs on every boot via systemd.
 # Pulls .env from Secrets Manager and starts Hive.
+# SECRET_NAME is read from the EC2 instance tag "hive-secret-name",
+# falling back to "hive/env" if the tag is not set.
 
 set -euo pipefail
 
 HIVE_DIR="/home/ubuntu/hive"
-SECRET_NAME="hive/env"
 REGION="us-east-1"
 
 log() { echo "[$(date '+%H:%M:%S')] $1"; }
+
+# ── Resolve secret name from EC2 instance tag ────────────────────────
+IMDS_TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 60")
+INSTANCE_ID=$(curl -s -H "X-aws-ec2-metadata-token: $IMDS_TOKEN" http://169.254.169.254/latest/meta-data/instance-id)
+TAG_VALUE=$(aws ec2 describe-tags \
+  --filters "Name=resource-id,Values=$INSTANCE_ID" "Name=key,Values=hive-secret-name" \
+  --query "Tags[0].Value" --output text --region "$REGION" 2>/dev/null || echo "None")
+SECRET_NAME="${TAG_VALUE}"
+[ "$SECRET_NAME" = "None" ] || [ -z "$SECRET_NAME" ] && SECRET_NAME="hive/env"
+log "Using secret: $SECRET_NAME"
 
 # ── Merge .env with Secrets Manager ───────────────────────────────────
 log "Merging .env with Secrets Manager..."

@@ -1,4 +1,4 @@
-# Hive fleet EC2 instance — t3.large, Ubuntu 22.04, 50GB gp3 EBS.
+# Hive fleet EC2 instance — t3.large, Ubuntu 22.04, gp3 EBS.
 
 resource "aws_instance" "hive" {
   ami                    = var.ami_id
@@ -20,7 +20,7 @@ resource "aws_instance" "hive" {
     encrypted             = true
 
     tags = {
-      Name        = "hive-fleet-root"
+      Name        = "${var.hive_name}-fleet-root"
       environment = var.env_name
       customer    = var.customer_name
     }
@@ -29,10 +29,11 @@ resource "aws_instance" "hive" {
   user_data = base64encode(file("${path.module}/../scripts/init.sh"))
 
   tags = {
-    Name        = "hive-fleet"
-    environment = var.env_name
-    customer    = var.customer_name
-    service     = "hive"
+    Name             = "${var.hive_name}-fleet"
+    environment      = var.env_name
+    customer         = var.customer_name
+    service          = "hive"
+    hive-secret-name = var.secret_name
   }
 
   lifecycle {
