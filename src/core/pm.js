@@ -1116,7 +1116,10 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
 
   _saveKnowledgeBase() {
     try {
-      fs.writeFileSync(KB_FILE, JSON.stringify(this.knowledgeBase, null, 2));
+      const json = JSON.stringify(this.knowledgeBase, null, 2);
+      const tmpFile = KB_FILE + '.tmp';
+      fs.writeFileSync(tmpFile, json);
+      fs.renameSync(tmpFile, KB_FILE);
     } catch (err) {
       log.error('[pm] Failed to save knowledge base:', err.message);
     }

@@ -1586,6 +1586,41 @@
         if (rbtn) { rbtn.disabled = true; rbtn.textContent = 'Restarting...'; }
         break;
       }
+      case 'backup:status': {
+        const fmt = (bytes) => bytes > 1048576 ? (bytes / 1048576).toFixed(1) + ' MB' : (bytes / 1024).toFixed(0) + ' KB';
+        const el = (id) => document.getElementById(id);
+        el('backup-state-size').textContent = msg.stateSize ? fmt(msg.stateSize) : '—';
+        el('backup-knowledge-size').textContent = msg.knowledgeSize ? fmt(msg.knowledgeSize) : '—';
+        el('backup-local-count').textContent = msg.localCount != null ? msg.localCount + ' files' : '—';
+        const bd = el('backup-local-breakdown');
+        if (bd && msg.localStateCount != null) bd.textContent = `state: ${msg.localStateCount}, knowledge: ${msg.localKnowledgeCount}, config: ${msg.localConfigCount}`;
+        el('backup-icloud-count').textContent = msg.icloudCount != null ? msg.icloudCount + ' files' : '—';
+        el('backup-local-latest').textContent = msg.localLatest ? 'Latest: ' + new Date(msg.localLatest).toLocaleString() : '';
+        el('backup-icloud-latest').textContent = msg.icloudLatest ? 'Latest: ' + new Date(msg.icloudLatest).toLocaleString() : '';
+        if (msg.config) {
+          el('backup-local-dir').value = msg.config.localDir || '';
+          el('backup-icloud-dir').value = msg.config.icloudDir || '';
+          el('backup-retention').value = msg.config.retentionDays || 14;
+          el('backup-icloud-retention').value = msg.config.icloudRetentionDays || 30;
+          el('backup-cron').value = msg.config.cronSchedule || '';
+        }
+        break;
+      }
+      case 'backup:saved': {
+        showToast('Backup', 'Settings saved', 'success');
+        break;
+      }
+      case 'backup:done': {
+        const btn = document.getElementById('backup-run-btn');
+        if (btn) { btn.disabled = false; btn.textContent = 'Backup Now'; }
+        if (msg.ok) {
+          showToast('Backup', 'Backup completed', 'success');
+          if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'backup:get' }));
+        } else {
+          showToast('Backup', 'Backup failed: ' + (msg.error || 'unknown'), 'error');
+        }
+        break;
+      }
     }
   }
 
@@ -7148,6 +7183,9 @@
       if (tab.dataset.moreTab === 'more-update' && ws && ws.readyState === 1) {
         ws.send(JSON.stringify({ type: 'update:status' }));
       }
+      if (tab.dataset.moreTab === 'more-backup' && ws && ws.readyState === 1) {
+        ws.send(JSON.stringify({ type: 'backup:get' }));
+      }
       if (tab.dataset.moreTab === 'more-automation') renderPMs();
     });
   });
@@ -8806,6 +8844,32 @@
       });
     }
   })();
+
+  // ── Backup tab ──────────────────────────────────────
+  document.addEventListener('click', (e) => {
+    const saveBtn = e.target.closest('#backup-save-btn');
+    const runBtn = e.target.closest('#backup-run-btn');
+    if (saveBtn) {
+      if (!ws || ws.readyState !== 1) { showToast('Backup', 'Not connected', 'error'); return; }
+      ws.send(JSON.stringify({
+        type: 'backup:save',
+        config: {
+          localDir: document.getElementById('backup-local-dir').value.trim(),
+          icloudDir: document.getElementById('backup-icloud-dir').value.trim(),
+          retentionDays: parseInt(document.getElementById('backup-retention').value) || 14,
+          icloudRetentionDays: parseInt(document.getElementById('backup-icloud-retention').value) || 30,
+          cronSchedule: document.getElementById('backup-cron').value.trim(),
+        }
+      }));
+      showToast('Backup', 'Saving...', 'success');
+    }
+    if (runBtn) {
+      if (!ws || ws.readyState !== 1) { showToast('Backup', 'Not connected', 'error'); return; }
+      runBtn.disabled = true;
+      runBtn.textContent = 'Running...';
+      ws.send(JSON.stringify({ type: 'backup:run' }));
+    }
+  });
 
   // ── Notifications ─────────────────────────────────
   function handleNotify(msg) {
