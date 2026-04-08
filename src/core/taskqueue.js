@@ -291,6 +291,7 @@ class TaskQueue extends EventEmitter {
       log.info(`[taskmap] S:${task.assignedTo} ✕ task ${task.id} (requeue)`);
       this.activeTaskBySession.delete(task.assignedTo);
       this.dispatchLock.delete(task.assignedTo);
+      this.clearSessionContext(task.assignedTo);
     }
     const prevSession = task.assignedTo;
     task.status = 'queued';
@@ -317,6 +318,7 @@ class TaskQueue extends EventEmitter {
     if (task.status === 'dispatched' && task.assignedTo) {
       log.info(`[taskmap] S:${task.assignedTo} ✕ task ${task.id} (cancel)`);
       this.activeTaskBySession.delete(task.assignedTo);
+      this.clearSessionContext(task.assignedTo);
     }
     task.status = 'cancelled';
     task.workStateManual = false;
@@ -328,7 +330,7 @@ class TaskQueue extends EventEmitter {
   snoozeTask(taskId, durationMs) {
     const task = this.tasks.get(taskId);
     if (!task) return null;
-    // If dispatched, requeue first
+    // If dispatched, requeue first (requeue already clears session context)
     if (task.status === 'dispatched') {
       this.requeueTask(taskId);
     }
