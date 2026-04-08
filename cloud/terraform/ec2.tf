@@ -11,6 +11,7 @@ resource "aws_instance" "hive" {
   vpc_security_group_ids = [
     aws_security_group.hive_ec2.id,
     var.office_ssh_sg_id,
+    var.hive_fleet_sg_id,
   ]
 
   root_block_device {

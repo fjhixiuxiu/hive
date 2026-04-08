@@ -88,7 +88,7 @@ chown ubuntu:ubuntu "${UBUNTU_HOME}/.tmux.conf"
 
 # ── npm install ───────────────────────────────────────────────────────────
 cd "${HIVE_DIR}"
-sudo -u ubuntu npm install --omit=dev 2>&1 | tail -1
+sudo -u ubuntu npm install 2>&1 | tail -1
 
 # ── Install systemd service ─────────────────────────────────────────────
 log "Installing hive systemd service..."

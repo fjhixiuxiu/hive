@@ -209,7 +209,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     }
 
     const user = wsUser.get(ws) || null;
-    ws.send(JSON.stringify({ type: 'config', links: config.links || {}, spawnBaseDir: process.env.HIVE_REPO_DIR || '~/ai-dev', hiveName: config.sessions?.hiveName || '' }));
+    ws.send(JSON.stringify({ type: 'config', links: config.links || {}, spawnBaseDir: config.sessions.repoBase || process.env.HIVE_REPO_DIR || '~/ai-dev', hiveName: config.sessions?.hiveName || '' }));
     ws.send(JSON.stringify({ type: 'commands:list', commands }));
     // Send user permissions
     if (auth.isOAuthEnabled() && user && user.login && taskQueue) {
@@ -259,6 +259,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
         jenkins: { configured: !!(process.env.JENKINS_URL && process.env.JENKINS_USER && process.env.JENKINS_API_TOKEN) },
         slack: { configured: !!(process.env.SLACK_BOT_TOKEN && process.env.SLACK_APP_TOKEN) },
         jira: { configured: !!(process.env.JIRA_BASE_URL && process.env.JIRA_EMAIL && process.env.JIRA_API_TOKEN) },
+        zoho: { configured: !!(process.env.ZOHO_DESK_ORG_ID && process.env.ZOHO_DESK_CLIENT_ID && process.env.ZOHO_DESK_REFRESH_TOKEN) },
       }
     }));
   }

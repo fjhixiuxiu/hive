@@ -632,6 +632,31 @@
             <span class="int-result" id="jira-result"></span>
           </div>
         </div>
+        <div class="integration-card" data-integration="zoho">
+          <div class="integration-header">
+            <span class="integration-name">Zoho Desk</span>
+            <span class="integration-status" id="zoho-status"></span>
+          </div>
+          <div class="integration-fields">
+            <label>Organization ID
+              <input type="text" id="int-zoho-org-id" data-env="ZOHO_DESK_ORG_ID" placeholder="123456789" autocomplete="off">
+            </label>
+            <label>Client ID
+              <input type="text" id="int-zoho-client-id" data-env="ZOHO_DESK_CLIENT_ID" placeholder="1000.XXXX..." autocomplete="off">
+            </label>
+            <label>Client Secret
+              <input type="password" id="int-zoho-client-secret" data-env="ZOHO_DESK_CLIENT_SECRET" placeholder="Client secret" autocomplete="off">
+            </label>
+            <label>Refresh Token
+              <input type="password" id="int-zoho-refresh-token" data-env="ZOHO_DESK_REFRESH_TOKEN" placeholder="Refresh token" autocomplete="off">
+            </label>
+          </div>
+          <div class="integration-actions">
+            <button class="int-save-btn" data-integration="zoho">Save</button>
+            <button class="int-test-btn" data-integration="zoho">Test Connection</button>
+            <span class="int-result" id="zoho-result"></span>
+          </div>
+        </div>
       </div>
       <div class="more-tab-panel perm-hidden" id="more-users">
         <div class="more-section" id="admin-users-section">

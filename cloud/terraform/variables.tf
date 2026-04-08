@@ -73,6 +73,12 @@ variable "office_ssh_sg_id" {
   default     = "sg-0809ef61cbd90123e" # toronto-office-dev-ssh
 }
 
+variable "hive_fleet_sg_id" {
+  description = "Shared SG for all hive EC2 instances (cross-hive access rules)"
+  type        = string
+  default     = "sg-09cad5143094f082f" # hive-fleet-sg
+}
+
 variable "office_cidrs" {
   description = "Office IP CIDRs for ALB HTTPS access"
   type        = list(string)

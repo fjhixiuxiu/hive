@@ -107,7 +107,7 @@ describe('working directory override', () => {
 
     expect(ctx.sent[0].ok).toBe(true);
     expect(ctx.sent[0].dir).not.toContain('~');
-    expect(ctx.sent[0].dir).toMatch(/^\/Users\//);
+    expect(ctx.sent[0].dir).toMatch(/^\//); // absolute path (works on macOS /Users and Linux /home)
   });
 
   it('mcp:set_working_dir rejects empty dir', async () => {

@@ -855,7 +855,7 @@ function createMessageHandler(deps) {
       case 'spawn:slots': {
         if (!taskQueue) break;
         const slots = await taskQueue.getAvailableSlots();
-        const repoBase = config.sessions.repoBase ? require('path').dirname(config.sessions.repoBase) : '';
+        const repoBase = config.sessions.repoBase || '';
         ws.send(JSON.stringify({ type: 'spawn:slots', slots, slotMin: taskQueue.spawnSlotMin, slotMax: taskQueue.spawnSlotMax, repoBase }));
         break;
       }
@@ -1276,6 +1276,7 @@ function createMessageHandler(deps) {
           jenkins: ['JENKINS_URL', 'JENKINS_USER', 'JENKINS_API_TOKEN'],
           slack: ['SLACK_BOT_TOKEN', 'SLACK_APP_TOKEN'],
           jira: ['JIRA_BASE_URL', 'JIRA_EMAIL', 'JIRA_API_TOKEN'],
+          zoho: ['ZOHO_DESK_ORG_ID', 'ZOHO_DESK_CLIENT_ID', 'ZOHO_DESK_CLIENT_SECRET', 'ZOHO_DESK_REFRESH_TOKEN'],
         };
         const allowed = ALLOWED_KEYS[intName];
         if (!allowed || !msg.values || typeof msg.values !== 'object') {
@@ -1389,6 +1390,24 @@ function createMessageHandler(deps) {
                 'Accept': 'application/json',
               });
               sendResult(true, data.displayName || 'Connected');
+              break;
+            }
+            case 'zoho': {
+              const zOrgId = vals.ZOHO_DESK_ORG_ID;
+              const zClientId = vals.ZOHO_DESK_CLIENT_ID;
+              const zClientSecret = vals.ZOHO_DESK_CLIENT_SECRET;
+              const zRefreshToken = vals.ZOHO_DESK_REFRESH_TOKEN;
+              if (!zOrgId || !zClientId || !zClientSecret || !zRefreshToken) { sendResult(false, null, 'All fields required'); break; }
+              const tokenData = await httpRequest('https://accounts.zoho.com/oauth/v2/token', {
+                'Content-Type': 'application/x-www-form-urlencoded',
+              }, `grant_type=refresh_token&client_id=${zClientId}&client_secret=${zClientSecret}&refresh_token=${zRefreshToken}`);
+              if (!tokenData.access_token) { sendResult(false, null, tokenData.error || 'Failed to get access token'); break; }
+              const ticketsData = await httpRequest(`https://desk.zoho.com/api/v1/tickets?limit=1`, {
+                'Authorization': `Zoho-oauthtoken ${tokenData.access_token}`,
+                'orgId': zOrgId,
+                'Accept': 'application/json',
+              });
+              sendResult(true, `Connected — org ${zOrgId}`);
               break;
             }
             default:
