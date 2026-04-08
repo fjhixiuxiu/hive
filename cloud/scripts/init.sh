@@ -56,10 +56,9 @@ if ! command -v uv &>/dev/null; then
   ln -sf /root/.local/bin/uvx /usr/local/bin/uvx 2>/dev/null || true
 fi
 
-if ! command -v claude &>/dev/null; then
-  log "Installing Claude Code..."
-  npm install -g @anthropic-ai/claude-code
-fi
+log "Installing Claude Code..."
+npm install -g @anthropic-ai/claude-code
+sudo -u ubuntu bash -c 'mkdir -p ~/.local/bin && claude install' 2>/dev/null || true
 
 if ! command -v tmuxinator &>/dev/null; then
   log "Installing tmuxinator..."
@@ -73,6 +72,23 @@ sudo -u ubuntu git config --global user.email "hive-bot[bot]@users.noreply.githu
 sudo -u ubuntu mkdir -p "${UBUNTU_HOME}/.ssh" "${UBUNTU_HOME}/hive_fleet" "${UBUNTU_HOME}/.claude"
 ssh-keyscan -t ed25519 github.com >> "${UBUNTU_HOME}/.ssh/known_hosts" 2>/dev/null || true
 chown ubuntu:ubuntu "${UBUNTU_HOME}/.ssh/known_hosts"
+
+# ── Claude Code config ───────────────────────────────────────────────────
+if [ ! -f "${UBUNTU_HOME}/.claude/settings.json" ]; then
+  log "Writing Claude Code settings..."
+  cat > "${UBUNTU_HOME}/.claude/settings.json" << 'CLAUDE_EOF'
+{
+  "permissions": {
+    "defaultMode": "bypassPermissions",
+    "additionalDirectories": [
+      "/home/ubuntu"
+    ]
+  },
+  "skipDangerousModePermissionPrompt": true
+}
+CLAUDE_EOF
+  chown ubuntu:ubuntu "${UBUNTU_HOME}/.claude/settings.json"
+fi
 
 timedatectl set-timezone America/Toronto 2>/dev/null || true
 
