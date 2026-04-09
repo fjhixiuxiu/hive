@@ -79,28 +79,63 @@ describe('resolveSessionAction', () => {
     '3': '/Users/me/agents/30',       // wrong path (prefix collision)
   };
 
-  it('returns "skip" when session exists with correct path', () => {
-    expect(resolveSessionAction('1', '/Users/me/agents/1', existing, false)).toBe('skip');
+  // ── non-explicit (default roles-map iteration) ──────────────
+  describe('non-explicit (default iteration)', () => {
+    it('returns "skip" when session exists with correct path', () => {
+      expect(resolveSessionAction('1', '/Users/me/agents/1', existing, false, false)).toBe('skip');
+    });
+
+    it('returns "skip" (not recreate) when session exists with wrong path — preserves custom paths', () => {
+      expect(resolveSessionAction('2', '/Users/me/agents/2', existing, false, false)).toBe('skip');
+    });
+
+    it('returns "noop" (not create) when session does not exist — killed sessions stay dead', () => {
+      expect(resolveSessionAction('99', '/Users/me/agents/99', existing, false, false)).toBe('noop');
+    });
+
+    it('returns "skip" for prefix-collision path when not explicit', () => {
+      expect(resolveSessionAction('3', '/Users/me/agents/3', existing, false, false)).toBe('skip');
+    });
   });
 
-  it('returns "recreate" when session exists with wrong path', () => {
-    expect(resolveSessionAction('2', '/Users/me/agents/2', existing, false)).toBe('recreate');
+  // ── explicit (user passed slot numbers on CLI) ──────────────
+  describe('explicit (user-passed slot numbers)', () => {
+    it('returns "skip" when session exists with correct path', () => {
+      expect(resolveSessionAction('1', '/Users/me/agents/1', existing, false, true)).toBe('skip');
+    });
+
+    it('returns "recreate" when session exists with wrong path', () => {
+      expect(resolveSessionAction('2', '/Users/me/agents/2', existing, false, true)).toBe('recreate');
+    });
+
+    it('returns "create" when session does not exist', () => {
+      expect(resolveSessionAction('99', '/Users/me/agents/99', existing, false, true)).toBe('create');
+    });
+
+    it('returns "recreate" for prefix-collision path (e.g. agents/30 vs agents/3)', () => {
+      expect(resolveSessionAction('3', '/Users/me/agents/3', existing, false, true)).toBe('recreate');
+    });
   });
 
-  it('returns "create" when session does not exist', () => {
-    expect(resolveSessionAction('99', '/Users/me/agents/99', existing, false)).toBe('create');
-  });
+  // ── --force flag ────────────────────────────────────────────
+  describe('--force', () => {
+    it('returns "recreate" with --force even when path is correct', () => {
+      expect(resolveSessionAction('1', '/Users/me/agents/1', existing, true, true)).toBe('recreate');
+    });
 
-  it('returns "recreate" with --force even when path is correct', () => {
-    expect(resolveSessionAction('1', '/Users/me/agents/1', existing, true)).toBe('recreate');
-  });
-
-  it('returns "recreate" for prefix-collision path (e.g. agents/30 vs agents/3)', () => {
-    expect(resolveSessionAction('3', '/Users/me/agents/3', existing, false)).toBe('recreate');
+    it('returns "recreate" with --force on wrong path', () => {
+      expect(resolveSessionAction('2', '/Users/me/agents/2', existing, true, true)).toBe('recreate');
+    });
   });
 
   it('returns "skip" when current path is a subdirectory of root', () => {
     const withSub = { '5': '/Users/me/agents/5/subdir' };
-    expect(resolveSessionAction('5', '/Users/me/agents/5', withSub, false)).toBe('skip');
+    expect(resolveSessionAction('5', '/Users/me/agents/5', withSub, false, true)).toBe('skip');
+  });
+
+  // ── legacy 4-arg call (backwards compat: explicit defaults to false) ──
+  it('defaults to non-explicit when called with 4 args (conservative)', () => {
+    // Legacy behavior: missing slot returns 'noop' (not 'create')
+    expect(resolveSessionAction('99', '/Users/me/agents/99', existing, false)).toBe('noop');
   });
 });
