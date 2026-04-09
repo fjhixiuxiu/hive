@@ -34,6 +34,14 @@ if [ "$NO_SESSIONS" = false ]; then
   SESSION_ARGS=""
   [ "$FORCE" = true ] && SESSION_ARGS="--force"
   node start-sessions.js $SESSION_ARGS
+
+  # Save tmux state so tmux-resurrect/continuum restores correct sessions on next reboot.
+  # Without this, continuum may restore stale sessions with wrong paths.
+  RESURRECT_SAVE="$HOME/.tmux/plugins/tmux-resurrect/scripts/save.sh"
+  if [ -x "$RESURRECT_SAVE" ] && tmux list-sessions >/dev/null 2>&1; then
+    "$RESURRECT_SAVE" >/dev/null 2>&1 || true
+    echo "Saved tmux-resurrect state"
+  fi
 else
   echo "Skipping session startup (--no-sessions)"
 fi
