@@ -114,6 +114,7 @@ class ProjectManager extends EventEmitter {
       slackUserId: cfg.slackUserId || null, // Slack user ID for PM status reporting
       actions: cfg.actions || null, // allowed context action IDs (null = all)
       boardStates: cfg.boardStates || null, // per-PM work state overrides: [{ stateId, autoOnStatus }]
+      autoCreate: cfg.autoCreate || false, // when true, auto-create sessions for this PM's queued tasks
       enabled: false,
       seenKeys: [],
       tasksCreated: 0,
@@ -312,6 +313,7 @@ class ProjectManager extends EventEmitter {
       slackUserId: pm.slackUserId,
       boardStates: pm.boardStates,
       actions: pm.actions,
+      autoCreate: pm.autoCreate,
       memory: pm.memory || [],
     };
 
@@ -509,6 +511,7 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
         slackUserId: data.slackUserId || null,
         boardStates: Array.isArray(data.boardStates) ? data.boardStates : null,
         actions: Array.isArray(data.actions) ? data.actions : null,
+        autoCreate: data.autoCreate || false,
         enabled: data.enabled || false,
         seenKeys: Array.isArray(data.seenKeys) ? data.seenKeys : [],
         tasksCreated: data.tasksCreated || 0,

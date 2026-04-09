@@ -139,7 +139,6 @@
   let taskMode = 'auto';
   let vimMode = false;
   let taskAutoComplete = true;
-  let autoCreateSessions = false;
   let manualTarget = null;
   let activeTaskTab = 'inprogress';
   let tasksViewMode = 'list'; // 'list' or 'board'
@@ -203,6 +202,7 @@
   }
   let agentRoots = [];      // array of scan paths
   let agentFilesList = [];  // cached scan results
+  let repoCaps = {}; // repoBaseName -> max sessions
   let spawnSlotMin = 1;
   let spawnBaseDir = '~/ai-dev';
   let spawnSlotMax = 32;
@@ -815,7 +815,7 @@
       // Close meeting detail when leaving voice panel
       closeMeetingDetail();
     }
-    if (tab === 'more-panel') { renderDesignationGrid(); renderAgentRoots(); renderDesigDefs(); renderPMs(); renderUsers(); renderChecklistTemplates(); }
+    if (tab === 'more-panel') { renderDesignationGrid(); renderAgentRoots(); renderRepoCaps(); renderDesigDefs(); renderPMs(); renderUsers(); renderChecklistTemplates(); }
     const spawnBtn = document.getElementById('spawn-btn');
     if (spawnBtn) spawnBtn.classList.toggle('visible', tab === 'fleet-panel');
     // shutdown + restart buttons are inside fleet-panel, no toggle needed
@@ -1307,17 +1307,15 @@
         agentFilesList = msg.files || [];
         if (activeTab === 'more-panel') { renderAgentRoots(); renderDesigDefs(); }
         break;
+      case 'repoCaps:status':
+        repoCaps = msg.caps || {};
+        if (activeTab === 'more-panel') renderRepoCaps();
+        break;
       case 'vim:status': vimMode = msg.enabled; updateVimToggles(); break;
       case 'taskAutoComplete:status': {
         taskAutoComplete = msg.enabled;
         const btn = document.getElementById('toggle-task-autocomplete');
         if (btn) btn.classList.toggle('on', taskAutoComplete);
-        break;
-      }
-      case 'autoCreateSessions:status': {
-        autoCreateSessions = msg.enabled;
-        const btn = document.getElementById('toggle-auto-create-sessions');
-        if (btn) btn.classList.toggle('on', autoCreateSessions);
         break;
       }
       case 'spawn:slots':
@@ -3313,9 +3311,6 @@
   });
   document.getElementById('toggle-task-autocomplete').addEventListener('click', function() {
     if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'taskAutoComplete:toggle' }));
-  });
-  document.getElementById('toggle-auto-create-sessions').addEventListener('click', function() {
-    if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'autoCreateSessions:toggle' }));
   });
   // Initialize toggle button states
   document.getElementById('toggle-nav-buttons').classList.toggle('on', showNavButtons);
@@ -7481,6 +7476,41 @@
     if (countEl) countEl.textContent = `${agentFilesList.length} agent file${agentFilesList.length !== 1 ? 's' : ''} found`;
   }
 
+  // ── Repo Session Caps (More tab) ─────────────────
+  function _repoBaseName(repoDir) {
+    if (!repoDir) return 'unknown';
+    const last = repoDir.replace(/\/+$/, '').split('/').pop() || '';
+    return last.replace(/\d+$/, '') || last;
+  }
+
+  function renderRepoCaps() {
+    const list = document.getElementById('repo-caps-list');
+    if (!list) return;
+    list.innerHTML = '';
+    for (const [repo, max] of Object.entries(repoCaps)) {
+      const count = fleetData.filter(s => _repoBaseName(s.repoDir) === repo).length;
+      const row = document.createElement('div'); row.className = 'agent-root-row';
+      row.innerHTML = `<span class="root-path">${esc(repo)}</span><span style="color:var(--dim);margin:0 8px">${count} / ${max} sessions</span><button>Remove</button>`;
+      row.querySelector('button').addEventListener('click', () => {
+        delete repoCaps[repo];
+        if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'repoCaps:set', caps: repoCaps }));
+        renderRepoCaps();
+      });
+      list.appendChild(row);
+    }
+  }
+
+  document.getElementById('repo-cap-add-btn').addEventListener('click', () => {
+    const name = document.getElementById('repo-cap-name').value.trim();
+    const max = parseInt(document.getElementById('repo-cap-max').value);
+    if (!name || isNaN(max) || max < 0) { showToast('Error', 'Enter repo name and max sessions', 'error'); return; }
+    repoCaps[name] = max;
+    if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'repoCaps:set', caps: repoCaps }));
+    document.getElementById('repo-cap-name').value = '';
+    document.getElementById('repo-cap-max').value = '';
+    renderRepoCaps();
+  });
+
   document.getElementById('agent-root-add-btn').addEventListener('click', () => {
     const input = document.getElementById('agent-root-input');
     const val = input.value.trim();
@@ -8110,6 +8140,7 @@
       pollInterval: parseInt(document.getElementById('pm-form-interval').value) || 60000,
       schedule: document.getElementById('pm-form-cron').value.trim() || null,
       slackUserId: document.getElementById('pm-form-slack-user-id').value.trim() || null,
+      autoCreate: document.getElementById('pm-form-auto-create').checked,
     };
     // Collect completion conditions
     const completionConditions = [];
@@ -8203,6 +8234,7 @@
     document.getElementById('pm-form-instructions').value = pm ? (pm.instructions || '') : '';
     document.getElementById('pm-form-mcp-enabled').checked = pm ? !!pm.mcpEnabled : false;
     document.getElementById('pm-form-require-human-close').checked = pm ? !!pm.requireHumanClose : false;
+    document.getElementById('pm-form-auto-create').checked = pm ? !!pm.autoCreate : false;
     document.getElementById('pm-form-learning-enabled').checked = pm ? !!pm.learningEnabled : false;
     document.getElementById('pm-form-learning-prompt').value = pm ? (pm.learningPrompt || '') : '';
     document.getElementById('pm-form-learning-prompt-wrap').style.display = (pm && pm.learningEnabled) ? '' : 'none';

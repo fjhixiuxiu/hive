@@ -42,7 +42,7 @@ class TaskQueue extends EventEmitter {
     this.spawnSlotMax = 32;
     this.vimMode = false;
     this.taskAutoComplete = true; // when false, tasks require manual completion
-    this.autoCreateSessions = false; // when true, auto-dispatch can spawn new sessions
+    this.repoSessionCaps = new Map(); // repoBaseName -> max session count
     this._snoozeTimers = new Map(); // taskId → setTimeout handle
     this.checklistTemplates = new Map(); // name → { name, items: [string] }
     this.sessionContext = new Map();    // session num -> { plan: '/path', pr: 'url', jira: 'KEY', ... }
@@ -703,44 +703,107 @@ class TaskQueue extends EventEmitter {
         }
       }
 
-      // Auto-create session for undesignated tasks with no matching idle session
-      if (!this.autoCreateSessions) return;
-      const remainingTasks = queuedTasks.filter(t => t.status === 'queued' && !t.designation);
-      if (remainingTasks.length > 0) {
-        // Check all sessions (not just idle ones) — an undesignated session may be booting
-        const allUndesignated = sessions.filter(s => !this.designations.get(s.num));
-        const hasIdleUndesignated = allUndesignated.some(s =>
+      // Auto-create session for queued tasks whose source PM has autoCreate enabled
+      const autoCreateTasks = queuedTasks.filter(t => {
+        if (t.status !== 'queued') return false;
+        const pm = this._getSourcePm(t);
+        return pm && pm.autoCreate;
+      });
+
+      // Group by designation (null = undesignated)
+      const byDesig = new Map();
+      for (const t of autoCreateTasks) {
+        const d = t.designation || null;
+        if (!byDesig.has(d)) byDesig.set(d, []);
+        byDesig.get(d).push(t);
+      }
+
+      for (const [desig, tasks] of byDesig) {
+        // Check if there's already an idle or booting session for this designation
+        const matching = sessions.filter(s =>
+          (desig ? this.designations.get(s.num) === desig : !this.designations.get(s.num))
+        );
+        const hasIdle = matching.some(s =>
           s.state === 'idle' && this.autoSessions.has(s.num)
           && !this.dispatchLock.has(s.num) && !this.activeTaskBySession.has(s.num)
         );
-        const hasBootingUndesignated = allUndesignated.some(s =>
+        const hasBooting = matching.some(s =>
           s.state !== 'idle' && this.autoSessions.has(s.num)
           && !this.activeTaskBySession.has(s.num)
         );
-        if (!hasIdleUndesignated && !hasBootingUndesignated) {
-          try {
-            const slots = await this.getAvailableSlots();
-            if (slots.length > 0) {
-              const num = slots[0];
-              const repoDir = this.config.sessions.repoDir(num);
-              const size = this.config.tmux?.defaultSize || { cols: 200, rows: 50 };
-              const prefix = this.config.sessions?.namePrefix || '';
-              const sessionName = `${prefix}${num}`;
-              log.info(`[auto-dispatch] No idle undesignated session — creating session ${num}`);
-              await sessionManager.createSession(sessionName, repoDir, this.config.tmux?.defaultLayout || { panes: 2, tmuxLayout: 'main-vertical', claudePaneWidth: '60%' }, size);
-              await sessionManager.startClaude(sessionName, this.config.sessions.claudePane, 'claude');
-              this.autoSessions.add(num);
-              this._saveState();
-              this.pushFeed('state', num, `Auto-created session ${num} for undesignated task`);
-            }
-          } catch (err) {
-            log.error(`[auto-dispatch] Failed to auto-create session: ${err.message}`);
+        if (hasIdle || hasBooting) continue;
+
+        try {
+          const slots = await this.getAvailableSlots();
+          if (slots.length === 0) continue;
+          const num = slots[0];
+          const repoDir = this.config.sessions.repoDir(num);
+          const repoName = TaskQueue.repoBaseName(repoDir);
+          const cap = this.repoSessionCaps.get(repoName);
+          if (cap !== undefined && this._countRepoSessions(sessions, repoName) >= cap) {
+            log.info(`[auto-dispatch] Repo "${repoName}" at session cap (${cap}) — skipping auto-create`);
+            continue;
           }
+          const size = this.config.tmux?.defaultSize || { cols: 200, rows: 50 };
+          const prefix = this.config.sessions?.namePrefix || '';
+          const sessionName = `${prefix}${num}`;
+          const desigLabel = desig || 'undesignated';
+          log.info(`[auto-dispatch] No idle ${desigLabel} session — creating session ${num}`);
+          await sessionManager.createSession(sessionName, repoDir, this.config.tmux?.defaultLayout || { panes: 2, tmuxLayout: 'main-vertical', claudePaneWidth: '60%' }, size);
+          await sessionManager.startClaude(sessionName, this.config.sessions.claudePane, 'claude');
+          this.autoSessions.add(num);
+          if (desig) this.designations.set(num, desig);
+          this._saveState();
+          this.pushFeed('state', num, `Auto-created session ${num} for ${desigLabel} task`);
+        } catch (err) {
+          log.error(`[auto-dispatch] Failed to auto-create session: ${err.message}`);
         }
       }
     } finally {
       this._autoDispatching = false;
     }
+  }
+
+  // Look up the PM that created a task (via task.source = 'pm:<name>')
+  _getSourcePm(task) {
+    if (!task.source || !task.source.startsWith('pm:') || !this._pmManager) return null;
+    const pmName = task.source.slice(3);
+    for (const pm of this._pmManager.pms.values()) {
+      if (pm.name === pmName) return pm;
+    }
+    return null;
+  }
+
+  // Extract repo base name from a repoDir path (e.g. '/Users/x/Coding/webplatform5' -> 'webplatform')
+  static repoBaseName(repoDir) {
+    if (!repoDir) return 'unknown';
+    const last = repoDir.replace(/\/+$/, '').split('/').pop() || '';
+    return last.replace(/\d+$/, '') || last;
+  }
+
+  // Count live sessions for a given repo base name
+  _countRepoSessions(sessions, repoName) {
+    return sessions.filter(s => {
+      const dir = this.getRepoDir(s.num) || this.config.sessions.repoDir(s.num);
+      return TaskQueue.repoBaseName(dir) === repoName;
+    }).length;
+  }
+
+  // Get/set repo session caps
+  getRepoCaps() {
+    const obj = {};
+    for (const [k, v] of this.repoSessionCaps) obj[k] = v;
+    return obj;
+  }
+
+  setRepoCaps(capsObj) {
+    this.repoSessionCaps.clear();
+    for (const [k, v] of Object.entries(capsObj)) {
+      const n = parseInt(v);
+      if (k && !isNaN(n) && n >= 0) this.repoSessionCaps.set(k, n);
+    }
+    this._saveState();
+    this.emit('repoCaps:changed', this.getRepoCaps());
   }
 
   // -- Auto-mode ----------------------------------------------------
@@ -1139,9 +1202,11 @@ class TaskQueue extends EventEmitter {
       }
       if (data.vimMode !== undefined) this.vimMode = data.vimMode;
       if (data.taskAutoComplete !== undefined) this.taskAutoComplete = data.taskAutoComplete;
-      if (data.autoCreateSessions !== undefined) this.autoCreateSessions = data.autoCreateSessions;
       if (data.spawnSlotMin !== undefined) this.spawnSlotMin = data.spawnSlotMin;
       if (data.spawnSlotMax !== undefined) this.spawnSlotMax = data.spawnSlotMax;
+      if (data.repoSessionCaps && typeof data.repoSessionCaps === 'object') {
+        for (const [k, v] of Object.entries(data.repoSessionCaps)) this.repoSessionCaps.set(k, v);
+      }
       if (data.sessionContext && typeof data.sessionContext === 'object') {
         for (const [num, ctx] of Object.entries(data.sessionContext)) {
           this.sessionContext.set(Number(num), ctx);
@@ -1219,13 +1284,13 @@ class TaskQueue extends EventEmitter {
       feed: this.feed,
       vimMode: this.vimMode,
       taskAutoComplete: this.taskAutoComplete,
-      autoCreateSessions: this.autoCreateSessions,
       spawnSlotMin: this.spawnSlotMin,
       spawnSlotMax: this.spawnSlotMax,
       checklistTemplates: this.getChecklistTemplates(),
       sessionContext: this.getAllSessionContexts(),
       backupConfig: this.backupConfig,
       workStates: this.workStates,
+      repoSessionCaps: this.getRepoCaps(),
     };
     // Merge PM data if pmManager is attached
     if (this._pmManager) {

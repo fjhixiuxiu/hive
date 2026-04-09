@@ -504,10 +504,6 @@
             <span class="rule-name">Auto-complete tasks when session goes idle</span>
             <button class="rule-toggle" id="toggle-task-autocomplete"></button>
           </div>
-          <div class="rule-row">
-            <span class="rule-name">Auto-create sessions for queued tasks</span>
-            <button class="rule-toggle" id="toggle-auto-create-sessions"></button>
-          </div>
         </div>
         <div class="more-section">
           <div class="more-section-title">Auto-Pilot Rules</div>
@@ -538,6 +534,15 @@
             <button id="agent-root-scan-btn">Refresh</button>
           </div>
           <div class="agent-root-count" id="agent-root-count"></div>
+        </div>
+        <div class="more-section">
+          <div class="more-section-title">Repo Session Caps</div>
+          <div id="repo-caps-list"></div>
+          <div class="agent-root-add">
+            <input id="repo-cap-name" type="text" placeholder="webplatform" autocomplete="off" style="flex:1">
+            <input id="repo-cap-max" type="number" placeholder="8" min="0" style="width:60px">
+            <button id="repo-cap-add-btn">Add</button>
+          </div>
         </div>
       </div>
       <div class="more-tab-panel" id="more-mcp">
@@ -1154,6 +1159,11 @@
       <select class="pm-form-select" id="pm-form-target-session">
         <option value="">None (route by designation)</option>
       </select>
+    </div>
+    <div class="pm-form-field full-width">
+      <label style="font-size:13px;color:var(--fg);cursor:pointer;display:flex;align-items:center;gap:6px">
+        <input type="checkbox" id="pm-form-auto-create"> Auto-create sessions when no idle session is available
+      </label>
     </div>
     <div class="pm-form-field">
       <label class="pm-form-label">Task Format <span style="color:var(--dim)">(use {key} and {summary} as placeholders)</span></label>
