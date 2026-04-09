@@ -19,14 +19,25 @@ You have hive MCP tools available. Use them:
 
 // ── HTTP layer ──────────────────────────────────────────
 
+// ETag cache: url → { etag, data } — GitHub 304s don't count against rate limit
+const _etagCache = new Map();
+
 function _httpRequest(urlStr, headers, body) {
   return new Promise((resolve, reject) => {
     const url = new URL(urlStr);
     const mod = url.protocol === 'https:' ? https : http;
 
+    const reqHeaders = { ...headers };
+
+    // Add If-None-Match for GET requests with cached ETags
+    const cached = !body && _etagCache.get(urlStr);
+    if (cached && cached.etag) {
+      reqHeaders['If-None-Match'] = cached.etag;
+    }
+
     const options = {
       method: body ? 'POST' : 'GET',
-      headers: { ...headers },
+      headers: reqHeaders,
       timeout: 30000,
     };
 
@@ -34,9 +45,19 @@ function _httpRequest(urlStr, headers, body) {
       let data = '';
       res.on('data', (chunk) => data += chunk);
       res.on('end', () => {
+        // 304 Not Modified — return cached data (free, no rate limit cost)
+        if (res.statusCode === 304 && cached) {
+          return resolve(cached.data);
+        }
         if (res.statusCode >= 200 && res.statusCode < 300) {
           try {
-            resolve(JSON.parse(data));
+            const parsed = JSON.parse(data);
+            // Store ETag for future conditional requests
+            const etag = res.headers['etag'];
+            if (etag && !body) {
+              _etagCache.set(urlStr, { etag, data: parsed });
+            }
+            resolve(parsed);
           } catch (e) {
             reject(new Error(`Invalid JSON response: ${e.message}`));
           }
