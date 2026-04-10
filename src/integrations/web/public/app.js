@@ -14,7 +14,7 @@
 
   // ── Theme ────────────────────────────────────────
   const XTERM_DARK = { background: '#0f0f23', foreground: '#e2e2f0', cursor: '#e2e2f0', black: '#282a36', red: '#ff5555', green: '#50fa7b', yellow: '#f1fa8c', blue: '#bd93f9', magenta: '#ff79c6', cyan: '#8be9fd', white: '#f8f8f2', brightBlack: '#6272a4', brightRed: '#ff6e6e', brightGreen: '#69ff94', brightYellow: '#ffffa5', brightBlue: '#d6acff', brightMagenta: '#ff92df', brightCyan: '#a4ffff', brightWhite: '#ffffff' };
-  const XTERM_LIGHT = { background: '#f5f5f7', foreground: '#1d1d2b', cursor: '#1d1d2b', black: '#e0e0e6', red: '#d93025', green: '#1a8f3f', yellow: '#9a7b00', blue: '#7c3aed', magenta: '#c72880', cyan: '#0277a8', white: '#1d1d2b', brightBlack: '#6e7191', brightRed: '#e8453a', brightGreen: '#2da653', brightYellow: '#b08f00', brightBlue: '#9058f0', brightMagenta: '#d94095', brightCyan: '#0892c4', brightWhite: '#1d1d2b' };
+  const XTERM_LIGHT = { background: '#f5f5f7', foreground: '#1d1d2b', cursor: '#1d1d2b', selectionBackground: 'rgba(124,58,237,0.25)', black: '#e0e0e6', red: '#d93025', green: '#1a8f3f', yellow: '#9a7b00', blue: '#7c3aed', magenta: '#c72880', cyan: '#0277a8', white: '#1d1d2b', brightBlack: '#6e7191', brightRed: '#e8453a', brightGreen: '#2da653', brightYellow: '#b08f00', brightBlue: '#9058f0', brightMagenta: '#d94095', brightCyan: '#0892c4', brightWhite: '#1d1d2b' };
   let currentTheme = localStorage.getItem('hive:theme') || 'dark';
 
   // Apply saved theme immediately (prevent dark flash on light theme)
