@@ -18,7 +18,7 @@ const {
   HIVE_CONSOLE_SESSION, HIVE_CONSOLE_DIR, ghExecEnv, setupPath,
   isSetupComplete, decorateTaskActions, executeTaskAction,
   getTailscaleIP, getBindHosts, scanCommands, discoverCommands,
-  capturePaneAnsi,
+  capturePaneAnsi, buildConfigMessage,
 } = require('./ws-helpers');
 const createMessageHandler = require('./ws-handlers');
 const VoiceAgent = require('../voice');
@@ -209,7 +209,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     }
 
     const user = wsUser.get(ws) || null;
-    ws.send(JSON.stringify({ type: 'config', links: config.links || {}, spawnBaseDir: config.sessions.repoBase || process.env.HIVE_REPO_DIR || '~/ai-dev', hiveName: config.sessions?.hiveName || '' }));
+    ws.send(JSON.stringify(buildConfigMessage(config)));
     ws.send(JSON.stringify({ type: 'commands:list', commands }));
     // Send user permissions
     if (auth.isOAuthEnabled() && user && user.login && taskQueue) {

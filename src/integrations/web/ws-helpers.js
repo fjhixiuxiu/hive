@@ -173,6 +173,20 @@ async function capturePaneAnsi(node, target) {
   return { content, cols };
 }
 
+/**
+ * Build the initial `config` WebSocket payload sent to clients on connect.
+ * Pure function for testability — reads env and config, returns the message object.
+ */
+function buildConfigMessage(config) {
+  return {
+    type: 'config',
+    links: config.links || {},
+    spawnBaseDir: config.sessions.repoBase || process.env.HIVE_REPO_DIR || '~/ai-dev',
+    hiveName: config.sessions?.hiveName || '',
+    title: process.env.HIVE_TITLE || '',
+  };
+}
+
 module.exports = {
   HIVE_CONSOLE_SESSION,
   HIVE_CONSOLE_DIR,
@@ -188,4 +202,5 @@ module.exports = {
   scanCommands,
   discoverCommands,
   capturePaneAnsi,
+  buildConfigMessage,
 };
