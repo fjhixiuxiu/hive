@@ -1201,6 +1201,11 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
       `- If unclear whether something is actionable, err on the side of ignoring`,
       `- Never do the work yourself — only triage and route`,
       `- Include full context in task descriptions so workers have what they need`,
+      // [context-consolidation] This instruction references the MCP wire params
+      // (slackChannel / slackThreadTs) which are STABLE per the plan. The field
+      // names Claude sets at the API are NOT the same as the task field names —
+      // ws-handlers.js translates them. Phase 2 doesn't need to change this line.
+      // Ref: ~/dev/agents/hive/context-consolidation-plan.md
       `- When creating tasks, set the slackChannel and slackThreadTs so replies route back`,
       `- Do NOT set a designation on tasks unless you know the exact designation name. Leave it empty/null so any idle session can pick it up.`,
     ].join('\n');

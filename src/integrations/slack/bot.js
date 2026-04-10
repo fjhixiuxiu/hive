@@ -1,6 +1,7 @@
 const { App } = require('@slack/bolt');
 const fleet = require('../../core/fleet');
 const relay = require('../../core/relay');
+const log = require('../../core/log');
 
 /**
  * Create and start the Slack bot (Socket Mode).
@@ -99,25 +100,46 @@ function createSlackBot(taskQueue, config, router, pmManager) {
     } catch { return ''; }
   }
 
-  // Find an active (queued/dispatched) task linked to a Slack thread
+  // Find an active (queued/dispatched) task linked to a Slack thread.
+  //
+  // [Phase 1 — context-consolidation] Dual lookup path:
+  //   1. Direct match on old-style task.slackThreadTs fields (original behavior)
+  //   2. Fallback: sessionContext.slackThread (set by _dispatchTask for slack-
+  //      originated tasks, or by Claude via hive_set_context for PM-created tasks)
+  //
+  // Phase 2 will collapse to a single path: sessionContext.slackThread for
+  // dispatched tasks, task._slackContext for queued tasks (see plan Step 3 /
+  // "findActiveTaskForThread" row in the "What changes" table).
+  // See: ~/dev/agents/hive/context-consolidation-plan.md
   function findActiveTaskForThread(threadTs, channel) {
-    if (!taskQueue || !threadTs) return null;
+    if (!taskQueue || !threadTs) {
+      log.info(`[slack:rcv] findActiveTaskForThread: no taskQueue or threadTs (threadTs=${threadTs})`);
+      return null;
+    }
     const tasks = taskQueue.getTasksList();
     // Direct match on task.slackThreadTs (existing behavior)
     const directMatch = tasks.find(t =>
       (t.status === 'queued' || t.status === 'dispatched') &&
       t.slackThreadTs === threadTs
     );
-    if (directMatch) return directMatch;
+    if (directMatch) {
+      log.info(`[slack:rcv] findActiveTaskForThread: directMatch task=${directMatch.id} status=${directMatch.status} assignedTo=${directMatch.assignedTo} thread=${threadTs}`);
+      return directMatch;
+    }
 
     // Fallback: check session context for dispatched tasks (e.g. PM-created tasks linked to a thread)
     const threadKey = channel ? `${channel}:${threadTs}` : null;
-    if (!threadKey) return null;
-    return tasks.find(t => {
+    if (!threadKey) {
+      log.info(`[slack:rcv] findActiveTaskForThread: no channel for threadKey lookup`);
+      return null;
+    }
+    const ctxMatch = tasks.find(t => {
       if (t.status !== 'dispatched' || !t.assignedTo) return false;
       const ctx = taskQueue.getSessionContext(t.assignedTo);
       return ctx.slackThread === threadKey;
     }) || null;
+    log.info(`[slack:rcv] findActiveTaskForThread: directMatch=null ctxMatch=${ctxMatch ? ctxMatch.id : 'null'} threadKey=${threadKey}`);
+    return ctxMatch;
   }
 
   // Find a PM with source.type === 'slack' matching the channel
@@ -218,6 +240,9 @@ function createSlackBot(taskQueue, config, router, pmManager) {
       'Decide: Does this need a new task, a follow-up to an existing task, or no action?',
       customInstructions,
       '',
+      // [context-consolidation] References the MCP wire params (stable). Phase 2
+      // keeps this exact wording — the translation happens in ws-handlers.js, not
+      // at the prompt level. Ref: ~/dev/agents/hive/context-consolidation-plan.md
       `If creating a task, you MUST pass slackChannel="${channel}" and slackThreadTs="${threadTs || messages[0]?.ts || ''}" so replies route back to Slack.`,
       `Do NOT set a designation on tasks — leave it empty so any idle session picks it up.`,
     ].join('\n');
@@ -247,8 +272,10 @@ function createSlackBot(taskQueue, config, router, pmManager) {
   }
 
   async function _handleMessage(event, say) {
+    log.info(`[slack:rcv] _handleMessage entry ts=${event.ts} thread_ts=${event.thread_ts || ''} ch=${event.channel} type=${event.type || 'message'}`);
     const text = stripMention(event.text);
     if (!text) {
+      log.info(`[slack:rcv] _handleMessage exit: empty text after stripMention`);
       await say({ text: 'What do you need? Try: `@hive <task>` or `@hive status`', thread_ts: event.ts });
       return;
     }
@@ -313,6 +340,7 @@ function createSlackBot(taskQueue, config, router, pmManager) {
     // ── Follow-up: active task in this thread? Relay or append ──
     if (threadTs) {
       const activeTask = findActiveTaskForThread(threadTs, event.channel);
+      log.info(`[slack:rcv] _handleMessage follow-up check: threadTs=${threadTs} activeTask=${activeTask ? `${activeTask.id}/${activeTask.status}` : 'null'}`);
       if (activeTask) {
         if (activeTask.status === 'dispatched' && activeTask.assignedTo) {
           // Running on a session — relay directly
@@ -384,13 +412,18 @@ function createSlackBot(taskQueue, config, router, pmManager) {
 
     let task;
     try {
+      log.info(`[slack:rcv] _handleMessage createTask path: ts=${event.ts} thread_ts=${threadTs || ''} ch=${event.channel} mode=${mode} target=${targetSession}`);
       task = taskQueue.createTask(fullText, mode, targetSession, designation, {
         source: `slack:${authorName}`,
         createdBy: authorName,
         requireHumanClose: slackPm ? !!slackPm.requireHumanClose : false,
       });
 
-      // Set Slack fields IMMEDIATELY so they're included in any subsequent save
+      // Set Slack fields IMMEDIATELY so they're included in any subsequent save.
+      // [Phase 1 — context-consolidation] Post-creation mutation with old-style
+      // slack fields. Phase 2 will pass { slackContext: { channel, threadTs } } in
+      // createTask meta and drop this mutation block.
+      // See: ~/dev/agents/hive/context-consolidation-plan.md (Step 3: Slack bot refactor)
       task.slackChannel = event.channel;
       task.slackThreadTs = threadTs || event.ts;
       taskQueue._saveState();
@@ -430,15 +463,93 @@ function createSlackBot(taskQueue, config, router, pmManager) {
     }
   }
 
+  // ── Zombie Socket Mode detection ──
+  // Track when we last received ANY event from Slack. Slack Bolt + Socket Mode
+  // can silently zombie — the WebSocket stays open and pings/pongs succeed,
+  // but Slack stops delivering real events. If this value gets stale while the
+  // socket claims to be "connected", the health check below will probe
+  // monitored channels and force-restart the bot.
+  //
+  // This middleware ALSO logs every incoming event at the top of the Bolt
+  // middleware chain (before any handler/filter). Grep for [slack:rcv] to
+  // diagnose missing messages — if an @mention doesn't create a task, the
+  // first question is "did the bot even receive it?". This line answers that.
+  let lastEventAt = Date.now();
+  app.use(async ({ body, next }) => {
+    lastEventAt = Date.now();
+    try {
+      const ev = (body && body.event) || {};
+      const type = ev.type || (body && body.type) || 'unknown';
+      const ch = ev.channel || '';
+      const ts = ev.ts || '';
+      const threadTs = ev.thread_ts || '';
+      const user = ev.user || '';
+      const sub = ev.subtype || '';
+      const textPreview = (ev.text || '').slice(0, 100).replace(/\n/g, ' ');
+      log.info(`[slack:rcv] type=${type} ch=${ch} ts=${ts} thread_ts=${threadTs} user=${user} sub=${sub} text="${textPreview}"`);
+    } catch (err) {
+      log.warn(`[slack:rcv] middleware log failed: ${err.message}`);
+    }
+    await next();
+  });
+
+  // ── @mention dedupe ───────────────────────────────────────────────────
+  // Slack USUALLY fires `app_mention` for @mentions in channels, including
+  // thread replies. But for some threads (observed: long-running threads
+  // with many replies in C0A72B59EDC, ~67 messages in the case that
+  // surfaced this) Slack stops firing `app_mention` and only fires the
+  // `message` event. We can't predict which threads enter that state, so
+  // we route @mentions through `handleMessage` from BOTH event handlers
+  // and dedupe by `event.ts` (unique per Slack message; the same ts is
+  // shared by app_mention + message events for the same underlying
+  // message, and by Slack's retries).
+  //
+  // The dedupe map is bounded by a 60s TTL via lazy GC on every set.
+  // Slack retries happen within seconds, not minutes, so 60s is plenty.
+  const _recentlyHandledMentions = new Map(); // ts → markedAt (ms)
+  const MENTION_DEDUPE_TTL_MS = 60 * 1000;
+  function markMentionHandled(ts) {
+    if (!ts) return;
+    const now = Date.now();
+    _recentlyHandledMentions.set(ts, now);
+    // Lazy GC: drop entries older than the TTL on every set
+    for (const [k, v] of _recentlyHandledMentions) {
+      if (now - v > MENTION_DEDUPE_TTL_MS) _recentlyHandledMentions.delete(k);
+    }
+  }
+  function isMentionAlreadyHandled(ts) {
+    if (!ts) return false;
+    const t = _recentlyHandledMentions.get(ts);
+    if (!t) return false;
+    if (Date.now() - t > MENTION_DEDUPE_TTL_MS) {
+      _recentlyHandledMentions.delete(ts);
+      return false;
+    }
+    return true;
+  }
+
   // ── Channel @mentions ──
-  app.event('app_mention', async ({ event, say }) => handleMessage(event, say));
+  app.event('app_mention', async ({ event, say }) => {
+    if (isMentionAlreadyHandled(event.ts)) {
+      log.info(`[slack:rcv] app_mention ts=${event.ts} deduped (already handled via message event)`);
+      return;
+    }
+    markMentionHandled(event.ts);
+    return handleMessage(event, say);
+  });
+
+  // Subtypes that represent real user-authored messages (vs edits/joins/etc).
+  // `undefined` = plain message. `file_share` = message with attachment.
+  // `thread_broadcast` = thread reply broadcast to channel.
+  const isUserMessage = (event) =>
+    !event.subtype || event.subtype === 'file_share' || event.subtype === 'thread_broadcast';
 
   // ── DMs ──
   app.event('message', async ({ event, say }) => {
     // Only handle direct messages, skip channel messages (handled by app_mention)
     if (event.channel_type !== 'im') return;
     // Skip bot's own messages and message edits/deletes
-    if (event.bot_id || event.subtype) return;
+    if (event.bot_id || !isUserMessage(event)) return;
     await handleMessage(event, say);
   });
 
@@ -446,12 +557,23 @@ function createSlackBot(taskQueue, config, router, pmManager) {
   app.event('message', async ({ event, say }) => {
     // Only channel thread replies (not DMs, not top-level)
     if (event.channel_type === 'im' || !event.thread_ts) return;
-    // Skip bot messages, edits, and @mentions (handled above)
-    if (event.bot_id || event.subtype) return;
+    // Skip bot messages and message edits/deletes
+    if (event.bot_id || !isUserMessage(event)) return;
     const text = (event.text || '').trim();
     if (!text) return;
-    // Skip if this is an @mention of the bot (already handled by app_mention)
-    if (botUserId && text.includes(`<@${botUserId}>`)) return;
+
+    // @mention in a thread reply: Slack USUALLY fires app_mention for these,
+    // but for some long threads it only fires the 'message' event. Route to
+    // handleMessage from here too, deduped by event.ts so we don't process
+    // twice when both events fire. See _recentlyHandledMentions comment block.
+    if (botUserId && text.includes(`<@${botUserId}>`)) {
+      if (isMentionAlreadyHandled(event.ts)) {
+        log.info(`[slack:rcv] thread-reply @mention ts=${event.ts} deduped (already handled via app_mention)`);
+        return;
+      }
+      markMentionHandled(event.ts);
+      return handleMessage(event, say);
+    }
 
     // Only relay if this thread is linked to an active dispatched task
     const activeTask = findActiveTaskForThread(event.thread_ts, event.channel);
@@ -475,8 +597,9 @@ function createSlackBot(taskQueue, config, router, pmManager) {
 
   // ── Channel Monitor: watch configured channels for actionable messages ──
   app.event('message', async ({ event }) => {
-    // Skip edits, joins, etc. (but not bot messages — PM config controls that)
-    if (event.subtype) return;
+    // Skip edits, joins, etc. (but not bot messages — PM config controls that).
+    // Allow file_share + thread_broadcast so messages with attachments/screenshots reach the monitor.
+    if (!isUserMessage(event)) return;
     // Skip DMs (handled by DM handler above)
     if (event.channel_type === 'im') return;
     // Skip @mentions of the bot (handled by app_mention above) — but allow mentions of other users
@@ -506,7 +629,16 @@ function createSlackBot(taskQueue, config, router, pmManager) {
 
     // Resolve author
     const authorName = await userName(event.user);
-    const text = (event.text || '').trim();
+    let text = (event.text || '').trim();
+    // Note any file attachments so the PM session has context for screenshots/uploads
+    if (Array.isArray(event.files) && event.files.length > 0) {
+      const fileList = event.files
+        .map(f => `- ${f.name || f.title || f.id}${f.permalink ? ` (${f.permalink})` : ''}`)
+        .join('\n');
+      text = text
+        ? `${text}\n\n[${event.files.length} file attachment(s)]\n${fileList}`
+        : `[${event.files.length} file attachment(s)]\n${fileList}`;
+    }
     if (!text) return;
 
     const permalink = await getPermalink(channel, messageTs);
@@ -538,6 +670,18 @@ function createSlackBot(taskQueue, config, router, pmManager) {
   });
 
   // ── Reply back to Slack when task completes ──────────
+  //
+  // [Phase 1 — context-consolidation] Reads old task.slackChannel/slackThreadTs
+  // directly. These fields survive task completion because they live on the
+  // task object, not in sessionContext (which gets cleared on complete).
+  //
+  // Phase 2 will read from task._completionContext — a snapshot that
+  // completeTask/failTask will capture from sessionContext.slackThread BEFORE
+  // clearing it. This is the HIGH-RISK change flagged in the plan ("Slack
+  // reply-back on task completion (CRITICAL)") — snapshot must happen before
+  // clearSessionContext or replies will silently drop.
+  //
+  // See: ~/dev/agents/hive/context-consolidation-plan.md (Step 2: completeTask/failTask)
   if (taskQueue) {
     taskQueue.on('task:completed', async (task) => {
       if (!task.slackChannel || !task.slackThreadTs) return;
@@ -578,6 +722,7 @@ function createSlackBot(taskQueue, config, router, pmManager) {
     const smClient = app.receiver.client;
     smClient.on('connected', () => {
       console.log('[slack] Socket Mode connected');
+      lastEventAt = Date.now(); // reset zombie-detector baseline on reconnect
     });
     smClient.on('disconnected', () => {
       console.warn('[slack] Socket Mode disconnected — will auto-reconnect');
@@ -593,19 +738,75 @@ function createSlackBot(taskQueue, config, router, pmManager) {
     });
   }
 
-  // Health check: periodically verify the connection is alive via auth.test
-  const HEALTH_INTERVAL = 5 * 60 * 1000; // 5 min
+  // Cleanly restart the bot and reset the zombie-detector baseline.
+  async function restartBot(reason) {
+    console.warn(`[slack] Restarting bot (reason: ${reason})`);
+    try {
+      await app.stop();
+      await app.start();
+      lastEventAt = Date.now();
+      console.log(`[slack] Bot restarted (reason: ${reason})`);
+    } catch (restartErr) {
+      console.error(`[slack] Restart failed: ${restartErr.message}`);
+    }
+  }
+
+  // Health check: verify the connection is alive AND actually delivering events.
+  //
+  // Two checks run every HEALTH_INTERVAL:
+  //   1. auth.test() — catches Web API outages
+  //   2. Zombie Socket Mode detection — if we haven't received any event for
+  //      ZOMBIE_THRESHOLD_MS, probe the channels that slack-channel-monitor
+  //      PMs are watching via conversations.history. If a real (non-subtype)
+  //      message exists in any of them that's newer than lastEventAt, Socket
+  //      Mode is zombied (connection claims to be up but no events flowing)
+  //      → force-restart the bot.
+  const HEALTH_INTERVAL = 5 * 60 * 1000;      // 5 min
+  const ZOMBIE_THRESHOLD_MS = 15 * 60 * 1000; // 15 min of silence before probing
   setInterval(async () => {
+    // Step 1: Web API liveness
     try {
       await app.client.auth.test();
     } catch (err) {
-      console.error(`[slack] Health check failed: ${err.message} — restarting socket`);
+      return restartBot(`auth.test failed: ${err.message}`);
+    }
+
+    // Step 2: Zombie Socket Mode detection
+    const sinceLastEvent = Date.now() - lastEventAt;
+    if (sinceLastEvent < ZOMBIE_THRESHOLD_MS) return;
+    if (!pmManager) return;
+
+    const monitorPms = pmManager.getAll().filter(pm =>
+      pm.enabled &&
+      pm.source &&
+      pm.source.type === 'slack-channel-monitor' &&
+      Array.isArray(pm.source.channels)
+    );
+    const channels = [...new Set(monitorPms.flatMap(pm => pm.source.channels))];
+    if (channels.length === 0) return;
+
+    const oldestSec = Math.floor(lastEventAt / 1000);
+    for (const channel of channels) {
       try {
-        await app.stop();
-        await app.start();
-        console.log('[slack] Bot restarted after health check failure');
-      } catch (restartErr) {
-        console.error(`[slack] Restart failed: ${restartErr.message}`);
+        const resp = await app.client.conversations.history({
+          channel,
+          limit: 5,
+          oldest: String(oldestSec),
+        });
+        // Look for any real (non-subtype) message newer than lastEventAt.
+        // subtype-only events (joins, edits, etc.) are ignored on purpose —
+        // the bot skips them too, so their absence doesn't prove zombie.
+        const missed = (resp.messages || []).find(m =>
+          !m.subtype && parseFloat(m.ts) * 1000 > lastEventAt
+        );
+        if (missed) {
+          const missedIso = new Date(parseFloat(missed.ts) * 1000).toISOString();
+          const lastIso = new Date(lastEventAt).toISOString();
+          console.warn(`[slack] Zombie Socket Mode detected: message in ${channel} at ${missedIso} but no events received since ${lastIso}`);
+          return restartBot(`zombie socket — missed message in ${channel}`);
+        }
+      } catch (err) {
+        console.warn(`[slack] Zombie probe error for ${channel}: ${err.message}`);
       }
     }
   }, HEALTH_INTERVAL);

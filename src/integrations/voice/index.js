@@ -267,6 +267,9 @@ class VoiceAgent extends EventEmitter {
       'HIVE STATE — you have full access to the fleet:',
       '- Read .hive-state.json in the project root to see all tasks, sessions, and fleet state.',
       '- Key fields in the state file:',
+      // [Phase 1 — context-consolidation] sourcePR mentioned here is a docs-only
+      // reference to the task field. Phase 2 removes task.sourcePR; update this
+      // string then. See: ~/dev/agents/hive/context-consolidation-plan.md (risk #8)
       '  tasks[]: id, text, status (queued/dispatched/completed/failed/cancelled), assignedTo (session number), workState, source, sourcePR, createdAt, completedAt',
       '  autoSessions[]: session numbers in auto-dispatch mode',
       '  designations: { sessionNum: designationName } — named roles like "iOS", "Hive", "Android"',

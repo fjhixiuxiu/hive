@@ -1913,6 +1913,13 @@ function createMessageHandler(deps) {
           createdBy: createdByLabel,
           requireHumanClose: msg.requireHumanClose !== undefined ? !!msg.requireHumanClose : false,
         });
+        // [Phase 1 — context-consolidation] Post-creation mutation mirrors the
+        // bot.js task creation pattern. Phase 2 will pass
+        //   { slackContext: { channel: msg.slackChannel, threadTs: msg.slackThreadTs } }
+        // in the createTask meta above and delete these three lines. The MCP wire
+        // protocol (msg.slackChannel / msg.slackThreadTs) stays stable — the plan
+        // explicitly preserves hive_create_task tool schema for back-compat.
+        // See: ~/dev/agents/hive/context-consolidation-plan.md (Step 4: WS handlers)
         if (msg.slackChannel) task.slackChannel = msg.slackChannel;
         if (msg.slackThreadTs) task.slackThreadTs = msg.slackThreadTs;
         if (msg.slackChannel || msg.slackThreadTs) taskQueue._saveState();
