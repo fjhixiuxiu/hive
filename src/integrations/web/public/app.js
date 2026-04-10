@@ -146,6 +146,7 @@
   let boardPrevStatuses = new Map(); // taskId → previous status for FLIP animation
   let taskSearchQuery = '';
   let taskSourceFilter = new Set(); // empty = show all; non-empty = show only matching sources
+  let taskAssigneeFilter = null; // null = show all; string = filter by user login
   let selectedTaskIds = new Set();
   let tasksSessionNum = null;
   let taskStatusFilter = null; // null = show all, 'waiting', 'working'
@@ -1396,6 +1397,10 @@
       case 'users:list':
         allUsers = msg.users || [];
         if (activeTab === 'more-panel') renderUsers();
+        break;
+      case 'users:basic':
+        // Non-admin users get basic user info (login, name, avatar) for assignee dropdowns
+        if (!allUsers.length) allUsers = msg.users || [];
         break;
       case 'users:updated': {
         const idx = allUsers.findIndex(u => u.login === msg.user.login);
@@ -4282,8 +4287,15 @@
     editingTaskId = taskId;
     const textEl = document.getElementById('task-dialog-text');
     const desigEl = document.getElementById('task-dialog-designation');
+    const assigneeEl = document.getElementById('task-dialog-assignee');
     const titleEl = document.getElementById('task-dialog-title');
     const saveBtn = document.getElementById('task-dialog-save');
+
+    // Populate assignee dropdown with real users
+    assigneeEl.innerHTML = '<option value="">Unassigned</option>';
+    for (const u of [...allUsers].sort((a, b) => (a.name || a.login).localeCompare(b.name || b.login))) {
+      assigneeEl.innerHTML += `<option value="${esc(u.login)}">${esc(u.name || u.login)}</option>`;
+    }
 
     if (taskId) {
       const task = tasks.find(t => t.id === taskId);
@@ -4292,6 +4304,7 @@
       saveBtn.textContent = 'Save';
       textEl.value = task.text;
       desigEl.value = task.designation || '';
+      assigneeEl.value = task.assignee || '';
       taskMode = task.mode || 'auto';
       manualTarget = task.targetSession || null;
       document.getElementById('task-dialog-require-human-close').checked = !!task.requireHumanClose;
@@ -4300,6 +4313,7 @@
       saveBtn.textContent = 'Create';
       textEl.value = loadDraft(TASK_DRAFT_KEY);
       desigEl.value = '';
+      assigneeEl.value = '';
       taskMode = 'auto';
       manualTarget = null;
       document.getElementById('task-dialog-require-human-close').checked = true; // manual default
@@ -4319,11 +4333,12 @@
     const desig = document.getElementById('task-dialog-designation').value || undefined;
 
     const requireHumanClose = document.getElementById('task-dialog-require-human-close').checked;
+    const assignee = document.getElementById('task-dialog-assignee').value || null;
     if (editingTaskId) {
-      ws.send(JSON.stringify({ type: 'task:update', taskId: editingTaskId, updates: { text, mode: taskMode, targetSession: taskMode === 'manual' ? manualTarget : null, designation: desig || null, requireHumanClose } }));
+      ws.send(JSON.stringify({ type: 'task:update', taskId: editingTaskId, updates: { text, mode: taskMode, targetSession: taskMode === 'manual' ? manualTarget : null, designation: desig || null, requireHumanClose, assignee } }));
       showToast('Task updated', text.substring(0, 40), 'success');
     } else {
-      ws.send(JSON.stringify({ type: 'task:create', text, mode: taskMode, targetSession: taskMode === 'manual' ? manualTarget : undefined, designation: desig, requireHumanClose }));
+      ws.send(JSON.stringify({ type: 'task:create', text, mode: taskMode, targetSession: taskMode === 'manual' ? manualTarget : undefined, designation: desig, requireHumanClose, assignee }));
       clearDraft(TASK_DRAFT_KEY);
       showToast('Task created', text.substring(0, 40), 'success');
     }
@@ -4881,16 +4896,25 @@
     const nextBtn = document.getElementById('ts-nav-next');
     const requeueBtn = document.getElementById('ts-nav-requeue');
     const doneBtn = document.getElementById('ts-nav-done');
+    const assigneeBtn = document.getElementById('ts-nav-assignee');
     // Show buttons only when a task session is open
     const show = !!tasksSelectedTaskId && isDispatched;
     prevBtn.style.display = show ? '' : 'none';
     nextBtn.style.display = show ? '' : 'none';
     requeueBtn.style.display = show ? '' : 'none';
     doneBtn.style.display = show ? '' : 'none';
+    assigneeBtn.style.display = show ? '' : 'none';
     prevBtn.disabled = !hasMultiple;
     nextBtn.disabled = !hasMultiple;
     requeueBtn.disabled = !isDispatched;
     doneBtn.disabled = !isDispatched;
+    // Update assignee button label
+    if (cur) {
+      const aUser = cur.assignee ? allUsers.find(u => u.login === cur.assignee) : null;
+      const aLabel = aUser ? aUser.name : cur.assignee;
+      assigneeBtn.textContent = aLabel || 'Assign';
+      assigneeBtn.classList.toggle('ts-assignee-set', !!aLabel);
+    }
   }
 
   function tsNavPrev() {
@@ -4972,11 +4996,71 @@
   document.getElementById('tasks-filter-btn').addEventListener('click', (e) => {
     e.stopPropagation();
     document.getElementById('tasks-filter-dropdown').classList.toggle('open');
+    document.getElementById('tasks-assignee-dropdown').classList.remove('open');
   });
-  // Close dropdown on outside click
+
+  // ── Assignee filter dropdown ───────────────────────────
+  function renderAssigneeFilter() {
+    const btn = document.getElementById('tasks-assignee-btn');
+    const dropdown = document.getElementById('tasks-assignee-dropdown');
+
+    // Collect assignees from tasks
+    const assigneeCounts = new Map();
+    let unassignedCount = 0;
+    for (const t of tasks) {
+      if (t.status === 'cancelled') continue;
+      if (t.assignee) assigneeCounts.set(t.assignee, (assigneeCounts.get(t.assignee) || 0) + 1);
+      else unassignedCount++;
+    }
+
+    // Update button label
+    if (!taskAssigneeFilter) {
+      btn.textContent = 'Assignee';
+      btn.classList.remove('has-filter');
+    } else {
+      const u = allUsers.find(u => u.login === taskAssigneeFilter);
+      btn.textContent = u ? u.name : taskAssigneeFilter;
+      btn.classList.add('has-filter');
+    }
+
+    // Build dropdown options
+    let html = `<label class="tasks-filter-option assignee-filter-opt" data-login="">
+      <span>All</span><span class="filter-count">${tasks.filter(t => t.status !== 'cancelled').length}</span></label>`;
+    html += `<label class="tasks-filter-option assignee-filter-opt" data-login="__unassigned__">
+      <span>Unassigned</span><span class="filter-count">${unassignedCount}</span></label>`;
+    // Show all known users (from allUsers), sorted by name
+    const sorted = [...allUsers].sort((a, b) => (a.name || a.login).localeCompare(b.name || b.login));
+    for (const u of sorted) {
+      const count = assigneeCounts.get(u.login) || 0;
+      const active = taskAssigneeFilter === u.login ? ' active' : '';
+      html += `<label class="tasks-filter-option assignee-filter-opt${active}" data-login="${esc(u.login)}">
+        <span>${esc(u.name || u.login)}</span><span class="filter-count">${count}</span></label>`;
+    }
+    dropdown.innerHTML = html;
+
+    dropdown.querySelectorAll('.assignee-filter-opt').forEach(opt => {
+      opt.style.cursor = 'pointer';
+      opt.addEventListener('click', () => {
+        const login = opt.dataset.login;
+        taskAssigneeFilter = login === '' ? null : login;
+        dropdown.classList.remove('open');
+        renderTasks();
+      });
+    });
+  }
+
+  document.getElementById('tasks-assignee-btn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    renderAssigneeFilter();
+    document.getElementById('tasks-assignee-dropdown').classList.toggle('open');
+    document.getElementById('tasks-filter-dropdown').classList.remove('open');
+  });
+
+  // Close dropdowns on outside click
   document.addEventListener('click', (e) => {
     if (!e.target.closest('.tasks-filter-wrap')) {
       document.getElementById('tasks-filter-dropdown').classList.remove('open');
+      document.getElementById('tasks-assignee-dropdown').classList.remove('open');
     }
   });
 
@@ -4989,10 +5073,16 @@
     for (const id of selectedTaskIds) { if (!taskIds.has(id)) selectedTaskIds.delete(id); }
 
     renderFilterChips();
+    renderAssigneeFilter();
 
     const q = taskSearchQuery.toLowerCase();
-    const matchesSearch = (t) => !q || t.text.toLowerCase().includes(q) || (t.source || '').toLowerCase().includes(q) || (t.designation || '').toLowerCase().includes(q) || String(t.assignedTo || '').includes(q);
+    const matchesSearch = (t) => !q || t.text.toLowerCase().includes(q) || (t.source || '').toLowerCase().includes(q) || (t.designation || '').toLowerCase().includes(q) || String(t.assignedTo || '').includes(q) || (t.assignee || '').toLowerCase().includes(q);
     const matchesFilter = (t) => taskSourceFilter.size === 0 || taskSourceFilter.has(t.source);
+    const matchesAssignee = (t) => {
+      if (!taskAssigneeFilter) return true;
+      if (taskAssigneeFilter === '__unassigned__') return !t.assignee;
+      return t.assignee === taskAssigneeFilter;
+    };
     const matchesStatus = (t) => {
       if (!taskStatusFilter) return true;
       const s = fleetData.find(x => x.num === t.assignedTo);
@@ -5000,11 +5090,11 @@
       if (taskStatusFilter === 'waiting') return !s || s.state !== 'working';
       return true;
     };
-    const allDispatched = tasks.filter(t => t.status === 'dispatched' && matchesSearch(t) && matchesFilter(t));
+    const allDispatched = tasks.filter(t => t.status === 'dispatched' && matchesSearch(t) && matchesFilter(t) && matchesAssignee(t));
     const dispatched = allDispatched.filter(matchesStatus);
-    const queued = tasks.filter(t => t.status === 'queued' && matchesSearch(t) && matchesFilter(t));
-    const snoozed = tasks.filter(t => t.status === 'snoozed' && matchesSearch(t) && matchesFilter(t));
-    const completed = tasks.filter(t => (t.status === 'completed' || t.status === 'failed') && matchesSearch(t) && matchesFilter(t));
+    const queued = tasks.filter(t => t.status === 'queued' && matchesSearch(t) && matchesFilter(t) && matchesAssignee(t));
+    const snoozed = tasks.filter(t => t.status === 'snoozed' && matchesSearch(t) && matchesFilter(t) && matchesAssignee(t));
+    const completed = tasks.filter(t => (t.status === 'completed' || t.status === 'failed') && matchesSearch(t) && matchesFilter(t) && matchesAssignee(t));
 
     // Update dropdown option counts
     if (activeTaskTab === 'inprogress') {
@@ -5120,6 +5210,14 @@
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         openAssignDialog(btn.dataset.id);
+      });
+    });
+
+    // Wire assignee badge buttons (all tabs — clickable user assignment)
+    tasksScroll.querySelectorAll('.task-assignee-badge').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        promptAssignee(btn.dataset.taskId, btn);
       });
     });
 
@@ -5510,6 +5608,11 @@
     if (!document.getElementById(`board-cards-${states[0].id}`)) renderBoardColumns();
     const q = taskSearchQuery.toLowerCase();
     const matchesSearch = (t) => !q || t.text.toLowerCase().includes(q) || (t.source || '').toLowerCase().includes(q) || (t.designation || '').toLowerCase().includes(q) || String(t.assignedTo || '').includes(q) || (t.assignee || '').toLowerCase().includes(q);
+    const matchesAssignee = (t) => {
+      if (!taskAssigneeFilter) return true;
+      if (taskAssigneeFilter === '__unassigned__') return !t.assignee;
+      return t.assignee === taskAssigneeFilter;
+    };
 
     // Filter tasks by selected PMs (empty = all)
     let pmFilteredTasks = tasks;
@@ -5526,7 +5629,7 @@
     const grouped = new Map();
     for (const wState of states) grouped.set(wState.id, []);
     // Include all non-cancelled tasks
-    const visible = pmFilteredTasks.filter(t => t.status !== 'cancelled' && matchesSearch(t));
+    const visible = pmFilteredTasks.filter(t => t.status !== 'cancelled' && matchesSearch(t) && matchesAssignee(t));
     for (const t of visible) {
       const col = effectiveWorkState(t);
       if (col && grouped.has(col)) grouped.get(col).push(t);
@@ -5627,8 +5730,10 @@
       const sourceBadge = sourceLabel ? `<span class="task-source-badge">${esc(sourceLabel)}</span>` : '';
       const sessionBadge = t.assignedTo ? `<span class="task-session-badge">S:${t.assignedTo}</span>` : '';
       const statusDot = `<span class="board-card-status s-${t.status}"></span>`;
-      const initials = t.assignee ? t.assignee.slice(0, 2).toUpperCase() : '';
-      const assigneeBadge = initials ? `<span class="board-card-assignee">${esc(initials)}</span>` : '';
+      const assigneeUserObj = t.assignee ? allUsers.find(u => u.login === t.assignee) : null;
+      const assigneeName = assigneeUserObj ? assigneeUserObj.name : t.assignee;
+      const initials = assigneeName ? assigneeName.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() : '';
+      const assigneeBadge = initials ? `<span class="board-card-assignee" title="${esc(assigneeName)}">${esc(initials)}</span>` : '';
       const timeStr = t.status === 'dispatched' ? timeAgo(t.dispatchedAt || t.createdAt) : timeAgo(t.createdAt);
 
       el.innerHTML = `
@@ -5701,40 +5806,77 @@
     const timeHtml = `<span>${timeAgo(task.createdAt)}</span>`;
     document.getElementById('task-detail-meta').innerHTML = [desigHtml, sourceHtml, sessionHtml, timeHtml].filter(Boolean).join('');
 
-    // Toolbar: actions
+    // Toolbar: primary action + overflow menu for secondary actions
     let actionsHtml = '';
+    let overflowItems = [];
     if (task.status === 'dispatched') {
-      actionsHtml = `
-        <button class="task-detail-action primary" data-action="done">Done</button>
-        <button class="task-detail-action" data-action="requeue">Requeue</button>
-        <button class="task-detail-action" data-action="snooze">Snooze</button>
-        <button class="task-detail-action" data-action="rename">Rename</button>
-        <button class="task-detail-action danger" data-action="cancel">Cancel</button>
-      `;
+      actionsHtml = `<button class="task-detail-action primary" data-action="done">Done</button>`;
+      overflowItems = [
+        { action: 'requeue', label: 'Requeue' },
+        { action: 'snooze', label: 'Snooze' },
+        { action: 'rename', label: 'Rename' },
+        { action: 'cancel', label: 'Cancel', danger: true },
+      ];
     } else if (task.status === 'queued') {
-      actionsHtml = `
-        <button class="task-detail-action primary" data-action="assign">Assign</button>
-        <button class="task-detail-action" data-action="edit">Edit</button>
-        <button class="task-detail-action" data-action="snooze">Snooze</button>
-        <button class="task-detail-action" data-action="rename">Rename</button>
-        <button class="task-detail-action danger" data-action="cancel">Cancel</button>
-      `;
+      actionsHtml = `<button class="task-detail-action primary" data-action="assign">Assign</button>`;
+      overflowItems = [
+        { action: 'edit', label: 'Edit' },
+        { action: 'snooze', label: 'Snooze' },
+        { action: 'rename', label: 'Rename' },
+        { action: 'cancel', label: 'Cancel', danger: true },
+      ];
     } else if (task.status === 'snoozed') {
       const wakeTime = task.snoozedUntil ? new Date(task.snoozedUntil).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
       actionsHtml = `
         ${wakeTime ? `<span style="font-size:11px;color:var(--yellow)">Wakes ${wakeTime}</span>` : ''}
-        <button class="task-detail-action primary" data-action="wake">Wake Now</button>
-        <button class="task-detail-action" data-action="rename">Rename</button>
-        <button class="task-detail-action danger" data-action="cancel">Cancel</button>
-      `;
+        <button class="task-detail-action primary" data-action="wake">Wake Now</button>`;
+      overflowItems = [
+        { action: 'rename', label: 'Rename' },
+        { action: 'cancel', label: 'Cancel', danger: true },
+      ];
     } else {
       actionsHtml = task.assignedTo ? `<button class="task-detail-action" data-action="resume">Resume</button>` : '';
     }
+    // Add overflow menu button if there are secondary actions
+    if (overflowItems.length) {
+      const menuItems = overflowItems.map(i =>
+        `<div class="td-overflow-item${i.danger ? ' danger' : ''}" data-action="${i.action}">${i.label}</div>`
+      ).join('');
+      actionsHtml += `<div class="td-overflow-wrap">
+        <button class="task-detail-action td-overflow-btn" title="More actions">&hellip;</button>
+        <div class="td-overflow-menu">${menuItems}</div>
+      </div>`;
+    }
     const actionsEl = document.getElementById('task-detail-actions');
     actionsEl.innerHTML = actionsHtml;
-    actionsEl.querySelectorAll('.task-detail-action').forEach(btn => {
+    // Wire primary action buttons
+    actionsEl.querySelectorAll('.task-detail-action[data-action]').forEach(btn => {
       btn.addEventListener('click', () => handleTaskDetailAction(btn.dataset.action, task));
     });
+    // Wire overflow menu toggle
+    const overflowBtn = actionsEl.querySelector('.td-overflow-btn');
+    const overflowMenu = actionsEl.querySelector('.td-overflow-menu');
+    if (overflowBtn && overflowMenu) {
+      overflowBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        overflowMenu.classList.toggle('open');
+      });
+      overflowMenu.querySelectorAll('.td-overflow-item').forEach(item => {
+        item.addEventListener('click', (e) => {
+          e.stopPropagation();
+          overflowMenu.classList.remove('open');
+          handleTaskDetailAction(item.dataset.action, task);
+        });
+      });
+      // Close on outside click
+      const closeOverflow = (e) => {
+        if (!overflowMenu.contains(e.target) && e.target !== overflowBtn) {
+          overflowMenu.classList.remove('open');
+          document.removeEventListener('click', closeOverflow);
+        }
+      };
+      document.addEventListener('click', closeOverflow);
+    }
 
     // Context actions button (right side, after Open Session)
     const ctxBtn = document.getElementById('task-detail-ctx-actions');
@@ -5755,9 +5897,12 @@
     wsBtn.style.color = wsState ? wsState.color : 'var(--dim)';
     wsBtn.onclick = (e) => { e.stopPropagation(); showWorkStateDropdown(task.id, wsBtn); };
 
-    // Assignee button
+    // Assignee button — show user name or "Assign" placeholder
     const assignBtn = document.getElementById('task-detail-assignee');
-    assignBtn.textContent = task.assignee || '';
+    const assigneeUser = task.assignee ? allUsers.find(u => u.login === task.assignee) : null;
+    const assigneeLabel = assigneeUser ? assigneeUser.name : task.assignee;
+    assignBtn.textContent = assigneeLabel || 'Assign';
+    assignBtn.classList.toggle('unassigned', !assigneeLabel);
     assignBtn.onclick = (e) => { e.stopPropagation(); promptAssignee(task.id, assignBtn); };
 
     // Toolbar: checklist progress
@@ -5887,30 +6032,63 @@
   function promptAssignee(taskId, anchorBtn) {
     const task = tasks.find(t => t.id === taskId);
     const current = task ? (task.assignee || '') : '';
-    // Simple inline input
-    const existing = document.querySelector('.assignee-input-inline');
+    // Close any existing dropdown
+    const existing = document.querySelector('.assignee-dropdown-inline');
     if (existing) existing.remove();
-    const input = document.createElement('input');
-    input.className = 'assignee-input-inline';
-    input.type = 'text';
-    input.value = current;
-    input.placeholder = 'Initials...';
-    input.style.cssText = 'width:60px;padding:3px 6px;font-size:var(--fs-sm);background:var(--bg);border:1px solid var(--bg3);color:var(--fg);border-radius:6px;font-weight:700;text-transform:uppercase;';
-    const commit = () => {
-      const val = input.value.trim().slice(0, 10);
+
+    const dropdown = document.createElement('div');
+    dropdown.className = 'assignee-dropdown-inline';
+    dropdown.style.cssText = 'position:absolute;z-index:100;background:var(--bg2);border:1px solid var(--bg3);border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.3);min-width:160px;max-height:240px;overflow-y:auto;padding:4px 0;';
+
+    const commitAssignee = (login) => {
       if (ws && ws.readyState === 1) {
-        ws.send(JSON.stringify({ type: 'task:update', taskId, updates: { assignee: val || null } }));
+        ws.send(JSON.stringify({ type: 'task:update', taskId, updates: { assignee: login || null } }));
       }
-      if (task) task.assignee = val || null;
-      input.replaceWith(anchorBtn);
-      openTaskDetail(taskId);
-      renderTaskBoard();
+      if (task) task.assignee = login || null;
+      dropdown.remove();
+      renderTasks();
+      updateTsNavButtons();
     };
-    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') { input.replaceWith(anchorBtn); } });
-    input.addEventListener('blur', commit);
-    anchorBtn.replaceWith(input);
-    input.focus();
-    input.select();
+
+    // Unassign option
+    let html = `<div class="assignee-option${!current ? ' active' : ''}" data-login="" style="padding:6px 12px;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:var(--fs-sm);color:var(--dim);">
+      <span style="width:22px;height:22px;border-radius:50%;background:var(--bg3);display:inline-flex;align-items:center;justify-content:center;font-size:10px;">—</span>
+      <span>Unassigned</span></div>`;
+
+    // User options
+    for (const u of allUsers) {
+      const isActive = current === u.login;
+      const avatarHtml = u.avatar
+        ? `<img src="${esc(u.avatar)}" style="width:22px;height:22px;border-radius:50%;" />`
+        : `<span style="width:22px;height:22px;border-radius:50%;background:var(--purple);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;">${esc((u.name || u.login).slice(0, 2).toUpperCase())}</span>`;
+      html += `<div class="assignee-option${isActive ? ' active' : ''}" data-login="${esc(u.login)}" style="padding:6px 12px;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:var(--fs-sm);${isActive ? 'background:var(--bg3);' : ''}">
+        ${avatarHtml}
+        <span style="color:var(--fg);">${esc(u.name || u.login)}</span></div>`;
+    }
+    dropdown.innerHTML = html;
+
+    // Position relative to anchor
+    const rect = anchorBtn.getBoundingClientRect();
+    dropdown.style.position = 'fixed';
+    dropdown.style.top = (rect.bottom + 4) + 'px';
+    dropdown.style.left = rect.left + 'px';
+    document.body.appendChild(dropdown);
+
+    // Wire click handlers
+    dropdown.querySelectorAll('.assignee-option').forEach(opt => {
+      opt.addEventListener('mouseenter', () => { opt.style.background = 'var(--bg3)'; });
+      opt.addEventListener('mouseleave', () => { opt.style.background = opt.classList.contains('active') ? 'var(--bg3)' : ''; });
+      opt.addEventListener('click', (e) => {
+        e.stopPropagation();
+        commitAssignee(opt.dataset.login);
+      });
+    });
+
+    // Close on outside click
+    setTimeout(() => {
+      const close = (e) => { if (!dropdown.contains(e.target) && e.target !== anchorBtn) { dropdown.remove(); document.removeEventListener('click', close); } };
+      document.addEventListener('click', close);
+    }, 0);
   }
 
   // ── Work States config modal ─────────────────────
@@ -6331,6 +6509,11 @@
   document.getElementById('ts-nav-next').addEventListener('click', tsNavNext);
   document.getElementById('ts-nav-requeue').addEventListener('click', tsNavRequeue);
   document.getElementById('ts-nav-done').addEventListener('click', tsNavDone);
+  document.getElementById('ts-nav-assignee').addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (!tasksSelectedTaskId) return;
+    promptAssignee(tasksSelectedTaskId, document.getElementById('ts-nav-assignee'));
+  });
 
   function taskHexSvg(t) {
     // Convention: purple=default, animated=working, green=selected (via CSS)
@@ -6380,6 +6563,11 @@
       }
     }
 
+    // Assignee button for action rows
+    const cardAssigneeUser = t.assignee ? allUsers.find(u => u.login === t.assignee) : null;
+    const cardAssigneeName = cardAssigneeUser ? cardAssigneeUser.name : t.assignee;
+    const assigneeBtnHtml = `<button class="task-assignee-badge ${cardAssigneeName ? 'has-user' : 'no-user'}" data-task-id="${t.id}" title="${esc(cardAssigneeName || 'Assign user')}">${esc(cardAssigneeName ? cardAssigneeName.split(' ')[0] : 'Assign')}</button>`;
+
     // Build actions (hidden by default, shown on hover/select)
     let actions = '';
     if (tabType === 'inprogress') {
@@ -6389,6 +6577,7 @@
         hasPerm('cancel') ? `<button class="task-reject-btn" data-id="${t.id}" style="background:var(--red);color:#fff">Reject</button>` : '',
       ].filter(Boolean).join('') : '';
       const btns = [
+        assigneeBtnHtml,
         hasPerm('dispatch') ? `<button class="task-snooze-btn" data-id="${t.id}">Snooze</button>` : '',
         hasPerm('dispatch') ? `<button class="task-requeue-btn" data-id="${t.id}">Requeue</button>` : '',
         hasPerm('cancel') ? `<button class="task-done-btn" data-id="${t.id}">Done</button>` : '',
@@ -6398,6 +6587,7 @@
     } else if (tabType === 'queued') {
       const btns = [
         hasPerm('create-tasks') ? `<button class="task-edit-btn" data-id="${t.id}">Edit</button>` : '',
+        assigneeBtnHtml,
         hasPerm('dispatch') ? `<button class="task-assign-btn" data-id="${t.id}">Assign</button>` : '',
         hasPerm('dispatch') ? `<button class="task-snooze-btn" data-id="${t.id}">Snooze</button>` : '',
         hasPerm('cancel') ? `<button class="task-cancel" data-id="${t.id}">Cancel</button>` : '',
@@ -6407,6 +6597,7 @@
       const wakeTime = t.snoozedUntil ? new Date(t.snoozedUntil).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
       const wakeDate = t.snoozedUntil && (t.snoozedUntil - Date.now() > 12 * 3600000) ? new Date(t.snoozedUntil).toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' : '';
       const btns = [
+        assigneeBtnHtml,
         hasPerm('dispatch') ? `<button class="task-wake-btn" data-id="${t.id}">Wake</button>` : '',
         hasPerm('cancel') ? `<button class="task-cancel" data-id="${t.id}">Cancel</button>` : '',
       ].filter(Boolean).join('');
@@ -6414,7 +6605,7 @@
     } else {
       // completed
       const resumeBtn = t.assignedTo ? `<button class="task-resume-btn" data-id="${t.id}" data-session="${t.assignedTo}">Resume</button>` : '';
-      if (resumeBtn) actions = `<div class="task-actions">${resumeBtn}</div>`;
+      actions = `<div class="task-actions">${assigneeBtnHtml}${resumeBtn}</div>`;
     }
 
     // Time info

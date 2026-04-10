@@ -458,6 +458,7 @@ function createMessageHandler(deps) {
         const task = taskQueue.createTask(msg.text, msg.mode, msg.targetSession, msg.designation, {
           createdBy: user?.login || null,
           requireHumanClose,
+          assignee: msg.assignee || null,
         });
         ws.send(JSON.stringify({ type: 'task:created', task }));
         break;
