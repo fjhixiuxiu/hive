@@ -162,6 +162,11 @@ class TaskQueue extends EventEmitter {
       completedAt: null,
       result: null,
       source: (meta && meta.source) || null,   // e.g. 'ci-fail', 'review-changes'
+      // [Phase 1 — context-consolidation] sourcePR kept for back-compat.
+      // Phase 2 will remove this field; PR is already tracked live via fleet
+      // (s.pr) and in sessionContext.pr. Plan marks this LOW RISK but requires
+      // auditing consumers (see plan risk #6 "task.sourcePR in tests").
+      // See: ~/dev/agents/hive/context-consolidation-plan.md (Step 6)
       sourcePR: (meta && meta.pr) || null,      // PR number that triggered this
       sourceSession: (meta && meta.session) || null, // session that triggered this
       createdBy: (meta && meta.createdBy) || null,   // GitHub login of creator
@@ -209,6 +214,8 @@ class TaskQueue extends EventEmitter {
       completedAt: null,
       result: null,
       source: (meta && meta.source) || 'attached',
+      // [Phase 1 — context-consolidation] see createTask() for notes. Same
+      // removal target in Phase 2. ~/dev/agents/hive/context-consolidation-plan.md
       sourcePR: (meta && meta.pr) || null,
       sourceSession: sessionNum,
       actionContext: (meta && meta.actionContext) || null,
@@ -291,6 +298,7 @@ class TaskQueue extends EventEmitter {
       log.info(`[taskmap] S:${task.assignedTo} ✕ task ${task.id} (requeue)`);
       this.activeTaskBySession.delete(task.assignedTo);
       this.dispatchLock.delete(task.assignedTo);
+      this.clearSessionContext(task.assignedTo);
     }
     const prevSession = task.assignedTo;
     task.status = 'queued';
@@ -317,6 +325,7 @@ class TaskQueue extends EventEmitter {
     if (task.status === 'dispatched' && task.assignedTo) {
       log.info(`[taskmap] S:${task.assignedTo} ✕ task ${task.id} (cancel)`);
       this.activeTaskBySession.delete(task.assignedTo);
+      this.clearSessionContext(task.assignedTo);
     }
     task.status = 'cancelled';
     task.workStateManual = false;
@@ -328,7 +337,7 @@ class TaskQueue extends EventEmitter {
   snoozeTask(taskId, durationMs) {
     const task = this.tasks.get(taskId);
     if (!task) return null;
-    // If dispatched, requeue first
+    // If dispatched, requeue first (requeue already clears session context)
     if (task.status === 'dispatched') {
       this.requeueTask(taskId);
     }
@@ -456,6 +465,14 @@ class TaskQueue extends EventEmitter {
       this.activeTaskBySession.delete(sessionNum);
       this.dispatchLock.delete(sessionNum);
       this.lastCompletedAt.set(sessionNum, Date.now());
+      // [Phase 2 — context-consolidation] TODO: snapshot sessionContext.slackThread
+      // into task._completionContext HERE, before clearSessionContext wipes it.
+      // Phase 1 sidesteps this by keeping task.slackChannel/slackThreadTs alive on
+      // the task object itself (bot.js reply-back reads them directly). Once
+      // Phase 2 removes those fields, this snapshot becomes CRITICAL for Slack
+      // reply-back to work after completion. See plan risk #1 "Slack reply-back
+      // on task completion (CRITICAL)".
+      // Ref: ~/dev/agents/hive/context-consolidation-plan.md
       // Clear session context so stale PR/branch/plan data doesn't leak into next task
       this.clearSessionContext(sessionNum);
     }
@@ -505,6 +522,9 @@ class TaskQueue extends EventEmitter {
       this.activeTaskBySession.delete(task.assignedTo);
       this.dispatchLock.delete(task.assignedTo);
       this.lastCompletedAt.set(task.assignedTo, Date.now());
+      // [Phase 2 — context-consolidation] TODO: same snapshot pattern as
+      // completeTask — capture sessionContext.slackThread into task._completionContext
+      // before clearing. See completeTask for details and plan ref.
       this.clearSessionContext(task.assignedTo);
     }
 
@@ -553,7 +573,19 @@ class TaskQueue extends EventEmitter {
     this.activeTaskBySession.set(sessionNum, task.id);
     this.lastDispatchedAt.set(sessionNum, Date.now());
 
-    // Auto-set slack thread in session context if task has one
+    // Auto-set slack thread in session context if task has one.
+    //
+    // [Phase 1 — context-consolidation] Bridges old task.slackChannel/slackThreadTs
+    // → new sessionContext.slackThread so thread routing via sessionContext works.
+    // Old fields are still the primary write path (bot.js sets them on task
+    // creation); this dispatch-time sync is the new path being bootstrapped.
+    //
+    // Phase 2 will:
+    //   1. Read task._slackContext (staging field set by createTask meta)
+    //   2. setSessionContext with the same shape
+    //   3. delete task._slackContext (it's been propagated, no longer needed)
+    //
+    // See: ~/dev/agents/hive/context-consolidation-plan.md (Step 2: _dispatchTask)
     if (task.slackChannel && task.slackThreadTs) {
       this.setSessionContext(sessionNum, {
         slackThread: `${task.slackChannel}:${task.slackThreadTs}`,

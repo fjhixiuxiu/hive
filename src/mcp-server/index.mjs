@@ -284,6 +284,11 @@ if (!enabledTools || enabledTools.includes('hive_create_task')) {
     {
       text: z.string().describe('Task description with full context'),
       designation: z.string().optional().describe('Routing designation — leave empty/omit to let any idle session pick it up. Only set if you know the exact designation name.'),
+      // [context-consolidation] slackChannel / slackThreadTs wire params are
+      // STABLE — the plan explicitly preserves this MCP schema across phases.
+      // Phase 2 will convert these params to meta.slackContext inside the
+      // ws-handlers.js mcp:create_task handler, NOT here. Do not rename.
+      // See: ~/dev/agents/hive/context-consolidation-plan.md ("What does NOT change")
       slackChannel: z.string().optional().describe('Slack channel ID for thread routing'),
       slackThreadTs: z.string().optional().describe('Slack thread timestamp for follow-up routing'),
       requireHumanClose: z.boolean().optional().describe('Require human approval to complete'),
