@@ -986,6 +986,7 @@
       case 'config':
         linkTemplates = msg.links || {};
         if (msg.spawnBaseDir) spawnBaseDir = msg.spawnBaseDir;
+        if (msg.title) document.title = msg.title;
         if (msg.hiveName) {
           document.getElementById('sidebar-logo').innerHTML =
             '<img src="/icon-192.png" alt="hive" style="width:28px;height:28px;vertical-align:middle;margin-bottom:2px"> hive<br><span style="font-size:11px;color:var(--green);font-weight:400">' + esc(msg.hiveName) + '</span>';
