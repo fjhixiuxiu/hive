@@ -266,6 +266,10 @@
           <button class="tasks-filter-btn" id="tasks-filter-btn">Sources</button>
           <div class="tasks-filter-dropdown" id="tasks-filter-dropdown"></div>
         </div>
+        <div class="tasks-filter-wrap" id="tasks-assignee-wrap">
+          <button class="tasks-filter-btn" id="tasks-assignee-btn">Assignee</button>
+          <div class="tasks-filter-dropdown" id="tasks-assignee-dropdown"></div>
+        </div>
         <div class="board-pm-wrap" id="board-pm-wrap" style="display:none">
           <button class="board-pm-btn" id="board-pm-btn">All PMs</button>
           <div class="board-pm-dropdown" id="board-pm-dropdown"></div>
@@ -326,6 +330,7 @@
             <button class="ts-nav-btn" id="ts-nav-next" style="display:none">Next &rarr;</button>
             <button class="ts-nav-btn ts-requeue-btn" id="ts-nav-requeue" style="display:none">Back to Queue</button>
             <button class="ts-nav-btn ts-done-btn" id="ts-nav-done" style="display:none">Mark Done</button>
+            <button class="ts-nav-btn ts-assignee-btn" id="ts-nav-assignee" style="display:none">Assign</button>
             <div class="font-size-controls" id="ts-font-controls">
               <button class="font-size-btn" data-action="font-down" data-tooltip="Decrease font size">A&minus;</button>
               <span class="font-size-label" id="ts-font-label">13</span>
@@ -1311,6 +1316,10 @@
       <textarea class="task-dialog-input" id="task-dialog-text" rows="6" placeholder="Enter task description..." autocomplete="off" style="min-height:8em;max-height:50vh;overflow-y:auto;resize:none"></textarea>
     </div>
     <div class="task-dialog-field">
+      <label class="task-dialog-label">Assignee</label>
+      <select class="task-dialog-select" id="task-dialog-assignee"><option value="">Unassigned</option></select>
+    </div>
+    <div class="task-dialog-field">
       <label class="task-dialog-label">Designation</label>
       <select class="task-dialog-select" id="task-dialog-designation"><option value="">Any</option></select>
     </div>
@@ -1519,12 +1528,12 @@
     <button class="td-assignee-btn" id="task-detail-assignee" data-tooltip="Set assignee"></button>
     <span class="td-spacer"></span>
     <span id="task-detail-checklist" class="td-checklist"></span>
-    <div class="font-size-controls" id="td-font-controls">
+    <button class="task-detail-action" id="task-detail-open-session">Open Session</button>
+    <div class="font-size-controls td-font-compact" id="td-font-controls">
       <button class="font-size-btn" data-action="font-down" data-tooltip="Decrease font size">A&minus;</button>
       <span class="font-size-label" id="td-font-label">13</span>
       <button class="font-size-btn" data-action="font-up" data-tooltip="Increase font size">A+</button>
     </div>
-    <button class="task-detail-action" id="task-detail-open-session">Open Session</button>
     <button class="task-detail-action td-actions-btn" id="task-detail-ctx-actions" style="display:none"></button>
   </div>
   <div class="pane-tabs" id="td-pane-tabs" style="display:none"></div>

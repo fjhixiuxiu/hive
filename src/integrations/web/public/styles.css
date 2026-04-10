@@ -889,6 +889,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .tasks-filter-option:hover { background: var(--bg3); }
 .tasks-filter-option input { accent-color: var(--purple); width: 14px; height: 14px; cursor: pointer; }
 .tasks-filter-option .filter-count { color: var(--dim); font-size: var(--fs-sm); margin-left: auto; }
+.tasks-filter-option.active { background: var(--bg3); color: var(--purple); font-weight: 700; }
 .tasks-scroll { flex: 1; overflow-y: auto; padding: 8px 10px; -webkit-overflow-scrolling: touch; }
 .task-section-label {
   font-size: var(--fs-sm); font-weight: 700; text-transform: uppercase; letter-spacing: 1px;
@@ -921,6 +922,13 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .task-text { font-size: var(--fs-md); font-weight: 500; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.4; }
 .task-info { display: flex; gap: 8px; align-items: center; margin-top: 3px; font-size: var(--fs-sm); color: var(--dim); }
 .task-source-badge { font-size: var(--fs-sm); font-weight: 700; color: var(--orange); background: rgba(255,184,108,0.15); padding: 1px 6px; border-radius: 3px; }
+.task-assignee-badge {
+  font-size: var(--fs-sm); font-weight: 600; padding: 2px 8px; border-radius: 10px;
+  cursor: pointer; border: 1px solid transparent; line-height: 1.3;
+}
+.task-assignee-badge.has-user { color: var(--cyan); background: rgba(139,233,253,0.12); border-color: rgba(139,233,253,0.2); }
+.task-assignee-badge.no-user { color: var(--dim); background: var(--bg3); font-weight: 400; font-size: 11px; }
+.task-assignee-badge:hover { filter: brightness(1.3); }
 .task-wait { font-weight: 700; font-size: var(--fs-sm); }
 .task-time { margin-left: auto; white-space: nowrap; }
 .task-actions {
@@ -1032,6 +1040,8 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .ts-nav-btn:disabled { opacity: 0.3; cursor: default; }
 .ts-nav-btn.ts-requeue-btn { color: var(--orange); }
 .ts-nav-btn.ts-done-btn { color: var(--green); }
+.ts-nav-btn.ts-assignee-btn { color: var(--dim); border: 1px dashed var(--bg3); border-radius: 12px; padding: 4px 12px; }
+.ts-nav-btn.ts-assignee-btn.ts-assignee-set { color: var(--cyan); border: 1px solid rgba(139,233,253,0.3); background: rgba(139,233,253,0.08); }
 .tasks-session-tabs {
   display: flex; gap: 0; background: var(--bg2); border-bottom: 1px solid var(--bg3); flex-shrink: 0;
 }
@@ -1828,11 +1838,11 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 /* Assignee button in toolbar */
 .td-assignee-btn {
   background: var(--bg3); border: none; color: var(--fg); font-size: var(--fs-sm);
-  font-weight: 700; padding: 4px 10px; border-radius: 12px; cursor: pointer;
-  min-width: 28px; text-transform: uppercase;
+  font-weight: 700; padding: 5px 12px; border-radius: 12px; cursor: pointer;
+  min-width: 28px; white-space: nowrap;
 }
 .td-assignee-btn:hover { filter: brightness(1.2); }
-.td-assignee-btn:empty::after { content: '+👤'; font-weight: 400; opacity: 0.5; }
+.td-assignee-btn.unassigned { color: var(--dim); font-weight: 400; }
 /* Work States config button */
 /* Board PM multi-select */
 .board-pm-wrap { position: relative; }
@@ -2048,6 +2058,23 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .task-detail-action.danger { color: var(--red); }
 .td-action-sep { width: 1px; height: 20px; background: var(--bg3); flex-shrink: 0; }
 .td-actions-btn { background: var(--purple-bg) !important; border: 1px solid var(--purple-border); color: var(--purple) !important; }
+/* Overflow "..." menu for secondary task actions */
+.td-overflow-wrap { position: relative; display: inline-flex; }
+.td-overflow-btn { min-width: 32px; padding: 5px 8px !important; font-size: 16px !important; letter-spacing: 2px; }
+.td-overflow-menu {
+  display: none; position: absolute; top: 100%; left: 0; margin-top: 4px; z-index: 60;
+  background: var(--bg2); border: 1px solid var(--bg3); border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0,0,0,.4); min-width: 140px; padding: 4px 0;
+}
+.td-overflow-menu.open { display: block; }
+.td-overflow-item {
+  padding: 8px 14px; font-size: var(--fs-sm); font-weight: 600; cursor: pointer; color: var(--fg);
+}
+.td-overflow-item:hover { background: var(--bg3); }
+.td-overflow-item.danger { color: var(--red); }
+/* Hide font controls in task detail on narrow screens */
+.td-font-compact { border-left: none; }
+@media (max-width: 900px) { .td-font-compact { display: none; } }
 #task-detail-terminal {
   flex: 1; min-height: 0; overflow: hidden;
 }

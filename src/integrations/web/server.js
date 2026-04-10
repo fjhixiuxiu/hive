@@ -235,9 +235,13 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       ws.send(JSON.stringify({ type: 'checklistTemplates:list', templates: taskQueue.getChecklistTemplates() }));
       ws.send(JSON.stringify({ type: 'spawnedAgents:list', agents: taskQueue.getSpawnedAgentsList() }));
       ws.send(JSON.stringify({ type: 'context:all', contexts: taskQueue.getAllSessionContexts() }));
-      // Send users list to admins (legacy token mode = no user, send to all)
+      // Send users list to all authenticated users (needed for assignee dropdown)
+      // Full details to admins, login+name+avatar only to others
       if (!user || (user.login && taskQueue.hasPermission(user.login, 'admin'))) {
         ws.send(JSON.stringify({ type: 'users:list', users: taskQueue.getUsersList() }));
+      } else {
+        const basicUsers = taskQueue.getUsersList().map(u => ({ login: u.login, name: u.name, avatar: u.avatar }));
+        ws.send(JSON.stringify({ type: 'users:basic', users: basicUsers }));
       }
     }
     if (pmManager) {
@@ -714,13 +718,16 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     taskQueue.on('task:comment:deleted', (data) => broadcast({ type: 'task:comment:deleted', taskId: data.taskId, commentId: data.commentId }));
     taskQueue.on('checklistTemplates:changed', (templates) => broadcast({ type: 'checklistTemplates:list', templates }));
     taskQueue.on('users:changed', (users) => {
-      // Send full users list to admins (legacy token mode = no user, send to all)
+      const basicUsers = users.map(u => ({ login: u.login, name: u.name, avatar: u.avatar }));
       for (const client of clients) {
+        if (client.readyState !== 1) continue;
         const clientUser = wsUser.get(client);
         const isLegacy = !clientUser;
         const isAdmin = clientUser && clientUser.login && taskQueue.hasPermission(clientUser.login, 'admin');
-        if ((isLegacy || isAdmin) && client.readyState === 1) {
+        if (isLegacy || isAdmin) {
           client.send(JSON.stringify({ type: 'users:list', users }));
+        } else if (clientUser) {
+          client.send(JSON.stringify({ type: 'users:basic', users: basicUsers }));
         }
       }
     });
