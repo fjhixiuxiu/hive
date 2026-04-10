@@ -13,9 +13,9 @@ coverage/
 *.pem
 
 # Developer-local / scratch files that occasionally get committed by accident
-.mcp.json              # local Claude Code MCP server config (env-specific)
-hive-pms-export.json   # PM state export snapshot (config, not source)
-test-voice*.js         # ad-hoc voice debug scripts
+.mcp.json
+hive-pms-export.json
+test-voice*.js
 
 # Terraform
 cloud/terraform/.terraform/
