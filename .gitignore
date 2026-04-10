@@ -12,6 +12,11 @@ coverage/
 .playwright-mcp/
 *.pem
 
+# Developer-local / scratch files that occasionally get committed by accident
+.mcp.json
+hive-pms-export.json
+test-voice*.js
+
 # Terraform
 cloud/terraform/.terraform/
 cloud/terraform/*.tfstate*
