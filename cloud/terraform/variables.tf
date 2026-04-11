@@ -25,22 +25,22 @@ variable "customer_name" {
 variable "vpc_id" {
   description = "VPC ID"
   type        = string
-  default     = "vpc-bf97f3c6"
+  default     = "vpc-02651295c24f8bc7f" # Jenkins VPC
 }
 
 variable "subnet_ids" {
   description = "Subnet IDs for ALB (minimum 2 AZs)"
   type        = list(string)
   default = [
-    "subnet-12f3a75a",           # us-east-1b
-    "subnet-03f3b75e5489f36f5",  # us-east-1c
+    "subnet-0d5dee6be35a20916", # internal-tools-1a, us-east-1a
+    "subnet-094867cafbdcc387d", # internal-tools-1b, us-east-1b
   ]
 }
 
 variable "ec2_subnet_id" {
   description = "Subnet for EC2 instance"
   type        = string
-  default     = "subnet-12f3a75a" # us-east-1b
+  default     = "subnet-0d5dee6be35a20916" # internal-tools-1a, us-east-1a
 }
 
 variable "instance_type" {
@@ -70,13 +70,13 @@ variable "certificate_arn" {
 variable "office_ssh_sg_id" {
   description = "Existing office SSH security group ID"
   type        = string
-  default     = "sg-0809ef61cbd90123e" # toronto-office-dev-ssh
+  default     = "sg-043c84f65239ea620" # toronto-office-jenkins-ssh
 }
 
 variable "hive_fleet_sg_id" {
   description = "Shared SG for all hive EC2 instances (cross-hive access rules)"
   type        = string
-  default     = "sg-09cad5143094f082f" # hive-fleet-sg
+  default     = "sg-0eccb5c1f5c931f9c" # hive-fleet-sg (Jenkins VPC)
 }
 
 variable "office_cidrs" {
