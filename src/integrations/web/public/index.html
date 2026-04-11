@@ -642,6 +642,25 @@
             <span class="int-result" id="jira-result"></span>
           </div>
         </div>
+        <div class="integration-card" data-integration="nectar">
+          <div class="integration-header">
+            <span class="integration-name">Nectar</span>
+            <span class="integration-status" id="nectar-status"></span>
+          </div>
+          <div class="integration-fields">
+            <label>Nectar URL
+              <input type="text" id="int-nectar-url" data-env="NECTAR_URL" placeholder="http://localhost:4000" autocomplete="off">
+            </label>
+            <label>API Key
+              <input type="password" id="int-nectar-api-key" data-env="NECTAR_API_KEY" placeholder="nectar_..." autocomplete="off">
+            </label>
+          </div>
+          <div class="integration-actions">
+            <button class="int-save-btn" data-integration="nectar">Save</button>
+            <button class="int-test-btn" data-integration="nectar">Test Connection</button>
+            <span class="int-result" id="nectar-result"></span>
+          </div>
+        </div>
         <div class="integration-card" data-integration="zoho">
           <div class="integration-header">
             <span class="integration-name">Zoho Desk</span>

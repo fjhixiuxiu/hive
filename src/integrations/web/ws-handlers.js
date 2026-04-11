@@ -1277,6 +1277,7 @@ function createMessageHandler(deps) {
           slack: ['SLACK_BOT_TOKEN', 'SLACK_APP_TOKEN'],
           jira: ['JIRA_BASE_URL', 'JIRA_EMAIL', 'JIRA_API_TOKEN'],
           zoho: ['ZOHO_DESK_ORG_ID', 'ZOHO_DESK_CLIENT_ID', 'ZOHO_DESK_CLIENT_SECRET', 'ZOHO_DESK_REFRESH_TOKEN'],
+          nectar: ['NECTAR_URL', 'NECTAR_API_KEY'],
         };
         const allowed = ALLOWED_KEYS[intName];
         if (!allowed || !msg.values || typeof msg.values !== 'object') {
@@ -1408,6 +1409,17 @@ function createMessageHandler(deps) {
                 'Accept': 'application/json',
               });
               sendResult(true, `Connected — org ${zOrgId}`);
+              break;
+            }
+            case 'nectar': {
+              const nectarUrl = (vals.NECTAR_URL || '').replace(/\/+$/, '');
+              const nectarKey = vals.NECTAR_API_KEY;
+              if (!nectarUrl || !nectarKey) { sendResult(false, null, 'URL and API key required'); break; }
+              const data = await httpRequest(`${nectarUrl}/health`, {
+                'Authorization': `Bearer ${nectarKey}`,
+                'Accept': 'application/json',
+              });
+              sendResult(true, `Connected — ${data.releases || 0} releases, ${data.environments || 0} environments`);
               break;
             }
             default:
