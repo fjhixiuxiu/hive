@@ -5690,6 +5690,9 @@
     if (!container || !countEl) return;
     countEl.textContent = taskList.length;
 
+    // Sort descending: completed tasks by completedAt, others by createdAt
+    taskList.sort((a, b) => (b.completedAt || b.createdAt) - (a.completedAt || a.createdAt));
+
     container.innerHTML = '';
 
     // Drop target: attach once so empty columns accept drops
