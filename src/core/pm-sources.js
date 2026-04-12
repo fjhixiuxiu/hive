@@ -531,6 +531,54 @@ function _buildFullText(pm, text) {
 
 // ── Export all methods as prototype mixin ────────────────
 
+// ── Nectar source ─────────────────────────────────────
+
+/**
+ * Fetch pending tasks from a Nectar instance.
+ * Source config: { type: 'nectar', url: '...', apiKey: '...' }
+ * Returns tasks in the standard { key, summary } format for PM consumption.
+ */
+async function _fetchNectar(source) {
+  const url = source.url || process.env.NECTAR_URL;
+  const apiKey = source.apiKey || process.env.NECTAR_API_KEY;
+
+  if (!url) throw new Error('Nectar URL not configured (source.url or NECTAR_URL)');
+  if (!apiKey) throw new Error('Nectar API key not configured (source.apiKey or NECTAR_API_KEY)');
+
+  const headers = {
+    'Authorization': `Bearer ${apiKey}`,
+    'Accept': 'application/json',
+  };
+
+  const tasks = await _httpRequest(`${url}/api/tasks?status=pending`, headers);
+  const items = Array.isArray(tasks) ? tasks : tasks.tasks || [];
+
+  return items.map(t => ({
+    key: t.id,
+    summary: `[${t.type}] ${t.input?.version || 'unknown'} — ${t.input?.tickets?.length || 0} tickets`,
+    _nectarTask: t, // Attach full task data for enrichment
+  }));
+}
+
+/**
+ * Claim a Nectar task (set status to in-progress).
+ * Called after a task is dispatched to a session.
+ */
+async function _claimNectarTask(source, taskId) {
+  const url = source.url || process.env.NECTAR_URL;
+  const apiKey = source.apiKey || process.env.NECTAR_API_KEY;
+  if (!url || !apiKey) return;
+
+  try {
+    await _httpMethod('PATCH', `${url}/api/tasks/${taskId}`, {
+      'Authorization': `Bearer ${apiKey}`,
+      'Accept': 'application/json',
+    }, { status: 'in-progress' });
+  } catch (err) {
+    log.error(`Failed to claim Nectar task ${taskId}: ${err.message}`);
+  }
+}
+
 module.exports = {
   // HTTP
   _httpRequest,
@@ -552,6 +600,8 @@ module.exports = {
   _getZohoToken,
   _fetchZoho,
   _fetchReReviews,
+  _fetchNectar,
+  _claimNectarTask,
   // Helpers
   _seedChecklist,
   enrichTaskText,

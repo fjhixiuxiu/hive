@@ -761,6 +761,7 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
         case 'jenkins': issues = await this._fetchJenkins(pm.source); break;
         case 'zoho':    issues = await this._fetchZoho(pm.source); break;
         case 'github-re-reviews': issues = await this._fetchReReviews(pm.source, pm.id); break;
+        case 'nectar':  issues = await this._fetchNectar(pm.source); break;
         default: throw new Error(`Unsupported source type: ${pm.source.type}`);
       }
       pm.lastPoll = Date.now();
@@ -798,6 +799,13 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
           text = `[${issue.key}] ${issue.summary}`;
         }
         const meta = { source: `pm:${pm.name}`, requireHumanClose: !!pm.requireHumanClose };
+
+        // Claim Nectar task when creating a Hive task for it
+        if (pm.source.type === 'nectar' && issue._nectarTask) {
+          meta.nectarTaskId = issue._nectarTask.id;
+          meta.actionContext = { type: 'nectar-task', taskId: issue._nectarTask.id };
+          this._claimNectarTask(pm.source, issue._nectarTask.id).catch(() => {});
+        }
 
         // Attach actionContext for PR-sourced tasks
         if (pm.source.type === 'github-prs' || pm.source.type === 'github-re-reviews') {

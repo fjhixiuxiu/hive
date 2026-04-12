@@ -8184,7 +8184,7 @@
     const type = document.getElementById('pm-form-source').value;
     const isGithub = type === 'github-issues' || type === 'github-prs' || type === 'github-re-reviews';
     const isReReviews = type === 'github-re-reviews';
-    const types = ['jira', 'github', 'github-prs', 're-reviews', 'manual', 'command', 'script', 'jenkins', 'zoho', 'slack', 'slack-channel-monitor', 'github-mentions'];
+    const types = ['jira', 'github', 'github-prs', 're-reviews', 'manual', 'command', 'script', 'jenkins', 'zoho', 'slack', 'slack-channel-monitor', 'github-mentions', 'nectar'];
     for (const t of types) {
       let show = false;
       if (t === type) show = true;
@@ -8313,6 +8313,10 @@
         source.query = document.getElementById('pm-form-zoho-query').value.trim();
         const sinceVal = document.getElementById('pm-form-zoho-since').value;
         source.since = sinceVal ? new Date(sinceVal).toISOString() : new Date().toISOString();
+        break;
+      case 'nectar':
+        // Nectar uses URL and API key from integration settings (env vars)
+        // No additional source config needed
         break;
     }
     const targetSessionVal = document.getElementById('pm-form-target-session').value;

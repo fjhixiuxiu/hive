@@ -166,6 +166,14 @@ module.exports = {
     maxMeetings: 50,
   },
 
+  // ── Nectar integration ──────────────────────────────
+  nectar: {
+    url: process.env.NECTAR_URL || 'http://localhost:4000',
+    apiKey: process.env.NECTAR_API_KEY || '',
+    pollInterval: 30000, // 30s
+    designation: 'nectar', // session designation for Nectar tasks
+  },
+
   // ── Web dashboard links ───────────────────────────────
   // URL templates for PR and CI links in the dashboard.
   // Use ${prNum} and ${ciBuild} as placeholders.

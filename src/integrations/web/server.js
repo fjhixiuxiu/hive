@@ -264,6 +264,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
         slack: { configured: !!(process.env.SLACK_BOT_TOKEN && process.env.SLACK_APP_TOKEN) },
         jira: { configured: !!(process.env.JIRA_BASE_URL && process.env.JIRA_EMAIL && process.env.JIRA_API_TOKEN) },
         zoho: { configured: !!(process.env.ZOHO_DESK_ORG_ID && process.env.ZOHO_DESK_CLIENT_ID && process.env.ZOHO_DESK_REFRESH_TOKEN) },
+        nectar: { configured: !!(process.env.NECTAR_URL && process.env.NECTAR_API_KEY) },
       }
     }));
   }
