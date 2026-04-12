@@ -465,6 +465,12 @@ class TaskQueue extends EventEmitter {
       this.activeTaskBySession.delete(sessionNum);
       this.dispatchLock.delete(sessionNum);
       this.lastCompletedAt.set(sessionNum, Date.now());
+      // Reset state cache so watcher detects session as idle for next dispatch
+      try {
+        const stateFile = path.join(this.config.cache.stateDir, String(sessionNum));
+        fs.writeFileSync(stateFile, 'idle');
+      } catch {}
+
       // [Phase 2 — context-consolidation] TODO: snapshot sessionContext.slackThread
       // into task._completionContext HERE, before clearSessionContext wipes it.
       // Phase 1 sidesteps this by keeping task.slackChannel/slackThreadTs alive on
@@ -522,6 +528,11 @@ class TaskQueue extends EventEmitter {
       this.activeTaskBySession.delete(task.assignedTo);
       this.dispatchLock.delete(task.assignedTo);
       this.lastCompletedAt.set(task.assignedTo, Date.now());
+      // Reset state cache so watcher detects session as idle for next dispatch
+      try {
+        const stateFile = path.join(this.config.cache.stateDir, String(task.assignedTo));
+        fs.writeFileSync(stateFile, 'idle');
+      } catch {}
       // [Phase 2 — context-consolidation] TODO: same snapshot pattern as
       // completeTask — capture sessionContext.slackThread into task._completionContext
       // before clearing. See completeTask for details and plan ref.
@@ -548,12 +559,9 @@ class TaskQueue extends EventEmitter {
     const { name: sessionName, nodeId } = found;
     const node = this.router.getNode(nodeId);
 
-    // Double-check session is actually idle right now (fresh read)
-    // A session with a dispatched task is never considered idle for dispatch purposes
-    const sessions = await fleet.getFleetStatus(this.config, this.router);
-    const session = sessions.find(s => s.num === sessionNum);
+    // Double-check no other task is active on this session
     const existingActive = this.activeTaskBySession.get(sessionNum);
-    if (!session || session.state !== 'idle' || (existingActive && existingActive !== task.id)) {
+    if (existingActive && existingActive !== task.id) {
       this.dispatchLock.delete(sessionNum);
       return false; // silently skip -- don't fail the task, just don't dispatch yet
     }
@@ -688,11 +696,13 @@ class TaskQueue extends EventEmitter {
       const sessions = await fleet.getFleetStatus(this.config, this.router);
 
       // First: retry queued manual tasks with a targetSession
+      // For targeted tasks, dispatch if the session has no active task — don't require
+      // fleet state === 'idle' since the state file can be stale
       const manualTargeted = Array.from(this.tasks.values())
         .filter(t => t.status === 'queued' && t.mode === 'manual' && t.targetSession);
       for (const task of manualTargeted) {
         const session = sessions.find(s => s.num === task.targetSession);
-        if (session && session.state === 'idle' && !this.dispatchLock.has(session.num) && !this.activeTaskBySession.has(session.num)) {
+        if (session && !this.dispatchLock.has(session.num) && !this.activeTaskBySession.has(session.num)) {
           await this._dispatchTask(task, task.targetSession);
         }
       }
