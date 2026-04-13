@@ -18,6 +18,20 @@ const NUMBERED_OPTION_PATTERN = /^\d+[.)]\s+.{5,}/;
  *   'approval:requested'    - { session, name, num, prompt }  -- Claude needs permission
  */
 
+// Patterns that indicate Claude hit a retryable API error
+const API_ERROR_PATTERNS = [
+  /API Error:\s*500/,
+  /API Error:\s*429/,
+  /API Error:\s*529/,
+  /overloaded/i,
+  /rate.?limit/i,
+  /capacity/i,
+  /Internal server error/i,
+];
+
+const MAX_ERROR_RETRIES = 3;
+const ERROR_RETRY_DELAY = 15000; // 15s before retry (helps with rate limits)
+
 // Patterns that indicate Claude is asking for permission
 const APPROVAL_PATTERNS = [
   /Do you want to proceed/i,
@@ -60,6 +74,7 @@ class Watcher extends EventEmitter {
     this.prevBranch = new Map();   // num -> branch name
     this.detectedWaiting = new Set(); // session nums waiting for user (approvals or questions)
     this.sessionActivity = new Map(); // num -> timestamp of last meaningful activity
+    this.errorRetries = new Map();    // num -> { count, lastRetryAt }
   }
 
   /**
@@ -160,6 +175,12 @@ class Watcher extends EventEmitter {
         } else {
           const count = (this.pendingIdle.get(s.num) || 0) + 1;
           if (count >= 5) {
+            // Before confirming idle, check for API errors that stalled the session
+            const retried = await this._checkAndRetryErrors(s);
+            if (retried) {
+              this.pendingIdle.delete(s.num);
+              continue; // Skip idle confirmation — retry sent
+            }
             // Fifth consecutive poll showing idle — confirmed idle
             log.info(`[watcher] session ${s.num}: idle confirmed (5 polls)`);
             this.pendingIdle.delete(s.num);
@@ -246,9 +267,10 @@ class Watcher extends EventEmitter {
       }
       if (currBranch) this.prevBranch.set(s.num, currBranch);
 
-      // Clear waiting flag when session starts working (user answered the question/approval)
+      // Clear waiting flag and error retries when session starts working
       if (currState === 'working' && prevState !== 'working') {
         this.detectedWaiting.delete(s.num);
+        this.errorRetries.delete(s.num);
       }
     }
 
@@ -260,6 +282,66 @@ class Watcher extends EventEmitter {
 
     // Emit poll event with all session states for task completion checks
     this.emit('poll', sessions);
+  }
+
+  /**
+   * Check if a session went idle due to an API error and auto-retry.
+   * Returns true if a retry was sent (caller should skip idle confirmation).
+   */
+  async _checkAndRetryErrors(s) {
+    const node = this.router.nodeFor(s.name);
+    if (!node) return false;
+
+    // Check retry budget
+    const retry = this.errorRetries.get(s.num) || { count: 0, lastRetryAt: 0 };
+    if (retry.count >= MAX_ERROR_RETRIES) return false;
+
+    // Don't retry more than once per delay window
+    if (Date.now() - retry.lastRetryAt < ERROR_RETRY_DELAY) return true; // still waiting
+
+    // Capture recent pane content
+    const paneTarget = `${s.name}:.${this.config.sessions.claudePane}`;
+    const content = await node.capturePane(paneTarget, { lines: 15 });
+    if (!content) return false;
+
+    // Check for API error patterns in the last 15 lines
+    const lines = content.split('\n');
+    let hasError = false;
+    for (const line of lines) {
+      for (const pat of API_ERROR_PATTERNS) {
+        if (pat.test(line)) {
+          hasError = true;
+          break;
+        }
+      }
+      if (hasError) break;
+    }
+
+    if (!hasError) return false;
+
+    // Send retry
+    retry.count++;
+    retry.lastRetryAt = Date.now();
+    this.errorRetries.set(s.num, retry);
+
+    log.info(`[watcher] session ${s.num}: API error detected, sending retry (${retry.count}/${MAX_ERROR_RETRIES})`);
+
+    try {
+      await node.sendKeys(paneTarget, 'retry', true);
+    } catch (err) {
+      log.error(`[watcher] session ${s.num}: retry send failed: ${err.message}`);
+      return false;
+    }
+
+    this.emit('session:error-retry', {
+      session: s,
+      name: s.name,
+      num: s.num,
+      retryCount: retry.count,
+      maxRetries: MAX_ERROR_RETRIES,
+    });
+
+    return true;
   }
 
   async _checkApprovals() {

@@ -171,6 +171,103 @@ describe('Watcher', () => {
     });
   });
 
+  describe('API error retry', () => {
+    it('retries session that went idle with API error', async () => {
+      const retrySpy = vi.fn();
+      watcher = new Watcher(config, router);
+      watcher.on('session:error-retry', retrySpy);
+
+      const mockNode = createMockNode();
+      mockNode.capturePane.mockResolvedValue(
+        'Reading file.js\n  ⎿  API Error: 500 {"type":"error","error":{"type":"api_error","message":"Internal server error"}}\n\n❯ '
+      );
+      mockNode.sendKeys.mockResolvedValue(null);
+      router.nodeFor.mockReturnValue(mockNode);
+
+      fleetSpy.mockResolvedValue([makeSession(6, 'idle')]);
+      await watcher._seed();
+
+      // Transition to working then back to idle (triggers seenWorking)
+      fleetSpy.mockResolvedValue([makeSession(6, 'working')]);
+      await watcher._poll();
+      await watcher._poll(); // 2nd poll → seenWorking
+
+      fleetSpy.mockResolvedValue([makeSession(6, 'idle')]);
+      // 5 idle polls to trigger confirmation
+      for (let i = 0; i < 5; i++) await watcher._poll();
+
+      expect(retrySpy).toHaveBeenCalledWith(
+        expect.objectContaining({ num: 6, retryCount: 1, maxRetries: 3 })
+      );
+      expect(mockNode.sendKeys).toHaveBeenCalledWith(
+        expect.stringContaining('6'), 'retry', true
+      );
+    });
+
+    it('does not retry when no API error present', async () => {
+      const retrySpy = vi.fn();
+      const idleSpy = vi.fn();
+      watcher = new Watcher(config, router);
+      watcher.on('session:error-retry', retrySpy);
+      watcher.on('session:idle', idleSpy);
+
+      const mockNode = createMockNode();
+      mockNode.capturePane.mockResolvedValue('Task completed successfully\n\n❯ ');
+      router.nodeFor.mockReturnValue(mockNode);
+
+      fleetSpy.mockResolvedValue([makeSession(6, 'idle')]);
+      await watcher._seed();
+
+      fleetSpy.mockResolvedValue([makeSession(6, 'working')]);
+      await watcher._poll();
+      await watcher._poll();
+
+      fleetSpy.mockResolvedValue([makeSession(6, 'idle')]);
+      for (let i = 0; i < 5; i++) await watcher._poll();
+
+      expect(retrySpy).not.toHaveBeenCalled();
+      expect(idleSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('stops retrying after max retries and emits idle', async () => {
+      const retrySpy = vi.fn();
+      const idleSpy = vi.fn();
+      watcher = new Watcher(config, router);
+      watcher.on('session:error-retry', retrySpy);
+      watcher.on('session:idle', idleSpy);
+
+      const mockNode = createMockNode();
+      mockNode.capturePane.mockResolvedValue(
+        '  ⎿  API Error: 500 {"type":"error"}\n❯ '
+      );
+      mockNode.sendKeys.mockResolvedValue(null);
+      router.nodeFor.mockReturnValue(mockNode);
+
+      // Exhaust retries (3)
+      watcher.errorRetries.set(6, { count: 3, lastRetryAt: 0 });
+      watcher.seenWorking.add(6);
+      watcher.prevStates.set(6, 'idle');
+
+      fleetSpy.mockResolvedValue([makeSession(6, 'idle')]);
+      for (let i = 0; i < 5; i++) await watcher._poll();
+
+      // Should NOT retry, SHOULD emit idle
+      expect(retrySpy).not.toHaveBeenCalled();
+      expect(idleSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('clears retry count when session starts working', async () => {
+      watcher = new Watcher(config, router);
+      watcher.errorRetries.set(6, { count: 2, lastRetryAt: Date.now() });
+      watcher.prevStates.set(6, 'idle');
+
+      fleetSpy.mockResolvedValue([makeSession(6, 'working')]);
+      await watcher._poll();
+
+      expect(watcher.errorRetries.has(6)).toBe(false);
+    });
+  });
+
   describe('start / stop', () => {
     it('start begins polling and stop clears intervals', async () => {
       watcher = new Watcher(config, router);
