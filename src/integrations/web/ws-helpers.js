@@ -46,38 +46,55 @@ function decorateTaskActions(task, pmManager) {
   return { ...task, actions: defs };
 }
 
-async function executeGithubPrAction(ctx, actionId, pmManager) {
+async function executeGithubPrAction(ctx, actionId, pmManager, comment) {
   const { repo, prNumber } = ctx;
   const headers = pmManager._githubHeaders();
 
   switch (actionId) {
     case 'approve': {
-      await pmManager._httpMethod('POST', `https://api.github.com/repos/${repo}/pulls/${prNumber}/reviews`, headers, { event: 'APPROVE' });
+      const reviewBody = { event: 'APPROVE' };
+      if (comment) reviewBody.body = `Approved via Hive\n\n${comment}`;
+      await pmManager._httpMethod('POST', `https://api.github.com/repos/${repo}/pulls/${prNumber}/reviews`, headers, reviewBody);
       return { message: `Approved PR #${prNumber}`, closeTask: false };
     }
     case 'request-changes': {
-      await pmManager._httpMethod('POST', `https://api.github.com/repos/${repo}/pulls/${prNumber}/reviews`, headers, { event: 'REQUEST_CHANGES', body: 'Changes requested via Hive' });
+      const rcBody = comment
+        ? `Changes requested via Hive\n\n${comment}`
+        : 'Changes requested via Hive';
+      await pmManager._httpMethod('POST', `https://api.github.com/repos/${repo}/pulls/${prNumber}/reviews`, headers, { event: 'REQUEST_CHANGES', body: rcBody });
       return { message: `Requested changes on PR #${prNumber}`, closeTask: false };
     }
     case 'merge': {
-      await pmManager._httpMethod('PUT', `https://api.github.com/repos/${repo}/pulls/${prNumber}/merge`, headers, { merge_method: 'squash' });
+      const mergeBody = { merge_method: 'squash' };
+      if (comment) mergeBody.commit_message = comment;
+      await pmManager._httpMethod('PUT', `https://api.github.com/repos/${repo}/pulls/${prNumber}/merge`, headers, mergeBody);
       return { message: `Merged PR #${prNumber} (squash)`, closeTask: false };
     }
     case 'merge-commit': {
-      await pmManager._httpMethod('PUT', `https://api.github.com/repos/${repo}/pulls/${prNumber}/merge`, headers, { merge_method: 'merge' });
+      const mergeBody = { merge_method: 'merge' };
+      if (comment) mergeBody.commit_message = comment;
+      await pmManager._httpMethod('PUT', `https://api.github.com/repos/${repo}/pulls/${prNumber}/merge`, headers, mergeBody);
       return { message: `Merged PR #${prNumber} (merge commit)`, closeTask: false };
     }
     case 'admin-merge': {
-      await pmManager._httpMethod('PUT', `https://api.github.com/repos/${repo}/pulls/${prNumber}/merge`, headers, { merge_method: 'squash', bypass_branch_protection: true });
+      const mergeBody = { merge_method: 'squash', bypass_branch_protection: true };
+      if (comment) mergeBody.commit_message = comment;
+      await pmManager._httpMethod('PUT', `https://api.github.com/repos/${repo}/pulls/${prNumber}/merge`, headers, mergeBody);
       return { message: `Admin merged PR #${prNumber} (override)`, closeTask: false };
     }
     case 'close-pr': {
+      // Close the PR, then add comment if provided
       await pmManager._httpMethod('PATCH', `https://api.github.com/repos/${repo}/pulls/${prNumber}`, headers, { state: 'closed' });
+      if (comment) {
+        await pmManager._httpMethod('POST', `https://api.github.com/repos/${repo}/issues/${prNumber}/comments`, headers, { body: comment });
+      }
       return { message: `Closed PR #${prNumber}`, closeTask: false };
     }
     case 'approve-close': {
       // Legacy: kept for backwards compat with any in-flight tasks
-      await pmManager._httpMethod('POST', `https://api.github.com/repos/${repo}/pulls/${prNumber}/reviews`, headers, { event: 'APPROVE' });
+      const reviewBody = { event: 'APPROVE' };
+      if (comment) reviewBody.body = comment;
+      await pmManager._httpMethod('POST', `https://api.github.com/repos/${repo}/pulls/${prNumber}/reviews`, headers, reviewBody);
       return { message: `Approved PR #${prNumber}`, closeTask: true };
     }
     default:
@@ -85,9 +102,9 @@ async function executeGithubPrAction(ctx, actionId, pmManager) {
   }
 }
 
-async function executeTaskAction(task, actionId, pmManager) {
+async function executeTaskAction(task, actionId, pmManager, comment) {
   const ctx = task.actionContext;
-  if (ctx.type === 'github-pr') return executeGithubPrAction(ctx, actionId, pmManager);
+  if (ctx.type === 'github-pr') return executeGithubPrAction(ctx, actionId, pmManager, comment);
   throw new Error(`Unknown action context type: ${ctx.type}`);
 }
 

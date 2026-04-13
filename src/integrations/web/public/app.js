@@ -7142,10 +7142,12 @@
     });
   }
 
-  function sendTaskAction(taskId, actionId, closeTask, btn) {
+  function sendTaskAction(taskId, actionId, closeTask, btn, comment) {
     if (!ws || ws.readyState !== 1) return;
     if (btn) btn.classList.add('loading');
-    ws.send(JSON.stringify({ type: 'task:action', taskId, actionId, closeTask: !!closeTask }));
+    const msg = { type: 'task:action', taskId, actionId, closeTask: !!closeTask };
+    if (comment) msg.comment = comment;
+    ws.send(JSON.stringify(msg));
   }
 
   function openActionConfirmDialog(taskId, actionId, label) {
@@ -7164,6 +7166,7 @@
     document.getElementById('action-confirm-body').textContent = detail ? `This will ${title.toLowerCase()} for ${detail}` : `This will ${title.toLowerCase()} this task`;
     document.getElementById('action-confirm-submit').style.background = action ? action.color : 'var(--red)';
     document.getElementById('action-confirm-close-task').checked = true;
+    document.getElementById('action-confirm-comment').value = '';
     document.getElementById('action-confirm-dialog').classList.add('visible');
   }
 
@@ -7171,10 +7174,12 @@
     if (actionConfirmTaskId && actionConfirmActionId) {
       const btn = document.querySelector(`.actions-popup-item[data-task-id="${actionConfirmTaskId}"][data-action-id="${actionConfirmActionId}"]`);
       const closeTask = document.getElementById('action-confirm-close-task').checked;
-      sendTaskAction(actionConfirmTaskId, actionConfirmActionId, closeTask, btn);
+      const comment = document.getElementById('action-confirm-comment').value.trim();
+      sendTaskAction(actionConfirmTaskId, actionConfirmActionId, closeTask, btn, comment || undefined);
     }
     document.getElementById('action-confirm-dialog').classList.remove('visible');
     document.getElementById('action-confirm-close-task').checked = false;
+    document.getElementById('action-confirm-comment').value = '';
     actionConfirmTaskId = null;
     actionConfirmActionId = null;
   });
@@ -7182,6 +7187,7 @@
   document.getElementById('action-confirm-cancel').addEventListener('click', () => {
     document.getElementById('action-confirm-dialog').classList.remove('visible');
     document.getElementById('action-confirm-close-task').checked = false;
+    document.getElementById('action-confirm-comment').value = '';
     actionConfirmTaskId = null;
     actionConfirmActionId = null;
   });

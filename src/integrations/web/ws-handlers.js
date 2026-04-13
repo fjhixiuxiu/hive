@@ -618,7 +618,8 @@ function createMessageHandler(deps) {
         }
         try {
           const pmManager = taskQueue._pmManager;
-          const result = await executeTaskAction(actionTask, msg.actionId, pmManager);
+          log.info(`[action] ${msg.actionId} on task ${msg.taskId}, comment: ${msg.comment ? JSON.stringify(msg.comment) : '(none)'}`);
+          const result = await executeTaskAction(actionTask, msg.actionId, pmManager, msg.comment);
           broadcast({ type: 'task:action:result', taskId: msg.taskId, actionId: msg.actionId, ok: true, message: result.message });
           if (result.closeTask || msg.closeTask) {
             let actionSnap = null, actionSnapCols = 0;
