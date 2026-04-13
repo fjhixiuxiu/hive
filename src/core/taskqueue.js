@@ -715,8 +715,7 @@ class TaskQueue extends EventEmitter {
       const COOLDOWN_MS = 15000; // 15s cooldown after completion before re-dispatch
       const now = Date.now();
       const idleAuto = sessions.filter(s =>
-        s.state === 'idle'
-        && this.autoSessions.has(s.num)
+        this.autoSessions.has(s.num)
         && !this.dispatchLock.has(s.num)
         && !this.activeTaskBySession.has(s.num)
         && (now - (this.lastCompletedAt.get(s.num) || 0)) > COOLDOWN_MS
