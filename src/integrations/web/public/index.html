@@ -12,7 +12,7 @@
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <title>hive</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css">
-<link rel="stylesheet" href="/styles.css">
+<link rel="stylesheet" href="/styles.css?v=2">
 </head>
 <body>
 
@@ -1451,9 +1451,10 @@
 
 <!-- Action confirm dialog -->
 <div class="dialog-overlay" id="action-confirm-dialog">
-  <div class="dialog" style="max-width:380px">
+  <div class="dialog" style="max-width:420px">
     <div class="dialog-title" id="action-confirm-title">Confirm Action</div>
     <div id="action-confirm-body" style="font-size:13px;color:var(--dim);margin-bottom:12px;line-height:1.5"></div>
+    <textarea id="action-confirm-comment" class="task-dialog-input" rows="3" placeholder="Add a comment (optional)..." style="width:100%;margin-bottom:12px;resize:vertical;font-family:inherit;font-size:13px"></textarea>
     <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:16px;cursor:pointer;color:var(--fg)">
       <input type="checkbox" id="action-confirm-close-task" style="accent-color:var(--green);width:16px;height:16px">
       Close task after
@@ -1694,6 +1695,6 @@
 <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-web-links@0.11.0/lib/addon-web-links.min.js"></script>
-<script src="/app.js"></script>
+<script src="/app.js?v=2"></script>
 </body>
 </html>
