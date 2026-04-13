@@ -266,6 +266,62 @@ describe('Watcher', () => {
 
       expect(watcher.errorRetries.has(6)).toBe(false);
     });
+
+    it('waits for reset time before retrying rate-limited session', async () => {
+      const retrySpy = vi.fn();
+      watcher = new Watcher(config, router);
+      watcher.on('session:error-retry', retrySpy);
+
+      const mockNode = createMockNode();
+      // Rate limit with reset time 30 minutes from now
+      const futureTime = new Date(Date.now() + 30 * 60 * 1000);
+      const h = futureTime.getHours() % 12 || 12;
+      const ampm = futureTime.getHours() >= 12 ? 'PM' : 'AM';
+      const timeStr = `${h}:${String(futureTime.getMinutes()).padStart(2, '0')} ${ampm}`;
+      mockNode.capturePane.mockResolvedValue(
+        `⚠ Usage limit reached. Resets at ${timeStr} EDT.\n❯ `
+      );
+      mockNode.sendKeys.mockResolvedValue(null);
+      router.nodeFor.mockReturnValue(mockNode);
+
+      watcher.seenWorking.add(6);
+      watcher.prevStates.set(6, 'idle');
+
+      fleetSpy.mockResolvedValue([makeSession(6, 'idle')]);
+      for (let i = 0; i < 5; i++) await watcher._poll();
+
+      // Should emit event with retryAfter but NOT send keys (waiting for reset)
+      expect(retrySpy).toHaveBeenCalledWith(
+        expect.objectContaining({ num: 6, retryAfter: expect.any(Number), waitMins: expect.any(Number) })
+      );
+      expect(mockNode.sendKeys).not.toHaveBeenCalled();
+    });
+
+    it('retries after reset time has passed', async () => {
+      const retrySpy = vi.fn();
+      watcher = new Watcher(config, router);
+      watcher.on('session:error-retry', retrySpy);
+
+      const mockNode = createMockNode();
+      // Error without reset time (plain 500)
+      mockNode.capturePane.mockResolvedValue(
+        '  ⎿  API Error: 500 {"type":"error"}\n❯ '
+      );
+      mockNode.sendKeys.mockResolvedValue(null);
+      router.nodeFor.mockReturnValue(mockNode);
+
+      // Set retryAfter to the past — should retry now
+      watcher.errorRetries.set(6, { count: 0, lastRetryAt: 0, retryAfter: Date.now() - 1000 });
+      watcher.seenWorking.add(6);
+      watcher.prevStates.set(6, 'idle');
+
+      fleetSpy.mockResolvedValue([makeSession(6, 'idle')]);
+      for (let i = 0; i < 5; i++) await watcher._poll();
+
+      expect(mockNode.sendKeys).toHaveBeenCalledWith(
+        expect.stringContaining('6'), 'retry', true
+      );
+    });
   });
 
   describe('start / stop', () => {

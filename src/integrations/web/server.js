@@ -687,10 +687,13 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     broadcast({ type: 'notify', event: 'session:working', session: num, name });
   });
 
-  watcher.on('session:error-retry', ({ name, num, retryCount, maxRetries }) => {
-    broadcast({ type: 'notify', event: 'session:error-retry', session: num, name, retryCount, maxRetries });
+  watcher.on('session:error-retry', ({ name, num, retryCount, maxRetries, retryAfter, waitMins }) => {
+    broadcast({ type: 'notify', event: 'session:error-retry', session: num, name, retryCount, maxRetries, retryAfter, waitMins });
     if (taskQueue) {
-      taskQueue.pushFeed('state', num, `API error — auto-retry ${retryCount}/${maxRetries}`);
+      const detail = retryAfter
+        ? `Rate limit — waiting ${waitMins}m for reset`
+        : `API error — auto-retry ${retryCount}/${maxRetries}`;
+      taskQueue.pushFeed('state', num, detail);
     }
   });
 
