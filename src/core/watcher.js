@@ -25,12 +25,66 @@ const API_ERROR_PATTERNS = [
   /API Error:\s*529/,
   /overloaded/i,
   /rate.?limit/i,
+  /usage.?limit/i,
   /capacity/i,
   /Internal server error/i,
 ];
 
 const MAX_ERROR_RETRIES = 3;
 const ERROR_RETRY_DELAY = 15000; // 15s before retry (helps with rate limits)
+
+// Patterns to extract a reset time from rate limit messages
+// Matches: "Resets at 2:00 PM", "resets at 14:00", "Resets at 2:00 PM EDT"
+const RESET_TIME_PATTERNS = [
+  /[Rr]esets?\s+at\s+(\d{1,2}:\d{2}\s*(?:AM|PM)?(?:\s+[A-Z]{2,4})?)/,
+  /[Tt]ry\s+again\s+(?:in|after)\s+(\d+)\s*(minutes?|mins?|hours?|hrs?|seconds?|secs?)/i,
+];
+
+/**
+ * Parse a reset time string into a future timestamp.
+ * Returns epoch ms if parseable and in the future, or 0 if not.
+ */
+function parseResetTime(lines) {
+  for (const line of lines) {
+    for (const pat of RESET_TIME_PATTERNS) {
+      const m = line.match(pat);
+      if (!m) continue;
+
+      // "Resets at 2:00 PM" — absolute time today
+      if (pat === RESET_TIME_PATTERNS[0]) {
+        const timeStr = m[1].trim();
+        // Parse "2:00 PM" or "14:00" style
+        const today = new Date();
+        const parts = timeStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
+        if (!parts) continue;
+        let hours = parseInt(parts[1]);
+        const mins = parseInt(parts[2]);
+        const ampm = parts[3];
+        if (ampm) {
+          if (ampm.toUpperCase() === 'PM' && hours !== 12) hours += 12;
+          if (ampm.toUpperCase() === 'AM' && hours === 12) hours = 0;
+        }
+        const target = new Date(today);
+        target.setHours(hours, mins, 0, 0);
+        // If time already passed today, it might mean tomorrow — but more likely
+        // it's a stale message. Return 0 to use normal retry delay.
+        if (target.getTime() > Date.now()) return target.getTime();
+      }
+
+      // "try again in 30 minutes" — relative duration
+      if (pat === RESET_TIME_PATTERNS[1]) {
+        const amount = parseInt(m[1]);
+        const unit = m[2].toLowerCase();
+        let ms = 0;
+        if (unit.startsWith('sec')) ms = amount * 1000;
+        else if (unit.startsWith('min')) ms = amount * 60 * 1000;
+        else if (unit.startsWith('hour') || unit.startsWith('hr')) ms = amount * 60 * 60 * 1000;
+        if (ms > 0) return Date.now() + ms;
+      }
+    }
+  }
+  return 0;
+}
 
 // Patterns that indicate Claude is asking for permission
 const APPROVAL_PATTERNS = [
@@ -304,11 +358,14 @@ class Watcher extends EventEmitter {
     if (!node) return false;
 
     // Check retry budget
-    const retry = this.errorRetries.get(s.num) || { count: 0, lastRetryAt: 0 };
+    const retry = this.errorRetries.get(s.num) || { count: 0, lastRetryAt: 0, retryAfter: 0 };
     if (retry.count >= MAX_ERROR_RETRIES) return false;
 
-    // Don't retry more than once per delay window
-    if (Date.now() - retry.lastRetryAt < ERROR_RETRY_DELAY) return true; // still waiting
+    // If a reset time was parsed, wait until it passes
+    if (retry.retryAfter && Date.now() < retry.retryAfter) return true; // waiting for reset
+
+    // Don't retry more than once per delay window (for errors without a reset time)
+    if (!retry.retryAfter && Date.now() - retry.lastRetryAt < ERROR_RETRY_DELAY) return true;
 
     // Capture recent pane content
     const paneTarget = `${s.name}:.${this.config.sessions.claudePane}`;
@@ -330,9 +387,26 @@ class Watcher extends EventEmitter {
 
     if (!hasError) return false;
 
-    // Send retry
+    // Check for a reset time in the error output
+    const resetAt = parseResetTime(lines);
+    if (resetAt && Date.now() < resetAt) {
+      // Schedule retry for after reset — don't send yet
+      retry.retryAfter = resetAt;
+      this.errorRetries.set(s.num, retry);
+      const waitMins = Math.ceil((resetAt - Date.now()) / 60000);
+      log.info(`[watcher] session ${s.num}: rate limit detected, will retry after reset (${waitMins}m)`);
+      this.emit('session:error-retry', {
+        session: s, name: s.name, num: s.num,
+        retryCount: retry.count, maxRetries: MAX_ERROR_RETRIES,
+        retryAfter: resetAt, waitMins,
+      });
+      return true;
+    }
+
+    // Send retry now
     retry.count++;
     retry.lastRetryAt = Date.now();
+    retry.retryAfter = 0;
     this.errorRetries.set(s.num, retry);
 
     log.info(`[watcher] session ${s.num}: API error detected, sending retry (${retry.count}/${MAX_ERROR_RETRIES})`);
