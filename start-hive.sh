@@ -47,9 +47,20 @@ else
 fi
 
 # Kill existing hive-server if --restart (--force implies --restart)
-if [ "$RESTART" = true ] && tmux has-session -t hive-server 2>/dev/null; then
+if [ "$RESTART" = true ]; then
   echo "Stopping existing hive server..."
-  tmux kill-session -t hive-server
+  # Kill tmux session
+  tmux kill-session -t hive-server 2>/dev/null || true
+  # Kill any orphaned hive node processes (zombies holding port/Slack connections)
+  # Match node processes running src/index.js from the hive directory, exclude MCP servers
+  for pid in $(lsof -ti :3000 2>/dev/null); do
+    kill "$pid" 2>/dev/null && echo "  killed process $pid (held port 3000)"
+  done
+  # Also kill any node --watch or direct node src/index.js in the hive dir
+  pgrep -f "node.*${HIVE_DIR}/src/index" 2>/dev/null | while read pid; do
+    kill "$pid" 2>/dev/null && echo "  killed orphan hive process $pid"
+  done
+  sleep 1
 fi
 
 # Run hive server in a dedicated tmux session
