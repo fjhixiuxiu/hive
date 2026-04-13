@@ -687,6 +687,13 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     broadcast({ type: 'notify', event: 'session:working', session: num, name });
   });
 
+  watcher.on('session:error-retry', ({ name, num, retryCount, maxRetries }) => {
+    broadcast({ type: 'notify', event: 'session:error-retry', session: num, name, retryCount, maxRetries });
+    if (taskQueue) {
+      taskQueue.pushFeed('state', num, `API error — auto-retry ${retryCount}/${maxRetries}`);
+    }
+  });
+
   watcher.on('ci:changed', ({ name, num, from, to, pr }) => {
     broadcast({ type: 'notify', event: 'ci:changed', session: num, name, from, to, pr });
     broadcastFleetStatus().catch(() => {});
