@@ -135,6 +135,17 @@ class Watcher extends EventEmitter {
       const node = this.router.nodeFor(s.name);
       if (node && fleet.refreshGitInfo) fleet.refreshGitInfo(this.config, node, s.name, s.nodeId).catch(() => {});
     }
+
+    // One-time scan: retry idle sessions that are stalled on API errors from before restart
+    for (const s of sessions) {
+      if (s.state !== 'idle') continue;
+      const retried = await this._checkAndRetryErrors(s);
+      if (retried) {
+        this.notifiedIdle.delete(s.num);
+        this.seenWorking.add(s.num);
+        log.info(`[watcher] session ${s.num}: startup retry — removed from notifiedIdle`);
+      }
+    }
   }
 
   async _poll() {
