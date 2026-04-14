@@ -664,16 +664,22 @@ class TaskQueue extends EventEmitter {
   _handleSessionIdle(num, preview, paneCols) {
     // Complete active task for this session
     const taskId = this.activeTaskBySession.get(num);
-    log.info(`[idle] S:${num} idle — ${taskId ? 'completing task ' + taskId : 'no active task'}`);
+    log.info(`[idle] S:${num} idle — ${taskId ? 'checking task ' + taskId : 'no active task'}`);
     if (taskId) {
       const task = this.tasks.get(taskId);
-      if (!task || (task.mode !== 'manual' && this.taskAutoComplete)) {
+      // Global kill switch: if taskAutoComplete is off, never auto-close anything.
+      // This applies to all task modes AND sources — an attached task is sacred.
+      if (!this.taskAutoComplete) {
+        log.info(`[idle] S:${num} idle — auto-complete disabled, leaving task ${taskId} attached`);
+        return;
+      }
+      if (!task || task.mode !== 'manual') {
         this.completeTask(taskId, null, preview || null, paneCols);
       } else if (task.source && task.source.startsWith('slack:')) {
         // Slack-originated manual tasks complete on idle like auto tasks
         this.completeTask(taskId, null, preview || null, paneCols);
       } else {
-        // Manual task or auto-complete disabled — don't clear locks or dispatch next
+        // Manual task — don't clear locks or dispatch next
         return;
       }
     }
