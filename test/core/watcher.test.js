@@ -297,6 +297,48 @@ describe('Watcher', () => {
       expect(mockNode.sendKeys).not.toHaveBeenCalled();
     });
 
+    // Regression: expanded pattern coverage (timeouts, network, HTTP 502/503/504)
+    const RETRYABLE_FIXTURES = [
+      ['Request timed out', 'API Error (Request timed out.) · Retrying in 1s... (attempt 1/10)\n❯ '],
+      ['Stream idle timeout', '  ⎿  API Error: Stream idle timeout - partial response received\n❯ '],
+      ['Connection error',    '  ⎿  API Error (Connection error.) · Retrying in 1s... (attempt 1/3)\n❯ '],
+      ['ECONNRESET',          '  ⎿  API Error: fetch failed (ECONNRESET)\n❯ '],
+      ['ETIMEDOUT',           '  ⎿  Error: connect ETIMEDOUT 104.18.32.115:443\n❯ '],
+      ['socket hang up',      '  ⎿  API Error: socket hang up\n❯ '],
+      ['fetch failed',        '  ⎿  TypeError: fetch failed\n❯ '],
+      ['HTTP 502',            '  ⎿  API Error: 502 Bad Gateway\n❯ '],
+      ['HTTP 503',            '  ⎿  API Error: 503 Service Unavailable\n❯ '],
+      ['HTTP 504',            '  ⎿  API Error: 504 {"type":"error","error":{"type":"timeout_error"}}\n❯ '],
+      ['HTTP 408',            '  ⎿  API Error: 408 Request Timeout\n❯ '],
+      ['Unable to connect',   '  ⎿  Unable to connect to the API. Check your internet connection.\n❯ '],
+    ];
+
+    for (const [label, paneContent] of RETRYABLE_FIXTURES) {
+      it(`retries on: ${label}`, async () => {
+        const retrySpy = vi.fn();
+        watcher = new Watcher(config, router);
+        watcher.on('session:error-retry', retrySpy);
+
+        const mockNode = createMockNode();
+        mockNode.capturePane.mockResolvedValue(paneContent);
+        mockNode.sendKeys.mockResolvedValue(null);
+        router.nodeFor.mockReturnValue(mockNode);
+
+        watcher.seenWorking.add(6);
+        watcher.prevStates.set(6, 'idle');
+
+        fleetSpy.mockResolvedValue([makeSession(6, 'idle')]);
+        for (let i = 0; i < 5; i++) await watcher._poll();
+
+        expect(retrySpy).toHaveBeenCalledWith(
+          expect.objectContaining({ num: 6, retryCount: 1, maxRetries: 3 })
+        );
+        expect(mockNode.sendKeys).toHaveBeenCalledWith(
+          expect.stringContaining('6'), 'retry', true
+        );
+      });
+    }
+
     it('retries after reset time has passed', async () => {
       const retrySpy = vi.fn();
       watcher = new Watcher(config, router);
