@@ -1189,7 +1189,7 @@
       case 'task:created': case 'task:dispatched': case 'task:completed': case 'task:failed': {
         const idx = tasks.findIndex(t => t.id === msg.task.id);
         if (idx >= 0) tasks[idx] = msg.task; else tasks.unshift(msg.task);
-        renderTasks(); updateTasksBadge(); updateChecklistButtons(); updateActionsButton(); updateTsNavButtons(); updateSessionTaskButtons();
+        renderTasks(); updateTasksBadge(); updateChecklistButtons(); updateActionsButton(); updatePrimaryActionButton(); updateTsNavButtons(); updateSessionTaskButtons();
         // Auto-advance when a viewed task is completed/failed
         if (msg.type === 'task:completed' || msg.type === 'task:failed') {
           const doneId = msg.task.id;
@@ -1227,7 +1227,7 @@
       case 'task:updated': {
         const idx = tasks.findIndex(t => t.id === msg.task.id);
         if (idx >= 0) tasks[idx] = msg.task; else tasks.unshift(msg.task);
-        renderTasks(); updateTasksBadge(); updateChecklistButtons(); updateActionsButton(); refreshChecklistPopup(); updateSessionTaskButtons(); break;
+        renderTasks(); updateTasksBadge(); updateChecklistButtons(); updateActionsButton(); updatePrimaryActionButton(); refreshChecklistPopup(); updateSessionTaskButtons(); break;
       }
       case 'task:cancelled': {
         const idx = tasks.findIndex(t => t.id === msg.task.id);
@@ -2285,7 +2285,7 @@
     if (sessionTask) renderCommentPanel(sessionTask.id, 'session');
     updateCommentBadge('session', sessionTask);
     updateChecklistButtons();
-    updateActionsButton();
+    updateActionsButton(); updatePrimaryActionButton();
     updateSessionTaskButtons();
     updateOffBanners();
 
@@ -4485,7 +4485,7 @@
 
     // Checklist/actions bar is always visible when a task is selected
     updateChecklistButtons();
-    updateActionsButton();
+    updateActionsButton(); updatePrimaryActionButton();
 
     // Always show tabs (checklist tab needs it); hide interactive-only controls
     tabs.style.display = '';
@@ -4554,7 +4554,7 @@
     showTsSessionControls(true);
     updateTasksStatusLine();
     updateChecklistButtons();
-    updateActionsButton();
+    updateActionsButton(); updatePrimaryActionButton();
 
     // Subscribe after fit so content arrives into a properly-sized terminal
     requestAnimationFrame(() => {
@@ -4875,7 +4875,7 @@
     }
     renderCommentPanel(task.id);
     updateChecklistButtons();
-    updateActionsButton();
+    updateActionsButton(); updatePrimaryActionButton();
     autoOpenActionsPopup();
     // Scroll selected card into view
     requestAnimationFrame(() => {
@@ -5287,7 +5287,7 @@
           openTaskSession(task.assignedTo);
           renderCommentPanel(task.id);
           updateChecklistButtons();
-          updateActionsButton();
+          updateActionsButton(); updatePrimaryActionButton();
           autoOpenActionsPopup();
           // Update selection highlight
           tasksScroll.querySelectorAll('.task-card').forEach(c => c.classList.remove('selected'));
@@ -5297,7 +5297,7 @@
           showTaskSnapshot(task.id);
           renderCommentPanel(task.id);
           updateChecklistButtons();
-          updateActionsButton();
+          updateActionsButton(); updatePrimaryActionButton();
           autoOpenActionsPopup();
           // Update selection highlight
           tasksScroll.querySelectorAll('.task-card').forEach(c => c.classList.remove('selected'));
@@ -5306,7 +5306,7 @@
           tasksSelectedTaskId = task.id;
           renderCommentPanel(task.id);
           updateChecklistButtons();
-          updateActionsButton();
+          updateActionsButton(); updatePrimaryActionButton();
           // Show session panel tabs if task has actions
           if (task.actions && task.actions.length) {
             document.getElementById('tasks-session-tabs').style.display = '';
@@ -5881,6 +5881,20 @@
         }
       };
       document.addEventListener('click', closeOverflow);
+    }
+
+    // Primary Action button (left of Actions) — opt-in per PM
+    const paBtn = document.getElementById('task-detail-primary-action');
+    if (paBtn) {
+      const pa = window.getTaskPrimaryAction ? window.getTaskPrimaryAction(task, pmList) : null;
+      if (pa) {
+        paBtn.textContent = pa.label;
+        paBtn.style.display = '';
+        paBtn.onclick = (e) => { e.stopPropagation(); window.open(pa.url, '_blank', 'noopener'); };
+      } else {
+        paBtn.style.display = 'none';
+        paBtn.onclick = null;
+      }
     }
 
     // Context actions button (right side, after Open Session)
@@ -6573,13 +6587,6 @@
     const cardAssigneeName = cardAssigneeUser ? cardAssigneeUser.name : t.assignee;
     const assigneeBtnHtml = `<button class="task-assignee-badge ${cardAssigneeName ? 'has-user' : 'no-user'}" data-task-id="${t.id}" title="${esc(cardAssigneeName || 'Assign user')}">${esc(cardAssigneeName ? cardAssigneeName.split(' ')[0] : 'Assign')}</button>`;
 
-    // Primary Action button (opt-in per PM). Anchor tag so native middle-click / cmd-click works.
-    const paFn = (typeof window !== 'undefined' && window.getTaskPrimaryAction) || null;
-    const pa = paFn ? paFn(t, pmList) : null;
-    const primaryActionBtn = pa
-      ? `<a class="task-primary-action-btn" href="${esc(pa.url)}" target="_blank" rel="noopener" data-id="${t.id}">${esc(pa.label)}</a>`
-      : '';
-
     // Build actions (hidden by default, shown on hover/select)
     let actions = '';
     if (tabType === 'inprogress') {
@@ -6589,7 +6596,6 @@
         hasPerm('cancel') ? `<button class="task-reject-btn" data-id="${t.id}" style="background:var(--red);color:#fff">Reject</button>` : '',
       ].filter(Boolean).join('') : '';
       const btns = [
-        primaryActionBtn,
         assigneeBtnHtml,
         hasPerm('dispatch') ? `<button class="task-snooze-btn" data-id="${t.id}">Snooze</button>` : '',
         hasPerm('dispatch') ? `<button class="task-requeue-btn" data-id="${t.id}">Requeue</button>` : '',
@@ -6599,7 +6605,6 @@
       actions = `<div class="task-actions">${sessionBadge}${pendingBtns}${btns}</div>`;
     } else if (tabType === 'queued') {
       const btns = [
-        primaryActionBtn,
         hasPerm('create-tasks') ? `<button class="task-edit-btn" data-id="${t.id}">Edit</button>` : '',
         assigneeBtnHtml,
         hasPerm('dispatch') ? `<button class="task-assign-btn" data-id="${t.id}">Assign</button>` : '',
@@ -6611,7 +6616,6 @@
       const wakeTime = t.snoozedUntil ? new Date(t.snoozedUntil).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
       const wakeDate = t.snoozedUntil && (t.snoozedUntil - Date.now() > 12 * 3600000) ? new Date(t.snoozedUntil).toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' : '';
       const btns = [
-        primaryActionBtn,
         assigneeBtnHtml,
         hasPerm('dispatch') ? `<button class="task-wake-btn" data-id="${t.id}">Wake</button>` : '',
         hasPerm('cancel') ? `<button class="task-cancel" data-id="${t.id}">Cancel</button>` : '',
@@ -6620,7 +6624,7 @@
     } else {
       // completed
       const resumeBtn = t.assignedTo ? `<button class="task-resume-btn" data-id="${t.id}" data-session="${t.assignedTo}">Resume</button>` : '';
-      actions = `<div class="task-actions">${primaryActionBtn}${assigneeBtnHtml}${resumeBtn}</div>`;
+      actions = `<div class="task-actions">${assigneeBtnHtml}${resumeBtn}</div>`;
     }
 
     // Time info
@@ -7111,6 +7115,17 @@
     tab.style.display = '';
     tab.textContent = `\u26A1 Actions (${task.actions.length})`;
     tab.className = 'session-tab actions-tab';
+  }
+
+  function updatePrimaryActionButton() {
+    const tab = document.getElementById('ts-primary-action-tab');
+    if (!tab) return;
+    const task = getActiveTaskForActions('tasks');
+    const pa = task && window.getTaskPrimaryAction ? window.getTaskPrimaryAction(task, pmList) : null;
+    if (!pa) { tab.style.display = 'none'; tab.onclick = null; return; }
+    tab.style.display = '';
+    tab.textContent = pa.label;
+    tab.onclick = () => window.open(pa.url, '_blank', 'noopener');
   }
 
   function closeActionsPopup() {
