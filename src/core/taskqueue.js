@@ -623,7 +623,9 @@ class TaskQueue extends EventEmitter {
           try { parts.push(fs.readFileSync(f, 'utf8')); } catch {}
         }
         if (parts.length > 0) {
-          fullMessage = parts.join('\n\n---\n\n') + '\n\n---\n\nTASK:\n' + task.text;
+          // Preserve the enriched text (PM instructions, Slack contact, MCP block)
+          // built above — don't fall back to raw task.text, or we silently drop it.
+          fullMessage = parts.join('\n\n---\n\n') + '\n\n---\n\nTASK:\n' + fullMessage;
         }
       }
       return relay.tell(this.config, node, sessionName, fullMessage, { vimMode: this.vimMode });

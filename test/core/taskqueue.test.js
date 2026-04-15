@@ -390,6 +390,93 @@ describe('TaskQueue', () => {
       const task = Array.from(tq.tasks.values()).find(t => t.text === 'Fix bug');
       expect(task.status).toBe('queued');
     });
+
+    it('dispatched prompt includes BOTH agent file and PM enrichment (instructions + MCP)', async () => {
+      // Regression: a prior bug reassigned fullMessage to raw task.text when the
+      // designation had agent files, silently dropping PM instructions and the
+      // MCP block. The dispatched prompt must contain both pieces.
+      //
+      // This test drives _dispatchTask directly rather than via the auto-dispatch
+      // loop so it's isolated from fleet/idle/cooldown concerns and fast.
+      vi.useRealTimers();
+      // Short-circuit the hardcoded 2500ms sleep between /clear and the real
+      // prompt so the fire-and-forget sendTask chain resolves inside the test.
+      const realSetTimeout = global.setTimeout;
+      vi.spyOn(global, 'setTimeout').mockImplementation((fn, ms) => {
+        // Fire the callback on next tick regardless of requested ms
+        return realSetTimeout(fn, 0);
+      });
+
+      // Agent file on disk — override the default ENOENT mock for this one path
+      const AGENT_FILE_PATH = '/fake/agents/cherrypick.md';
+      const AGENT_FILE_BODY = '# Cherry Pick Agent\n\nFollow the cherry pick playbook.';
+      fs.readFileSync.mockImplementation((p) => {
+        if (p === AGENT_FILE_PATH) return AGENT_FILE_BODY;
+        throw new Error('ENOENT');
+      });
+
+      // Minimal PM manager stub — matches the shape taskqueue.js consumes
+      // (enrichTaskText for dispatch, serialize for _saveState). Mirrors the
+      // real _buildFullText behavior for the fields under test.
+      tq._pmManager = {
+        pms: new Map(),
+        serialize: () => ({ pms: [], knowledgeBase: [] }),
+        enrichTaskText(task) {
+          let result = task.text;
+          result += '\n\nInstructions: Review the diff and cherry pick matching commits.';
+          result += '\n\n## Hive Integration\n\nUse hive_get_task to see your full assignment.';
+          return result;
+        },
+      };
+
+      // Wire a designation with the agent file and assign it to session 6
+      tq.setDesignationDef('cherrypick', {
+        agentFiles: [AGENT_FILE_PATH],
+        description: 'Cherry picks',
+        color: 'red',
+      });
+      tq.designations.set(6, 'cherrypick');
+
+      // Session 6 is idle and resolvable to a real node
+      fleetModule.getFleetStatus.mockResolvedValue([{ name: '6-CP', num: 6, state: 'idle' }]);
+      fleetModule.findSession.mockResolvedValue({ name: '6-CP', nodeId: 'local' });
+
+      // Build a task directly (skip createTask's auto-dispatch side-effects)
+      // and dispatch it synchronously via _dispatchTask.
+      const task = {
+        id: 'test-1',
+        text: 'Cherry pick DEV-12345',
+        mode: 'auto',
+        designation: 'cherrypick',
+        status: 'queued',
+        source: 'pm:release',
+        assignedTo: null,
+        createdAt: Date.now(),
+      };
+      tq.tasks.set(task.id, task);
+      await tq._dispatchTask(task, 6);
+      // Flush microtasks for the fire-and-forget sendTask chain
+      await new Promise(r => realSetTimeout(r, 10));
+
+      // relay.tell is called twice per dispatch: once for /clear, once for the
+      // real prompt. Find the non-/clear call and inspect its message.
+      const tellCalls = relayModule.tell.mock.calls;
+      const promptCall = tellCalls.find(args => args[3] !== '/clear');
+      expect(promptCall, 'expected relay.tell to be called with the task prompt').toBeDefined();
+
+      const sentMessage = promptCall[3];
+
+      // Agent file content must survive
+      expect(sentMessage).toContain('# Cherry Pick Agent');
+      expect(sentMessage).toContain('Follow the cherry pick playbook.');
+      // TASK section with raw task text must be present
+      expect(sentMessage).toContain('TASK:');
+      expect(sentMessage).toContain('Cherry pick DEV-12345');
+      // PM enrichment must NOT be silently dropped
+      expect(sentMessage).toContain('Instructions: Review the diff and cherry pick matching commits.');
+      expect(sentMessage).toContain('## Hive Integration');
+      expect(sentMessage).toContain('hive_get_task');
+    });
   });
 
   describe('approvals', () => {
