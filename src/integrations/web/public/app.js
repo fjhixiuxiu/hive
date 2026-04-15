@@ -1362,6 +1362,7 @@
         break;
       }
       case 'pm:list': pmList = msg.pms || []; renderPMs();
+        renderTasks(); // re-render task cards so PM-level flags (e.g. primaryAction) take effect without a page refresh
         if (tasksViewMode === 'board') { populateBoardPmSelect(); renderBoardColumns(); renderTaskBoard(); }
         if (loadingActive) completeLoadingStage('pms', (msg.pms || []).length + ' active');
         break;
