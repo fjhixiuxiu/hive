@@ -20,14 +20,26 @@ const NUMBERED_OPTION_PATTERN = /^\d+[.)]\s+.{5,}/;
 
 // Patterns that indicate Claude hit a retryable API error
 const API_ERROR_PATTERNS = [
-  /API Error:\s*500/,
-  /API Error:\s*429/,
-  /API Error:\s*529/,
+  // HTTP status codes (Anthropic API)
+  /API Error:?\s*\(?\s*(408|429|500|502|503|504|529)\b/,
+  // Error body phrases
   /overloaded/i,
   /rate.?limit/i,
   /usage.?limit/i,
   /capacity/i,
   /Internal server error/i,
+  /timeout_error/i,
+  // Timeout / streaming
+  /Request timed out/i,
+  /Stream (idle )?timeout/i,
+  /partial response received/i,
+  // Network / connection
+  /Connection error/i,
+  /\b(ECONNRESET|ETIMEDOUT|ECONNREFUSED|EPIPE|ENOTFOUND|EAI_AGAIN)\b/,
+  /socket hang up/i,
+  /fetch failed/i,
+  /Unable to connect to (the )?API/i,
+  /Check your (internet )?connection/i,
 ];
 
 const MAX_ERROR_RETRIES = 3;
