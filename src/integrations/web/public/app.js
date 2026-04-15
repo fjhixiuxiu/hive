@@ -6572,6 +6572,13 @@
     const cardAssigneeName = cardAssigneeUser ? cardAssigneeUser.name : t.assignee;
     const assigneeBtnHtml = `<button class="task-assignee-badge ${cardAssigneeName ? 'has-user' : 'no-user'}" data-task-id="${t.id}" title="${esc(cardAssigneeName || 'Assign user')}">${esc(cardAssigneeName ? cardAssigneeName.split(' ')[0] : 'Assign')}</button>`;
 
+    // Primary Action button (opt-in per PM). Anchor tag so native middle-click / cmd-click works.
+    const paFn = (typeof window !== 'undefined' && window.getTaskPrimaryAction) || null;
+    const pa = paFn ? paFn(t, pmList) : null;
+    const primaryActionBtn = pa
+      ? `<a class="task-primary-action-btn" href="${esc(pa.url)}" target="_blank" rel="noopener" data-id="${t.id}">${esc(pa.label)}</a>`
+      : '';
+
     // Build actions (hidden by default, shown on hover/select)
     let actions = '';
     if (tabType === 'inprogress') {
@@ -6581,6 +6588,7 @@
         hasPerm('cancel') ? `<button class="task-reject-btn" data-id="${t.id}" style="background:var(--red);color:#fff">Reject</button>` : '',
       ].filter(Boolean).join('') : '';
       const btns = [
+        primaryActionBtn,
         assigneeBtnHtml,
         hasPerm('dispatch') ? `<button class="task-snooze-btn" data-id="${t.id}">Snooze</button>` : '',
         hasPerm('dispatch') ? `<button class="task-requeue-btn" data-id="${t.id}">Requeue</button>` : '',
@@ -6590,6 +6598,7 @@
       actions = `<div class="task-actions">${sessionBadge}${pendingBtns}${btns}</div>`;
     } else if (tabType === 'queued') {
       const btns = [
+        primaryActionBtn,
         hasPerm('create-tasks') ? `<button class="task-edit-btn" data-id="${t.id}">Edit</button>` : '',
         assigneeBtnHtml,
         hasPerm('dispatch') ? `<button class="task-assign-btn" data-id="${t.id}">Assign</button>` : '',
@@ -6601,6 +6610,7 @@
       const wakeTime = t.snoozedUntil ? new Date(t.snoozedUntil).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
       const wakeDate = t.snoozedUntil && (t.snoozedUntil - Date.now() > 12 * 3600000) ? new Date(t.snoozedUntil).toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' : '';
       const btns = [
+        primaryActionBtn,
         assigneeBtnHtml,
         hasPerm('dispatch') ? `<button class="task-wake-btn" data-id="${t.id}">Wake</button>` : '',
         hasPerm('cancel') ? `<button class="task-cancel" data-id="${t.id}">Cancel</button>` : '',
@@ -6609,7 +6619,7 @@
     } else {
       // completed
       const resumeBtn = t.assignedTo ? `<button class="task-resume-btn" data-id="${t.id}" data-session="${t.assignedTo}">Resume</button>` : '';
-      actions = `<div class="task-actions">${assigneeBtnHtml}${resumeBtn}</div>`;
+      actions = `<div class="task-actions">${primaryActionBtn}${assigneeBtnHtml}${resumeBtn}</div>`;
     }
 
     // Time info
@@ -8247,6 +8257,20 @@
       const isGhPr = type === 'github-prs' || type === 'github-re-reviews';
       actionsField.style.display = isGhPr ? '' : 'none';
     }
+    // Primary Action toggle: show for GitHub PR/issue/re-review and Slack PMs (scope A)
+    const paField = document.getElementById('pm-form-primary-action-field');
+    const paLabel = document.getElementById('pm-form-primary-action-label');
+    if (paField) {
+      const paLabels = {
+        'github-prs': 'Enable Primary Action — Open PR',
+        'github-re-reviews': 'Enable Primary Action — Open PR',
+        'github-issues': 'Enable Primary Action — Open Issue',
+        'slack': 'Enable Primary Action — Open Thread',
+      };
+      const label = paLabels[type];
+      paField.style.display = label ? '' : 'none';
+      if (paLabel && label) paLabel.textContent = label;
+    }
   }
 
   document.getElementById('pm-form-save').addEventListener('click', () => {
@@ -8346,6 +8370,7 @@
       schedule: document.getElementById('pm-form-cron').value.trim() || null,
       slackUserId: document.getElementById('pm-form-slack-user-id').value.trim() || null,
       autoCreate: document.getElementById('pm-form-auto-create').checked,
+      primaryAction: { enabled: document.getElementById('pm-form-primary-action').checked },
     };
     // Collect completion conditions
     const completionConditions = [];
@@ -8440,6 +8465,7 @@
     document.getElementById('pm-form-mcp-enabled').checked = pm ? !!pm.mcpEnabled : false;
     document.getElementById('pm-form-require-human-close').checked = pm ? !!pm.requireHumanClose : false;
     document.getElementById('pm-form-auto-create').checked = pm ? !!pm.autoCreate : false;
+    document.getElementById('pm-form-primary-action').checked = pm ? !!(pm.primaryAction && pm.primaryAction.enabled) : false;
     document.getElementById('pm-form-learning-enabled').checked = pm ? !!pm.learningEnabled : false;
     document.getElementById('pm-form-learning-prompt').value = pm ? (pm.learningPrompt || '') : '';
     document.getElementById('pm-form-learning-prompt-wrap').style.display = (pm && pm.learningEnabled) ? '' : 'none';

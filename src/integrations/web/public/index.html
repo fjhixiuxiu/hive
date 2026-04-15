@@ -1190,6 +1190,11 @@
         <input type="checkbox" id="pm-form-auto-create"> Auto-create sessions when no idle session is available
       </label>
     </div>
+    <div class="pm-form-field full-width" id="pm-form-primary-action-field" style="display:none">
+      <label style="font-size:13px;color:var(--fg);cursor:pointer;display:flex;align-items:center;gap:6px">
+        <input type="checkbox" id="pm-form-primary-action"> <span id="pm-form-primary-action-label">Enable Primary Action — opens the PR/issue/thread from the task card</span>
+      </label>
+    </div>
     <div class="pm-form-field">
       <label class="pm-form-label">Task Format <span style="color:var(--dim)">(use {key} and {summary} as placeholders)</span></label>
       <input class="pm-form-input" id="pm-form-taskformat" type="text" placeholder="e.g. /start-task {key}" autocomplete="off">
@@ -1695,6 +1700,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-web-links@0.11.0/lib/addon-web-links.min.js"></script>
+<script src="/primary-action.js?v=1"></script>
 <script src="/app.js?v=2"></script>
 </body>
 </html>

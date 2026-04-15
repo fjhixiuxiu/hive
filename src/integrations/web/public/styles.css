@@ -956,6 +956,12 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .task-wake-btn { color: var(--green); }
 .task-cancel:hover, .task-requeue-btn:hover, .task-done-btn:hover,
 .task-edit-btn:hover, .task-assign-btn:hover, .task-snooze-btn:hover, .task-wake-btn:hover { opacity: 0.7; }
+.task-primary-action-btn {
+  background: var(--cyan); color: #000; border: none; border-radius: 4px;
+  padding: 4px 10px; font-size: var(--fs-sm); font-weight: 600; cursor: pointer;
+  text-decoration: none; display: inline-block;
+}
+.task-primary-action-btn:hover { opacity: 0.85; }
 .snooze-presets { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; }
 .snooze-preset-btn {
   background: var(--bg3); border: 1px solid var(--bg3); color: var(--fg); font-size: var(--fs-md);
