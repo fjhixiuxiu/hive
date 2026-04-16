@@ -956,6 +956,11 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .task-wake-btn { color: var(--green); }
 .task-cancel:hover, .task-requeue-btn:hover, .task-done-btn:hover,
 .task-edit-btn:hover, .task-assign-btn:hover, .task-snooze-btn:hover, .task-wake-btn:hover { opacity: 0.7; }
+/* Primary Action button — session tab (Tasks view) and task-detail toolbar (Board panel view).
+   Uses the accent color to stand out next to regular tabs / action buttons. */
+.session-tab.primary-action-tab { color: var(--cyan); font-weight: 600; }
+.session-tab.primary-action-tab:hover { background: var(--bg3); }
+.task-detail-action.td-primary-action-btn { color: var(--cyan); font-weight: 600; }
 .snooze-presets { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; }
 .snooze-preset-btn {
   background: var(--bg3); border: 1px solid var(--bg3); color: var(--fg); font-size: var(--fs-md);

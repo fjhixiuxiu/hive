@@ -1196,7 +1196,7 @@
       case 'task:created': case 'task:dispatched': case 'task:completed': case 'task:failed': {
         const idx = tasks.findIndex(t => t.id === msg.task.id);
         if (idx >= 0) tasks[idx] = msg.task; else tasks.unshift(msg.task);
-        renderTasks(); updateTasksBadge(); updateChecklistButtons(); updateActionsButton(); updateTsNavButtons(); updateSessionTaskButtons();
+        renderTasks(); updateTasksBadge(); updateChecklistButtons(); updateActionsButton(); updatePrimaryActionButton(); updateTsNavButtons(); updateSessionTaskButtons();
         // Auto-advance when a viewed task is completed/failed
         if (msg.type === 'task:completed' || msg.type === 'task:failed') {
           const doneId = msg.task.id;
@@ -1234,7 +1234,7 @@
       case 'task:updated': {
         const idx = tasks.findIndex(t => t.id === msg.task.id);
         if (idx >= 0) tasks[idx] = msg.task; else tasks.unshift(msg.task);
-        renderTasks(); updateTasksBadge(); updateChecklistButtons(); updateActionsButton(); refreshChecklistPopup(); updateSessionTaskButtons(); break;
+        renderTasks(); updateTasksBadge(); updateChecklistButtons(); updateActionsButton(); updatePrimaryActionButton(); refreshChecklistPopup(); updateSessionTaskButtons(); break;
       }
       case 'task:cancelled': {
         const idx = tasks.findIndex(t => t.id === msg.task.id);
@@ -1369,6 +1369,7 @@
         break;
       }
       case 'pm:list': pmList = msg.pms || []; renderPMs();
+        renderTasks(); // re-render task cards so PM-level flags (e.g. primaryAction) take effect without a page refresh
         if (tasksViewMode === 'board') { populateBoardPmSelect(); renderBoardColumns(); renderTaskBoard(); }
         if (loadingActive) completeLoadingStage('pms', (msg.pms || []).length + ' active');
         break;
@@ -2292,7 +2293,7 @@
     if (sessionTask) renderCommentPanel(sessionTask.id, 'session');
     updateCommentBadge('session', sessionTask);
     updateChecklistButtons();
-    updateActionsButton();
+    updateActionsButton(); updatePrimaryActionButton();
     updateSessionTaskButtons();
     updateOffBanners();
 
@@ -4495,7 +4496,7 @@
 
     // Checklist/actions bar is always visible when a task is selected
     updateChecklistButtons();
-    updateActionsButton();
+    updateActionsButton(); updatePrimaryActionButton();
 
     // Always show tabs (checklist tab needs it); hide interactive-only controls
     tabs.style.display = '';
@@ -4564,7 +4565,7 @@
     showTsSessionControls(true);
     updateTasksStatusLine();
     updateChecklistButtons();
-    updateActionsButton();
+    updateActionsButton(); updatePrimaryActionButton();
 
     // Subscribe after fit so content arrives into a properly-sized terminal
     requestAnimationFrame(() => {
@@ -4885,7 +4886,7 @@
     }
     renderCommentPanel(task.id);
     updateChecklistButtons();
-    updateActionsButton();
+    updateActionsButton(); updatePrimaryActionButton();
     autoOpenActionsPopup();
     // Scroll selected card into view
     requestAnimationFrame(() => {
@@ -5297,7 +5298,7 @@
           openTaskSession(task.assignedTo);
           renderCommentPanel(task.id);
           updateChecklistButtons();
-          updateActionsButton();
+          updateActionsButton(); updatePrimaryActionButton();
           autoOpenActionsPopup();
           // Update selection highlight
           tasksScroll.querySelectorAll('.task-card').forEach(c => c.classList.remove('selected'));
@@ -5307,7 +5308,7 @@
           showTaskSnapshot(task.id);
           renderCommentPanel(task.id);
           updateChecklistButtons();
-          updateActionsButton();
+          updateActionsButton(); updatePrimaryActionButton();
           autoOpenActionsPopup();
           // Update selection highlight
           tasksScroll.querySelectorAll('.task-card').forEach(c => c.classList.remove('selected'));
@@ -5316,7 +5317,7 @@
           tasksSelectedTaskId = task.id;
           renderCommentPanel(task.id);
           updateChecklistButtons();
-          updateActionsButton();
+          updateActionsButton(); updatePrimaryActionButton();
           // Show session panel tabs if task has actions
           if (task.actions && task.actions.length) {
             document.getElementById('tasks-session-tabs').style.display = '';
@@ -5891,6 +5892,20 @@
         }
       };
       document.addEventListener('click', closeOverflow);
+    }
+
+    // Primary Action button (left of Actions) — opt-in per PM
+    const paBtn = document.getElementById('task-detail-primary-action');
+    if (paBtn) {
+      const pa = window.getTaskPrimaryAction ? window.getTaskPrimaryAction(task, pmList) : null;
+      if (pa) {
+        paBtn.textContent = pa.label;
+        paBtn.style.display = '';
+        paBtn.onclick = (e) => { e.stopPropagation(); window.open(pa.url, '_blank', 'noopener'); };
+      } else {
+        paBtn.style.display = 'none';
+        paBtn.onclick = null;
+      }
     }
 
     // Context actions button (right side, after Open Session)
@@ -7115,6 +7130,17 @@
     tab.className = 'session-tab actions-tab';
   }
 
+  function updatePrimaryActionButton() {
+    const tab = document.getElementById('ts-primary-action-tab');
+    if (!tab) return;
+    const task = getActiveTaskForActions('tasks');
+    const pa = task && window.getTaskPrimaryAction ? window.getTaskPrimaryAction(task, pmList) : null;
+    if (!pa) { tab.style.display = 'none'; tab.onclick = null; return; }
+    tab.style.display = '';
+    tab.textContent = pa.label;
+    tab.onclick = () => window.open(pa.url, '_blank', 'noopener');
+  }
+
   function closeActionsPopup() {
     actionsPopupTaskId = null;
     document.querySelectorAll('.actions-popup').forEach(p => p.remove());
@@ -8261,6 +8287,20 @@
       const isGhPr = type === 'github-prs' || type === 'github-re-reviews';
       actionsField.style.display = isGhPr ? '' : 'none';
     }
+    // Primary Action toggle: show for GitHub PR/issue/re-review and Slack PMs (scope A)
+    const paField = document.getElementById('pm-form-primary-action-field');
+    const paLabel = document.getElementById('pm-form-primary-action-label');
+    if (paField) {
+      const paLabels = {
+        'github-prs': 'Enable Primary Action — Open PR',
+        'github-re-reviews': 'Enable Primary Action — Open PR',
+        'github-issues': 'Enable Primary Action — Open Issue',
+        'slack': 'Enable Primary Action — Open Thread',
+      };
+      const label = paLabels[type];
+      paField.style.display = label ? '' : 'none';
+      if (paLabel && label) paLabel.textContent = label;
+    }
   }
 
   document.getElementById('pm-form-save').addEventListener('click', () => {
@@ -8360,6 +8400,7 @@
       schedule: document.getElementById('pm-form-cron').value.trim() || null,
       slackUserId: document.getElementById('pm-form-slack-user-id').value.trim() || null,
       autoCreate: document.getElementById('pm-form-auto-create').checked,
+      primaryAction: { enabled: document.getElementById('pm-form-primary-action').checked },
     };
     // Collect completion conditions
     const completionConditions = [];
@@ -8454,6 +8495,7 @@
     document.getElementById('pm-form-mcp-enabled').checked = pm ? !!pm.mcpEnabled : false;
     document.getElementById('pm-form-require-human-close').checked = pm ? !!pm.requireHumanClose : false;
     document.getElementById('pm-form-auto-create').checked = pm ? !!pm.autoCreate : false;
+    document.getElementById('pm-form-primary-action').checked = pm ? !!(pm.primaryAction && pm.primaryAction.enabled) : false;
     document.getElementById('pm-form-learning-enabled').checked = pm ? !!pm.learningEnabled : false;
     document.getElementById('pm-form-learning-prompt').value = pm ? (pm.learningPrompt || '') : '';
     document.getElementById('pm-form-learning-prompt-wrap').style.display = (pm && pm.learningEnabled) ? '' : 'none';

@@ -426,6 +426,7 @@ function createSlackBot(taskQueue, config, router, pmManager) {
       // See: ~/dev/agents/hive/context-consolidation-plan.md (Step 3: Slack bot refactor)
       task.slackChannel = event.channel;
       task.slackThreadTs = threadTs || event.ts;
+      if (permalink) task.slackPermalink = permalink;
       taskQueue._saveState();
       console.log(`[slack] Task ${task.id} created (${mode}) for thread ${task.slackThreadTs} in ${event.channel}`);
     } catch (err) {

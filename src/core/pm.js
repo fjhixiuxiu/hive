@@ -115,6 +115,7 @@ class ProjectManager extends EventEmitter {
       actions: cfg.actions || null, // allowed context action IDs (null = all)
       boardStates: cfg.boardStates || null, // per-PM work state overrides: [{ stateId, autoOnStatus }]
       autoCreate: cfg.autoCreate || false, // when true, auto-create sessions for this PM's queued tasks
+      primaryAction: cfg.primaryAction || { enabled: false }, // { enabled: bool } — opt-in "Open PR/Issue/Thread" button on task cards
       enabled: false,
       seenKeys: [],
       tasksCreated: 0,
@@ -814,6 +815,12 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
             meta.actionContext = { type: 'github-pr', repo: prMeta.repo, prNumber: prMeta.prNumber };
             meta.pr = prMeta.prNumber;
           }
+        }
+
+        // Attach actionContext for issue-sourced tasks (used by Primary Action URL builder)
+        if (pm.source.type === 'github-issues') {
+          const m = /^(.+)#(\d+)$/.exec(issue.key);
+          if (m) meta.actionContext = { type: 'github-issue', repo: m[1], issueNumber: parseInt(m[2], 10) };
         }
 
         const task = this.taskQueue.createTask(text, mode, pm.targetSession || null, pm.designation, meta);
