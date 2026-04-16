@@ -735,20 +735,25 @@ class TaskQueue extends EventEmitter {
         (this.lastDispatchedAt.get(a.num) || 0) - (this.lastDispatchedAt.get(b.num) || 0)
       );
 
-      // Dispatch one task per idle session (not all at once)
-      for (const session of idleAuto) {
-        const sessionDesig = this.designations.get(session.num);
-        const task = queuedTasks.find(t => {
-          if (t.status !== 'queued') return false;
-          if (t.designation) {
-            // Designated task → only match sessions with same designation
-            return sessionDesig === t.designation;
-          }
-          // Undesignated task → only match sessions with no designation
-          return !sessionDesig;
-        });
-        if (task) {
-          await this._dispatchTask(task, session.num);
+      // Dispatch one task per idle session.
+      // Designated tasks prefer sessions with matching designation, but fall
+      // back to undesignated sessions. They never cross-designate (e.g. a
+      // 'cherrypick' task won't go to an 'ios'-designated session).
+      // Undesignated tasks still only go to undesignated sessions.
+      const dispatched = new Set(); // track sessions claimed this round
+      for (const task of queuedTasks) {
+        if (task.status !== 'queued') continue;
+        const candidates = idleAuto.filter(s => !dispatched.has(s.num));
+        let best = null;
+        if (task.designation) {
+          best = candidates.find(s => this.designations.get(s.num) === task.designation)
+            || candidates.find(s => !this.designations.get(s.num));
+        } else {
+          best = candidates.find(s => !this.designations.get(s.num));
+        }
+        if (best) {
+          dispatched.add(best.num);
+          await this._dispatchTask(task, best.num);
         }
       }
 
@@ -768,10 +773,13 @@ class TaskQueue extends EventEmitter {
       }
 
       for (const [desig, tasks] of byDesig) {
-        // Check if there's already an idle or booting session for this designation
-        const matching = sessions.filter(s =>
-          (desig ? this.designations.get(s.num) === desig : !this.designations.get(s.num))
-        );
+        // Check if there's already an idle or booting session for this designation.
+        // Designated tasks can also fall back to undesignated sessions, so include
+        // those in the matching set to avoid needless auto-creation.
+        const matching = sessions.filter(s => {
+          const sd = this.designations.get(s.num);
+          return desig ? (sd === desig || !sd) : !sd;
+        });
         const hasIdle = matching.some(s =>
           s.state === 'idle' && this.autoSessions.has(s.num)
           && !this.dispatchLock.has(s.num) && !this.activeTaskBySession.has(s.num)
