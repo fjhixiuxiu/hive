@@ -371,6 +371,53 @@ describe('TaskQueue', () => {
       expect(task.status).toBe('queued');
     });
 
+    it('falls back to undesignated session for designated task', async () => {
+      vi.useRealTimers();
+      tq.autoSessions.add(6);
+      // session 6 has no designation
+      fleetModule.getFleetStatus.mockResolvedValue([{ name: '6-DEV', num: 6, state: 'idle' }]);
+      fleetModule.findSession.mockResolvedValue({ name: '6-DEV', nodeId: 'local' });
+      tq.createTask('Review PR', 'auto', null, 'reviewer');
+
+      await new Promise(r => setTimeout(r, 50));
+      const task = Array.from(tq.tasks.values()).find(t => t.text === 'Review PR');
+      expect(task.status).toBe('dispatched');
+      expect(task.assignedTo).toBe(6);
+    });
+
+    it('prefers matching designation over undesignated fallback', async () => {
+      vi.useRealTimers();
+      tq.autoSessions.add(6);
+      tq.autoSessions.add(7);
+      tq.designations.set(7, 'reviewer');
+      // session 6 = undesignated, session 7 = reviewer
+      // Make session 6 idle longer so LRU would pick it first
+      tq.lastDispatchedAt.set(6, 0);
+      tq.lastDispatchedAt.set(7, 1000);
+      fleetModule.getFleetStatus.mockResolvedValue([
+        { name: '6-DEV', num: 6, state: 'idle' },
+        { name: '7-REV', num: 7, state: 'idle' },
+      ]);
+      fleetModule.findSession.mockResolvedValue({ name: '7-REV', nodeId: 'local' });
+      tq.createTask('Review PR', 'auto', null, 'reviewer');
+
+      await new Promise(r => setTimeout(r, 50));
+      const task = Array.from(tq.tasks.values()).find(t => t.text === 'Review PR');
+      expect(task.status).toBe('dispatched');
+      expect(task.assignedTo).toBe(7);
+    });
+
+    it('does not dispatch undesignated task to designated session', async () => {
+      tq.autoSessions.add(6);
+      tq.designations.set(6, 'reviewer');
+      tq.createTask('Fix bug', 'auto', null, null);
+      fleetModule.getFleetStatus.mockResolvedValue([{ name: '6-DEV', num: 6, state: 'idle' }]);
+
+      await tq._tryAutoDispatch();
+      const task = Array.from(tq.tasks.values()).find(t => t.text === 'Fix bug');
+      expect(task.status).toBe('queued');
+    });
+
     it('does not dispatch to non-auto session', async () => {
       tq.createTask('Fix bug', 'auto', null, null);
       fleetModule.getFleetStatus.mockResolvedValue([{ name: '6-DEV', num: 6, state: 'idle' }]);
