@@ -12,6 +12,13 @@
     });
   }
 
+  // OSC 8 hyperlink handler — Claude Code emits proper ANSI hyperlinks,
+  // xterm.js marks them internally but needs this handler to make them clickable.
+  const XTERM_LINK_HANDLER = {
+    activate: (event, text) => { window.open(text, '_blank'); },
+    allowNonHttpProtocols: false,
+  };
+
   // ── Theme ────────────────────────────────────────
   const XTERM_DARK = { background: '#0f0f23', foreground: '#e2e2f0', cursor: '#e2e2f0', black: '#282a36', red: '#ff5555', green: '#50fa7b', yellow: '#f1fa8c', blue: '#bd93f9', magenta: '#ff79c6', cyan: '#8be9fd', white: '#f8f8f2', brightBlack: '#6272a4', brightRed: '#ff6e6e', brightGreen: '#69ff94', brightYellow: '#ffffa5', brightBlue: '#d6acff', brightMagenta: '#ff92df', brightCyan: '#a4ffff', brightWhite: '#ffffff' };
   const XTERM_LIGHT = { background: '#f5f5f7', foreground: '#1d1d2b', cursor: '#1d1d2b', selectionBackground: 'rgba(124,58,237,0.25)', black: '#e0e0e6', red: '#d93025', green: '#1a8f3f', yellow: '#9a7b00', blue: '#7c3aed', magenta: '#c72880', cyan: '#0277a8', white: '#1d1d2b', brightBlack: '#6e7191', brightRed: '#e8453a', brightGreen: '#2da653', brightYellow: '#b08f00', brightBlue: '#9058f0', brightMagenta: '#d94095', brightCyan: '#0892c4', brightWhite: '#1d1d2b' };
@@ -1978,6 +1985,7 @@
         scrollback: 500,
         convertEol: true,
         allowProposedApi: true,
+        linkHandler: XTERM_LINK_HANDLER,
       });
       const f = new FitAddon.FitAddon();
       t.loadAddon(f);
@@ -2294,6 +2302,7 @@
         theme: currentTheme === 'light' ? XTERM_LIGHT : XTERM_DARK,
         fontSize: sessionFontSize, fontFamily: "'SF Mono', 'Menlo', 'Monaco', 'Courier New', monospace",
         disableStdin: true, scrollback: 5000, convertEol: true, allowProposedApi: true,
+        linkHandler: XTERM_LINK_HANDLER,
       });
       fitAddon = new FitAddon.FitAddon();
       term.loadAddon(fitAddon);
@@ -2725,6 +2734,7 @@
         theme: currentTheme === 'light' ? XTERM_LIGHT : XTERM_DARK,
         fontSize: 12, fontFamily: "'SF Mono', 'Menlo', 'Monaco', 'Courier New', monospace",
         disableStdin: true, scrollback: 5000, convertEol: true, allowProposedApi: true,
+        linkHandler: XTERM_LINK_HANDLER,
       });
       consoleFit = new FitAddon.FitAddon();
       consoleTerm.loadAddon(consoleFit);
@@ -4403,6 +4413,7 @@
       theme: currentTheme === 'light' ? XTERM_LIGHT : XTERM_DARK,
       fontSize: tsFontSize, fontFamily: "'SF Mono', 'Menlo', 'Monaco', 'Courier New', monospace",
       disableStdin: true, scrollback: 5000, convertEol: true, allowProposedApi: true,
+      linkHandler: XTERM_LINK_HANDLER,
     });
     tasksSessionFit = new FitAddon.FitAddon();
     tasksSessionTerm.loadAddon(tasksSessionFit);
@@ -5965,6 +5976,8 @@
         fontSize: tdFontSize, fontFamily: "'SF Mono', Menlo, Monaco, monospace",
         theme: currentTheme === 'light' ? XTERM_LIGHT : XTERM_DARK,
         scrollback: 5000, convertEol: true, cursorBlink: false, disableStdin: true,
+        allowProposedApi: true,
+        linkHandler: XTERM_LINK_HANDLER,
       });
       taskDetailFitAddon = new FitAddon.FitAddon();
       taskDetailTerm.loadAddon(taskDetailFitAddon);
@@ -8140,6 +8153,7 @@
         theme: currentTheme === 'light' ? XTERM_LIGHT : XTERM_DARK,
         fontSize: sessionFontSize, fontFamily: "'SF Mono', 'Menlo', 'Monaco', 'Courier New', monospace",
         disableStdin: true, scrollback: 5000, convertEol: true, allowProposedApi: true,
+        linkHandler: XTERM_LINK_HANDLER,
       });
       fitAddon = new FitAddon.FitAddon();
       term.loadAddon(fitAddon);
@@ -9643,6 +9657,7 @@
         theme: currentTheme === 'light' ? XTERM_LIGHT : XTERM_DARK,
         fontSize: 12, fontFamily: "'SF Mono', 'Menlo', 'Monaco', 'Courier New', monospace",
         disableStdin: true, scrollback: 5000, convertEol: true, allowProposedApi: true,
+        linkHandler: XTERM_LINK_HANDLER,
       });
       mtgFit = new FitAddon.FitAddon();
       mtgTerm.loadAddon(mtgFit);

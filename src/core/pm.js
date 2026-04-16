@@ -820,7 +820,7 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
         // Attach actionContext for issue-sourced tasks (used by Primary Action URL builder)
         if (pm.source.type === 'github-issues') {
           const m = /^(.+)#(\d+)$/.exec(issue.key);
-          if (m) meta.actionContext = { type: 'github-issue', repo: m[1], issueNumber: parseInt(m[2]) };
+          if (m) meta.actionContext = { type: 'github-issue', repo: m[1], issueNumber: parseInt(m[2], 10) };
         }
 
         const task = this.taskQueue.createTask(text, mode, pm.targetSession || null, pm.designation, meta);

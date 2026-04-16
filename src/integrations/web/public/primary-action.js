@@ -8,11 +8,29 @@
 
   function getTaskPrimaryAction(task, pms) {
     if (!task || !pms || !task.source) return null;
-    var pmName = String(task.source).replace(/^pm:/, '');
-    if (!pmName) return null;
+    var src = String(task.source);
+
+    // Slack @mention tasks are created with source="slack:<authorName>", not
+    // "pm:<slackPmName>". Look up the enabled Slack PM via matching channel
+    // (or catch-all) rather than by task.source name. See PR #243 review.
     var pm = null;
-    for (var i = 0; i < pms.length; i++) {
-      if (pms[i] && pms[i].name === pmName) { pm = pms[i]; break; }
+    if (src.indexOf('slack:') === 0) {
+      var exact = null, fallback = null;
+      for (var j = 0; j < pms.length; j++) {
+        var p = pms[j];
+        if (!p || !p.source || p.source.type !== 'slack') continue;
+        if (!p.primaryAction || p.primaryAction.enabled !== true) continue;
+        if (p.source.channel && task.slackChannel && p.source.channel === task.slackChannel) {
+          exact = p; break;
+        }
+        if (!p.source.channel && !fallback) fallback = p;
+      }
+      pm = exact || fallback;
+    } else if (src.indexOf('pm:') === 0) {
+      var pmName = src.slice(3);
+      for (var i = 0; i < pms.length; i++) {
+        if (pms[i] && pms[i].name === pmName) { pm = pms[i]; break; }
+      }
     }
     if (!pm || !pm.primaryAction || pm.primaryAction.enabled !== true) return null;
     if (!pm.source || !pm.source.type) return null;

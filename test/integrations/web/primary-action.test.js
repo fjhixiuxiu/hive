@@ -90,7 +90,7 @@ describe('getTaskPrimaryAction', () => {
     });
   });
 
-  describe('slack', () => {
+  describe('slack (pm:<name> source — synthetic / tests)', () => {
     it('prefers stored slackPermalink when present', () => {
       const task = {
         source: 'pm:Slack',
@@ -114,6 +114,57 @@ describe('getTaskPrimaryAction', () => {
 
     it('returns null when Slack task has neither permalink nor channel+ts', () => {
       expect(getTaskPrimaryAction({ source: 'pm:Slack' }, pms)).toBeNull();
+    });
+  });
+
+  // REAL Slack @mention flow — bot.js creates tasks with source="slack:<authorName>",
+  // not "pm:<slackPmName>". PR #243 review caught that the original PM-name lookup
+  // was dead code for every real Slack task. These fixtures cover that path.
+  describe('slack (slack:<author> source — real @mention flow)', () => {
+    it('resolves via catch-all Slack PM when no channel is configured', () => {
+      const task = {
+        source: 'slack:Nukul Bhasin',
+        slackChannel: 'C0A72B59EDC',
+        slackThreadTs: '1776132841.415429',
+      };
+      expect(getTaskPrimaryAction(task, pms)).toEqual({
+        url: 'https://vivtechnologies.slack.com/archives/C0A72B59EDC/p1776132841415429',
+        label: 'Open Thread',
+      });
+    });
+
+    it('prefers stored slackPermalink over constructed URL', () => {
+      const task = {
+        source: 'slack:Alice',
+        slackPermalink: 'https://vivtechnologies.slack.com/archives/C08/p1776268507043009',
+        slackChannel: 'C08',
+        slackThreadTs: '1776268446.027589',
+      };
+      expect(getTaskPrimaryAction(task, pms)).toEqual({
+        url: 'https://vivtechnologies.slack.com/archives/C08/p1776268507043009',
+        label: 'Open Thread',
+      });
+    });
+
+    it('prefers a channel-specific Slack PM over the catch-all when both are enabled', () => {
+      const channelPm = { name: 'Dev Channel', source: { type: 'slack', channel: 'C0DEV' }, primaryAction: { enabled: true } };
+      const catchAll  = { name: 'Slack',       source: { type: 'slack' },                    primaryAction: { enabled: true } };
+      const task = { source: 'slack:Alice', slackChannel: 'C0DEV', slackThreadTs: '1.2' };
+      expect(getTaskPrimaryAction(task, [channelPm, catchAll])).toEqual({
+        url: 'https://vivtechnologies.slack.com/archives/C0DEV/p12',
+        label: 'Open Thread',
+      });
+    });
+
+    it('returns null when no Slack PM has primaryAction enabled', () => {
+      const disabledSlackPm = { name: 'Slack', source: { type: 'slack' }, primaryAction: { enabled: false } };
+      const task = { source: 'slack:Alice', slackChannel: 'C08', slackThreadTs: '1.2' };
+      expect(getTaskPrimaryAction(task, [disabledSlackPm])).toBeNull();
+    });
+
+    it('returns null when no Slack-type PM exists at all', () => {
+      const task = { source: 'slack:Alice', slackChannel: 'C08', slackThreadTs: '1.2' };
+      expect(getTaskPrimaryAction(task, [prPm])).toBeNull();
     });
   });
 });
