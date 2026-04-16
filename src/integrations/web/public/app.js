@@ -3829,6 +3829,22 @@
       item.addEventListener('click', () => { overflowMenu.classList.remove('visible'); btn.click(); });
       overflowMenu.appendChild(item);
     });
+    if (window.innerWidth <= 640) {
+      const sessionFontDown = document.querySelector('#session-font-controls [data-action="font-down"]');
+      const sessionFontUp = document.querySelector('#session-font-controls [data-action="font-up"]');
+      if (sessionFontDown) {
+        const fd = document.createElement('button');
+        fd.textContent = 'Font \u2212';
+        fd.addEventListener('click', () => { overflowMenu.classList.remove('visible'); sessionFontDown.click(); });
+        overflowMenu.appendChild(fd);
+      }
+      if (sessionFontUp) {
+        const fu = document.createElement('button');
+        fu.textContent = 'Font +';
+        fu.addEventListener('click', () => { overflowMenu.classList.remove('visible'); sessionFontUp.click(); });
+        overflowMenu.appendChild(fu);
+      }
+    }
     const rect = overflowBtn.getBoundingClientRect();
     overflowMenu.style.top = rect.bottom + 4 + 'px';
     overflowMenu.style.right = (window.innerWidth - rect.right) + 'px';
@@ -3966,6 +3982,11 @@
   }
 
   sendBtn.addEventListener('click', sendMessage);
+  // iOS Safari may swallow the first tap when the keyboard is up
+  // (the tap dismisses the keyboard instead of clicking the button).
+  // A touchend listener fires before the keyboard-dismiss animation
+  // steals the gesture, so the send actually goes through.
+  sendBtn.addEventListener('touchend', (e) => { e.preventDefault(); sendMessage(); });
   msgInput.addEventListener('input', () => { if (currentSession) saveDraft(sessionDraftKey('fleet', currentSession), msgInput.value); });
   msgInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); return; }
@@ -4123,6 +4144,7 @@
   }
 
   quickSendEl.addEventListener('click', quickSendMessage);
+  quickSendEl.addEventListener('touchend', (e) => { e.preventDefault(); quickSendMessage(); });
   quickInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { quickSendMessage(); return; }
     if (quickSessions.size !== 1) return;
@@ -9836,4 +9858,97 @@
 
   // ── Unregister any stale service workers ──────────
   if ('serviceWorker' in navigator) navigator.serviceWorker.getRegistrations().then(regs => regs.forEach(r => r.unregister())).catch(() => {});
+
+  // ── Mobile UI enhancements (≤640px only) ──────────
+  if (window.innerWidth <= 640) {
+    const sidebar = document.getElementById('sidebar');
+    const backdrop = document.getElementById('mobile-nav-backdrop');
+
+    function addHamburger(containerId) {
+      const container = document.getElementById(containerId);
+      if (!container) return;
+      const btn = document.createElement('button');
+      btn.id = 'mobile-nav-btn-' + containerId;
+      btn.className = 'mobile-hamburger';
+      btn.textContent = '\u2630';
+      btn.style.cssText = 'background:none;border:none;color:var(--fg);font-size:20px;padding:6px 8px;cursor:pointer;min-width:36px;min-height:36px;display:flex;align-items:center;justify-content:center;flex-shrink:0;';
+      btn.addEventListener('click', () => {
+        sidebar.classList.toggle('mobile-open');
+        backdrop.classList.toggle('visible');
+      });
+      container.prepend(btn);
+    }
+    addHamburger('session-header');
+    // Add hamburger to fleet search bar
+    const fleetBar = document.querySelector('.fleet-search-bar');
+    if (fleetBar) {
+      const fb = document.createElement('button');
+      fb.className = 'mobile-hamburger';
+      fb.textContent = '\u2630';
+      fb.addEventListener('click', () => { sidebar.classList.toggle('mobile-open'); backdrop.classList.toggle('visible'); });
+      fleetBar.prepend(fb);
+    }
+    // Add hamburger to tasks toolbar
+    const tasksToggle = document.querySelector('.tasks-view-toggle');
+    if (tasksToggle) {
+      const tb = document.createElement('button');
+      tb.className = 'mobile-hamburger';
+      tb.textContent = '\u2630';
+      tb.addEventListener('click', () => { sidebar.classList.toggle('mobile-open'); backdrop.classList.toggle('visible'); });
+      tasksToggle.prepend(tb);
+    }
+
+    if (backdrop) backdrop.addEventListener('click', () => {
+      sidebar.classList.remove('mobile-open');
+      backdrop.classList.remove('visible');
+    });
+    sidebar.querySelectorAll('.nav-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        sidebar.classList.remove('mobile-open');
+        backdrop.classList.remove('visible');
+      });
+    });
+
+    // Keys bar toggle on status line — re-inject after WS updates
+    const statusLine = document.getElementById('session-status-line');
+    const keysBar = document.getElementById('keys-bar');
+    if (statusLine && keysBar) {
+      function ensureKeysToggle() {
+        if (document.getElementById('mobile-keys-toggle')) return;
+        const kt = document.createElement('button');
+        kt.id = 'mobile-keys-toggle';
+        kt.textContent = '\u2328 Keys';
+        kt.addEventListener('click', () => {
+          const open = keysBar.classList.toggle('mobile-open');
+          kt.classList.toggle('active', open);
+        });
+        statusLine.prepend(kt);
+      }
+      ensureKeysToggle();
+      new MutationObserver(ensureKeysToggle).observe(statusLine, { childList: true });
+    }
+
+    // Send dropdown (camera)
+    const sendExpand = document.getElementById('send-expand');
+    const sendDropdown = document.getElementById('send-dropdown');
+    const sendAttach = document.getElementById('send-attach-btn');
+    const imgUpload = document.getElementById('img-upload');
+    if (sendExpand && sendDropdown) {
+      sendExpand.addEventListener('click', (e) => {
+        e.stopPropagation();
+        sendDropdown.classList.toggle('visible');
+      });
+      if (sendAttach && imgUpload) {
+        sendAttach.addEventListener('click', () => {
+          imgUpload.click();
+          sendDropdown.classList.remove('visible');
+        });
+      }
+      document.addEventListener('click', () => sendDropdown.classList.remove('visible'));
+    }
+
+    // Hide back button in session header (hamburger replaces it)
+    const backBtn = document.getElementById('back-btn');
+    if (backBtn) backBtn.style.display = 'none';
+  }
 })();

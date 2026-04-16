@@ -15,6 +15,7 @@
 <link rel="stylesheet" href="/styles.css?v=2">
 </head>
 <body>
+<div id="mobile-nav-backdrop"></div>
 
 <!-- Auth screen -->
 <div id="auth-screen">
@@ -933,7 +934,13 @@
         <input type="file" id="img-upload" accept="image/*" multiple style="display:none">
         <div class="send-col">
           <button id="img-upload-btn" class="img-upload-btn" data-tooltip="Attach image">&#128247;</button>
-          <button id="send-btn" data-tooltip="Send message to this session">Send</button>
+          <div class="send-btn-group">
+            <button id="send-btn" data-tooltip="Send message to this session">Send</button>
+            <button id="send-expand" data-tooltip="More options">▾</button>
+          </div>
+          <div class="send-dropdown" id="send-dropdown">
+            <button id="send-attach-btn">📷 Attach image</button>
+          </div>
         </div>
       </div>
     </div>

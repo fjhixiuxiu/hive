@@ -1389,6 +1389,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   #session-actions > :not(#actions-overflow-btn):not(#expand-btn):not(#reading-btn):not(#actions-overflow-menu) { display: none !important; }
   #actions-overflow-btn { display: block; }
   #expand-btn { display: block; }
+  #session-font-controls { display: none !important; }
 }
 
 /* ── Fullscreen session modal ─── */
@@ -2737,3 +2738,712 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   0%, 100% { opacity: 1; }
   50% { opacity: 0.5; }
 }
+
+/* ══════════════════════════════════════════════════════════════════
+   MOBILE REDESIGN (≤640px)
+
+   Desktop hive is a two-pane, sidebar-driven command center. That
+   model doesn't translate to a 390px screen, so on phones we:
+
+   1. Kill the vertical sidebar and replace it with a bottom tab bar
+      (iOS native pattern, thumb-reachable, frees every horizontal px).
+   2. Force every panel to single-pane, full-width.
+   3. Bump the type scale up (14/16/18) and make every tap target
+      ≥44px.
+   4. Set 16px font on any text input so iOS Safari stops auto-zooming
+      when the field gets focus.
+   5. Scroll-carousel long horizontal rows (tabs, quick-keys) instead
+      of wrapping them into two crowded lines.
+   6. Fleet becomes a vertical list of generous cards, not a 2-col
+      grid of 150px postage stamps.
+   7. Tasks hides the desktop split pane, list view only, bigger
+      cards, action row wraps.
+   8. All fixed-bottom elements (quick-bar, spawn FAB) lift above the
+      bottom tab bar + iOS safe-area inset.
+   ══════════════════════════════════════════════════════════════════ */
+@media (max-width: 640px) {
+
+  :root {
+    /* Bottom nav bar height + iOS home-indicator safe area */
+    --mobile-nav-h: 58px;
+    --mobile-nav-total: calc(var(--mobile-nav-h) + env(safe-area-inset-bottom, 0px));
+    /* Bump the type scale for thumb-friendly reading.
+       Still keyed off --ui-scale so the A-/A+ controls work. */
+    --fs-xs: calc(10px * var(--ui-scale));
+    --fs-sm: calc(11px * var(--ui-scale));
+    --fs-md: calc(12px * var(--ui-scale));
+    --fs-lg: calc(14px * var(--ui-scale));
+    --fs-xl: calc(15px * var(--ui-scale));
+    --fs-2xl: calc(17px * var(--ui-scale));
+    --fs-3xl: calc(20px * var(--ui-scale));
+  }
+
+  html, body { font-size: 16px; }
+
+  /* ── Layout: stack sidebar below content, make content full-width ── */
+  #main-view { flex-direction: column; }
+  #content-area {
+    width: 100%;
+    padding-bottom: 0;
+  }
+  .panel { padding-bottom: 0; }
+
+  /* ── Sidebar becomes a slide-up overlay triggered by ☰ ────────── */
+  #sidebar {
+    position: fixed; left: 0; right: 0; bottom: 0; top: auto;
+    width: 100%;
+    max-height: 70vh;
+    padding: 12px 0 calc(12px + env(safe-area-inset-bottom, 0px));
+    flex-direction: row; flex-wrap: wrap;
+    border-right: none;
+    border-top: none;
+    border-radius: 16px 16px 0 0;
+    background: var(--bg2);
+    z-index: 200;
+    box-shadow: 0 -4px 30px rgba(0,0,0,0.6);
+    transform: translateY(100%);
+    transition: transform 0.25s ease;
+    pointer-events: none;
+  }
+  #sidebar.mobile-open {
+    transform: translateY(0);
+    pointer-events: auto;
+  }
+  #sidebar-logo,
+  .nav-divider,
+  .nav-spacer,
+  #theme-toggle,
+  #user-badge,
+  #user-logout,
+  #console-btn { display: none !important; }
+  .nav-btn {
+    flex: 0 0 33.3%;
+    min-width: 0;
+    padding: 14px 2px 10px;
+    gap: 4px;
+    justify-content: center;
+    font-size: 11px;
+    line-height: 1.1;
+    min-height: 56px;
+  }
+  .nav-btn.active {
+    background: rgba(189,147,249,0.1);
+    color: var(--purple);
+    border-radius: 12px;
+  }
+  .nav-btn.active::before { display: none; }
+  .nav-icon { font-size: 22px; }
+  .nav-btn span:not(.nav-icon):not(.nav-badge) { font-size: 11px; font-weight: 600; }
+  .nav-badge {
+    top: 6px; right: calc(50% - 20px);
+    min-width: 16px; height: 16px; border-radius: 8px;
+    font-size: 9px;
+  }
+  .fleet-badge { font-size: 9px; }
+  /* Backdrop when nav is open */
+  #mobile-nav-backdrop {
+    display: none;
+    position: fixed; inset: 0; z-index: 199;
+    background: rgba(0,0,0,0.4);
+  }
+  #mobile-nav-backdrop.visible { display: block; }
+
+  /* Hide the connection bar behind the top status and give its
+     4px line a higher contrast so it reads on small screens */
+  #conn-bar { height: 3px; }
+
+  /* ── Typography inside content areas ─────────────────────────────── */
+  .panel h1, .panel h2 { font-size: var(--fs-2xl); }
+  .panel input, .panel select, .panel textarea { font-size: 16px; }
+
+  /* ══════════════════════════════════════════════════════════════
+     FLEET / HOME PANEL
+     ══════════════════════════════════════════════════════════════ */
+
+  /* Hamburger button for non-session panels */
+  .mobile-hamburger {
+    background: none !important; border: none !important;
+    color: var(--fg) !important; font-size: 20px !important;
+    padding: 6px 8px !important; cursor: pointer;
+    min-width: 36px; min-height: 36px;
+    display: flex !important; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+
+  /* Search bar: search takes its own full-width row, action buttons
+     drop cleanly below as equal-width pills */
+  .fleet-search-bar {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 12px 12px 6px;
+  }
+  #fleet-search-input {
+    flex: 1 1 100%;
+    min-height: 44px;
+    padding: 11px 36px 11px 14px;
+    font-size: 16px;
+    border-radius: 10px;
+  }
+  .fleet-search-clear { right: 22px; top: auto; }
+  .fleet-search-bar #restart-all-btn,
+  .fleet-search-bar #shutdown-all-btn {
+    flex: 1 1 0;
+    min-height: 40px;
+    padding: 0 10px;
+    font-size: 13px;
+    justify-content: center;
+    border-radius: 8px;
+  }
+
+  /* Hide the Grid/List/Swim/Cols + Auto/1/2/3/4/6 toggles — they're
+     desktop power-user controls that don't apply when every card is
+     a single column */
+  #fleet-view-toggle,
+  #fleet-cols-toggle,
+  #fleet-live-btn,
+  .fleet-live-btn,
+  .fleet-toolbar { display: none !important; }
+
+  /* Force a single column of tall, generous fleet cards */
+  #grid.grid,
+  #grid.grid.cols-1,
+  #grid.grid.cols-2,
+  #grid.grid.cols-3,
+  #grid.grid.cols-4,
+  #grid.grid.cols-6,
+  #grid.grid.live.cols-auto {
+    grid-template-columns: 1fr !important;
+    gap: 10px;
+    padding: 10px 12px 10px;
+  }
+  #grid.grid .card {
+    padding: 12px 14px 12px;
+    border-radius: 12px;
+    font-size: var(--fs-md);
+    gap: 6px;
+    min-height: 96px;
+    overflow: hidden;
+  }
+  #grid.grid .card .card-top { gap: 10px; align-items: center; }
+  #grid.grid .card .card-num { font-size: 18px; font-weight: 800; }
+  #grid.grid .card .card-branch { font-size: 13px; }
+  #grid.grid .card .card-activity { font-size: 11px; }
+  #grid.grid .card .card-preview {
+    font-size: 11px;
+    -webkit-line-clamp: 2;
+    padding-left: 30px;
+    line-height: 1.4;
+    min-height: 30px;
+  }
+  #grid.grid .card .card-meta { padding-left: 30px; font-size: 11px; }
+  #grid.list { padding: 10px 12px var(--mobile-nav-total); }
+  #grid.list .card { padding: 12px 14px; min-height: 56px; }
+
+  /* Quick keys bar: single-row horizontal carousel */
+  #quick-keys-bar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 8px 12px;
+    gap: 6px;
+    scrollbar-width: none;
+  }
+  #quick-keys-bar::-webkit-scrollbar { display: none; }
+  #quick-keys-bar .key-btn {
+    flex-shrink: 0;
+    padding: 10px 14px;
+    font-size: 13px;
+    min-height: 40px;
+  }
+
+  /* Quick send bar: one row, composer + big Send.
+     Sits above the bottom nav with safe-area padding. */
+  #quick-bar {
+    flex-wrap: nowrap;
+    gap: 6px;
+    padding: 8px 12px;
+    padding-bottom: calc(8px + var(--mobile-nav-total));
+    background: var(--bg2);
+    border-top: 1px solid var(--bg3);
+    position: sticky;
+    bottom: 0;
+    z-index: 20;
+  }
+  #quick-target {
+    min-width: 40px; height: 40px; font-size: 16px;
+    border-radius: 10px;
+  }
+  #quick-all, #quick-mode {
+    min-width: 44px; height: 40px;
+    padding: 0 8px; font-size: 11px;
+    border-radius: 10px;
+  }
+  #quick-input {
+    flex: 1 1 0; min-width: 0;
+    height: 40px;
+    padding: 0 12px;
+    font-size: 16px;
+    border-radius: 10px;
+  }
+  #quick-send {
+    height: 40px;
+    padding: 0 14px;
+    font-size: 14px;
+    border-radius: 10px;
+  }
+
+  /* Floating spawn button: above nav + quick-bar, thumb-reachable */
+  #spawn-btn {
+    bottom: calc(var(--mobile-nav-total) + 88px);
+    right: 14px;
+    width: 52px; height: 52px;
+    font-size: 28px;
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+     TASKS PANEL
+     ══════════════════════════════════════════════════════════════ */
+
+  /* Force single pane — the desktop split (list | session terminal)
+     becomes unusable on a phone. We hide the session pane entirely.
+     Users open sessions via the Home tab. */
+  .tasks-panes {
+    flex-direction: column !important;
+    position: relative !important;
+  }
+  .tasks-list-pane {
+    width: 100% !important;
+    flex: 1 1 auto !important;
+    order: 1 !important;
+    border-right: none !important;
+  }
+  .tasks-session-pane,
+  .tasks-panes-resize { display: none !important; }
+
+  /* Top toolbar: List/Board on one row (Board still works as a
+     scrollable kanban), search gets its own row, filters below */
+  .tasks-view-toggle {
+    flex-wrap: wrap;
+    row-gap: 8px;
+    padding: 12px 12px 6px;
+    align-items: stretch;
+  }
+  .tasks-view-toggle .tasks-view-btn {
+    min-height: 38px;
+    padding: 8px 14px;
+    font-size: 13px;
+    border-radius: 8px;
+  }
+  .tasks-view-toggle .td-spacer { display: none; }
+  .tasks-view-toggle .tasks-toggle-search {
+    flex: 1 1 100%;
+    order: 10;
+    min-height: 44px;
+    padding: 10px 14px;
+    font-size: 16px;
+    border-radius: 10px;
+  }
+  .tasks-view-toggle .tasks-filter-wrap { order: 11; }
+  .tasks-view-toggle .tasks-filter-btn {
+    min-height: 40px;
+    padding: 8px 14px;
+    font-size: 13px;
+    border-radius: 10px;
+  }
+  .tasks-view-toggle .tasks-create-btn,
+  .tasks-view-toggle .tasks-ws-config-btn {
+    order: 12;
+    min-height: 40px;
+    padding: 8px 14px;
+    font-size: 13px;
+    border-radius: 10px;
+  }
+  .tasks-view-toggle .tasks-create-btn { margin-left: auto; }
+
+  /* Status tabs as a horizontal carousel — never wrap, never clip */
+  .tasks-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 6px 12px 8px;
+    gap: 6px;
+    scrollbar-width: none;
+  }
+  .tasks-tabs::-webkit-scrollbar { display: none; }
+  .tasks-tab {
+    flex-shrink: 0;
+    padding: 8px 16px;
+    font-size: 13px;
+    min-height: 38px;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  /* Task list scroll area: leave room for bottom nav */
+  .tasks-scroll {
+    padding: 8px 12px var(--mobile-nav-total);
+  }
+
+  /* Task cards: bigger, more breathable, full-width action row */
+  .task-card {
+    padding: 14px;
+    margin-bottom: 10px;
+    border-radius: 12px;
+  }
+  .task-card-row { gap: 10px; margin-bottom: 10px; }
+  .task-card-row input[type="checkbox"] {
+    width: 22px; height: 22px; flex-shrink: 0;
+  }
+  .task-text {
+    font-size: 15px;
+    line-height: 1.45;
+    -webkit-line-clamp: 3;
+  }
+  .task-info { font-size: 12px; gap: 10px; flex-wrap: wrap; }
+  .task-time { font-size: 12px; }
+  .task-actions {
+    flex-wrap: wrap;
+    row-gap: 6px;
+    column-gap: 6px;
+    padding-top: 10px;
+    margin-top: 10px;
+  }
+  .task-actions > button,
+  .task-cancel,
+  .task-requeue-btn,
+  .task-done-btn,
+  .task-edit-btn,
+  .task-assign-btn,
+  .task-resume-btn,
+  .task-snooze-btn,
+  .task-wake-btn {
+    min-height: 34px;
+    padding: 6px 12px;
+    font-size: 12px;
+    border-radius: 8px;
+  }
+
+  /* Bulk-select bar wraps cleanly */
+  .tasks-bulk-bar {
+    flex-wrap: wrap;
+    row-gap: 8px;
+    padding: 10px 12px;
+  }
+
+  /* Board view: make columns a touch narrower so ~1.5 fit on screen
+     and snap-scroll feels natural */
+  .tasks-board { padding: 10px 12px var(--mobile-nav-total); gap: 10px; }
+  .tasks-board-col {
+    min-width: 260px;
+    max-width: 300px;
+    scroll-snap-align: start;
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+     ALERTS / IDEAS / ADMIN / VOICE / ASK — shared cleanups
+     ══════════════════════════════════════════════════════════════ */
+
+  /* Any panel that has a top toolbar: give it breathing room */
+  .panel > .panel-header,
+  .panel > .panel-toolbar { padding: 12px; }
+
+  /* Notifications / feed rows */
+  .notif-header { padding: 12px; }
+  .notif-row, .feed-item { padding: 12px; font-size: var(--fs-md); }
+
+  /* Ideas cards */
+  .idea-card { padding: 14px; margin-bottom: 8px; border-radius: 10px; }
+  .idea-title { font-size: var(--fs-lg); }
+
+  /* Dialogs / modals: fill the screen on phones instead of floating
+     tiny in the center */
+  .dialog, .modal, .task-dialog, .hive-modal-content {
+    width: 100vw !important;
+    max-width: 100vw !important;
+    height: auto;
+    max-height: calc(100vh - var(--mobile-nav-total));
+    border-radius: 14px 14px 0 0;
+    position: fixed !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    top: auto !important;
+    transform: none !important;
+  }
+
+  /* Any generic toolbar that might live in a panel: horizontal scroll */
+  .toolbar, .panel-toolbar {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Console side-panel: full-screen takeover on mobile */
+  #console-panel {
+    width: 100vw !important;
+    max-width: 100vw !important;
+  }
+
+  /* Auth screen stays centered but inputs hit 16px */
+  #auth-input { font-size: 16px; padding: 14px 16px; width: min(320px, 88vw); }
+
+  /* ══════════════════════════════════════════════════════════════
+     SESSION DETAIL PANEL (#session-panel)
+     The big one — terminal + composer. On desktop this is the
+     rightmost pane of a split layout. On mobile it takes over.
+     ══════════════════════════════════════════════════════════════ */
+
+  /* Session-panel takes the full viewport above the bottom nav.
+     Existing CSS uses display:none|flex on .active, so we just
+     ensure it stretches to 100% and clears the tab bar. */
+  #session-panel {
+    padding-bottom: 0;
+  }
+  #session-panel.active {
+    height: 100vh;
+  }
+
+  /* Tighter header: back, title, branch, dim activity, overflow menu */
+  #session-header {
+    padding: 8px 10px;
+    gap: 8px;
+    min-height: 48px;
+  }
+  #back-btn {
+    font-size: 22px;
+    padding: 6px 10px;
+    min-height: 40px;
+    min-width: 40px;
+  }
+  #session-info { gap: 6px; min-width: 0; flex: 1; }
+  #session-title {
+    font-size: 16px;
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  #session-branch {
+    font-size: 11px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 80px;
+  }
+  #session-activity {
+    font-size: 10px;
+    white-space: nowrap;
+  }
+  #session-actions { gap: 4px; }
+  #actions-overflow-btn,
+  #expand-btn,
+  #reading-btn {
+    min-height: 36px;
+    min-width: 36px;
+    padding: 6px 8px;
+  }
+
+  /* Hide Prev/Next nav on mobile — saves ~46px for terminal */
+  #session-nav-bar { display: none !important; }
+  #session-nav-bar .session-nav-btn,
+  #session-nav-bar .nav-dropdown-chevron,
+  #session-nav-bar button {
+    min-height: 34px;
+    padding: 6px 10px;
+    font-size: 12px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  /* Pane tabs row (Terminal / Git / …) */
+  .pane-tabs-row, #pane-tabs-row {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 4px 10px;
+    gap: 4px;
+    scrollbar-width: none;
+  }
+  .pane-tabs-row::-webkit-scrollbar,
+  #pane-tabs-row::-webkit-scrollbar { display: none; }
+
+  /* Terminal — xterm computes cell grid from desktop width before
+     we know we're on mobile, so cols are fixed wider than our
+     container. Two-pronged fix:
+
+     1. Let the terminal wrap scroll horizontally so users can pan
+        right to see the rest of a long line. This is the fallback
+        when reading mode is off.
+     2. Default every session to reading mode on mobile (toggled by
+        a tiny JS shim in app.js via the existing reading-btn).
+
+     Reading mode hides the xterm and shows wrapped plain text in
+     #reading-pane which uses white-space: pre-wrap + word-wrap:
+     break-word so content always fits the viewport. */
+  /* Terminal: horizontal scroll with right-edge fade so the user
+     knows to swipe. Preserves all xterm colors/fonts at native size. */
+  #terminal-wrap {
+    padding: 0;
+    overflow-x: auto !important;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-x pan-y;
+    position: relative;
+  }
+  /* Right-edge gradient fade — signals "swipe for more" */
+  #terminal-wrap::after {
+    content: '';
+    position: sticky;
+    right: 0; top: 0;
+    width: 28px;
+    height: 100%;
+    display: block;
+    pointer-events: none;
+    background: linear-gradient(to right, transparent, var(--bg));
+    float: right;
+    margin-top: -100%;
+  }
+  /* Make the reading pane's pre use a tight mono font and wrap
+     cleanly inside the 390-ish px column */
+  #reading-pane pre {
+    font-size: 12px !important;
+    line-height: 1.45 !important;
+    white-space: pre-wrap !important;
+    word-wrap: break-word !important;
+    word-break: break-word !important;
+    padding-bottom: 10px;
+  }
+  /* When reading mode is active on mobile, the reading pane should
+     fill the full width and show a subtle "Reading" tag */
+  #session-panel.reading-mode #reading-pane {
+    padding: 12px 14px;
+  }
+
+  /* Scroll-pause pill sits lower so it clears the composer */
+  #scroll-pause, .scroll-pause-btn { bottom: 12px; }
+
+  /* Keys bar: hidden by default, shown as fixed popover above the
+     status+input bars when ⌨ Keys is tapped */
+  #keys-bar {
+    display: none !important;
+    position: fixed;
+    bottom: 80px;
+    left: 0; right: 0;
+    z-index: 30;
+    background: var(--bg2);
+    border-top: 1px solid var(--bg3);
+    border-radius: 12px 12px 0 0;
+    box-shadow: 0 -4px 16px rgba(0,0,0,0.4);
+    padding: 10px;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  #keys-bar.mobile-open {
+    display: flex !important;
+  }
+  #keys-bar .key-btn {
+    min-height: 38px;
+    padding: 8px 12px;
+    font-size: 13px;
+    flex: 0 0 auto;
+  }
+  #cmd-bar { display: none !important; }
+
+  /* Session composer (Auto/Tell + message + Send).
+     Desktop has mode-toggle + textarea stacked on same row with
+     5em min-height textarea — way too tall on a phone. */
+  #input-bar {
+    padding: 4px 8px;
+    padding-bottom: calc(4px + env(safe-area-inset-bottom, 0px));
+    gap: 4px;
+    align-items: flex-end;
+    flex-wrap: nowrap;
+  }
+  /* Hide ASK/Tell mode toggle on mobile */
+  #mode-toggle { display: none !important; }
+  /* Hide standalone camera button — it's in the Send dropdown now */
+  #img-upload-btn { display: none !important; }
+  .send-col { position: relative; }
+  #msg-input {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 36px !important;
+    height: 36px;
+    max-height: 25vh;
+    padding: 8px 12px;
+    font-size: 16px;
+    border-radius: 10px;
+    line-height: 1.3;
+  }
+  #input-bar button[type="submit"],
+  #input-bar .send-btn,
+  #send-btn {
+    height: 36px;
+    padding: 0 14px;
+    font-size: 14px;
+    border-radius: 8px;
+    flex-shrink: 0;
+  }
+
+  /* Status line: add keys toggle, make it the anchor for keys popover */
+  #session-status-line, .session-status-line {
+    padding: 4px 8px;
+    position: relative;
+  }
+  #mini-fleet-strip { display: none !important; }
+  /* Keys toggle button injected by JS */
+  #mobile-keys-toggle {
+    background: var(--bg3); border: none; color: var(--fg);
+    font-size: 12px; font-weight: 700; padding: 4px 10px;
+    border-radius: 6px; cursor: pointer; white-space: nowrap;
+    font-family: 'SF Mono', 'Menlo', monospace;
+  }
+  #mobile-keys-toggle:active { background: var(--purple); color: var(--bg); }
+  #mobile-keys-toggle.active { background: var(--purple); color: var(--bg); }
+  /* Send dropdown (camera option) */
+  .send-dropdown {
+    display: none;
+    position: absolute; bottom: 100%; right: 0;
+    margin-bottom: 4px;
+    background: var(--bg2); border: 1px solid var(--bg3);
+    border-radius: 8px; padding: 4px; z-index: 30;
+    box-shadow: 0 -4px 12px rgba(0,0,0,0.4);
+  }
+  .send-dropdown.visible { display: block; }
+  .send-dropdown button {
+    display: block; width: 100%; background: none; border: none;
+    color: var(--fg); font-size: 14px; padding: 10px 16px;
+    text-align: left; cursor: pointer; white-space: nowrap;
+    border-radius: 6px;
+  }
+  .send-dropdown button:active { background: var(--bg3); }
+  #send-btn { border-radius: 8px 8px 8px 8px; }
+  #send-expand {
+    background: var(--purple); border: none; color: var(--bg);
+    font-size: 10px; padding: 0 6px; height: 36px;
+    border-radius: 0 8px 8px 0; cursor: pointer;
+    border-left: 1px solid rgba(0,0,0,0.2);
+  }
+  #send-expand:active { opacity: 0.8; }
+  .send-btn-group {
+    display: flex; border-radius: 8px; overflow: hidden; flex-shrink: 0;
+  }
+  .send-btn-group #send-btn { border-radius: 8px 0 0 8px; }
+
+  /* The Git / files / diff sidebars inside session-panel stack
+     vertically on mobile so the diff pane isn't 120px wide */
+  #session-panel .sidebar-diff-pane,
+  #session-panel .git-sidebar,
+  #session-panel #git-files-sidebar,
+  #session-panel #plan-sidebar {
+    max-width: 100% !important;
+    width: 100% !important;
+  }
+}
+
+/* Extra padding tweak for extra-narrow phones (≤360px) */
+@media (max-width: 360px) {
+  :root { --fs-lg: calc(13px * var(--ui-scale)); --fs-xl: calc(14px * var(--ui-scale)); }
+  #grid.grid .card { padding: 12px; min-height: 68px; }
+  .task-card { padding: 12px; }
+  #quick-target, #quick-all, #quick-mode { min-width: 36px; }
+}
+
