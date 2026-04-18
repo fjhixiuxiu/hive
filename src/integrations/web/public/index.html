@@ -1544,11 +1544,11 @@
 
 <!-- Task rename dialog -->
 <div class="dialog-overlay" id="task-rename-dialog">
-  <div class="dialog" style="max-width:380px">
-    <div class="dialog-title">Rename Task</div>
-    <input type="text" id="task-rename-input" class="dialog-input" style="width:100%;margin-bottom:12px;padding:8px 10px;background:var(--surface);border:1px solid var(--border);color:var(--fg);border-radius:6px;font-size:13px" placeholder="New task title">
+  <div class="dialog" style="max-width:480px">
+    <div class="dialog-title">Edit Description</div>
+    <textarea id="task-rename-input" class="dialog-input" rows="6" style="width:100%;margin-bottom:12px;padding:8px 10px;background:var(--surface);border:1px solid var(--border);color:var(--fg);border-radius:6px;font-size:13px;font-family:inherit;resize:vertical;min-height:8em;max-height:50vh;overflow-y:auto;line-height:1.4;box-sizing:border-box" placeholder="Task description"></textarea>
     <div class="dialog-actions">
-      <button class="dialog-btn primary" id="task-rename-submit">Rename</button>
+      <button class="dialog-btn primary" id="task-rename-submit">Save</button>
       <button class="dialog-btn" id="task-rename-cancel">Cancel</button>
     </div>
   </div>

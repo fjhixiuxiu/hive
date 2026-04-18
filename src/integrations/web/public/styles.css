@@ -920,6 +920,35 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .task-hex { flex-shrink: 0; display: flex; align-items: center; padding-top: 2px; }
 .task-body { flex: 1; min-width: 0; }
 .task-text { font-size: var(--fs-md); font-weight: 500; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.4; }
+.task-edit-icon {
+  background: none; border: none; cursor: pointer; font-size: 12px;
+  color: var(--dim); padding: 2px 4px; line-height: 1;
+  flex-shrink: 0; opacity: 0.5;
+}
+.task-edit-icon:hover { color: var(--purple); opacity: 1; }
+.rename-dialog-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 9999;
+  display: flex; align-items: center; justify-content: center;
+}
+.rename-dialog {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  padding: 16px; width: 90%; max-width: 480px; box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+}
+.rename-dialog-title { font-size: var(--fs-md); font-weight: 600; color: var(--fg); margin-bottom: 10px; }
+.rename-dialog-text {
+  width: 100%; font-size: var(--fs-md); font-family: inherit; color: var(--fg);
+  background: var(--bg); border: 1px solid var(--border); border-radius: 4px;
+  padding: 8px; resize: vertical; line-height: 1.4; box-sizing: border-box;
+  min-height: 8em; max-height: 50vh; overflow-y: auto;
+}
+.rename-dialog-text:focus { outline: none; border-color: var(--purple); }
+.rename-dialog-btns { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
+.rename-dialog-cancel, .rename-dialog-save {
+  padding: 6px 16px; border-radius: 4px; border: none; cursor: pointer;
+  font-size: var(--fs-sm); font-weight: 600;
+}
+.rename-dialog-cancel { background: var(--bg3); color: var(--fg); }
+.rename-dialog-save { background: var(--purple); color: #fff; }
 .task-info { display: flex; gap: 8px; align-items: center; margin-top: 3px; font-size: var(--fs-sm); color: var(--dim); }
 .task-source-badge { font-size: var(--fs-sm); font-weight: 700; color: var(--orange); background: rgba(255,184,108,0.15); padding: 1px 6px; border-radius: 3px; }
 .task-assignee-badge {
@@ -1795,10 +1824,11 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 }
 .board-card:hover { background: var(--bg3); }
 .board-card.selected { background: var(--purple-bg); border-left-color: var(--purple); }
+.board-card-top { display: flex; align-items: flex-start; gap: 4px; margin-bottom: 6px; }
 .board-card-title {
   font-size: var(--fs-md); font-weight: 600; color: var(--fg);
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
-  overflow: hidden; margin-bottom: 6px;
+  overflow: hidden; flex: 1; min-width: 0;
 }
 .board-card-meta {
   display: flex; gap: 6px; flex-wrap: wrap; align-items: center;

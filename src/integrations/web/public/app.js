@@ -5259,6 +5259,11 @@
       btn.addEventListener('click', (e) => { e.stopPropagation(); openTaskDialog(btn.dataset.id); });
     });
 
+    // Wire edit icon on all task cards (list view) — lightweight rename
+    tasksScroll.querySelectorAll('.task-edit-icon').forEach(btn => {
+      btn.addEventListener('click', (e) => { e.stopPropagation(); openRenameDialog(btn.dataset.id); });
+    });
+
     // Wire assign buttons (queued tab)
     tasksScroll.querySelectorAll('.task-assign-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
@@ -5810,8 +5815,9 @@
       const assigneeBadge = initials ? `<span class="board-card-assignee" title="${esc(assigneeName)}">${esc(initials)}</span>` : '';
       const timeStr = t.status === 'dispatched' ? timeAgo(t.dispatchedAt || t.createdAt) : timeAgo(t.createdAt);
 
+      const boardEditIcon = hasPerm('create-tasks') ? `<button class="task-edit-icon" data-id="${t.id}" title="Edit task">&#9998;</button>` : '';
       el.innerHTML = `
-        <div class="board-card-title">${esc(t.text)}</div>
+        <div class="board-card-top"><div class="board-card-title">${esc(t.text)}</div>${boardEditIcon}</div>
         <div class="board-card-meta">${statusDot}${desigBadge}${sourceBadge}${sessionBadge}<span>${timeStr}</span>${assigneeBadge}</div>
       `;
 
@@ -5831,6 +5837,9 @@
       });
 
       el.addEventListener('click', () => openTaskDetail(t.id));
+      // Wire board card edit icon — lightweight rename
+      const editBtn = el.querySelector('.task-edit-icon');
+      if (editBtn) editBtn.addEventListener('click', (e) => { e.stopPropagation(); openRenameDialog(t.id); });
       container.appendChild(el);
     }
   }
@@ -6705,8 +6714,9 @@
       timeStr = `${Math.round((t.completedAt - t.dispatchedAt) / 60000)}m · ${ago}`;
     }
 
+    const editIcon = hasPerm('create-tasks') ? `<button class="task-edit-icon" data-id="${t.id}" title="Edit task">&#9998;</button>` : '';
     return `<div class="task-card-row"><input type="checkbox" class="task-checkbox" data-id="${t.id}"${checked}><div class="task-card ${t.status}${selected}" data-id="${t.id}">
-      <div class="task-top"><span class="task-hex">${hex}</span><div class="task-body"><div class="task-text">${esc(t.text)}</div><div class="task-info">${sourceBadge}${pendingBadge}${waitBadge}<span class="task-time">${timeStr}</span></div></div></div>${actions}</div></div>`;
+      <div class="task-top"><span class="task-hex">${hex}</span><div class="task-body"><div class="task-text">${esc(t.text)}</div><div class="task-info">${sourceBadge}${pendingBadge}${waitBadge}<span class="task-time">${timeStr}</span></div></div>${editIcon}</div>${actions}</div></div>`;
   }
 
   // ── Comment panel (rendered into tab content divs) ─────
@@ -7156,14 +7166,14 @@
     const newText = document.getElementById('task-rename-input').value.trim();
     if (!newText || !taskId || !ws || ws.readyState !== 1) return;
     ws.send(JSON.stringify({ type: 'task:rename', taskId, text: newText }));
-    showToast('Renamed', 'Task title updated', 'success');
+    showToast('Updated', 'Task description saved', 'success');
     closeRenameDialog();
   });
 
   document.getElementById('task-rename-cancel').addEventListener('click', closeRenameDialog);
 
   document.getElementById('task-rename-input').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
       document.getElementById('task-rename-submit').click();
     } else if (e.key === 'Escape') {
