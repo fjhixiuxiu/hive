@@ -8251,6 +8251,45 @@
     });
   });
 
+  // Dispatch tab cascade: target session hides routing fields, designation=none disables match
+  function updatePmDispatchCascade() {
+    const hasTarget = !!document.getElementById('pm-form-target-session').value;
+    const hasDesig = !!document.getElementById('pm-form-designation').value;
+    const autoCreate = document.getElementById('pm-form-auto-create').checked;
+    const notice = document.getElementById('pm-form-target-override-notice');
+    const matchField = document.getElementById('pm-form-designation-match-field');
+    const routingFields = document.querySelectorAll('.pm-routing-field');
+    // Target session overrides all routing
+    if (hasTarget) {
+      routingFields.forEach(el => el.style.display = 'none');
+      notice.style.display = '';
+      document.getElementById('pm-form-designation-match').value = 'flexible';
+    } else {
+      notice.style.display = 'none';
+      matchField.style.display = hasDesig ? '' : 'none';
+      // Show auto-create and its hint
+      routingFields.forEach(el => {
+        if (el === notice) return;
+        if (el === matchField) return; // handled above
+        el.style.display = '';
+      });
+    }
+    // Auto-create hint
+    const hint = document.getElementById('pm-form-auto-create-hint');
+    if (!hasTarget && hasDesig && autoCreate) {
+      hint.style.display = '';
+      hint.textContent = document.getElementById('pm-form-designation-match').value === 'strict'
+        ? 'Will only check for idle sessions with matching designation. Creates a new designated session if none found.'
+        : 'Will check for idle matching or undesignated sessions first. Only creates a new session if neither is available.';
+    } else {
+      hint.style.display = 'none';
+    }
+  }
+  document.getElementById('pm-form-target-session').addEventListener('change', updatePmDispatchCascade);
+  document.getElementById('pm-form-designation').addEventListener('change', updatePmDispatchCascade);
+  document.getElementById('pm-form-designation-match').addEventListener('change', updatePmDispatchCascade);
+  document.getElementById('pm-form-auto-create').addEventListener('change', updatePmDispatchCascade);
+
   function togglePmSourceFields() {
     const type = document.getElementById('pm-form-source').value;
     const isGithub = type === 'github-issues' || type === 'github-prs' || type === 'github-re-reviews';
@@ -8422,6 +8461,7 @@
       schedule: document.getElementById('pm-form-cron').value.trim() || null,
       slackUserId: document.getElementById('pm-form-slack-user-id').value.trim() || null,
       autoCreate: document.getElementById('pm-form-auto-create').checked,
+      designationMatch: document.getElementById('pm-form-designation-match').value || 'flexible',
       primaryAction: { enabled: document.getElementById('pm-form-primary-action').checked },
     };
     // Collect completion conditions
@@ -8517,6 +8557,8 @@
     document.getElementById('pm-form-mcp-enabled').checked = pm ? !!pm.mcpEnabled : false;
     document.getElementById('pm-form-require-human-close').checked = pm ? !!pm.requireHumanClose : false;
     document.getElementById('pm-form-auto-create').checked = pm ? !!pm.autoCreate : false;
+    document.getElementById('pm-form-designation-match').value = pm ? (pm.designationMatch || 'flexible') : 'flexible';
+    updatePmDispatchCascade();
     document.getElementById('pm-form-primary-action').checked = pm ? !!(pm.primaryAction && pm.primaryAction.enabled) : false;
     document.getElementById('pm-form-learning-enabled').checked = pm ? !!pm.learningEnabled : false;
     document.getElementById('pm-form-learning-prompt').value = pm ? (pm.learningPrompt || '') : '';

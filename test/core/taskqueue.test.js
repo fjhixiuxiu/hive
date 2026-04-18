@@ -418,6 +418,58 @@ describe('TaskQueue', () => {
       expect(task.status).toBe('queued');
     });
 
+    it('strict designationMatch skips undesignated fallback', async () => {
+      tq.autoSessions.add(6);
+      // session 6 is undesignated
+      fleetModule.getFleetStatus.mockResolvedValue([{ name: '6-DEV', num: 6, state: 'idle' }]);
+
+      // Set up a PM with strict matching
+      tq._pmManager = {
+        pms: new Map([['1', { name: 'StrictPM', designationMatch: 'strict' }]]),
+      };
+      tq.createTask('Review PR', 'auto', null, 'reviewer', { source: 'pm:StrictPM' });
+
+      await tq._tryAutoDispatch();
+      const task = Array.from(tq.tasks.values()).find(t => t.text === 'Review PR');
+      expect(task.status).toBe('queued'); // should NOT fall back to undesignated
+    });
+
+    it('strict designationMatch dispatches to matching session', async () => {
+      vi.useRealTimers();
+      tq.autoSessions.add(6);
+      tq.designations.set(6, 'reviewer');
+      fleetModule.getFleetStatus.mockResolvedValue([{ name: '6-DEV', num: 6, state: 'idle' }]);
+      fleetModule.findSession.mockResolvedValue({ name: '6-DEV', nodeId: 'local' });
+
+      tq._pmManager = {
+        pms: new Map([['1', { name: 'StrictPM', designationMatch: 'strict' }]]),
+      };
+      tq.createTask('Review PR', 'auto', null, 'reviewer', { source: 'pm:StrictPM' });
+
+      await new Promise(r => setTimeout(r, 50));
+      const task = Array.from(tq.tasks.values()).find(t => t.text === 'Review PR');
+      expect(task.status).toBe('dispatched');
+      expect(task.assignedTo).toBe(6);
+    });
+
+    it('flexible designationMatch (default) falls back to undesignated', async () => {
+      vi.useRealTimers();
+      tq.autoSessions.add(6);
+      // session 6 is undesignated
+      fleetModule.getFleetStatus.mockResolvedValue([{ name: '6-DEV', num: 6, state: 'idle' }]);
+      fleetModule.findSession.mockResolvedValue({ name: '6-DEV', nodeId: 'local' });
+
+      tq._pmManager = {
+        pms: new Map([['1', { name: 'FlexPM', designationMatch: 'flexible' }]]),
+      };
+      tq.createTask('Review PR', 'auto', null, 'reviewer', { source: 'pm:FlexPM' });
+
+      await new Promise(r => setTimeout(r, 50));
+      const task = Array.from(tq.tasks.values()).find(t => t.text === 'Review PR');
+      expect(task.status).toBe('dispatched');
+      expect(task.assignedTo).toBe(6);
+    });
+
     it('does not dispatch to non-auto session', async () => {
       tq.createTask('Fix bug', 'auto', null, null);
       fleetModule.getFleetStatus.mockResolvedValue([{ name: '6-DEV', num: 6, state: 'idle' }]);
