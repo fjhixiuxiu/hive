@@ -18,11 +18,15 @@ const cache = new Map();
 const CACHE_TTL = 300_000; // 5 minutes
 const HTTP_TIMEOUT = 5_000; // 5s per API call
 
+// ETag cache: url → { etag, data } — GitHub 304s don't count against rate limit
+const etagCache = new Map();
+
 // Branches to skip (no PR to look up)
 const SKIP_BRANCHES = new Set(['main', 'master', 'develop']);
 
 /**
  * Make an HTTP(S) request and return parsed JSON.
+ * Supports ETag conditional requests — 304 responses return cached data for free.
  */
 function fetchJSON(url, options = {}) {
   return new Promise((resolve, reject) => {
@@ -31,20 +35,40 @@ function fetchJSON(url, options = {}) {
       reject(new Error(`Timeout: ${url}`));
     }, HTTP_TIMEOUT);
 
+    const headers = {
+      'User-Agent': 'hive-ai',
+      'Accept': 'application/json',
+      ...options.headers,
+    };
+
+    // Add If-None-Match if we have a cached ETag for this URL
+    const cached = etagCache.get(url);
+    if (cached && cached.etag) {
+      headers['If-None-Match'] = cached.etag;
+    }
+
     const mod = url.startsWith('https') ? https : http;
     const req = mod.request(url, {
       method: options.method || 'GET',
-      headers: {
-        'User-Agent': 'hive-ai',
-        'Accept': 'application/json',
-        ...options.headers,
-      },
+      headers,
     }, (res) => {
       let data = '';
       res.on('data', chunk => data += chunk);
       res.on('end', () => {
         clearTimeout(timer);
-        try { resolve({ status: res.statusCode, data: JSON.parse(data) }); }
+        // 304 Not Modified — return cached data (free, no rate limit cost)
+        if (res.statusCode === 304 && cached) {
+          return resolve({ status: 200, data: cached.data });
+        }
+        try {
+          const parsed = JSON.parse(data);
+          // Store ETag for future conditional requests
+          const etag = res.headers['etag'];
+          if (etag && res.statusCode === 200) {
+            etagCache.set(url, { etag, data: parsed });
+          }
+          resolve({ status: res.statusCode, data: parsed });
+        }
         catch { reject(new Error(`Invalid JSON from ${url}`)); }
       });
     });

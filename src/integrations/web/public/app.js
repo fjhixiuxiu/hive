@@ -8418,7 +8418,7 @@
       learningPrompt: document.getElementById('pm-form-learning-prompt').value.trim(),
       checklistTemplate: document.getElementById('pm-form-checklist-tpl').value || null,
       autoThreshold: parseInt(document.getElementById('pm-form-threshold').value) || 3,
-      pollInterval: parseInt(document.getElementById('pm-form-interval').value) || 60000,
+      pollInterval: parseInt(document.getElementById('pm-form-interval').value) || 300000,
       schedule: document.getElementById('pm-form-cron').value.trim() || null,
       slackUserId: document.getElementById('pm-form-slack-user-id').value.trim() || null,
       autoCreate: document.getElementById('pm-form-auto-create').checked,
@@ -8523,7 +8523,7 @@
     document.getElementById('pm-form-learning-prompt-wrap').style.display = (pm && pm.learningEnabled) ? '' : 'none';
     document.getElementById('pm-form-threshold').value = pm ? pm.autoThreshold : 3;
     document.getElementById('pm-form-slack-user-id').value = pm ? (pm.slackUserId || '') : '';
-    document.getElementById('pm-form-interval').value = pm ? pm.pollInterval : 60000;
+    document.getElementById('pm-form-interval').value = pm ? pm.pollInterval : 300000;
     document.getElementById('pm-form-cron').value = pm ? (pm.schedule || '') : '';
     // Set schedule tab state
     const hasCron = pm && pm.schedule;
