@@ -1277,6 +1277,11 @@
         }
         break;
       }
+      case 'task:cleanup-scan:result': {
+        if (msg.error) { showToast('Scan failed', msg.error, 'error'); break; }
+        renderCleanupPopup(msg.items || []);
+        break;
+      }
       case 'auto:status': autoSessions = new Set(msg.sessions || []); renderAutoGrid(); if (activeTab === 'fleet-panel') renderGrid(); break;
       case 'feed:entries': feedEntries = msg.entries || []; feedHasMore = msg.hasMore || false; renderFeed(); break;
       case 'feed:new':
@@ -4275,6 +4280,70 @@
   taskSearchClear.addEventListener('click', () => {
     taskSearchInput.value = ''; taskSearchQuery = ''; taskSearchClear.style.display = 'none'; renderTasks();
   });
+
+  // ── Cleanup utility ─────────────────────────────
+  document.getElementById('tasks-cleanup-btn').addEventListener('click', () => {
+    if (!ws || ws.readyState !== 1) return;
+    showToast('Scanning', 'Checking PR statuses...', 'info');
+    ws.send(JSON.stringify({ type: 'task:cleanup-scan' }));
+  });
+
+  function renderCleanupPopup(items) {
+    if (!items.length) { showToast('All clean', 'No tasks with merged/closed PRs', 'success'); return; }
+    const overlay = document.createElement('div');
+    overlay.className = 'cleanup-overlay';
+    const dialog = document.createElement('div');
+    dialog.className = 'cleanup-dialog';
+    let rows = '';
+    for (const item of items) {
+      const prBadges = item.prs.map(p => {
+        const label = p.merged ? 'MERGED' : 'CLOSED';
+        const cls = p.merged ? 'merged' : 'closed';
+        const ago = p.merged_at ? timeAgo(new Date(p.merged_at).getTime()) : p.closed_at ? timeAgo(new Date(p.closed_at).getTime()) : '';
+        return `<span class="cleanup-pr-badge ${cls}">#${p.number} ${label}${ago ? ' ' + ago : ''}</span>`;
+      }).join(' ');
+      const sessionBadge = item.assignedTo ? `<span class="task-session-badge">S:${item.assignedTo}</span>` : `<span class="task-session-badge">queued</span>`;
+      const workingWarn = item.isWorking ? ' <span style="color:var(--yellow);font-size:11px">(still working)</span>' : '';
+      const checked = item.isWorking ? '' : ' checked';
+      rows += `<label class="cleanup-row">
+        <input type="checkbox" class="cleanup-check" data-id="${item.taskId}"${checked}>
+        <div class="cleanup-row-body">
+          <div class="cleanup-row-top">${sessionBadge}${workingWarn}</div>
+          <div class="cleanup-row-text">${esc(item.taskText.substring(0, 120))}</div>
+          <div class="cleanup-row-prs">${prBadges}</div>
+        </div>
+      </label>`;
+    }
+    dialog.innerHTML = `
+      <div class="cleanup-title">Cleanup — ${items.length} task${items.length > 1 ? 's' : ''} with closed PRs</div>
+      <div class="cleanup-list">${rows}</div>
+      <div class="cleanup-actions">
+        <button class="cleanup-close-btn">Close Selected</button>
+        <button class="cleanup-cancel-btn">Cancel</button>
+      </div>
+    `;
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+    dialog.querySelector('.cleanup-cancel-btn').addEventListener('click', () => overlay.remove());
+    dialog.querySelector('.cleanup-close-btn').addEventListener('click', () => {
+      const checked = dialog.querySelectorAll('.cleanup-check:checked');
+      let count = 0;
+      checked.forEach(cb => {
+        ws.send(JSON.stringify({ type: 'task:done', taskId: cb.dataset.id, result: 'Closed — PR merged/closed' }));
+        count++;
+      });
+      overlay.remove();
+      if (count) showToast('Cleaned up', `${count} task${count > 1 ? 's' : ''} closed`, 'success');
+    });
+    // Update count on checkbox change
+    const updateBtn = () => {
+      const n = dialog.querySelectorAll('.cleanup-check:checked').length;
+      dialog.querySelector('.cleanup-close-btn').textContent = `Close Selected (${n})`;
+    };
+    dialog.querySelectorAll('.cleanup-check').forEach(cb => cb.addEventListener('change', updateBtn));
+    updateBtn();
+  }
 
   // ── Task dialog (create/edit) ────────────────────
   const taskDialog = document.getElementById('task-dialog');

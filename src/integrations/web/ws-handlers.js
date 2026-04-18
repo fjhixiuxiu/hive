@@ -573,6 +573,96 @@ function createMessageHandler(deps) {
         break;
       }
 
+      case 'task:cleanup-scan': {
+        if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'cancel')) break;
+        const ghToken = process.env.GITHUB_TOKEN;
+        if (!ghToken) { ws.send(JSON.stringify({ type: 'task:cleanup-scan:result', error: 'GITHUB_TOKEN not configured', items: [] })); break; }
+        const ghHeaders = { 'Authorization': `Bearer ${ghToken}`, 'Accept': 'application/vnd.github+json', 'User-Agent': 'hive-cleanup' };
+        const ghFetch = (urlStr) => new Promise((resolve, reject) => {
+          const mod = urlStr.startsWith('https') ? https : http;
+          const req = mod.request(urlStr, { headers: ghHeaders, timeout: 10000 }, (res) => {
+            let d = ''; res.on('data', c => d += c);
+            res.on('end', () => {
+              if (res.statusCode >= 200 && res.statusCode < 300) {
+                try { resolve(JSON.parse(d)); } catch { reject(new Error('Invalid JSON')); }
+              } else { resolve(null); } // treat errors as "unknown" not crash
+            });
+          });
+          req.on('error', () => resolve(null));
+          req.on('timeout', () => { req.destroy(); resolve(null); });
+          req.end();
+        });
+
+        // Extract PR references from a task
+        const extractPRs = (t) => {
+          const prs = new Map(); // "owner/repo#number" -> { repo, number }
+          const add = (repo, num) => { if (repo && num) prs.set(`${repo}#${num}`, { repo, number: Number(num) }); };
+          // actionContext
+          if (t.actionContext && t.actionContext.type === 'github-pr') add(t.actionContext.repo, t.actionContext.prNumber);
+          // sourceKey
+          const skMatch = (t.sourceKey || '').match(/^(.+)#(\d+)$/);
+          if (skMatch) add(skMatch[1], skMatch[2]);
+          // session context
+          const ctx = taskQueue.sessionContext.get(t.assignedTo);
+          if (ctx && ctx.pr) {
+            const prUrlMatch = ctx.pr.match(/github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)/);
+            if (prUrlMatch) add(prUrlMatch[1], prUrlMatch[2]);
+          }
+          // task text — owner/repo#N or just #N with known repo
+          const textMatches = (t.text || '').matchAll(/(?:([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+))?#(\d{4,})/g);
+          for (const m of textMatches) {
+            const repo = m[1] || (config.github && config.github.repo) || '';
+            if (repo) add(repo, m[2]);
+          }
+          return [...prs.values()];
+        };
+
+        (async () => {
+          try {
+            const openTasks = [...taskQueue.tasks.values()].filter(t =>
+              t.status === 'queued' || t.status === 'dispatched' || t.status === 'snoozed');
+            // Collect unique PRs to check
+            const prCache = new Map(); // "repo#number" -> { state, merged, merged_at, closed_at }
+            const taskPRs = []; // [{ task, prs: [{repo,number}] }]
+            for (const t of openTasks) {
+              const prs = extractPRs(t);
+              if (prs.length) taskPRs.push({ task: t, prs });
+              for (const pr of prs) prCache.set(`${pr.repo}#${pr.number}`, null);
+            }
+            // Batch fetch PR states (deduplicated)
+            const fetches = [...prCache.keys()].map(async (key) => {
+              const [repo, num] = key.split('#');
+              const data = await ghFetch(`https://api.github.com/repos/${repo}/pulls/${num}`);
+              if (data) prCache.set(key, { state: data.state, merged: !!data.merged, merged_at: data.merged_at, closed_at: data.closed_at });
+            });
+            await Promise.all(fetches);
+            // Build stale items
+            const items = [];
+            for (const { task: t, prs } of taskPRs) {
+              const prResults = prs.map(pr => {
+                const cached = prCache.get(`${pr.repo}#${pr.number}`);
+                return { repo: pr.repo, number: pr.number, ...(cached || { state: 'unknown', merged: false }) };
+              });
+              const allDone = prResults.length > 0 && prResults.every(p => p.state === 'closed' || p.merged);
+              if (allDone) {
+                const sessions = fleet.getStatus(config);
+                const s = sessions.find(x => x.num === t.assignedTo);
+                items.push({
+                  taskId: t.id, taskText: t.text, status: t.status,
+                  assignedTo: t.assignedTo, isWorking: s ? s.state === 'working' : false,
+                  prs: prResults,
+                });
+              }
+            }
+            ws.send(JSON.stringify({ type: 'task:cleanup-scan:result', items }));
+          } catch (err) {
+            ws.send(JSON.stringify({ type: 'task:cleanup-scan:result', error: err.message, items: [] }));
+          }
+        })();
+        break;
+      }
+
       case 'task:approve-complete': {
         if (!taskQueue) break;
         if (!checkPermission(ws, user, 'cancel')) break;
