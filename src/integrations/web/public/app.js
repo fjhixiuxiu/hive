@@ -5111,7 +5111,26 @@
     renderAssigneeFilter();
 
     const q = taskSearchQuery.toLowerCase();
-    const matchesSearch = (t) => !q || t.text.toLowerCase().includes(q) || (t.source || '').toLowerCase().includes(q) || (t.designation || '').toLowerCase().includes(q) || String(t.assignedTo || '').includes(q) || (t.assignee || '').toLowerCase().includes(q);
+    const matchesSearch = (t) => {
+      if (!q) return true;
+      if (t.text.toLowerCase().includes(q)) return true;
+      if ((t.source || '').toLowerCase().includes(q)) return true;
+      if ((t.designation || '').toLowerCase().includes(q)) return true;
+      if (String(t.assignedTo || '').includes(q)) return true;
+      if ((t.assignee || '').toLowerCase().includes(q)) return true;
+      // Search session context (pr, jira, branch, plan, planText)
+      const ctx = t.assignedTo != null ? sessionContexts[t.assignedTo] : null;
+      if (ctx) {
+        if ((ctx.pr || '').toLowerCase().includes(q)) return true;
+        if ((ctx.jira || '').toLowerCase().includes(q)) return true;
+        if ((ctx.branch || '').toLowerCase().includes(q)) return true;
+        if ((ctx.plan || '').toLowerCase().includes(q)) return true;
+        if ((ctx.planText || '').toLowerCase().includes(q)) return true;
+      }
+      // Search task sourceKey (e.g. "mavencare/webplatform#29290")
+      if ((t.sourceKey || '').toLowerCase().includes(q)) return true;
+      return false;
+    };
     const matchesFilter = (t) => taskSourceFilter.size === 0 || taskSourceFilter.has(t.source);
     const matchesAssignee = (t) => {
       if (!taskAssigneeFilter) return true;
@@ -5642,7 +5661,24 @@
     // Ensure columns exist (idempotent)
     if (!document.getElementById(`board-cards-${states[0].id}`)) renderBoardColumns();
     const q = taskSearchQuery.toLowerCase();
-    const matchesSearch = (t) => !q || t.text.toLowerCase().includes(q) || (t.source || '').toLowerCase().includes(q) || (t.designation || '').toLowerCase().includes(q) || String(t.assignedTo || '').includes(q) || (t.assignee || '').toLowerCase().includes(q);
+    const matchesSearch = (t) => {
+      if (!q) return true;
+      if (t.text.toLowerCase().includes(q)) return true;
+      if ((t.source || '').toLowerCase().includes(q)) return true;
+      if ((t.designation || '').toLowerCase().includes(q)) return true;
+      if (String(t.assignedTo || '').includes(q)) return true;
+      if ((t.assignee || '').toLowerCase().includes(q)) return true;
+      const ctx = t.assignedTo != null ? sessionContexts[t.assignedTo] : null;
+      if (ctx) {
+        if ((ctx.pr || '').toLowerCase().includes(q)) return true;
+        if ((ctx.jira || '').toLowerCase().includes(q)) return true;
+        if ((ctx.branch || '').toLowerCase().includes(q)) return true;
+        if ((ctx.plan || '').toLowerCase().includes(q)) return true;
+        if ((ctx.planText || '').toLowerCase().includes(q)) return true;
+      }
+      if ((t.sourceKey || '').toLowerCase().includes(q)) return true;
+      return false;
+    };
     const matchesAssignee = (t) => {
       if (!taskAssigneeFilter) return true;
       if (taskAssigneeFilter === '__unassigned__') return !t.assignee;
