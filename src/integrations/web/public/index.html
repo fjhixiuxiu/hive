@@ -1215,13 +1215,24 @@
     <div class="pm-form-field">
       <label class="pm-form-label">Target Session <span style="color:var(--dim)">(optional)</span></label>
       <select class="pm-form-select" id="pm-form-target-session">
-        <option value="">None (route by designation)</option>
+        <option value="">None (use routing below)</option>
       </select>
     </div>
-    <div class="pm-form-field full-width">
+    <div class="pm-form-field full-width pm-routing-field" id="pm-form-target-override-notice" style="display:none">
+      <span style="font-size:11px;color:var(--orange);line-height:1.4;display:block;">Target session overrides routing — designation matching and auto-create are ignored.</span>
+    </div>
+    <div class="pm-form-field full-width pm-routing-field" id="pm-form-designation-match-field">
+      <label class="pm-form-label">Session Matching</label>
+      <select class="pm-form-select" id="pm-form-designation-match">
+        <option value="flexible">Flexible — prefer matching, fall back to undesignated</option>
+        <option value="strict">Strict — only dispatch to matching designation</option>
+      </select>
+    </div>
+    <div class="pm-form-field full-width pm-routing-field">
       <label style="font-size:13px;color:var(--fg);cursor:pointer;display:flex;align-items:center;gap:6px">
         <input type="checkbox" id="pm-form-auto-create"> Auto-create sessions when no idle session is available
       </label>
+      <span id="pm-form-auto-create-hint" style="font-size:11px;color:var(--dim);margin-top:4px;display:none;line-height:1.4;"></span>
     </div>
     <div class="pm-form-field full-width" id="pm-form-primary-action-field" style="display:none">
       <label style="font-size:13px;color:var(--fg);cursor:pointer;display:flex;align-items:center;gap:6px">

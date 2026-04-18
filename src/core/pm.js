@@ -115,6 +115,7 @@ class ProjectManager extends EventEmitter {
       actions: cfg.actions || null, // allowed context action IDs (null = all)
       boardStates: cfg.boardStates || null, // per-PM work state overrides: [{ stateId, autoOnStatus }]
       autoCreate: cfg.autoCreate || false, // when true, auto-create sessions for this PM's queued tasks
+      designationMatch: cfg.designationMatch || 'flexible', // 'flexible' = fall back to undesignated sessions, 'strict' = only matching designation
       primaryAction: cfg.primaryAction || { enabled: false }, // { enabled: bool } — opt-in "Open PR/Issue/Thread" button on task cards
       enabled: false,
       seenKeys: [],
@@ -315,6 +316,7 @@ class ProjectManager extends EventEmitter {
       boardStates: pm.boardStates,
       actions: pm.actions,
       autoCreate: pm.autoCreate,
+      designationMatch: pm.designationMatch,
       memory: pm.memory || [],
     };
 
@@ -513,6 +515,7 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
         boardStates: Array.isArray(data.boardStates) ? data.boardStates : null,
         actions: Array.isArray(data.actions) ? data.actions : null,
         autoCreate: data.autoCreate || false,
+        designationMatch: data.designationMatch || 'flexible',
         enabled: data.enabled || false,
         seenKeys: Array.isArray(data.seenKeys) ? data.seenKeys : [],
         tasksCreated: data.tasksCreated || 0,

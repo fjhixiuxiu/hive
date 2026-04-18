@@ -740,18 +740,24 @@ class TaskQueue extends EventEmitter {
       );
 
       // Dispatch one task per idle session.
-      // Designated tasks prefer sessions with matching designation, but fall
-      // back to undesignated sessions. They never cross-designate (e.g. a
-      // 'cherrypick' task won't go to an 'ios'-designated session).
+      // Designated tasks prefer sessions with matching designation.
+      // In "flexible" mode (default), they fall back to undesignated sessions.
+      // In "strict" mode, they only dispatch to sessions with matching designation.
+      // Cross-designation is always forbidden (e.g. a 'cherrypick' task won't
+      // go to an 'ios'-designated session).
       // Undesignated tasks still only go to undesignated sessions.
       const dispatched = new Set(); // track sessions claimed this round
       for (const task of queuedTasks) {
         if (task.status !== 'queued') continue;
         const candidates = idleAuto.filter(s => !dispatched.has(s.num));
+        const pm = this._getSourcePm(task);
+        const matchMode = (pm && pm.designationMatch) || 'flexible';
         let best = null;
         if (task.designation) {
-          best = candidates.find(s => this.designations.get(s.num) === task.designation)
-            || candidates.find(s => !this.designations.get(s.num));
+          best = candidates.find(s => this.designations.get(s.num) === task.designation);
+          if (!best && matchMode === 'flexible') {
+            best = candidates.find(s => !this.designations.get(s.num));
+          }
         } else {
           best = candidates.find(s => !this.designations.get(s.num));
         }
@@ -768,21 +774,27 @@ class TaskQueue extends EventEmitter {
         return pm && pm.autoCreate;
       });
 
-      // Group by designation (null = undesignated)
-      const byDesig = new Map();
+      // Group by designation + matchMode (both affect which sessions count)
+      // Key: "desig|matchMode" (e.g. "webplatform|flexible" or "|flexible" for undesignated)
+      const byDesigMode = new Map();
       for (const t of autoCreateTasks) {
         const d = t.designation || null;
-        if (!byDesig.has(d)) byDesig.set(d, []);
-        byDesig.get(d).push(t);
+        const pm = this._getSourcePm(t);
+        const mode = (pm && pm.designationMatch) || 'flexible';
+        const key = `${d === null ? '' : d}|${mode}`;
+        if (!byDesigMode.has(key)) byDesigMode.set(key, { desig: d, matchMode: mode, tasks: [] });
+        byDesigMode.get(key).tasks.push(t);
       }
 
-      for (const [desig, tasks] of byDesig) {
+      for (const [, { desig, matchMode, tasks }] of byDesigMode) {
         // Check if there's already an idle or booting session for this designation.
-        // Designated tasks can also fall back to undesignated sessions, so include
-        // those in the matching set to avoid needless auto-creation.
+        // In flexible mode, undesignated sessions count as potential hosts.
+        // In strict mode, only sessions with matching designation count.
         const matching = sessions.filter(s => {
           const sd = this.designations.get(s.num);
-          return desig ? (sd === desig || !sd) : !sd;
+          if (!desig) return !sd;
+          if (sd === desig) return true;
+          return matchMode === 'flexible' && !sd;
         });
         const hasIdle = matching.some(s =>
           s.state === 'idle' && this.autoSessions.has(s.num)
