@@ -607,12 +607,16 @@ class TaskQueue extends EventEmitter {
     this._saveState();
 
     // Fire-and-forget: send the task text to Claude
-    // Clear context first so the agent starts fresh
+    // Clear context first so the agent starts fresh.
+    //
+    // relay.ask rather than relay.tell + fixed sleep: ask polls
+    // tmux.detectState() and only returns after the session is confirmed
+    // idle. A blind 2500ms sleep raced when /clear took longer under load,
+    // leaving the next paste to land mid-clear → interleaved input and
+    // Claude Code crashes. Observed on S:34 on 2026-04-15.
+    // See: ~/dev/agents/hive/clear-paste-race-plan.md
     const sendTask = async () => {
-      const clearResult = await relay.tell(this.config, node, sessionName, '/clear', { vimMode: this.vimMode });
-      if (clearResult.success) {
-        await new Promise(r => setTimeout(r, 2500));
-      }
+      await relay.ask(this.config, node, sessionName, '/clear', { vimMode: this.vimMode });
       // Build message with agent file preamble if designation has agent files
       let fullMessage = this._pmManager ? this._pmManager.enrichTaskText(task) : task.text;
       const desigName = task.designation || this.designations.get(sessionNum);

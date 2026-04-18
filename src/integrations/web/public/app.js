@@ -8275,6 +8275,20 @@
     // Hide schedule for slack/github-mentions/channel-monitor (no polling); manual supports cron schedule
     const schedField = document.getElementById('pm-form-schedule-field');
     if (schedField) schedField.style.display = (type === 'slack' || type === 'github-mentions' || type === 'slack-channel-monitor') ? 'none' : '';
+    // Manual/command/script sources only support cron (no interval polling) — auto-switch to cron tab
+    if (type === 'manual' || type === 'command' || type === 'script') {
+      document.querySelectorAll('.pm-sched-tab').forEach(t => {
+        const isCron = t.dataset.mode === 'cron';
+        t.classList.toggle('selected', isCron);
+        t.style.background = isCron ? 'var(--accent)' : 'var(--surface)';
+        t.style.color = isCron ? '#fff' : 'var(--text)';
+        t.style.display = isCron ? '' : 'none';
+      });
+      document.getElementById('pm-sched-interval').style.display = 'none';
+      document.getElementById('pm-sched-cron').style.display = '';
+    } else {
+      document.querySelectorAll('.pm-sched-tab').forEach(t => t.style.display = '');
+    }
     const threshField = document.getElementById('pm-form-threshold').closest('.pm-form-field');
     if (threshField) threshField.style.display = (type === 'manual' || type === 'command' || type === 'script' || type === 'slack' || type === 'github-mentions' || type === 'slack-channel-monitor') ? 'none' : '';
     const instrField = document.getElementById('pm-form-instructions').closest('.pm-form-field');
@@ -8525,12 +8539,16 @@
     document.getElementById('pm-form-slack-user-id').value = pm ? (pm.slackUserId || '') : '';
     document.getElementById('pm-form-interval').value = pm ? pm.pollInterval : 300000;
     document.getElementById('pm-form-cron').value = pm ? (pm.schedule || '') : '';
-    // Set schedule tab state
-    const hasCron = pm && pm.schedule;
-    document.querySelectorAll('.pm-sched-tab').forEach(t => t.classList.toggle('selected', t.dataset.mode === (hasCron ? 'cron' : 'interval')));
+    // Set schedule tab state — for manual/command/script, always show cron-only
+    const sourceType = document.getElementById('pm-form-source').value;
+    const cronOnly = sourceType === 'manual' || sourceType === 'command' || sourceType === 'script';
+    const hasCron = cronOnly || (pm && pm.schedule);
     document.querySelectorAll('.pm-sched-tab').forEach(t => {
+      const isCron = t.dataset.mode === 'cron';
+      t.classList.toggle('selected', hasCron ? isCron : !isCron);
       if (t.classList.contains('selected')) { t.style.background = 'var(--accent)'; t.style.color = '#fff'; }
       else { t.style.background = 'var(--surface)'; t.style.color = 'var(--text)'; }
+      t.style.display = cronOnly ? (isCron ? '' : 'none') : '';
     });
     document.getElementById('pm-sched-interval').style.display = hasCron ? 'none' : '';
     document.getElementById('pm-sched-cron').style.display = hasCron ? '' : 'none';

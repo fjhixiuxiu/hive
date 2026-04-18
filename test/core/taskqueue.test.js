@@ -446,13 +446,10 @@ describe('TaskQueue', () => {
       // This test drives _dispatchTask directly rather than via the auto-dispatch
       // loop so it's isolated from fleet/idle/cooldown concerns and fast.
       vi.useRealTimers();
-      // Short-circuit the hardcoded 2500ms sleep between /clear and the real
-      // prompt so the fire-and-forget sendTask chain resolves inside the test.
+      // relay.ask is already mocked to resolve immediately in the top-level
+      // beforeEach, so dispatch no longer sleeps between /clear and the
+      // prompt. Keep a realSetTimeout handle for the microtask flush below.
       const realSetTimeout = global.setTimeout;
-      vi.spyOn(global, 'setTimeout').mockImplementation((fn, ms) => {
-        // Fire the callback on next tick regardless of requested ms
-        return realSetTimeout(fn, 0);
-      });
 
       // Agent file on disk — override the default ENOENT mock for this one path
       const AGENT_FILE_PATH = '/fake/agents/cherrypick.md';
@@ -523,6 +520,66 @@ describe('TaskQueue', () => {
       expect(sentMessage).toContain('Instructions: Review the diff and cherry pick matching commits.');
       expect(sentMessage).toContain('## Hive Integration');
       expect(sentMessage).toContain('hive_get_task');
+    });
+
+    it('sends /clear via relay.ask and waits for it to resolve before pasting the task', async () => {
+      // Regression for the /clear paste-race: dispatch used to call
+      // relay.tell('/clear') fire-and-forget then sleep 2500ms. When /clear
+      // took longer (observed on S:34 on 2026-04-15), the paste landed mid-
+      // clear and Claude Code crashed on the interleaved input.
+      //
+      // Contract we now enforce:
+      //   1. relay.ask is called with '/clear' (so it polls for idle).
+      //   2. relay.tell(fullMessage) runs ONLY after relay.ask has resolved.
+      vi.useRealTimers();
+      const realSetTimeout = global.setTimeout;
+
+      let clearResolved = false;
+      let tellCalledBeforeClearResolved = false;
+
+      relayModule.ask.mockImplementation((config, node, sessionName, message) => {
+        if (message === '/clear') {
+          return new Promise(resolve => {
+            realSetTimeout(() => {
+              clearResolved = true;
+              resolve({ success: true, response: 'cleared' });
+            }, 50);
+          });
+        }
+        return Promise.resolve({ success: true, response: 'ok' });
+      });
+
+      relayModule.tell.mockImplementation((config, node, sessionName, message) => {
+        // If tell runs with the task text BEFORE /clear resolves, the race
+        // is back — flag it for the assertion below.
+        if (message !== '/clear' && !clearResolved) tellCalledBeforeClearResolved = true;
+        return Promise.resolve({ success: true });
+      });
+
+      fleetModule.getFleetStatus.mockResolvedValue([{ name: '6-sess', num: 6, state: 'idle' }]);
+      fleetModule.findSession.mockResolvedValue({ name: '6-sess', nodeId: 'local' });
+
+      const task = {
+        id: 'race-1', text: 'Do the thing', mode: 'auto',
+        designation: null, status: 'queued', source: 'pm:test',
+        assignedTo: null, createdAt: Date.now(),
+      };
+      tq.tasks.set(task.id, task);
+      await tq._dispatchTask(task, 6);
+      // Drain microtasks + the simulated 50ms /clear delay
+      await new Promise(r => realSetTimeout(r, 100));
+
+      // relay.ask MUST have been called with '/clear'
+      const askCall = relayModule.ask.mock.calls.find(args => args[3] === '/clear');
+      expect(askCall, 'expected relay.ask to be called with /clear').toBeDefined();
+
+      // relay.tell MUST NOT have been called with the task text before /clear resolved
+      expect(tellCalledBeforeClearResolved,
+        'relay.tell(task) fired before relay.ask(/clear) resolved — race is back').toBe(false);
+
+      // Sanity: the task DID eventually reach relay.tell
+      const tellCall = relayModule.tell.mock.calls.find(args => args[3] !== '/clear');
+      expect(tellCall, 'expected relay.tell to eventually be called with task text').toBeDefined();
     });
   });
 

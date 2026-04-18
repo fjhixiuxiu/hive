@@ -1279,6 +1279,7 @@ function createMessageHandler(deps) {
           jira: ['JIRA_BASE_URL', 'JIRA_EMAIL', 'JIRA_API_TOKEN'],
           zoho: ['ZOHO_DESK_ORG_ID', 'ZOHO_DESK_CLIENT_ID', 'ZOHO_DESK_CLIENT_SECRET', 'ZOHO_DESK_REFRESH_TOKEN'],
           nectar: ['NECTAR_URL', 'NECTAR_API_KEY'],
+          's3-release-artifacts': ['RELEASE_ARTIFACTS_BUCKET', 'RELEASE_ARTIFACTS_REGION', 'RELEASE_ARTIFACTS_AWS_ACCESS_KEY_ID', 'RELEASE_ARTIFACTS_AWS_SECRET_ACCESS_KEY'],
         };
         const allowed = ALLOWED_KEYS[intName];
         if (!allowed || !msg.values || typeof msg.values !== 'object') {
@@ -1421,6 +1422,24 @@ function createMessageHandler(deps) {
                 'Accept': 'application/json',
               });
               sendResult(true, `Connected — ${data.releases || 0} releases, ${data.environments || 0} environments`);
+              break;
+            }
+            case 's3-release-artifacts': {
+              const bucket = vals.RELEASE_ARTIFACTS_BUCKET;
+              const region = vals.RELEASE_ARTIFACTS_REGION || 'us-east-1';
+              const accessKey = vals.RELEASE_ARTIFACTS_AWS_ACCESS_KEY_ID;
+              const secretKey = vals.RELEASE_ARTIFACTS_AWS_SECRET_ACCESS_KEY;
+              if (!bucket || !accessKey || !secretKey) { sendResult(false, null, 'Bucket, Access Key ID, and Secret Access Key are required'); break; }
+              // Test by listing the bucket (HeadBucket via S3 REST API)
+              const { exec } = require('child_process');
+              const testCmd = `AWS_ACCESS_KEY_ID=${accessKey} AWS_SECRET_ACCESS_KEY=${secretKey} aws s3 ls s3://${bucket}/ --region ${region} --max-items 1 2>&1`;
+              exec(testCmd, { timeout: 15000 }, (err, stdout, stderr) => {
+                if (err) {
+                  sendResult(false, null, `Cannot access bucket: ${(stderr || err.message).slice(0, 200)}`);
+                } else {
+                  sendResult(true, `Connected to s3://${bucket} (${region})`);
+                }
+              });
               break;
             }
             default:

@@ -663,6 +663,31 @@
             <span class="int-result" id="nectar-result"></span>
           </div>
         </div>
+        <div class="integration-card" data-integration="s3-release-artifacts">
+          <div class="integration-header">
+            <span class="integration-name">S3 Release Artifacts</span>
+            <span class="integration-status" id="s3-release-artifacts-status"></span>
+          </div>
+          <div class="integration-fields">
+            <label>S3 Bucket
+              <input type="text" id="int-s3-bucket" data-env="RELEASE_ARTIFACTS_BUCKET" placeholder="viv-release-artifacts" autocomplete="off">
+            </label>
+            <label>Region
+              <input type="text" id="int-s3-region" data-env="RELEASE_ARTIFACTS_REGION" placeholder="us-east-1" autocomplete="off">
+            </label>
+            <label>AWS Access Key ID
+              <input type="text" id="int-s3-access-key" data-env="RELEASE_ARTIFACTS_AWS_ACCESS_KEY_ID" placeholder="AKIA..." autocomplete="off">
+            </label>
+            <label>AWS Secret Access Key
+              <input type="password" id="int-s3-secret-key" data-env="RELEASE_ARTIFACTS_AWS_SECRET_ACCESS_KEY" placeholder="..." autocomplete="off">
+            </label>
+          </div>
+          <div class="integration-actions">
+            <button class="int-save-btn" data-integration="s3-release-artifacts">Save</button>
+            <button class="int-test-btn" data-integration="s3-release-artifacts">Test Connection</button>
+            <span class="int-result" id="s3-release-artifacts-result"></span>
+          </div>
+        </div>
         <div class="integration-card" data-integration="zoho">
           <div class="integration-header">
             <span class="integration-name">Zoho Desk</span>
