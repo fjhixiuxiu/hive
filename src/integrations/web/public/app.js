@@ -4296,12 +4296,19 @@
     dialog.className = 'cleanup-dialog';
     let rows = '';
     for (const item of items) {
-      const prBadges = item.prs.map(p => {
-        const label = p.merged ? 'MERGED' : 'CLOSED';
-        const cls = p.merged ? 'merged' : 'closed';
-        const ago = p.merged_at ? timeAgo(new Date(p.merged_at).getTime()) : p.closed_at ? timeAgo(new Date(p.closed_at).getTime()) : '';
-        return `<span class="cleanup-pr-badge ${cls}">#${p.number} ${label}${ago ? ' ' + ago : ''}</span>`;
-      }).join(' ');
+      let reasonBadge = '';
+      if (item.reason === 'pr') {
+        reasonBadge = item.prs.map(p => {
+          const label = p.merged ? 'MERGED' : 'CLOSED';
+          const cls = p.merged ? 'merged' : 'closed';
+          const ago = p.merged_at ? timeAgo(new Date(p.merged_at).getTime()) : p.closed_at ? timeAgo(new Date(p.closed_at).getTime()) : '';
+          return `<span class="cleanup-pr-badge ${cls}">#${p.number} ${label}${ago ? ' ' + ago : ''}</span>`;
+        }).join(' ');
+      } else if (item.reason === 'slack-inactive') {
+        reasonBadge = `<span class="cleanup-pr-badge inactive">Slack thread — no activity ${item.inactiveDays}d</span>`;
+      } else if (item.reason === 'inactive') {
+        reasonBadge = `<span class="cleanup-pr-badge inactive">No activity ${item.inactiveDays}d</span>`;
+      }
       const sessionBadge = item.assignedTo ? `<span class="task-session-badge">S:${item.assignedTo}</span>` : `<span class="task-session-badge">queued</span>`;
       const workingWarn = item.isWorking ? ' <span style="color:var(--yellow);font-size:11px">(still working)</span>' : '';
       const checked = item.isWorking ? '' : ' checked';
@@ -4310,12 +4317,12 @@
         <div class="cleanup-row-body">
           <div class="cleanup-row-top">${sessionBadge}${workingWarn}</div>
           <div class="cleanup-row-text">${esc(item.taskText.substring(0, 120))}</div>
-          <div class="cleanup-row-prs">${prBadges}</div>
+          <div class="cleanup-row-prs">${reasonBadge}</div>
         </div>
       </label>`;
     }
     dialog.innerHTML = `
-      <div class="cleanup-title">Cleanup — ${items.length} task${items.length > 1 ? 's' : ''} with closed PRs</div>
+      <div class="cleanup-title">Cleanup — ${items.length} stale task${items.length > 1 ? 's' : ''}</div>
       <div class="cleanup-list">${rows}</div>
       <div class="cleanup-actions">
         <button class="cleanup-close-btn">Close Selected</button>

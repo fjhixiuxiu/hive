@@ -620,25 +620,31 @@ function createMessageHandler(deps) {
 
         (async () => {
           try {
+            const TWO_DAYS = 2 * 24 * 60 * 60 * 1000;
+            const now = Date.now();
             const openTasks = [...taskQueue.tasks.values()].filter(t =>
               t.status === 'queued' || t.status === 'dispatched' || t.status === 'snoozed');
+            const sessions = await fleet.getFleetStatus(config, router);
+
             // Collect unique PRs to check
-            const prCache = new Map(); // "repo#number" -> { state, merged, merged_at, closed_at }
-            const taskPRs = []; // [{ task, prs: [{repo,number}] }]
+            const prCache = new Map();
+            const taskPRs = [];
             for (const t of openTasks) {
               const prs = extractPRs(t);
               if (prs.length) taskPRs.push({ task: t, prs });
               for (const pr of prs) prCache.set(`${pr.repo}#${pr.number}`, null);
             }
             // Batch fetch PR states (deduplicated)
-            const fetches = [...prCache.keys()].map(async (key) => {
+            await Promise.all([...prCache.keys()].map(async (key) => {
               const [repo, num] = key.split('#');
               const data = await ghFetch(`https://api.github.com/repos/${repo}/pulls/${num}`);
               if (data) prCache.set(key, { state: data.state, merged: !!data.merged, merged_at: data.merged_at, closed_at: data.closed_at });
-            });
-            await Promise.all(fetches);
-            // Build stale items
+            }));
+
             const items = [];
+            const seen = new Set(); // track taskIds already added
+
+            // 1. Tasks with merged/closed PRs
             for (const { task: t, prs } of taskPRs) {
               const prResults = prs.map(pr => {
                 const cached = prCache.get(`${pr.repo}#${pr.number}`);
@@ -646,15 +652,49 @@ function createMessageHandler(deps) {
               });
               const allDone = prResults.length > 0 && prResults.every(p => p.state === 'closed' || p.merged);
               if (allDone) {
-                const sessions = fleet.getStatus(config);
                 const s = sessions.find(x => x.num === t.assignedTo);
                 items.push({
                   taskId: t.id, taskText: t.text, status: t.status,
                   assignedTo: t.assignedTo, isWorking: s ? s.state === 'working' : false,
-                  prs: prResults,
+                  reason: 'pr', prs: prResults,
                 });
+                seen.add(t.id);
               }
             }
+
+            // 2. Slack-sourced tasks with no activity for 2+ days
+            for (const t of openTasks) {
+              if (seen.has(t.id)) continue;
+              const isSlack = (t.source && t.source.startsWith('slack:')) || t.slackChannel;
+              if (!isSlack) continue;
+              const lastActive = t.lastActivityAt || t.dispatchedAt || t.createdAt;
+              if (now - lastActive < TWO_DAYS) continue;
+              const s = sessions.find(x => x.num === t.assignedTo);
+              const inactiveFor = Math.round((now - lastActive) / (24 * 60 * 60 * 1000));
+              items.push({
+                taskId: t.id, taskText: t.text, status: t.status,
+                assignedTo: t.assignedTo, isWorking: s ? s.state === 'working' : false,
+                reason: 'slack-inactive', inactiveDays: inactiveFor, prs: [],
+              });
+              seen.add(t.id);
+            }
+
+            // 3. Any dispatched task with no session activity for 2+ days
+            for (const t of openTasks) {
+              if (seen.has(t.id)) continue;
+              if (t.status !== 'dispatched') continue;
+              const lastActive = t.lastActivityAt || t.dispatchedAt || t.createdAt;
+              if (now - lastActive < TWO_DAYS) continue;
+              const s = sessions.find(x => x.num === t.assignedTo);
+              const inactiveFor = Math.round((now - lastActive) / (24 * 60 * 60 * 1000));
+              items.push({
+                taskId: t.id, taskText: t.text, status: t.status,
+                assignedTo: t.assignedTo, isWorking: s ? s.state === 'working' : false,
+                reason: 'inactive', inactiveDays: inactiveFor, prs: [],
+              });
+              seen.add(t.id);
+            }
+
             ws.send(JSON.stringify({ type: 'task:cleanup-scan:result', items }));
           } catch (err) {
             ws.send(JSON.stringify({ type: 'task:cleanup-scan:result', error: err.message, items: [] }));
