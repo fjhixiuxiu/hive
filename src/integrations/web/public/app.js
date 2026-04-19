@@ -4337,7 +4337,7 @@
       const checked = dialog.querySelectorAll('.cleanup-check:checked');
       let count = 0;
       checked.forEach(cb => {
-        ws.send(JSON.stringify({ type: 'task:done', taskId: cb.dataset.id, result: 'Closed — PR merged/closed' }));
+        ws.send(JSON.stringify({ type: 'task:complete', taskId: cb.dataset.id, result: 'Closed — cleanup (PR merged/closed or inactive)' }));
         count++;
       });
       overlay.remove();
