@@ -1,0 +1,12 @@
+[Unit]
+Description=Hive auto-update — pulls origin/main and restarts if changed
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /home/ubuntu/hive/cloud/scripts/auto-update.sh
+StandardOutput=append:/home/ubuntu/hive-update.log
+StandardError=append:/home/ubuntu/hive-update.log
+# Hard cap so a hung git/npm can't block the next timer fire
+TimeoutStartSec=600
