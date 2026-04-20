@@ -476,12 +476,14 @@ function createSlackBot(taskQueue, config, router, pmManager) {
   // diagnose missing messages — if an @mention doesn't create a task, the
   // first question is "did the bot even receive it?". This line answers that.
   let lastEventAt = Date.now();
+  const lastEventByChannel = new Map(); // channel -> timestamp of last received event
   app.use(async ({ body, next }) => {
     lastEventAt = Date.now();
     try {
       const ev = (body && body.event) || {};
       const type = ev.type || (body && body.type) || 'unknown';
       const ch = ev.channel || '';
+      if (ch) lastEventByChannel.set(ch, Date.now());
       const ts = ev.ts || '';
       const threadTs = ev.thread_ts || '';
       const user = ev.user || '';
@@ -777,36 +779,61 @@ function createSlackBot(taskQueue, config, router, pmManager) {
     if (sinceLastEvent < ZOMBIE_THRESHOLD_MS) return;
     if (!pmManager) return;
 
+    // Collect channels to probe: channel-monitor PMs + channels with active Slack tasks
+    const probeChannels = new Set();
     const monitorPms = pmManager.getAll().filter(pm =>
       pm.enabled &&
       pm.source &&
       pm.source.type === 'slack-channel-monitor' &&
       Array.isArray(pm.source.channels)
     );
-    const channels = [...new Set(monitorPms.flatMap(pm => pm.source.channels))];
-    if (channels.length === 0) return;
+    for (const pm of monitorPms) pm.source.channels.forEach(ch => probeChannels.add(ch));
 
-    const oldestSec = Math.floor(lastEventAt / 1000);
-    for (const channel of channels) {
+    // Add channels from active Slack-sourced tasks (dispatched or queued)
+    if (taskQueue) {
+      for (const t of taskQueue.tasks.values()) {
+        if (t.status !== 'dispatched' && t.status !== 'queued') continue;
+        if (t.slackChannel) probeChannels.add(t.slackChannel);
+        // Also check sessionContext for slack threads
+        const ctx = taskQueue.sessionContext.get(t.assignedTo);
+        if (ctx && ctx.slackThread) {
+          const ch = ctx.slackThread.split(':')[0];
+          if (ch) probeChannels.add(ch);
+        }
+      }
+    }
+
+    if (probeChannels.size === 0) return;
+
+    // Use per-channel tracking: probe each channel for messages we should
+    // have received. This catches partial zombies where some channels flow
+    // but others silently drop.
+    const probeOldestSec = Math.floor((Date.now() - ZOMBIE_THRESHOLD_MS) / 1000);
+    for (const channel of probeChannels) {
       try {
         const resp = await app.client.conversations.history({
           channel,
           limit: 5,
-          oldest: String(oldestSec),
+          oldest: String(probeOldestSec),
         });
-        // Look for any real (non-subtype) message newer than lastEventAt.
-        // subtype-only events (joins, edits, etc.) are ignored on purpose —
-        // the bot skips them too, so their absence doesn't prove zombie.
-        const missed = (resp.messages || []).find(m =>
-          !m.subtype && parseFloat(m.ts) * 1000 > lastEventAt
-        );
+        // Look for a real (non-subtype) message in this channel that we
+        // should have received but didn't (not in our per-channel tracker).
+        const missed = (resp.messages || []).find(m => {
+          if (m.subtype) return false;
+          const msgTs = parseFloat(m.ts) * 1000;
+          // Check if this message arrived after our per-channel last-seen
+          const chLastSeen = lastEventByChannel.get(channel) || 0;
+          return msgTs > chLastSeen + 60000; // 1 min grace for clock skew
+        });
         if (missed) {
           const missedIso = new Date(parseFloat(missed.ts) * 1000).toISOString();
-          const lastIso = new Date(lastEventAt).toISOString();
-          console.warn(`[slack] Zombie Socket Mode detected: message in ${channel} at ${missedIso} but no events received since ${lastIso}`);
-          return restartBot(`zombie socket — missed message in ${channel}`);
+          const chLastIso = lastEventByChannel.has(channel) ? new Date(lastEventByChannel.get(channel)).toISOString() : 'never';
+          console.warn(`[slack] Partial zombie detected: message in ${channel} at ${missedIso} but last event from channel at ${chLastIso}`);
+          return restartBot(`partial zombie — missed message in ${channel}`);
         }
       } catch (err) {
+        // not_in_channel is expected for channels the bot can't read
+        if (err.data && err.data.error === 'not_in_channel') continue;
         console.warn(`[slack] Zombie probe error for ${channel}: ${err.message}`);
       }
     }
