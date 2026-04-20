@@ -29,7 +29,7 @@ SECRET_ENV=$(aws secretsmanager get-secret-value \
   --region "${REGION}" \
   --query 'SecretString' \
   --output text \
-  | jq -r 'to_entries[] | "\(.key)=\(.value)"')
+  | jq -r 'to_entries[] | "\(.key)=\"\(.value)\""')
 
 # Start with existing .env (preserves UI-configured credentials)
 touch "${ENV_FILE}"

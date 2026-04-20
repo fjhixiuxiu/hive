@@ -13,12 +13,11 @@ set -euo pipefail
 HIVE_DIR="/home/ubuntu/hive"
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"; }
 
-# ── Load .env for HIVE_REPO_TOKEN ─────────────────────────────────────
+# ── Load HIVE_REPO_TOKEN from .env ────────────────────────────────────
+# Read specific key instead of sourcing (values may contain unquoted spaces)
 if [ -f "${HIVE_DIR}/.env" ]; then
-  set -a
-  # shellcheck disable=SC1091
-  source "${HIVE_DIR}/.env"
-  set +a
+  HIVE_REPO_TOKEN=$(grep -m1 '^HIVE_REPO_TOKEN=' "${HIVE_DIR}/.env" | cut -d= -f2- | tr -d '"' || true)
+  export HIVE_REPO_TOKEN
 fi
 
 # ── Build git env with token auth (bypasses credential store) ─────────
