@@ -1656,6 +1656,22 @@ function createMessageHandler(deps) {
         const sendLog = (step, output) => {
           try { ws.send(JSON.stringify({ type: 'update:log', step, output })); } catch (_) {}
         };
+
+        // Build env that injects HIVE_REPO_TOKEN for git auth, bypassing
+        // the system credential store (which gets overwritten by GITHUB_TOKEN
+        // used for mavencare API calls).
+        const hiveRepoToken = process.env.HIVE_REPO_TOKEN;
+        const gitEnv = hiveRepoToken
+          ? { ...process.env,
+              GIT_TERMINAL_PROMPT: '0',
+              GIT_CONFIG_COUNT: '1',
+              GIT_CONFIG_KEY_0: `url.https://${hiveRepoToken}@github.com/.insteadOf`,
+              GIT_CONFIG_VALUE_0: 'https://github.com/' }
+          : process.env;
+        const gitOpts = (timeout) => ({ cwd: hiveDir, encoding: 'utf8', timeout, env: gitEnv });
+        // Scrub token from git error output (git can include the rewritten URL with embedded token)
+        const scrub = (s) => hiveRepoToken ? s.replace(new RegExp(hiveRepoToken, 'g'), '***') : s;
+
         try {
           // Step 0: stash local changes so pull doesn't conflict
           const dirtyCheck = execSync('git status --porcelain', { cwd: hiveDir, encoding: 'utf8' }).trim();
@@ -1667,23 +1683,23 @@ function createMessageHandler(deps) {
             sendLog('stash', 'Done.');
           }
 
-          // Step 1: fetch
+          // Step 1: fetch (use gitOpts to inject HIVE_REPO_TOKEN)
           sendLog('fetch', 'Running git fetch origin...');
-          const fetchOut = execSync('git fetch origin 2>&1', { cwd: hiveDir, encoding: 'utf8', timeout: 30000 });
-          sendLog('fetch', fetchOut || 'Done.');
+          const fetchOut = execSync('git fetch origin 2>&1', gitOpts(30000));
+          sendLog('fetch', scrub(fetchOut) || 'Done.');
 
           // Step 2: checkout if different branch
           const currentBranch = execSync('git branch --show-current', { cwd: hiveDir, encoding: 'utf8' }).trim();
           if (targetBranch && targetBranch !== currentBranch) {
             sendLog('checkout', `Switching to ${targetBranch}...`);
-            const checkoutOut = execSync(`git checkout ${targetBranch} 2>&1`, { cwd: hiveDir, encoding: 'utf8', timeout: 15000 });
-            sendLog('checkout', checkoutOut || 'Done.');
+            const checkoutOut = execSync(`git checkout ${targetBranch} 2>&1`, gitOpts(15000));
+            sendLog('checkout', scrub(checkoutOut) || 'Done.');
           }
 
-          // Step 3: pull
+          // Step 3: pull (use gitOpts to inject HIVE_REPO_TOKEN)
           sendLog('pull', 'Running git pull...');
-          const pullOut = execSync('git pull 2>&1', { cwd: hiveDir, encoding: 'utf8', timeout: 30000 });
-          sendLog('pull', pullOut || 'Done.');
+          const pullOut = execSync('git pull 2>&1', gitOpts(30000));
+          sendLog('pull', scrub(pullOut) || 'Done.');
 
           // Step 3b: re-apply stashed changes
           if (didStash) {
@@ -1716,8 +1732,8 @@ function createMessageHandler(deps) {
           const child = spawn('bash', ['-c', restartScript], { detached: true, stdio: 'ignore' });
           child.unref();
         } catch (err) {
-          sendLog('error', err.message);
-          ws.send(JSON.stringify({ type: 'update:error', error: err.message }));
+          sendLog('error', scrub(err.message));
+          ws.send(JSON.stringify({ type: 'update:error', error: scrub(err.message) }));
         }
         break;
       }
