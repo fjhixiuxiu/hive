@@ -1092,6 +1092,10 @@
       <label class="pm-form-label">Repo (owner/name)</label>
       <input class="pm-form-input" id="pm-form-gh-repo" type="text" placeholder="mavencare/webplatform" autocomplete="off">
     </div>
+    <div class="pm-form-field pm-fields-github-prs full-width" style="display:none">
+      <label class="pm-form-label">Base Branch <span style="color:var(--dim)">(comma-separated, supports regex — blank = main/master)</span></label>
+      <input class="pm-form-input" id="pm-form-gh-base" type="text" placeholder="main, releases/.*, hotfix/.*" autocomplete="off">
+    </div>
     <div class="pm-form-field pm-fields-github full-width" style="display:none">
       <label class="pm-form-label">Labels <span style="color:var(--dim)">(comma-separated, optional)</span></label>
       <input class="pm-form-input" id="pm-form-gh-labels" type="text" placeholder="bug,help wanted" autocomplete="off">
@@ -1115,10 +1119,6 @@
     <div class="pm-form-field pm-fields-github full-width" style="display:none">
       <label class="pm-form-label">Exclude Authors <span style="color:var(--dim)">(comma-separated, optional)</span></label>
       <input class="pm-form-input" id="pm-form-gh-exclude-authors" type="text" placeholder="jeffheifetz,dependabot" autocomplete="off">
-    </div>
-    <div class="pm-form-field pm-fields-github-prs full-width" style="display:none">
-      <label class="pm-form-label">Base Branch <span style="color:var(--dim)">(optional, blank = main/master)</span></label>
-      <input class="pm-form-input" id="pm-form-gh-base" type="text" placeholder="releases/4.1.0" autocomplete="off">
     </div>
     <div class="pm-form-field pm-fields-re-reviews full-width" style="display:none">
       <label class="pm-form-label">Reviewer Username</label>

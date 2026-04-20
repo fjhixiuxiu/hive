@@ -251,8 +251,28 @@ async function _fetchGithubPrs(source) {
     ? source.base.split(',').map(b => b.trim()).filter(Boolean)
     : ['main', 'master'];
 
+  // Separate literal base names from regex patterns
+  const literalBases = [];
+  const regexBases = [];
+  for (const b of allowedBases) {
+    if (/[.*+?^${}()|[\]\\]/.test(b)) {
+      try { regexBases.push(new RegExp(`^${b}$`)); } catch { literalBases.push(b); }
+    } else {
+      literalBases.push(b);
+    }
+  }
+
   const allPrs = [];
-  for (const base of allowedBases) {
+  if (regexBases.length > 0) {
+    // Regex patterns require fetching all open PRs and filtering client-side
+    const params = new URLSearchParams({ per_page: '100' });
+    if (source.state) params.set('state', source.state);
+    const urlStr = `https://api.github.com/repos/${source.repo}/pulls?${params}`;
+    const data = await this._httpRequest(urlStr, this._githubHeaders());
+    if (Array.isArray(data)) allPrs.push(...data);
+  }
+  // Fetch literal bases via the Pulls API (exact match, faster)
+  for (const base of literalBases) {
     const params = new URLSearchParams({ per_page: '100', base });
     if (source.state) params.set('state', source.state);
     const urlStr = `https://api.github.com/repos/${source.repo}/pulls?${params}`;
@@ -260,11 +280,24 @@ async function _fetchGithubPrs(source) {
     if (Array.isArray(data)) allPrs.push(...data);
   }
 
-  const baseSet = new Set(allowedBases);
+  // Deduplicate by PR number (a PR fetched via both paths)
+  const seen = new Set();
+  const uniquePrs = allPrs.filter(pr => {
+    if (seen.has(pr.number)) return false;
+    seen.add(pr.number);
+    return true;
+  });
+
+  function matchesBase(ref) {
+    if (!ref) return false;
+    if (literalBases.includes(ref)) return true;
+    return regexBases.some(rx => rx.test(ref));
+  }
+
   const authorFilter = source.author ? source.author.toLowerCase() : null;
   const excludeSet = new Set((source.excludeAuthors || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean));
-  return allPrs
-    .filter(pr => baseSet.has(pr.base && pr.base.ref) && !pr.draft)
+  return uniquePrs
+    .filter(pr => matchesBase(pr.base && pr.base.ref) && !pr.draft)
     .filter(pr => !authorFilter || (pr.user && pr.user.login.toLowerCase() === authorFilter))
     .filter(pr => !excludeSet.size || !excludeSet.has((pr.user && pr.user.login || '').toLowerCase()))
     .map(pr => ({
@@ -276,6 +309,10 @@ async function _fetchGithubPrs(source) {
 }
 
 async function _fetchGithubPrsViaSearch(source) {
+  // Parse base patterns up front (used for client-side filtering when needed)
+  const baseParts = source.base ? source.base.split(',').map(b => b.trim()).filter(Boolean) : [];
+  const isSingleLiteral = baseParts.length === 1 && !/[.*+?^${}()|[\]\\]/.test(baseParts[0]);
+
   let q;
   if (source.query) {
     // Raw query — use directly, ensure is:pr is included
@@ -294,7 +331,9 @@ async function _fetchGithubPrsViaSearch(source) {
         parts.push(l.includes(' ') ? `-label:"${l}"` : `-label:${l}`);
       }
     }
-    if (source.base) parts.push(`base:${source.base}`);
+    // base: qualifier only supports a single literal value in GitHub Search API.
+    // If source.base has multiple entries or regex, we skip it here and filter client-side below.
+    if (isSingleLiteral) parts.push(`base:${baseParts[0]}`);
     if (source.author) parts.push(`author:${source.author}`);
     if (source.excludeAuthors) {
       for (const a of source.excludeAuthors.split(',').map(s => s.trim()).filter(Boolean)) {
@@ -307,7 +346,36 @@ async function _fetchGithubPrsViaSearch(source) {
   const params = new URLSearchParams({ q, per_page: '50', sort: 'created', order: 'desc' });
   const urlStr = `https://api.github.com/search/issues?${params}`;
   const data = await this._httpRequest(urlStr, this._githubHeaders());
-  const items = data && data.items ? data.items : [];
+  let items = data && data.items ? data.items : [];
+
+  // Client-side base filtering when we have multiple entries or regex patterns
+  if (baseParts.length > 0 && !isSingleLiteral) {
+    // Build matchers: literal set + regex list
+    const literalSet = new Set();
+    const regexList = [];
+    for (const b of baseParts) {
+      if (/[.*+?^${}()|[\]\\]/.test(b)) {
+        try { regexList.push(new RegExp(`^${b}$`)); } catch { literalSet.add(b); }
+      } else {
+        literalSet.add(b);
+      }
+    }
+    // Search API items don't include base ref — fetch each PR to check
+    const headers = this._githubHeaders();
+    const repo = source.repo;
+    const filtered = [];
+    for (const item of items) {
+      const prNum = item.number;
+      try {
+        const prData = await this._httpRequest(`https://api.github.com/repos/${repo}/pulls/${prNum}`, headers);
+        const ref = prData.base && prData.base.ref;
+        if (ref && (literalSet.has(ref) || regexList.some(rx => rx.test(ref)))) {
+          filtered.push(item);
+        }
+      } catch { /* skip items we can't fetch */ }
+    }
+    items = filtered;
+  }
 
   return items.map(item => {
     const repo = source.repo || (item.repository_url ? item.repository_url.replace('https://api.github.com/repos/', '') : 'unknown');

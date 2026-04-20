@@ -304,6 +304,77 @@ describe('PM source: _fetchGithubPrs', () => {
       { key: 'org/repo#55', summary: 'My PR', issueType: 'pr', storyPoints: null },
     ]);
   });
+
+  it('matches PRs using regex base patterns', async () => {
+    pm._httpRequest = vi.fn().mockResolvedValue([
+      { number: 1, title: 'Release PR', base: { ref: 'releases/4.1.0' }, user: { login: 'dev' }, draft: false },
+      { number: 2, title: 'Hotfix PR', base: { ref: 'hotfix/urgent' }, user: { login: 'dev' }, draft: false },
+      { number: 3, title: 'Feature PR', base: { ref: 'feature/new' }, user: { login: 'dev' }, draft: false },
+    ]);
+
+    const result = await pm._fetchGithubPrs({ repo: 'org/repo', base: 'releases/.*' });
+    expect(result).toHaveLength(1);
+    expect(result[0].key).toBe('org/repo#1');
+  });
+
+  it('supports mix of literal and regex base entries', async () => {
+    pm._httpRequest = vi.fn()
+      .mockResolvedValueOnce([
+        // All PRs fetched for regex path
+        { number: 1, title: 'Release PR', base: { ref: 'releases/4.1.0' }, user: { login: 'dev' }, draft: false },
+        { number: 2, title: 'Main PR', base: { ref: 'main' }, user: { login: 'dev' }, draft: false },
+        { number: 3, title: 'Feature PR', base: { ref: 'feature/x' }, user: { login: 'dev' }, draft: false },
+      ])
+      .mockResolvedValueOnce([
+        // Literal 'main' fetch
+        { number: 2, title: 'Main PR', base: { ref: 'main' }, user: { login: 'dev' }, draft: false },
+      ]);
+
+    const result = await pm._fetchGithubPrs({ repo: 'org/repo', base: 'main, releases/.*' });
+    // Should include main (literal) and releases/4.1.0 (regex), deduplicated
+    expect(result).toHaveLength(2);
+    const keys = result.map(r => r.key);
+    expect(keys).toContain('org/repo#1');
+    expect(keys).toContain('org/repo#2');
+  });
+
+  it('deduplicates PRs fetched from both literal and regex paths', async () => {
+    pm._httpRequest = vi.fn()
+      .mockResolvedValueOnce([
+        // All PRs (regex path)
+        { number: 5, title: 'PR 5', base: { ref: 'develop' }, user: { login: 'dev' }, draft: false },
+      ])
+      .mockResolvedValueOnce([
+        // Literal 'develop' fetch — same PR
+        { number: 5, title: 'PR 5', base: { ref: 'develop' }, user: { login: 'dev' }, draft: false },
+      ]);
+
+    const result = await pm._fetchGithubPrs({ repo: 'org/repo', base: 'develop, dev.*' });
+    expect(result).toHaveLength(1);
+    expect(result[0].key).toBe('org/repo#5');
+  });
+
+  it('regex with no matches returns empty', async () => {
+    pm._httpRequest = vi.fn().mockResolvedValue([
+      { number: 1, title: 'PR 1', base: { ref: 'main' }, user: { login: 'dev' }, draft: false },
+    ]);
+
+    const result = await pm._fetchGithubPrs({ repo: 'org/repo', base: 'releases/.*' });
+    expect(result).toHaveLength(0);
+  });
+
+  it('falls back to literal if regex is invalid', async () => {
+    pm._httpRequest = vi.fn().mockResolvedValue([
+      { number: 1, title: 'PR 1', base: { ref: 'bad[regex' }, user: { login: 'dev' }, draft: false },
+    ]);
+
+    // Invalid regex like "bad[regex" should be treated as a literal
+    const result = await pm._fetchGithubPrs({ repo: 'org/repo', base: 'bad[regex' });
+    // It will try to fetch with literal base "bad[regex" via Pulls API
+    expect(pm._httpRequest).toHaveBeenCalled();
+    const url = pm._httpRequest.mock.calls[0][0];
+    expect(url).toContain('base=bad');
+  });
 });
 
 // ── _fetchGithubPrsViaSearch ────────────────────────────
@@ -387,6 +458,67 @@ describe('PM source: _fetchGithubPrsViaSearch', () => {
     pm._httpRequest = vi.fn().mockResolvedValue({});
     const result = await pm._fetchGithubPrsViaSearch({ repo: 'org/repo', labels: 'x' });
     expect(result).toEqual([]);
+  });
+
+  it('does not include base: qualifier for multiple base entries', async () => {
+    pm._httpRequest = vi.fn().mockResolvedValue({ items: [] });
+    await pm._fetchGithubPrsViaSearch({ repo: 'org/repo', labels: 'x', base: 'main, develop' });
+
+    const url = pm._httpRequest.mock.calls[0][0];
+    expect(url).not.toContain('base%3A');
+  });
+
+  it('does not include base: qualifier for regex base patterns', async () => {
+    pm._httpRequest = vi.fn().mockResolvedValue({ items: [] });
+    await pm._fetchGithubPrsViaSearch({ repo: 'org/repo', labels: 'x', base: 'releases/.*' });
+
+    const url = pm._httpRequest.mock.calls[0][0];
+    expect(url).not.toContain('base%3A');
+  });
+
+  it('includes base: qualifier for single literal base', async () => {
+    pm._httpRequest = vi.fn().mockResolvedValue({ items: [] });
+    await pm._fetchGithubPrsViaSearch({ repo: 'org/repo', labels: 'x', base: 'develop' });
+
+    const url = pm._httpRequest.mock.calls[0][0];
+    expect(url).toContain('base%3Adevelop');
+  });
+
+  it('filters results client-side when base has regex patterns', async () => {
+    pm._httpRequest = vi.fn()
+      .mockResolvedValueOnce({
+        items: [
+          { number: 10, title: 'Release PR' },
+          { number: 11, title: 'Feature PR' },
+        ],
+      })
+      // Individual PR fetches for base ref checking
+      .mockResolvedValueOnce({ base: { ref: 'releases/4.2.0' } })
+      .mockResolvedValueOnce({ base: { ref: 'feature/x' } });
+
+    const result = await pm._fetchGithubPrsViaSearch({ repo: 'org/repo', labels: 'x', base: 'releases/.*' });
+    expect(result).toHaveLength(1);
+    expect(result[0].key).toBe('org/repo#10');
+  });
+
+  it('filters results client-side for multiple literal bases', async () => {
+    pm._httpRequest = vi.fn()
+      .mockResolvedValueOnce({
+        items: [
+          { number: 1, title: 'Main PR' },
+          { number: 2, title: 'Develop PR' },
+          { number: 3, title: 'Other PR' },
+        ],
+      })
+      .mockResolvedValueOnce({ base: { ref: 'main' } })
+      .mockResolvedValueOnce({ base: { ref: 'develop' } })
+      .mockResolvedValueOnce({ base: { ref: 'feature/x' } });
+
+    const result = await pm._fetchGithubPrsViaSearch({ repo: 'org/repo', labels: 'x', base: 'main, develop' });
+    expect(result).toHaveLength(2);
+    const keys = result.map(r => r.key);
+    expect(keys).toContain('org/repo#1');
+    expect(keys).toContain('org/repo#2');
   });
 });
 
