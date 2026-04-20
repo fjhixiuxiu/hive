@@ -1,0 +1,15 @@
+[Unit]
+Description=Poll origin/main for Hive updates every 5 minutes
+Requires=hive-update.service
+
+[Timer]
+# Wait 2 minutes after boot before the first run (let hive settle first)
+OnBootSec=2min
+# Then run every 5 minutes (measured from the last run's completion)
+OnUnitActiveSec=5min
+# If the system was off when a run was due, catch up on boot
+Persistent=true
+Unit=hive-update.service
+
+[Install]
+WantedBy=timers.target

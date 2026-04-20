@@ -106,11 +106,15 @@ chown ubuntu:ubuntu "${UBUNTU_HOME}/.tmux.conf"
 cd "${HIVE_DIR}"
 sudo -u ubuntu npm install 2>&1 | tail -1
 
-# ── Install systemd service ─────────────────────────────────────────────
+# ── Install systemd service + auto-update timer ───────────────────────
 log "Installing hive systemd service..."
 cp "${HIVE_DIR}/cloud/templates/hive.service" /etc/systemd/system/hive.service
+cp "${HIVE_DIR}/cloud/templates/hive-update.service" /etc/systemd/system/hive-update.service
+cp "${HIVE_DIR}/cloud/templates/hive-update.timer" /etc/systemd/system/hive-update.timer
+chmod +x "${HIVE_DIR}/cloud/scripts/auto-update.sh"
 systemctl daemon-reload
 systemctl enable hive.service
+systemctl enable --now hive-update.timer
 
 # ── Run boot.sh to write .env and start Hive ────────────────────────────
 log "Running boot.sh..."
