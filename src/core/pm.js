@@ -515,6 +515,7 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
         boardStates: Array.isArray(data.boardStates) ? data.boardStates : null,
         actions: Array.isArray(data.actions) ? data.actions : null,
         autoCreate: data.autoCreate || false,
+        primaryAction: data.primaryAction || { enabled: false },
         designationMatch: data.designationMatch || 'flexible',
         enabled: data.enabled || false,
         seenKeys: Array.isArray(data.seenKeys) ? data.seenKeys : [],
