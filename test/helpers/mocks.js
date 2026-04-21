@@ -2,6 +2,31 @@ import { vi } from 'vitest';
 import EventEmitter from 'events';
 
 /**
+ * Create a fake WebSocket (EventEmitter with send/close stubs).
+ */
+export function createFakeWs() {
+  const ws = new EventEmitter();
+  ws.readyState = 1;
+  ws.send = vi.fn();
+  ws.close = vi.fn();
+  return ws;
+}
+
+/**
+ * Extract all JSON messages sent via ws.send().
+ */
+export function sentMessages(ws) {
+  return ws.send.mock.calls.map(([raw]) => JSON.parse(raw));
+}
+
+/**
+ * Find the first sent message of a given type.
+ */
+export function findSent(ws, type) {
+  return sentMessages(ws).find((m) => m.type === type);
+}
+
+/**
  * Create a mock Node with standard methods.
  */
 export function createMockNode(id = 'local') {

@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeAll, beforeEach, afterAll, afterEach } from 'vitest';
 import { createRequire } from 'module';
-import EventEmitter from 'events';
-import { createMockNode, createMockConfig, createMockWatcher } from '../../helpers/mocks.js';
+import { createFakeWs, sentMessages, findSent, createMockNode, createMockConfig, createMockWatcher } from '../../helpers/mocks.js';
 
 // ---------------------------------------------------------------------------
 // CJS interop: server.js uses require(), so we must get the same module
@@ -12,25 +11,6 @@ const fleet = require('../../../src/core/fleet.js');
 const relay = require('../../../src/core/relay.js');
 const auth = require('../../../src/core/auth.js');
 const log = require('../../../src/core/log.js');
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-function createFakeWs() {
-  const ws = new EventEmitter();
-  ws.readyState = 1;
-  ws.send = vi.fn();
-  ws.close = vi.fn();
-  return ws;
-}
-
-function sentMessages(ws) {
-  return ws.send.mock.calls.map(([raw]) => JSON.parse(raw));
-}
-
-function findSent(ws, type) {
-  return sentMessages(ws).find((m) => m.type === type);
-}
 
 // ---------------------------------------------------------------------------
 // Tests
