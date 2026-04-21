@@ -1373,11 +1373,20 @@
         closeSpawnDialog();
         break;
       }
-      case 'pm:list': pmList = msg.pms || []; renderPMs();
-        renderTasks(); // re-render task cards so PM-level flags (e.g. primaryAction) take effect without a page refresh
-        if (tasksViewMode === 'board') { populateBoardPmSelect(); renderBoardColumns(); renderTaskBoard(); }
+      case 'pm:list': {
+        const prevPAKeys = new Set(pmList.filter(p => p.primaryAction && p.primaryAction.enabled).map(p => p.id));
+        pmList = msg.pms || []; renderPMs();
+        const newPAKeys = new Set(pmList.filter(p => p.primaryAction && p.primaryAction.enabled).map(p => p.id));
+        // Only re-render task/board views if primaryAction flags actually changed
+        const paChanged = prevPAKeys.size !== newPAKeys.size || [...prevPAKeys].some(k => !newPAKeys.has(k));
+        if (paChanged) {
+          renderTasks();
+          if (tasksViewMode === 'board') renderTaskBoard();
+        }
+        if (tasksViewMode === 'board') populateBoardPmSelect();
         if (loadingActive) completeLoadingStage('pms', (msg.pms || []).length + ' active');
         break;
+      }
       case 'pm:created': showToast('PM Created', msg.pm.name, 'success'); break;
       case 'pm:error': showToast('PM Error', `${msg.id}: ${msg.error}`, 'error'); break;
       case 'pm:export:result':
@@ -5791,6 +5800,14 @@
     const newStatuses = new Map();
     for (const t of pmFilteredTasks) newStatuses.set(t.id, effectiveWorkState(t) || '');
 
+    // Build per-column fingerprints to skip unchanged columns
+    const colFingerprints = new Map();
+    for (const wState of states) {
+      const colTasks = grouped.get(wState.id) || [];
+      // Include task id, text length, status, assignedTo, workState so we detect meaningful changes
+      colFingerprints.set(wState.id, colTasks.map(t => `${t.id}:${t.status}:${t.assignedTo || ''}:${t.workState || ''}:${t.text.length}`).join('|'));
+    }
+
     // Snapshot existing card positions for FLIP
     const oldRects = new Map();
     document.querySelectorAll('.board-card').forEach(el => {
@@ -5804,10 +5821,14 @@
       if (prev !== undefined && prev !== wst) movers.add(id);
     }
 
-    // Render each column
+    // Render each column — skip if fingerprint unchanged (no DOM thrashing)
+    if (!renderTaskBoard._prevFingerprints) renderTaskBoard._prevFingerprints = new Map();
     for (const wState of states) {
+      const fp = colFingerprints.get(wState.id);
+      if (fp === renderTaskBoard._prevFingerprints.get(wState.id) && !movers.size) continue;
       renderBoardCol(wState.id, grouped.get(wState.id) || []);
     }
+    renderTaskBoard._prevFingerprints = colFingerprints;
 
     // FLIP animate movers
     document.querySelectorAll('.board-card').forEach(el => {
@@ -6706,7 +6727,9 @@
       const t = tasks.find(x => x.id === card.dataset.id);
       if (!t || t.status !== 'dispatched') return;
       const hexEl = card.querySelector('.task-hex');
-      if (hexEl) hexEl.innerHTML = taskHexSvg(t);
+      if (!hexEl) return;
+      const newSvg = taskHexSvg(t);
+      if (hexEl.innerHTML !== newSvg) hexEl.innerHTML = newSvg;
     });
   }
 
