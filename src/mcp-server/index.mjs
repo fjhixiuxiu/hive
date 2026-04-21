@@ -276,6 +276,26 @@ if (!enabledTools || enabledTools.includes('hive_set_working_dir')) {
 }
 
 
+// Tool: hive_reply_thread
+if (!enabledTools || enabledTools.includes('hive_reply_thread')) {
+  server.tool(
+    'hive_reply_thread',
+    'Reply to the Slack thread associated with your current task. Use this instead of slack_post_message when replying to the thread that created your task — it automatically routes to the correct channel and thread.',
+    { message: z.string().describe('The message to post in the Slack thread') },
+    async ({ message }) => {
+      try {
+        const resp = await sendRequest('mcp:reply_thread', { message });
+        if (resp.ok) {
+          return { content: [{ type: 'text', text: 'Reply posted to Slack thread' }] };
+        }
+        return { content: [{ type: 'text', text: resp.error || 'Failed to post reply' }], isError: true };
+      } catch (err) {
+        return { content: [{ type: 'text', text: `Error: ${err.message}` }], isError: true };
+      }
+    }
+  );
+}
+
 // Tool: hive_create_task
 if (!enabledTools || enabledTools.includes('hive_create_task')) {
   server.tool(

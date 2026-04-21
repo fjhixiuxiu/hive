@@ -2126,6 +2126,58 @@ function createMessageHandler(deps) {
         break;
       }
 
+      case 'mcp:reply_thread': {
+        if (!taskQueue) { ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'No task queue' })); break; }
+        const message = msg.message;
+        if (!message || typeof message !== 'string') {
+          ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'message is required' }));
+          break;
+        }
+        // Find the active task for this session
+        const sessionNum = Number(msg.session);
+        const activeTask = [...taskQueue.tasks.values()].find(t =>
+          t.status === 'dispatched' && t.assignedTo === sessionNum
+        );
+        if (!activeTask || !activeTask.slackChannel || !activeTask.slackThreadTs) {
+          ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'No active Slack task for this session' }));
+          break;
+        }
+        try {
+          const slackToken = process.env.SLACK_BOT_TOKEN;
+          if (!slackToken) {
+            ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'SLACK_BOT_TOKEN not configured' }));
+            break;
+          }
+          const body = JSON.stringify({
+            channel: activeTask.slackChannel,
+            thread_ts: activeTask.slackThreadTs,
+            text: message,
+          });
+          const resp = await new Promise((resolve, reject) => {
+            const req = https.request('https://slack.com/api/chat.postMessage', {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${slackToken}`, 'Content-Type': 'application/json' },
+            }, (res) => {
+              let data = '';
+              res.on('data', chunk => data += chunk);
+              res.on('end', () => { try { resolve(JSON.parse(data)); } catch { resolve({ ok: false }); } });
+            });
+            req.on('error', reject);
+            req.write(body);
+            req.end();
+          });
+          if (resp.ok) {
+            console.log(`[mcp] reply_thread from S:${msg.session} → ${activeTask.slackChannel}:${activeTask.slackThreadTs}`);
+            ws.send(JSON.stringify({ _reqId: msg._reqId, ok: true }));
+          } else {
+            ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: resp.error || 'Slack API error' }));
+          }
+        } catch (err) {
+          ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: err.message }));
+        }
+        break;
+      }
+
       case 'mcp:deploy': {
         if (!checkPermission(ws, user, 'admin')) break;
         const sessionMgr = require('../../core/session-manager');

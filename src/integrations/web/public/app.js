@@ -7660,6 +7660,7 @@
     { name: 'hive_get_knowledge', desc: 'Query the fleet knowledge base for insights about files or domains' },
     { name: 'hive_set_working_dir', desc: 'Tell hive which git repo you are working in (e.g. a worktree)' },
     { name: 'hive_create_task', desc: 'Create a new task in the hive queue for another session to pick up' },
+    { name: 'hive_reply_thread', desc: 'Reply to the Slack thread associated with your current task' },
   ];
 
   function renderMcpTools(enabledTools) {

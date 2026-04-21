@@ -80,6 +80,7 @@ Sessions have access to these tools via the hive MCP server:
 | `hive_get_context` | Get shared context (plan, PR, JIRA) |
 | `hive_set_context` | Update shared context |
 | `hive_set_working_dir` | Override repo directory (for worktrees) |
+| `hive_reply_thread` | Reply to the Slack thread for current task |
 
 ### State Persistence
 
