@@ -566,25 +566,43 @@
   const TOKEN_KEY = 'hive_token';
   let token = localStorage.getItem(TOKEN_KEY);
   let currentUser = null; // { login, name, avatar } from OAuth, or null for token auth
+  let oauthMode = false;
+  let oauthCheckInFlight = false;
 
-  // Check if we have OAuth cookie auth (page wouldn't load without it when OAuth is enabled)
-  // Try connecting immediately — if OAuth is active, cookie handles auth
-  // If token mode, show token prompt only if no saved token
+  // Re-validate OAuth cookie via /auth/me, then reconnect or redirect to login.
+  // Deduplicates concurrent calls from visibilitychange + scheduleReconnect.
+  function refreshOAuthAndConnect() {
+    if (oauthCheckInFlight) return;
+    oauthCheckInFlight = true;
+    fetch('/auth/me').then(r => r.json()).then(data => {
+      oauthCheckInFlight = false;
+      if (data.authenticated) {
+        oauthMode = true;
+        token = 'cookie';
+        currentUser = { login: data.login, name: data.name, avatar: data.avatar };
+        authScreen.style.display = 'none';
+        connect();
+      } else {
+        window.location.href = '/auth/github';
+      }
+    }).catch(() => {
+      oauthCheckInFlight = false;
+    });
+  }
+
+  // Initial auth check — OAuth cookie or legacy saved token
   fetch('/auth/me').then(r => r.json()).then(data => {
     if (data.authenticated) {
-      // OAuth mode — already authenticated via cookie
+      oauthMode = true;
       currentUser = { login: data.login, name: data.name, avatar: data.avatar };
-      token = 'cookie'; // marker so connect() works
+      token = 'cookie';
       authScreen.style.display = 'none';
       connect();
     } else if (token) {
-      // Legacy token mode — have saved token
       authScreen.style.display = 'none';
       connect();
     }
-    // Otherwise show auth screen (token mode, no saved token)
   }).catch(() => {
-    // /auth/me failed — legacy mode, try saved token
     if (token) {
       authScreen.style.display = 'none';
       connect();
@@ -672,12 +690,20 @@
 
   function scheduleReconnect() {
     if (reconnectTimer) return;
-    reconnectTimer = setTimeout(() => { reconnectTimer = null; if (token) connect(); }, 3000);
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+      if (token) { connect(); return; }
+      if (oauthMode) refreshOAuthAndConnect();
+    }, 3000);
   }
 
   // Reconnect when returning from sleep/background
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState !== 'visible' || !token) return;
+    if (document.visibilityState !== 'visible') return;
+    if (!token) {
+      if (oauthMode) refreshOAuthAndConnect();
+      return;
+    }
     if (!ws || ws.readyState > 1) {
       connect();
       return;
@@ -948,6 +974,11 @@
           if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
           applyHash();
         } else {
+          if (oauthMode) {
+            // OAuth session expired — redirect to re-authenticate via GitHub
+            window.location.href = '/auth/github';
+            return;
+          }
           token = null; localStorage.removeItem(TOKEN_KEY);
           authScreen.style.display = 'flex'; mainView.style.display = 'none';
           authError.style.display = 'block'; authInput.value = ''; authInput.focus();
