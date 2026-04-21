@@ -837,6 +837,40 @@ function createSlackBot(taskQueue, config, router, pmManager) {
         console.warn(`[slack] Zombie probe error for ${channel}: ${err.message}`);
       }
     }
+
+    // Step 3: Thread-level zombie detection — conversations.history only returns
+    // top-level messages, so threads that go dark are invisible to the probe above.
+    // Check conversations.replies for active Slack task threads to catch dropped
+    // thread reply events (the most common partial-zombie scenario).
+    if (taskQueue) {
+      for (const t of taskQueue.tasks.values()) {
+        if (t.status !== 'dispatched' || !t.slackChannel || !t.slackThreadTs) continue;
+        try {
+          const resp = await app.client.conversations.replies({
+            channel: t.slackChannel,
+            ts: t.slackThreadTs,
+            oldest: String(probeOldestSec),
+            limit: 10,
+          });
+          const missed = (resp.messages || []).find(m => {
+            if (m.subtype) return false;
+            // Skip the bot's own messages
+            if (botUserId && m.user === botUserId) return false;
+            const msgTs = parseFloat(m.ts) * 1000;
+            const chLastSeen = lastEventByChannel.get(t.slackChannel) || 0;
+            return msgTs > chLastSeen + 60000;
+          });
+          if (missed) {
+            const missedIso = new Date(parseFloat(missed.ts) * 1000).toISOString();
+            console.warn(`[slack] Thread zombie detected: reply in ${t.slackChannel}:${t.slackThreadTs} at ${missedIso} (task ${t.id})`);
+            return restartBot(`thread zombie — missed reply in task ${t.id} thread`);
+          }
+        } catch (err) {
+          if (err.data && (err.data.error === 'not_in_channel' || err.data.error === 'thread_not_found')) continue;
+          console.warn(`[slack] Thread zombie probe error for task ${t.id}: ${err.message}`);
+        }
+      }
+    }
   }, HEALTH_INTERVAL);
 
   // Start the bot and resolve bot user ID for @mention filtering
