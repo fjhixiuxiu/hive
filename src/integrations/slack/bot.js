@@ -244,10 +244,11 @@ function createSlackBot(taskQueue, config, router, pmManager) {
       'Decide: Does this need a new task, a follow-up to an existing task, or no action?',
       customInstructions,
       '',
-      // [context-consolidation] References the MCP wire params (stable). Phase 2
-      // keeps this exact wording — the translation happens in ws-handlers.js, not
-      // at the prompt level. Ref: ~/dev/agents/hive/context-consolidation-plan.md
-      `If creating a task, you MUST pass slackChannel="${channel}" and slackThreadTs="${threadTs || messages[0]?.ts || ''}" so replies route back to Slack.`,
+      `## How to reply to this Slack thread`,
+      `Use slack_post_message with channel_id="${channel}" and thread_ts="${threadTs || messages[0]?.ts || ''}". The "text" parameter must be your actual message — NOT a timestamp.`,
+      ``,
+      `## If creating a hive task`,
+      `Pass slackChannel="${channel}" and slackThreadTs="${threadTs || messages[0]?.ts || ''}" so replies route back.`,
       `Do NOT set a designation on tasks — leave it empty so any idle session picks it up.`,
     ].join('\n');
 
@@ -412,6 +413,11 @@ function createSlackBot(taskQueue, config, router, pmManager) {
       fullText += `\n\nInstructions: ${slackPm.instructions}`;
     }
     if (permalink) fullText += `\n\nSlack link: ${permalink}`;
+    // Explicit Slack reply instructions so sessions don't post raw thread_ts as text
+    if (event.channel && (threadTs || event.ts)) {
+      const replyTs = threadTs || event.ts;
+      fullText += `\n\nTo reply to this Slack thread, use slack_post_message with channel_id="${event.channel}" and thread_ts="${replyTs}". The text parameter is your actual message content.`;
+    }
 
     // Use PM config for routing if available, otherwise defaults
     const mode = slackPm && slackPm.targetSession ? 'manual' : 'auto';

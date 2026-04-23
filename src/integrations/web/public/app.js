@@ -6163,6 +6163,38 @@
       if (s) openSession(s);
     } : null;
 
+    // Context info section — shows Slack, session, and action context for debugging
+    const ctxSection = document.getElementById('task-detail-context');
+    if (ctxSection) {
+      const items = [];
+      // Slack context
+      if (task.slackChannel) items.push({ key: 'Slack Channel', val: task.slackChannel });
+      if (task.slackThreadTs) items.push({ key: 'Thread TS', val: task.slackThreadTs });
+      if (task.slackPermalink) items.push({ key: 'Permalink', val: `<a href="${esc(task.slackPermalink)}" target="_blank" rel="noopener">${esc(task.slackPermalink)}</a>` });
+      // Action context
+      if (task.actionContext) {
+        const ac = task.actionContext;
+        if (ac.type) items.push({ key: 'Action', val: ac.type });
+        if (ac.repo) items.push({ key: 'Repo', val: ac.repo });
+        if (ac.prNumber) items.push({ key: 'PR', val: `#${ac.prNumber}` });
+        if (ac.issueNumber) items.push({ key: 'Issue', val: `#${ac.issueNumber}` });
+      }
+      // Session context (plan, PR, JIRA, branch)
+      const sCtx = task.assignedTo != null ? sessionContexts[task.assignedTo] : null;
+      if (sCtx) {
+        if (sCtx.pr) items.push({ key: 'PR URL', val: `<a href="${esc(sCtx.pr)}" target="_blank" rel="noopener">${esc(sCtx.pr)}</a>` });
+        if (sCtx.jira) items.push({ key: 'JIRA', val: esc(sCtx.jira) });
+        if (sCtx.branch) items.push({ key: 'Branch', val: esc(sCtx.branch) });
+        if (sCtx.slackThread) items.push({ key: 'Slack Thread', val: esc(sCtx.slackThread) });
+      }
+      if (items.length) {
+        ctxSection.innerHTML = items.map(i => `<span class="td-ctx-item"><span class="td-ctx-key">${i.key}:</span> ${i.val}</span>`).join('');
+        ctxSection.style.display = '';
+      } else {
+        ctxSection.style.display = 'none';
+      }
+    }
+
     // Terminal + input: show for dispatched tasks
     const termContainer = document.getElementById('task-detail-terminal');
     const keysBar = document.getElementById('task-detail-keys');

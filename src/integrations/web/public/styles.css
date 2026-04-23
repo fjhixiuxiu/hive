@@ -2130,6 +2130,15 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .td-checklist {
   font-size: var(--fs-sm); color: var(--dim); font-weight: 600;
 }
+.td-context-section {
+  display: flex; flex-wrap: wrap; gap: 4px 12px; padding: 6px 12px;
+  background: var(--bg2); border-bottom: 1px solid var(--border);
+  font-size: 11px; color: var(--dim); line-height: 1.6;
+}
+.td-ctx-item { white-space: nowrap; }
+.td-ctx-key { color: var(--fg); font-weight: 600; }
+.td-ctx-item a { color: var(--blue); text-decoration: none; }
+.td-ctx-item a:hover { text-decoration: underline; }
 #task-detail-actions {
   display: flex; gap: 4px; flex-wrap: wrap;
 }
