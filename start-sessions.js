@@ -125,5 +125,15 @@ if (require.main === module) {
     } catch (err) {
       console.error(`Failed to start session ${n}: ${err.message}`);
     }
+
+    // Write hive MCP config so the session has hive tools from the start
+    try {
+      const sessionMgr = require('./src/core/session-manager');
+      const port = process.env.WEB_PORT || 3000;
+      const token = process.env.WEB_TOKEN || process.env.HIVE_TOKEN || '';
+      sessionMgr.writeMcpConfig(root, `ws://127.0.0.1:${port}`, token, name);
+    } catch (err) {
+      console.error(`Failed to write MCP config for session ${n}: ${err.message}`);
+    }
   }
 }

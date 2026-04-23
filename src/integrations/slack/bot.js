@@ -158,6 +158,10 @@ function createSlackBot(taskQueue, config, router, pmManager) {
   const _monitorDebounce = new Map();
   // Rate limit state: pmId:channel → { count, resetAt }
   const _monitorRateLimit = new Map();
+  // Last relayed Slack context per PM session — used by ws-handlers to
+  // auto-attach slackChannel/slackThreadTs on PM-created tasks.
+  // Key: session name (e.g. "hive-pm-13"), Value: { channel, threadTs, at }
+  if (taskQueue) taskQueue.lastRelayedSlackContext = new Map();
 
   /**
    * Find an enabled channel-monitor PM that watches this channel.
@@ -251,6 +255,10 @@ function createSlackBot(taskQueue, config, router, pmManager) {
       const result = await relay.tell(config, node, sessionName, formatted, {});
       if (result.success) {
         console.log(`[slack-monitor] Relayed ${messages.length} message(s) to PM "${pm.name}" session`);
+        // Store context so ws-handlers can auto-attach to PM-created tasks
+        if (taskQueue && taskQueue.lastRelayedSlackContext && channel && threadTs) {
+          taskQueue.lastRelayedSlackContext.set(sessionName, { channel, threadTs, at: Date.now() });
+        }
       } else {
         console.error(`[slack-monitor] Relay failed: ${result.error}`);
       }
@@ -477,6 +485,7 @@ function createSlackBot(taskQueue, config, router, pmManager) {
   // first question is "did the bot even receive it?". This line answers that.
   let lastEventAt = Date.now();
   const lastEventByChannel = new Map(); // channel -> timestamp of last received event
+  const lastSeenByThread = new Map();   // "channel:threadTs" -> last seen Slack ts (string)
   app.use(async ({ body, next }) => {
     lastEventAt = Date.now();
     try {
@@ -581,6 +590,10 @@ function createSlackBot(taskQueue, config, router, pmManager) {
     // Only relay if this thread is linked to an active dispatched task
     const activeTask = findActiveTaskForThread(event.thread_ts, event.channel);
     if (!activeTask || activeTask.status !== 'dispatched' || !activeTask.assignedTo) return;
+
+    // Track high-water mark for thread polling dedup
+    const threadKey = `${event.channel}:${event.thread_ts}`;
+    lastSeenByThread.set(threadKey, event.ts);
 
     try {
       const authorName = await userName(event.user);
@@ -838,40 +851,64 @@ function createSlackBot(taskQueue, config, router, pmManager) {
       }
     }
 
-    // Step 3: Thread-level zombie detection — conversations.history only returns
-    // top-level messages, so threads that go dark are invisible to the probe above.
-    // Check conversations.replies for active Slack task threads to catch dropped
-    // thread reply events (the most common partial-zombie scenario).
-    if (taskQueue) {
-      for (const t of taskQueue.tasks.values()) {
-        if (t.status !== 'dispatched' || !t.slackChannel || !t.slackThreadTs) continue;
-        try {
-          const resp = await app.client.conversations.replies({
-            channel: t.slackChannel,
-            ts: t.slackThreadTs,
-            oldest: String(probeOldestSec),
-            limit: 10,
-          });
-          const missed = (resp.messages || []).find(m => {
-            if (m.subtype) return false;
-            // Skip the bot's own messages
-            if (botUserId && m.user === botUserId) return false;
-            const msgTs = parseFloat(m.ts) * 1000;
-            const chLastSeen = lastEventByChannel.get(t.slackChannel) || 0;
-            return msgTs > chLastSeen + 60000;
-          });
-          if (missed) {
-            const missedIso = new Date(parseFloat(missed.ts) * 1000).toISOString();
-            console.warn(`[slack] Thread zombie detected: reply in ${t.slackChannel}:${t.slackThreadTs} at ${missedIso} (task ${t.id})`);
-            return restartBot(`thread zombie — missed reply in task ${t.id} thread`);
-          }
-        } catch (err) {
-          if (err.data && (err.data.error === 'not_in_channel' || err.data.error === 'thread_not_found')) continue;
-          console.warn(`[slack] Thread zombie probe error for task ${t.id}: ${err.message}`);
+  }, HEALTH_INTERVAL);
+
+  // ── Thread polling fallback ──────────────────────────
+  // Socket Mode silently drops thread reply events. Every THREAD_POLL_INTERVAL,
+  // check conversations.replies for active task threads and relay any messages
+  // the bot missed. This replaces the old Step 3 zombie detection which could
+  // only detect and restart — this detects and relays directly.
+  const THREAD_POLL_INTERVAL = 150_000; // 2.5 min
+  setInterval(async () => {
+    if (!taskQueue) return;
+    let relayed = 0;
+    for (const t of taskQueue.tasks.values()) {
+      if (t.status !== 'dispatched' || !t.slackChannel || !t.slackThreadTs || !t.assignedTo) continue;
+      const threadKey = `${t.slackChannel}:${t.slackThreadTs}`;
+      const oldest = lastSeenByThread.get(threadKey) || t.slackThreadTs;
+      try {
+        const resp = await app.client.conversations.replies({
+          channel: t.slackChannel,
+          ts: t.slackThreadTs,
+          oldest,
+          limit: 20,
+        });
+        const messages = (resp.messages || []).filter(m => {
+          if (m.subtype) return false;
+          if (botUserId && m.user === botUserId) return false;
+          // Only messages strictly newer than our high-water mark
+          return parseFloat(m.ts) > parseFloat(oldest);
+        });
+        if (messages.length === 0) continue;
+
+        // Update high-water mark to newest message
+        const newestTs = messages[messages.length - 1].ts;
+        lastSeenByThread.set(threadKey, newestTs);
+
+        // Relay missed messages to the session
+        const found = await fleet.findSession(config, router, t.assignedTo);
+        if (!found) continue;
+        const node = router.getNode(found.nodeId);
+        if (!node) continue;
+
+        const parts = [];
+        for (const m of messages) {
+          const name = await userName(m.user);
+          parts.push(`${name}: ${m.text || '[attachment]'}`);
         }
+        const text = `Slack thread update (${messages.length} missed message${messages.length > 1 ? 's' : ''}):\n${parts.join('\n')}\n\nReply back on the thread when done.`;
+        const result = await relay.tell(config, node, found.name, text, { vimMode: taskQueue.vimMode });
+        if (result.success) {
+          relayed += messages.length;
+          console.log(`[slack-poll] Relayed ${messages.length} missed message(s) to S:${t.assignedTo} for thread ${threadKey}`);
+        }
+      } catch (err) {
+        if (err.data && (err.data.error === 'not_in_channel' || err.data.error === 'thread_not_found')) continue;
+        console.warn(`[slack-poll] Thread poll error for task ${t.id}: ${err.message}`);
       }
     }
-  }, HEALTH_INTERVAL);
+    if (relayed > 0) console.log(`[slack-poll] Cycle complete: ${relayed} message(s) relayed`);
+  }, THREAD_POLL_INTERVAL);
 
   // Start the bot and resolve bot user ID for @mention filtering
   let botUserId = null;

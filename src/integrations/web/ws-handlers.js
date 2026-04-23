@@ -2119,7 +2119,18 @@ function createMessageHandler(deps) {
         // See: ~/dev/agents/hive/context-consolidation-plan.md (Step 4: WS handlers)
         if (msg.slackChannel) task.slackChannel = msg.slackChannel;
         if (msg.slackThreadTs) task.slackThreadTs = msg.slackThreadTs;
-        if (msg.slackChannel || msg.slackThreadTs) taskQueue._saveState();
+        // Auto-attach Slack context for PM-created tasks if not explicitly provided
+        if (!task.slackChannel && !task.slackThreadTs && pmMatch && taskQueue.lastRelayedSlackContext) {
+          const pmSessionName = `hive-pm-${pmMatch[1]}`;
+          const ctx = taskQueue.lastRelayedSlackContext.get(pmSessionName);
+          if (ctx && (Date.now() - ctx.at) < 5 * 60 * 1000) { // within 5 min
+            task.slackChannel = ctx.channel;
+            task.slackThreadTs = ctx.threadTs;
+            taskQueue.lastRelayedSlackContext.delete(pmSessionName);
+            console.log(`[mcp] Auto-attached Slack context to task ${task.id} from ${pmSessionName}`);
+          }
+        }
+        if (task.slackChannel || task.slackThreadTs) taskQueue._saveState();
         console.log(`[mcp] create_task from S:${msg.session} → task ${task.id} ("${text.slice(0, 60)}")`);
         broadcast({ type: 'task:created', task });
         ws.send(JSON.stringify({ _reqId: msg._reqId, ok: true, taskId: task.id }));

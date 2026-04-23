@@ -6089,17 +6089,30 @@
       document.addEventListener('click', closeOverflow);
     }
 
-    // Primary Action button (left of Actions) — opt-in per PM
+    // Context link buttons (Open Thread, Open PR) — auto-derived from task data
     const paBtn = document.getElementById('task-detail-primary-action');
     if (paBtn) {
-      const pa = window.getTaskPrimaryAction ? window.getTaskPrimaryAction(task, pmList) : null;
-      if (pa) {
-        paBtn.textContent = pa.label;
+      const actions = window.getTaskActions ? window.getTaskActions(task) : [];
+      if (actions.length > 0) {
+        // Render first action on the existing button
+        paBtn.textContent = actions[0].label;
         paBtn.style.display = '';
-        paBtn.onclick = (e) => { e.stopPropagation(); window.open(pa.url, '_blank', 'noopener'); };
+        paBtn.onclick = (e) => { e.stopPropagation(); window.open(actions[0].url, '_blank', 'noopener'); };
+        // Remove any previously added extra action buttons
+        paBtn.parentNode.querySelectorAll('.task-detail-extra-action').forEach(b => b.remove());
+        // Render additional actions as sibling buttons
+        for (let i = 1; i < actions.length; i++) {
+          const extra = document.createElement('button');
+          extra.className = paBtn.className + ' task-detail-extra-action';
+          extra.textContent = actions[i].label;
+          extra.style.marginLeft = '6px';
+          extra.onclick = ((url) => (e) => { e.stopPropagation(); window.open(url, '_blank', 'noopener'); })(actions[i].url);
+          paBtn.parentNode.insertBefore(extra, paBtn.nextSibling);
+        }
       } else {
         paBtn.style.display = 'none';
         paBtn.onclick = null;
+        paBtn.parentNode.querySelectorAll('.task-detail-extra-action').forEach(b => b.remove());
       }
     }
 
@@ -7332,11 +7345,22 @@
     const tab = document.getElementById('ts-primary-action-tab');
     if (!tab) return;
     const task = getActiveTaskForActions('tasks');
-    const pa = task && window.getTaskPrimaryAction ? window.getTaskPrimaryAction(task, pmList) : null;
-    if (!pa) { tab.style.display = 'none'; tab.onclick = null; return; }
+    const actions = task && window.getTaskActions ? window.getTaskActions(task) : [];
+    // Remove any previously added extra action tabs
+    tab.parentNode.querySelectorAll('.ts-extra-action-tab').forEach(b => b.remove());
+    if (actions.length === 0) { tab.style.display = 'none'; tab.onclick = null; return; }
+    // First action on the existing tab
     tab.style.display = '';
-    tab.textContent = pa.label;
-    tab.onclick = () => window.open(pa.url, '_blank', 'noopener');
+    tab.textContent = actions[0].label;
+    tab.onclick = () => window.open(actions[0].url, '_blank', 'noopener');
+    // Additional actions as sibling tabs
+    for (let i = 1; i < actions.length; i++) {
+      const extra = document.createElement('div');
+      extra.className = tab.className + ' ts-extra-action-tab';
+      extra.textContent = actions[i].label;
+      extra.onclick = ((url) => () => window.open(url, '_blank', 'noopener'))(actions[i].url);
+      tab.parentNode.insertBefore(extra, tab.nextSibling);
+    }
   }
 
   function closeActionsPopup() {
