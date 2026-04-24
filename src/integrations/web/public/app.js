@@ -1220,7 +1220,10 @@
         if (tasksViewMode === 'board') renderTaskBoard();
         break;
       case 'tasks:list':
-        tasks = msg.tasks || []; renderTasks(); updateTasksBadge();
+        tasks = msg.tasks || [];
+        // Clear board fingerprint cache so a full re-render happens after reconnect
+        if (renderTaskBoard._prevFingerprints) renderTaskBoard._prevFingerprints = new Map();
+        renderTasks(); updateTasksBadge();
         if (loadingActive) { const _q = msg.tasks ? msg.tasks.filter(t => t.status === 'queued').length : 0, _a = msg.tasks ? msg.tasks.filter(t => t.status === 'dispatched').length : 0; completeLoadingStage('tasks', _q + ' queued, ' + _a + ' active'); }
         if (pendingRouteTask) { selectTaskById(pendingRouteTask); pendingRouteTask = null; }
         break;
@@ -5810,11 +5813,22 @@
     let pmFilteredTasks = tasks;
     if (boardPmFilter.size) {
       const pmNames = new Set();
+      const selectedPmTypes = new Set();
       for (const id of boardPmFilter) {
         const pm = pmList.find(p => p.id === id);
-        if (pm) pmNames.add(pm.name);
+        if (pm) {
+          pmNames.add(pm.name);
+          if (pm.source && pm.source.type) selectedPmTypes.add(pm.source.type);
+        }
       }
-      pmFilteredTasks = tasks.filter(t => pmNames.has((t.source || '').replace(/^pm:/, '')));
+      pmFilteredTasks = tasks.filter(t => {
+        const src = t.source || '';
+        // Direct PM match: "pm:Slack" → "Slack"
+        if (pmNames.has(src.replace(/^pm:/, ''))) return true;
+        // Slack @mention tasks have source "slack:<author>" — match when Slack PM is selected
+        if (src.startsWith('slack:') && selectedPmTypes.has('slack')) return true;
+        return false;
+      });
     }
 
     // Group tasks by effective work state (dynamic resolution)
