@@ -1877,7 +1877,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .board-card-title {
   font-size: var(--fs-md); font-weight: 600; color: var(--fg);
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
-  overflow: hidden; flex: 1; min-width: 0; white-space: pre-wrap;
+  overflow: hidden; flex: 1; min-width: 0;
 }
 .board-card-meta {
   display: flex; gap: 6px; flex-wrap: wrap; align-items: center;
