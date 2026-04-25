@@ -2101,7 +2101,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 }
 #task-detail-title {
   font-size: var(--fs-md); font-weight: 700; color: var(--fg);
-  overflow: hidden; text-overflow: ellipsis; white-space: pre-wrap;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   max-width: 50%;
 }
 #task-detail-header #task-detail-meta {
