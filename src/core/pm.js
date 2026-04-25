@@ -87,6 +87,20 @@ class ProjectManager extends EventEmitter {
     taskQueue._pmManager = this;
     this._githubLogin = null;
     this._resolveGithubLogin();
+
+    // React on GitHub PRs when tasks are dispatched/completed
+    taskQueue.on('task:dispatched', (task) => {
+      const ctx = task.actionContext;
+      if (ctx && ctx.type === 'github-pr' && ctx.repo && ctx.prNumber) {
+        this._reactOnPR(ctx.repo, ctx.prNumber, 'rocket').catch(() => {});
+      }
+    });
+    taskQueue.on('task:completed', (task) => {
+      const ctx = task.actionContext;
+      if (ctx && ctx.type === 'github-pr' && ctx.repo && ctx.prNumber) {
+        this._reactOnPR(ctx.repo, ctx.prNumber, 'hooray').catch(() => {});
+      }
+    });
   }
 
   // ── CRUD ────────────────────────────────────────────
@@ -782,12 +796,10 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
         pm.seenKeys.push(issue.key);
         seenSet.add(issue.key);
 
-        // Already-queued: reply on GitHub instead of creating a duplicate task
+        // Already-queued: react on GitHub instead of posting a comment
         if (issue._alreadyQueued) {
-          const assignee = pm.source.reviewer || 'hive';
-          const body = `🐝 Already queued for review by \`${assignee}\``;
-          this._commentOnPR(issue._repo, issue._prNumber, body).catch(err => {
-            log.error(`Failed to comment on PR #${issue._prNumber}:`, err.message);
+          this._reactOnPR(issue._repo, issue._prNumber, 'eyes').catch(err => {
+            log.error(`Failed to react on PR #${issue._prNumber}:`, err.message);
           });
           continue;
         }
@@ -831,17 +843,12 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
         task.sourceKey = issue.key;
         this._seedChecklist(pm, task);
 
-        // Post GitHub PR comment if this is a PR-sourced task
+        // React on GitHub PR when queued (replaces verbose comment)
         if (pm.source.type === 'github-prs' || pm.source.type === 'github-re-reviews') {
           const prInfo = this._parsePRFromKey(issue.key);
           if (prInfo) {
-            const pos = this.taskQueue.getQueuePosition(task.id);
-            const desig = pm.designation || 'general';
-            const posText = pos === 1 ? 'next up' : `#${pos} in queue`;
-            const assignee = pm.source.reviewer || 'hive';
-            const body = `🐝 **Queued for review** by \`${assignee}\` — ${posText} (${desig})`;
-            this._commentOnPR(prInfo.repo, prInfo.prNumber, body).catch(err => {
-              log.error(`Failed to comment on PR #${prInfo.prNumber}:`, err.message);
+            this._reactOnPR(prInfo.repo, prInfo.prNumber, 'eyes').catch(err => {
+              log.error(`Failed to react on PR #${prInfo.prNumber}:`, err.message);
             });
           }
         }

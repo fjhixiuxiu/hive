@@ -359,10 +359,10 @@ function createSlackBot(taskQueue, config, router, pmManager) {
               const node = router.getNode(found.nodeId);
               const result = await relay.tell(config, node, found.name, text + '\n\nReply back on the thread when done.', { vimMode: taskQueue.vimMode });
               if (result.success) {
-                await say({
-                  text: `:bee: Sent to session ${activeTask.assignedTo}:\n> ${text}`,
-                  thread_ts: replyTs,
-                });
+                // React instead of echoing the message back
+                await app.client.reactions.add({
+                  channel: event.channel, name: 'bee', timestamp: event.ts,
+                }).catch(() => {});
                 return;
               }
               // Relay failed — fall through to create new task
@@ -375,10 +375,9 @@ function createSlackBot(taskQueue, config, router, pmManager) {
           // Still queued — append follow-up to the task text
           activeTask.text += `\n\nFollow-up:\n${text}`;
           taskQueue._saveState();
-          await say({
-            text: `:bee: Appended to queued task:\n> ${text}`,
-            thread_ts: replyTs,
-          });
+          await app.client.reactions.add({
+            channel: event.channel, name: 'bee', timestamp: event.ts,
+          }).catch(() => {});
           return;
         }
       }
@@ -440,6 +439,7 @@ function createSlackBot(taskQueue, config, router, pmManager) {
       // See: ~/dev/agents/hive/context-consolidation-plan.md (Step 3: Slack bot refactor)
       task.slackChannel = event.channel;
       task.slackThreadTs = threadTs || event.ts;
+      task._lastSeenSlackTs = event.ts; // seed high-water mark so poller doesn't replay
       if (permalink) task.slackPermalink = permalink;
       taskQueue._saveState();
       console.log(`[slack] Task ${task.id} created (${mode}) for thread ${task.slackThreadTs} in ${event.channel}`);
@@ -466,15 +466,18 @@ function createSlackBot(taskQueue, config, router, pmManager) {
       console.error(`[slack] PM stats/checklist error (task ${task.id} still created): ${err.message}`);
     }
 
-    const pos = taskQueue.getQueuePosition(task.id);
-    const posText = pos > 0 ? ` (position #${pos} in queue)` : '';
+    // React with :bee: instead of echoing the message back
     try {
-      await say({
-        text: `:bee: Task created${posText}:\n> ${text}`,
-        thread_ts: replyTs,
+      await app.client.reactions.add({
+        channel: event.channel,
+        name: 'bee',
+        timestamp: event.ts,
       });
     } catch (err) {
-      console.error(`[slack] Failed to reply for task ${task.id}: ${err.message}`);
+      // already_reacted is fine
+      if (!err.data || err.data.error !== 'already_reacted') {
+        console.error(`[slack] Failed to react for task ${task.id}: ${err.message}`);
+      }
     }
   }
 
@@ -597,9 +600,11 @@ function createSlackBot(taskQueue, config, router, pmManager) {
     const activeTask = findActiveTaskForThread(event.thread_ts, event.channel);
     if (!activeTask || activeTask.status !== 'dispatched' || !activeTask.assignedTo) return;
 
-    // Track high-water mark for thread polling dedup
+    // Track high-water mark for thread polling dedup (in-memory + persisted on task)
     const threadKey = `${event.channel}:${event.thread_ts}`;
     lastSeenByThread.set(threadKey, event.ts);
+    activeTask._lastSeenSlackTs = event.ts;
+    taskQueue._saveState();
 
     try {
       const authorName = await userName(event.user);
@@ -705,19 +710,52 @@ function createSlackBot(taskQueue, config, router, pmManager) {
   //
   // See: ~/dev/agents/hive/context-consolidation-plan.md (Step 2: completeTask/failTask)
   if (taskQueue) {
+    // Add :hourglass_flowing_sand: when task is dispatched to a session
+    taskQueue.on('task:dispatched', async (task) => {
+      if (!task.slackChannel || !task.slackThreadTs) return;
+      try {
+        await app.client.reactions.add({
+          channel: task.slackChannel, name: 'hourglass_flowing_sand', timestamp: task.slackThreadTs,
+        });
+      } catch (err) {
+        if (!err.data || err.data.error !== 'already_reacted') {
+          console.error('Slack dispatch reaction error:', err.message);
+        }
+      }
+    });
+
     taskQueue.on('task:completed', async (task) => {
       if (!task.slackChannel || !task.slackThreadTs) return;
       try {
+        // Remove hourglass, add checkmark
+        await app.client.reactions.remove({
+          channel: task.slackChannel, name: 'hourglass_flowing_sand', timestamp: task.slackThreadTs,
+        }).catch(() => {});
+        await app.client.reactions.add({
+          channel: task.slackChannel, name: 'white_check_mark', timestamp: task.slackThreadTs,
+        }).catch(() => {});
+        // Post rich completion message with context
         const duration = task.dispatchedAt
           ? Math.round((task.completedAt - task.dispatchedAt) / 60000)
           : 0;
+        const parts = [`:white_check_mark: *Task completed* (${duration}m)`];
+        // Add JIRA/PR context from actionContext, task fields, or sessionContext
+        const ctx = task.actionContext;
+        const sCtx = task.assignedTo != null && taskQueue ? taskQueue.getSessionContext(task.assignedTo) : {};
+        const pr = (ctx && ctx.type === 'github-pr' && ctx.repo && ctx.prNumber)
+          ? `https://github.com/${ctx.repo}/pull/${ctx.prNumber}`
+          : sCtx.pr || null;
+        const jira = task.jira || sCtx.jira || null;
+        if (pr) parts.push(`PR: ${pr}`);
+        if (jira) parts.push(`JIRA: ${jira}`);
         const resultSnippet = task.result
           ? task.result.substring(0, 300)
-          : 'No result summary available.';
+          : '';
+        if (resultSnippet) parts.push(resultSnippet);
         await app.client.chat.postMessage({
           channel: task.slackChannel,
           thread_ts: task.slackThreadTs,
-          text: `:white_check_mark: *Task completed* (${duration}m)\n${resultSnippet}`,
+          text: parts.join('\n'),
         });
       } catch (err) {
         console.error('Slack reply-back error:', err.message);
@@ -727,6 +765,9 @@ function createSlackBot(taskQueue, config, router, pmManager) {
     taskQueue.on('task:failed', async (task) => {
       if (!task.slackChannel || !task.slackThreadTs) return;
       try {
+        await app.client.reactions.remove({
+          channel: task.slackChannel, name: 'hourglass_flowing_sand', timestamp: task.slackThreadTs,
+        }).catch(() => {});
         await app.client.chat.postMessage({
           channel: task.slackChannel,
           thread_ts: task.slackThreadTs,
@@ -871,7 +912,8 @@ function createSlackBot(taskQueue, config, router, pmManager) {
     for (const t of taskQueue.tasks.values()) {
       if (t.status !== 'dispatched' || !t.slackChannel || !t.slackThreadTs || !t.assignedTo) continue;
       const threadKey = `${t.slackChannel}:${t.slackThreadTs}`;
-      const oldest = lastSeenByThread.get(threadKey) || t.slackThreadTs;
+      // Use persisted high-water mark (survives restarts), then in-memory, then thread parent
+      const oldest = t._lastSeenSlackTs || lastSeenByThread.get(threadKey) || t.slackThreadTs;
       try {
         const resp = await app.client.conversations.replies({
           channel: t.slackChannel,
@@ -887,9 +929,11 @@ function createSlackBot(taskQueue, config, router, pmManager) {
         });
         if (messages.length === 0) continue;
 
-        // Update high-water mark to newest message
+        // Update high-water mark to newest message (in-memory + persisted on task)
         const newestTs = messages[messages.length - 1].ts;
         lastSeenByThread.set(threadKey, newestTs);
+        t._lastSeenSlackTs = newestTs;
+        taskQueue._saveState();
 
         // Relay missed messages to the session
         const found = await fleet.findSession(config, router, t.assignedTo);

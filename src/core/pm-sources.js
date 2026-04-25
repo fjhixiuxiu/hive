@@ -142,6 +142,12 @@ async function _commentOnPR(repo, prNumber, body) {
   await this._httpPost(url, headers, { body });
 }
 
+async function _reactOnPR(repo, prNumber, reaction) {
+  const headers = this._githubHeaders();
+  const url = `https://api.github.com/repos/${repo}/issues/${prNumber}/reactions`;
+  await this._httpPost(url, headers, { content: reaction });
+}
+
 function _parsePRFromKey(key) {
   // re-review-org/repo#123-commentId
   let m = key.match(/^re-review-(.+?)#(\d+)/);
@@ -677,6 +683,7 @@ module.exports = {
   _githubHeaders,
   _resolveGithubLogin,
   _commentOnPR,
+  _reactOnPR,
   _parsePRFromKey,
   _hasActiveTaskForPR,
   // Source fetchers
