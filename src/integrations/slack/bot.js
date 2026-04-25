@@ -244,11 +244,9 @@ function createSlackBot(taskQueue, config, router, pmManager) {
       'Decide: Does this need a new task, a follow-up to an existing task, or no action?',
       customInstructions,
       '',
-      `## How to reply to this Slack thread`,
-      `Use slack_post_message with channel_id="${channel}" and thread_ts="${threadTs || messages[0]?.ts || ''}". The "text" parameter must be your actual message — NOT a timestamp.`,
-      ``,
-      `## If creating a hive task`,
-      `Pass slackChannel="${channel}" and slackThreadTs="${threadTs || messages[0]?.ts || ''}" so replies route back.`,
+      `## Replying and creating tasks`,
+      `To reply to this thread: use slack_post_message with channel_id="${channel}" and thread_ts="${threadTs || messages[0]?.ts || ''}".`,
+      `To create a hive task: pass slackChannel="${channel}" and slackThreadTs="${threadTs || messages[0]?.ts || ''}" so replies route back.`,
       `Do NOT set a designation on tasks — leave it empty so any idle session picks it up.`,
     ].join('\n');
 
@@ -411,12 +409,8 @@ function createSlackBot(taskQueue, config, router, pmManager) {
     if (slackPm && slackPm.instructions) {
       fullText += `\n\nInstructions: ${slackPm.instructions}`;
     }
-    if (permalink) fullText += `\n\nSlack link: ${permalink}`;
-    // Explicit Slack reply instructions so sessions don't post raw thread_ts as text
-    if (event.channel && (threadTs || event.ts)) {
-      const replyTs = threadTs || event.ts;
-      fullText += `\n\nTo reply to this Slack thread, use slack_post_message with channel_id="${event.channel}" and thread_ts="${replyTs}". The text parameter is your actual message content.`;
-    }
+    // Tell session to use hive_reply_thread for Slack replies (no raw timestamps in prompt)
+    fullText += `\n\nTo reply to the Slack thread, use the hive_reply_thread tool with your message.`;
 
     // Use PM config for routing if available, otherwise defaults
     const mode = slackPm && slackPm.targetSession ? 'manual' : 'auto';
