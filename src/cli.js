@@ -4,18 +4,14 @@ const path = require('path');
 const fs = require('fs');
 const log = require('./core/log');
 
-// Load .env from project root
+// Load .env from project root. Uses dotenv so surrounding quotes are stripped
+// (boot.sh's jq filter emits values like WEB_BIND="0.0.0.0"; without quote
+// stripping the literal quotes break consumers like app.listen()).
+// override: true preserves the prior behavior of overriding existing env vars.
 const envPath = path.join(__dirname, '..', '.env');
 function loadEnvFile() {
   if (fs.existsSync(envPath)) {
-    for (const line of fs.readFileSync(envPath, 'utf8').split('\n')) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith('#')) continue;
-      const eq = trimmed.indexOf('=');
-      if (eq > 0) {
-        process.env[trimmed.substring(0, eq)] = trimmed.substring(eq + 1);
-      }
-    }
+    require('dotenv').config({ path: envPath, override: true });
   }
 }
 loadEnvFile();
