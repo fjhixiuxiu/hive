@@ -6,6 +6,15 @@ const WebSocket = require('ws');
 const tmux = require('./core/tmux');
 const log = require('./core/log');
 
+// Load .env from project root. Uses dotenv so surrounding quotes are stripped
+// (boot.sh's jq filter emits values like WEB_BIND="0.0.0.0"; without quote
+// stripping the literal quotes break consumers like app.listen()).
+// override: true matches the behavior of cli.js / index.js / start-sessions.js.
+const envPath = path.join(__dirname, '..', '.env');
+if (fs.existsSync(envPath)) {
+  require('dotenv').config({ path: envPath, override: true });
+}
+
 const hubUrl = process.argv[2] || process.env.HIVE_HUB_URL;
 const secret = process.argv[3] || process.env.HIVE_SECRET;
 const nodeId = process.argv[4] || process.env.HIVE_NODE_ID || require('os').hostname();
