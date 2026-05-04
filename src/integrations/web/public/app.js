@@ -1221,8 +1221,7 @@
         break;
       case 'tasks:list':
         tasks = msg.tasks || [];
-        // Clear board fingerprint cache so a full re-render happens after reconnect
-        if (renderTaskBoard._prevFingerprints) renderTaskBoard._prevFingerprints = new Map();
+        resetBoardFingerprints(); // force full board redraw after reconnect
         renderTasks(); updateTasksBadge();
         if (loadingActive) { const _q = msg.tasks ? msg.tasks.filter(t => t.status === 'queued').length : 0, _a = msg.tasks ? msg.tasks.filter(t => t.status === 'dispatched').length : 0; completeLoadingStage('tasks', _q + ' queued, ' + _a + ' active'); }
         if (pendingRouteTask) { selectTaskById(pendingRouteTask); pendingRouteTask = null; }
@@ -1346,6 +1345,15 @@
         designationDefs = msg.defs || [];
         renderDesignationGrid(); updateDesignationSelector(); updatePmDesignationSelector();
         if (activeTab === 'more-panel') renderDesigDefs();
+        // Refresh every surface that resolves names via getDesigColor() — without this,
+        // stale labels keep their fallback color until the next periodic broadcast.
+        // Fingerprint reset is unconditional: key doesn't include designation, so a
+        // later switchTab → renderTaskBoard would otherwise skip the redraw.
+        resetBoardFingerprints();
+        if (activeTab === 'fleet-panel') renderGrid();
+        if (activeTab === 'tasks-panel' && tasksViewMode === 'board') renderTaskBoard();
+        updateSessionStatusLine();
+        updateTasksStatusLine();
         break;
       case 'agentRoots:list':
         agentRoots = msg.roots || [];
@@ -2065,6 +2073,12 @@
     const hexEl = card.querySelector('.card-hex');
     if (hexEl) hexEl.innerHTML = fleetHexSvg(s.state);
     card.classList.toggle('off', s.state === 'off');
+
+    // Border refresh: live-grid mode reuses card DOM, so designation/color changes
+    // after first render only land here.
+    const desig = designations[s.num];
+    const dc = desig ? getDesigColor(desig) : null;
+    card.style.borderLeft = dc ? `3px solid ${dc.fg}` : '';
 
     const branch = shortBranch(s.branch);
     const branchEl = card.querySelector('.card-branch');
@@ -5777,6 +5791,12 @@
     // Fall back to stored workState if it exists in active board
     if (task.workState && states.some(ws => ws.id === task.workState)) return task.workState;
     return states[0]?.id || null;
+  }
+
+  // Use when something not in the column fingerprint key (e.g., designation
+  // color) has changed and the diff would otherwise skip the redraw.
+  function resetBoardFingerprints() {
+    if (renderTaskBoard._prevFingerprints) renderTaskBoard._prevFingerprints = new Map();
   }
 
   function renderTaskBoard() {

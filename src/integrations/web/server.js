@@ -225,11 +225,13 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       const feedData = taskQueue.getFeed(null, 50);
       ws.send(JSON.stringify({ type: 'feed:entries', entries: feedData.entries, hasMore: feedData.hasMore }));
       ws.send(JSON.stringify({ type: 'rules:list', rules: taskQueue.getRules() }));
+      // Defs must precede assignments — getDesigColor() resolves names against the defs
+      // cache, so re-renders triggered by `designations:status` need defs already loaded.
+      ws.send(JSON.stringify({ type: 'designationDefs:list', defs: taskQueue.getDesignationDefs() }));
       ws.send(JSON.stringify({ type: 'designations:status', designations: taskQueue.getDesignations() }));
       ws.send(JSON.stringify({ type: 'vim:status', enabled: taskQueue.vimMode }));
       ws.send(JSON.stringify({ type: 'taskAutoComplete:status', enabled: taskQueue.taskAutoComplete }));
       ws.send(JSON.stringify({ type: 'repoCaps:status', caps: taskQueue.getRepoCaps() }));
-      ws.send(JSON.stringify({ type: 'designationDefs:list', defs: taskQueue.getDesignationDefs() }));
       ws.send(JSON.stringify({ type: 'agentRoots:list', roots: taskQueue.getAgentRoots() }));
       ws.send(JSON.stringify({ type: 'agentFiles:list', files: taskQueue.agentFilesList }));
       ws.send(JSON.stringify({ type: 'checklistTemplates:list', templates: taskQueue.getChecklistTemplates() }));
