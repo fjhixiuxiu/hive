@@ -381,6 +381,22 @@ function createSlackBot(taskQueue, config, router, pmManager) {
       }
     }
 
+    // ── Dedup: skip if there's already an ACTIVE task for this thread ──
+    // Only match queued/dispatched tasks. Completed/failed tasks must NOT block
+    // new mentions in the same thread — once a task is done, a follow-up mention
+    // should spawn a fresh task with the full thread context (revival isn't
+    // possible, so we just start a new one).
+    const dedupTs = threadTs || event.ts;
+    const existingTask = taskQueue.getTasksList().find(t =>
+      (t.status === 'queued' || t.status === 'dispatched') &&
+      t.slackChannel === event.channel &&
+      t.slackThreadTs === dedupTs
+    );
+    if (existingTask) {
+      log.info(`[slack:rcv] dedup: task ${existingTask.id} already exists for ch=${event.channel} ts=${dedupTs} (status=${existingTask.status}) — skipping`);
+      return;
+    }
+
     // ── PM-based routing: find a matching Slack PM for this channel ──
     const slackPm = findSlackPM(event.channel);
 
