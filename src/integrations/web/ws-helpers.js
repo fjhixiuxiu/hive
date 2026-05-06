@@ -4,6 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { execFile } = require('child_process');
+const fleet = require('../../core/fleet');
 
 // ── Constants ───────────────────────────────────────────
 
@@ -204,6 +205,27 @@ function buildConfigMessage(config) {
   };
 }
 
+/**
+ * Resolve a fleet session integer from whatever the MCP client sent.
+ *
+ * The mcp-server process is launched with `--session <tmuxName>`, so the value
+ * arriving on the wire can be:
+ *   - an integer (legacy / unprefixed deployments)        → returned as-is
+ *   - a digit string ("3")                                → parsed
+ *   - a prefixed string ("VIV-1") matching namePrefix     → prefix stripped, parsed
+ *   - a non-fleet identifier ("hive-pm-2", "hive-console")→ null (not a fleet session)
+ *
+ * Callers that key state by integer (activeTaskBySession, lastCompletedAt,
+ * sessionContext, workingDirOverrides) must guard against the null return —
+ * forwarding null to those maps would coerce to 0 via Number(null) and corrupt
+ * session 0's bucket.
+ */
+function resolveMcpSessionNum(rawSession, namePrefix) {
+  if (typeof rawSession === 'number' && Number.isFinite(rawSession)) return rawSession;
+  if (rawSession == null) return null;
+  return fleet.sessionNum(String(rawSession), namePrefix || '');
+}
+
 module.exports = {
   HIVE_CONSOLE_SESSION,
   HIVE_CONSOLE_DIR,
@@ -220,4 +242,5 @@ module.exports = {
   discoverCommands,
   capturePaneAnsi,
   buildConfigMessage,
+  resolveMcpSessionNum,
 };

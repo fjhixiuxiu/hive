@@ -18,7 +18,7 @@ const {
   HIVE_CONSOLE_SESSION, HIVE_CONSOLE_DIR, ghExecEnv, setupPath,
   isSetupComplete, decorateTaskActions, executeTaskAction,
   getTailscaleIP, getBindHosts, scanCommands, discoverCommands,
-  capturePaneAnsi, buildConfigMessage,
+  capturePaneAnsi, buildConfigMessage, resolveMcpSessionNum,
 } = require('./ws-helpers');
 const createMessageHandler = require('./ws-handlers');
 const VoiceAgent = require('../voice');
@@ -350,8 +350,11 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
           const urlParams = new URL(request.url, 'http://localhost').searchParams;
           const mcpSession = urlParams.get('session');
           if (mcpSession != null) {
-            mcpClients.set(ws, { session: Number(mcpSession) });
-            log.info(`MCP client connected for session ${mcpSession}`);
+            // mcpClients only uses the WS key today — rawSession kept for log/debug fidelity.
+            const sessionNum = resolveMcpSessionNum(mcpSession, config.sessions?.namePrefix);
+            mcpClients.set(ws, { session: sessionNum, rawSession: mcpSession });
+            const resolvedSuffix = sessionNum != null && String(sessionNum) !== String(mcpSession) ? ` (resolved to ${sessionNum})` : '';
+            log.info(`MCP client connected for session ${mcpSession}${resolvedSuffix}`);
           }
           ws.send(JSON.stringify({ type: 'auth', ok: true, user: serviceUser }));
         } else {
