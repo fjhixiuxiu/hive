@@ -13,6 +13,7 @@ const log = require('../../core/log');
 const {
   HIVE_CONSOLE_SESSION, ghExecEnv, setupPath, isSetupComplete,
   decorateTaskActions, executeTaskAction, capturePaneAnsi,
+  resolveMcpSessionNum,
 } = require('./ws-helpers');
 
 /**
@@ -42,6 +43,17 @@ function createMessageHandler(deps) {
   function resolveRepoDir(num, nc) {
     if (num && workingDirOverrides.has(num)) return workingDirOverrides.get(num);
     return num ? nc.sessions.repoDir(num) : null;
+  }
+
+  // Wraps the shared helper with this handler's config. See ws-helpers.js.
+  const resolveSessionNum = (raw) => resolveMcpSessionNum(raw, config.sessions?.namePrefix);
+
+  // Look up the active task object for a resolved fleet session integer.
+  // Returns null when the session has no active task or sessionNum is null.
+  function activeTaskFor(sessionNum) {
+    if (sessionNum == null || !taskQueue) return null;
+    const taskId = taskQueue.activeTaskBySession.get(sessionNum);
+    return taskId ? taskQueue.tasks.get(taskId) || null : null;
   }
 
   return async function handleMessage(ws, msg, user) {
@@ -1897,19 +1909,19 @@ function createMessageHandler(deps) {
       // ── MCP tool handlers (called by mcp-server/index.mjs via WS) ──
       case 'mcp:get_task': {
         if (!taskQueue) { ws.send(JSON.stringify({ _reqId: msg._reqId, task: null })); break; }
-        const sessionNum = msg.session;
-        const taskId = taskQueue.activeTaskBySession.get(sessionNum);
-        const task = taskId ? taskQueue.tasks.get(taskId) : null;
-        console.log(`[mcp] get_task S:${sessionNum} → ${taskId ? `task ${taskId} ("${(task?.text || '').slice(0, 60)}")` : 'no task'}`);
+        const sessionNum = resolveSessionNum(msg.session);
+        const task = activeTaskFor(sessionNum);
+        console.log(`[mcp] get_task S:${sessionNum ?? msg.session} → ${task ? `task ${task.id} ("${(task.text || '').slice(0, 60)}")` : 'no task'}`);
         ws.send(JSON.stringify({ _reqId: msg._reqId, task: task ? { id: task.id, text: task.text, status: task.status, designation: task.designation, checklist: task.checklist || [] } : null }));
         break;
       }
 
       case 'mcp:complete_task': {
         if (!taskQueue) { ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'No task queue' })); break; }
-        const sessionNum = msg.session;
-        const taskId = taskQueue.activeTaskBySession.get(sessionNum);
-        console.log(`[mcp] complete_task S:${sessionNum} → ${taskId ? `task ${taskId}` : 'NO TASK'} summary="${(msg.summary || '').slice(0, 80)}"`);
+        const sessionNum = resolveSessionNum(msg.session);
+        const activeTask = activeTaskFor(sessionNum);
+        const taskId = activeTask?.id;
+        console.log(`[mcp] complete_task S:${sessionNum ?? msg.session} → ${taskId ? `task ${taskId}` : 'NO TASK'} summary="${(msg.summary || '').slice(0, 80)}"`);
         if (!taskId) {
           // Race condition: idle watcher may have auto-completed the task before MCP call arrived.
           // If a task was recently completed for this session, treat it as success.
@@ -1948,16 +1960,17 @@ function createMessageHandler(deps) {
 
       case 'mcp:post_update': {
         if (!taskQueue) { ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'No task queue' })); break; }
-        taskQueue.pushFeed('mcp', msg.session, `[Session ${msg.session}] ${msg.message || ''}`);
+        const sessionNum = resolveSessionNum(msg.session);
+        const label = sessionNum ?? msg.session;
+        taskQueue.pushFeed('mcp', label, `[Session ${label}] ${msg.message || ''}`);
         ws.send(JSON.stringify({ _reqId: msg._reqId, ok: true }));
         break;
       }
 
       case 'mcp:report_learnings': {
         if (!taskQueue || !pmManager) { ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'No task queue or PM manager' })); break; }
-        const sessionNum = msg.session;
-        const taskId = taskQueue.activeTaskBySession.get(sessionNum);
-        const task = taskId ? taskQueue.tasks.get(taskId) : null;
+        const sessionNum = resolveSessionNum(msg.session);
+        const task = activeTaskFor(sessionNum);
         const source = task && task.source;
         if (!source || !source.startsWith('pm:')) {
           ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'No PM-sourced task for this session' }));
@@ -1979,9 +1992,8 @@ function createMessageHandler(deps) {
 
       case 'mcp:share_knowledge': {
         if (!pmManager) { ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'No PM manager' })); break; }
-        const sessionNum = msg.session;
-        const taskId = taskQueue ? taskQueue.activeTaskBySession.get(sessionNum) : null;
-        const task = taskId ? taskQueue.tasks.get(taskId) : null;
+        const sessionNum = resolveSessionNum(msg.session);
+        const task = activeTaskFor(sessionNum);
         const sourcePm = task && task.source ? task.source.replace(/^pm:/, '') : 'unknown';
         const entry = {
           insight: (msg.insight || '').slice(0, 500),
@@ -1989,7 +2001,7 @@ function createMessageHandler(deps) {
           domain: (msg.domain || '').slice(0, 50).toLowerCase() || null,
           type: msg.insightType || null,
           sourcePm,
-          sourceSession: sessionNum,
+          sourceSession: sessionNum ?? msg.session,
           createdAt: Date.now(),
         };
         if (!entry.insight) {
@@ -2012,9 +2024,7 @@ function createMessageHandler(deps) {
         // PM-specific learnings for the session's active task
         let pmLearnings = [];
         if (taskQueue) {
-          const sessionNum = msg.session;
-          const taskId = taskQueue.activeTaskBySession.get(sessionNum);
-          const task = taskId ? taskQueue.tasks.get(taskId) : null;
+          const task = activeTaskFor(resolveSessionNum(msg.session));
           if (task && task.source && task.source.startsWith('pm:')) {
             const pmName = task.source.slice(3);
             const pm = pmManager.getAll().find(p => p.name === pmName);
@@ -2037,7 +2047,10 @@ function createMessageHandler(deps) {
 
       case 'mcp:get_context': {
         if (!taskQueue) { ws.send(JSON.stringify({ _reqId: msg._reqId, context: {} })); break; }
-        const ctx = taskQueue.getSessionContext(msg.session);
+        const sessionNum = resolveSessionNum(msg.session);
+        // sessionContext is keyed by integer fleet num. Non-fleet IDs (PM, console)
+        // get an empty context — they don't participate in the session-context surface.
+        const ctx = sessionNum != null ? taskQueue.getSessionContext(sessionNum) : {};
         ws.send(JSON.stringify({ _reqId: msg._reqId, context: ctx }));
         break;
       }
@@ -2049,17 +2062,28 @@ function createMessageHandler(deps) {
           ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'updates must be an object' }));
           break;
         }
-        const updated = taskQueue.setSessionContext(msg.session, updates);
-        broadcast({ type: 'context:updated', session: Number(msg.session), context: updated });
+        const sessionNum = resolveSessionNum(msg.session);
+        if (sessionNum == null) {
+          // Without a fleet integer, setSessionContext would coerce null→0 and
+          // overwrite session 0's context. Reject explicitly.
+          ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: `Cannot resolve session "${msg.session}" to a fleet number` }));
+          break;
+        }
+        const updated = taskQueue.setSessionContext(sessionNum, updates);
+        broadcast({ type: 'context:updated', session: sessionNum, context: updated });
         ws.send(JSON.stringify({ _reqId: msg._reqId, ok: true, context: updated }));
         break;
       }
 
       case 'mcp:set_working_dir': {
-        const num = Number(msg.session);
+        const num = resolveSessionNum(msg.session);
         const dir = msg.dir;
         if (!dir || typeof dir !== 'string') {
           ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'dir must be a non-empty string' }));
+          break;
+        }
+        if (num == null) {
+          ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: `Cannot resolve session "${msg.session}" to a fleet number` }));
           break;
         }
         const resolved = dir.replace(/^~/, os.homedir());
@@ -2094,9 +2118,13 @@ function createMessageHandler(deps) {
             designation = null;
           }
         }
-        // Resolve source label — if session is a PM session (hive-pm-*), use PM name
-        let sourceLabel = `mcp:session-${msg.session}`;
-        let createdByLabel = `Session ${msg.session}`;
+        // Resolve source label — if session is a PM session (hive-pm-*), use PM name.
+        // For prefixed fleet sessions (e.g. "VIV-1"), strip the prefix so the label
+        // shows the integer the rest of the system uses.
+        const createSessionNum = resolveSessionNum(msg.session);
+        const sessionLabel = createSessionNum ?? msg.session;
+        let sourceLabel = `mcp:session-${sessionLabel}`;
+        let createdByLabel = `Session ${sessionLabel}`;
         const pmMatch = typeof msg.session === 'string' && msg.session.match(/^hive-pm-(\d+)$/);
         if (pmMatch && pmManager) {
           const pmObj = pmManager.get(pmMatch[1]);
@@ -2131,7 +2159,7 @@ function createMessageHandler(deps) {
           }
         }
         if (task.slackChannel || task.slackThreadTs) taskQueue._saveState();
-        console.log(`[mcp] create_task from S:${msg.session} → task ${task.id} ("${text.slice(0, 60)}")`);
+        console.log(`[mcp] create_task from S:${sessionLabel} → task ${task.id} ("${text.slice(0, 60)}")`);
         broadcast({ type: 'task:created', task });
         ws.send(JSON.stringify({ _reqId: msg._reqId, ok: true, taskId: task.id }));
         break;
@@ -2145,7 +2173,7 @@ function createMessageHandler(deps) {
           break;
         }
         // Find the active task for this session
-        const sessionNum = Number(msg.session);
+        const sessionNum = resolveSessionNum(msg.session);
         const activeTask = [...taskQueue.tasks.values()].find(t =>
           t.status === 'dispatched' && t.assignedTo === sessionNum
         );
