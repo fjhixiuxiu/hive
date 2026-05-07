@@ -827,15 +827,19 @@ function createSlackBot(taskQueue, config, router, pmManager) {
   // Health check: verify the connection is alive AND actually delivering events.
   //
   // Two checks run every HEALTH_INTERVAL:
-  //   1. auth.test() — catches Web API outages
-  //   2. Zombie Socket Mode detection — if we haven't received any event for
-  //      ZOMBIE_THRESHOLD_MS, probe the channels that slack-channel-monitor
-  //      PMs are watching via conversations.history. If a real (non-subtype)
-  //      message exists in any of them that's newer than lastEventAt, Socket
-  //      Mode is zombied (connection claims to be up but no events flowing)
-  //      → force-restart the bot.
+  //   1. auth.test() — catches Web API outages.
+  //   2. Per-channel zombie detection — for every monitored channel + every
+  //      channel with an active Slack task, fetch the last few messages via
+  //      conversations.history and compare against `lastEventByChannel` (the
+  //      socket-side tracker). If Slack has a real message we never received
+  //      on the socket, the connection is zombied for that channel — restart.
+  //
+  // We deliberately do NOT gate Step 2 on a global silence threshold. Slack
+  // Socket Mode can deliver events from busy channels while silently dropping
+  // others ("partial zombie"). Gating on global silence means a single chatty
+  // channel masks the failure on every other channel.
   const HEALTH_INTERVAL = 5 * 60 * 1000;      // 5 min
-  const ZOMBIE_THRESHOLD_MS = 15 * 60 * 1000; // 15 min of silence before probing
+  const PROBE_WINDOW_MS = 15 * 60 * 1000;     // only consider messages from the last 15 min
   setInterval(async () => {
     // Step 1: Web API liveness
     try {
@@ -844,9 +848,7 @@ function createSlackBot(taskQueue, config, router, pmManager) {
       return restartBot(`auth.test failed: ${err.message}`);
     }
 
-    // Step 2: Zombie Socket Mode detection
-    const sinceLastEvent = Date.now() - lastEventAt;
-    if (sinceLastEvent < ZOMBIE_THRESHOLD_MS) return;
+    // Step 2: per-channel zombie detection (runs every tick, no global guard)
     if (!pmManager) return;
 
     // Collect channels to probe: channel-monitor PMs + channels with active Slack tasks
@@ -875,11 +877,14 @@ function createSlackBot(taskQueue, config, router, pmManager) {
 
     if (probeChannels.size === 0) return;
 
-    // Use per-channel tracking: probe each channel for messages we should
-    // have received. This catches partial zombies where some channels flow
-    // but others silently drop.
-    const probeOldestSec = Math.floor((Date.now() - ZOMBIE_THRESHOLD_MS) / 1000);
+    // Probe each channel for messages we should have received but didn't.
+    // Skip channels with no baseline (chLastSeen === 0) — could be the bot's
+    // first run or a brand-new monitored channel that hasn't fired yet, and
+    // we'd false-positive every existing message as "missed".
+    const probeOldestSec = Math.floor((Date.now() - PROBE_WINDOW_MS) / 1000);
     for (const channel of probeChannels) {
+      const chLastSeen = lastEventByChannel.get(channel) || 0;
+      if (chLastSeen === 0) continue;
       try {
         const resp = await app.client.conversations.history({
           channel,
@@ -887,13 +892,12 @@ function createSlackBot(taskQueue, config, router, pmManager) {
           oldest: String(probeOldestSec),
         });
         // Look for a real (non-subtype) message in this channel that we
-        // should have received but didn't (not in our per-channel tracker).
+        // should have received but didn't (newer than our per-channel
+        // last-seen, beyond a 1-min grace window for clock skew).
         const missed = (resp.messages || []).find(m => {
           if (m.subtype) return false;
           const msgTs = parseFloat(m.ts) * 1000;
-          // Check if this message arrived after our per-channel last-seen
-          const chLastSeen = lastEventByChannel.get(channel) || 0;
-          return msgTs > chLastSeen + 60000; // 1 min grace for clock skew
+          return msgTs > chLastSeen + 60000;
         });
         if (missed) {
           const missedIso = new Date(parseFloat(missed.ts) * 1000).toISOString();
