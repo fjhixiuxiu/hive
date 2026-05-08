@@ -688,7 +688,12 @@ function createSlackBot(taskQueue, config, router, pmManager) {
 
     let bucket = _monitorDebounce.get(threadKey);
     if (bucket) {
-      // Add to existing batch, reset timer
+      // Slack Socket Mode retries unacked events every ~15s. If we've already
+      // seen this exact ts, it's a retry — don't push it (would duplicate the
+      // text in the relay) and don't reset the timer (would starve the
+      // debounce flush, leaving thread replies stuck forever under retry
+      // pressure on a 60s debounce).
+      if (bucket.messages.some(m => m.ts === entry.ts)) return;
       bucket.messages.push(entry);
       clearTimeout(bucket.timer);
     } else {

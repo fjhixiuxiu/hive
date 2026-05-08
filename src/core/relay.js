@@ -144,11 +144,32 @@ async function ask(config, node, sessionName, message, callbacks = {}) {
  */
 async function tell(config, node, sessionName, message, { vimMode } = {}) {
   const paneTarget = `${sessionName}:.${config.sessions.claudePane}`;
-  const beforeContent = await node.capturePane(paneTarget, { lines: 3 });
-  const state = tmux.detectState(beforeContent, config);
 
-  if (state === 'off') {
-    return { success: false, error: 'Claude is not running in this session.' };
+  // Wait for the session to settle before pasting. Avoids the race where the
+  // session is mid-turn (e.g. processing /clear) and our paste lands in the
+  // input that gets submitted right after the turn finishes. detectState can
+  // be wrong/unreliable, so after a 30s budget we paste anyway rather than
+  // drop the message — late delivery beats silent loss.
+  const TELL_IDLE_BUDGET_MS = 30000;
+  const TELL_IDLE_POLL_MS = 2000;
+  const startedAt = Date.now();
+  let sawWorking = false;
+  let consecutiveIdle = 0;
+  while (true) {
+    const tail = await node.capturePane(paneTarget, { lines: 3 });
+    const state = tmux.detectState(tail, config);
+    if (state === 'off') {
+      return { success: false, error: 'Claude is not running in this session.' };
+    }
+    if (state === 'idle') {
+      if (!sawWorking) break;             // idle from the start → no settle needed
+      if (++consecutiveIdle >= 2) break;  // 2 consecutive idle reads → settled
+    } else {
+      sawWorking = true;
+      consecutiveIdle = 0;
+    }
+    if (Date.now() - startedAt >= TELL_IDLE_BUDGET_MS) break; // budget out, paste anyway
+    await new Promise(r => setTimeout(r, TELL_IDLE_POLL_MS));
   }
 
   // Ensure Claude's TUI is in INSERT mode (only needed for vim-mode terminals)
