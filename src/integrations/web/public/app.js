@@ -8571,11 +8571,10 @@
       const els = document.querySelectorAll(`.pm-fields-${t}`);
       els.forEach(el => el.style.display = show ? '' : 'none');
     }
-    // Hide labels/state for re-reviews (not needed)
+    // Hide non-repo github fields for re-reviews (only Repo is needed; Query/Labels/State/Author/etc. don't apply)
     if (isReReviews) {
-      document.querySelectorAll('.pm-fields-github').forEach((el, i) => {
-        // Show only the first github field (repo), hide labels and state
-        if (i > 0) el.style.display = 'none';
+      document.querySelectorAll('.pm-fields-github').forEach((el) => {
+        if (!el.querySelector('#pm-form-gh-repo')) el.style.display = 'none';
       });
     }
     // Hide schedule for slack/github-mentions/channel-monitor (no polling); manual supports cron schedule
