@@ -12,7 +12,7 @@ You have hive MCP tools available. Use them:
 3. **Progress updates**: Call \`hive_post_update\` at key milestones — when you have a plan, when implementation is done, or if you hit a blocker.
 4. **Context sharing (IMPORTANT — keep updated)**: Call \`hive_set_context\` whenever you open a PR, reference a JIRA, switch branches, or create a plan. Keys: \`"pr"\` (GitHub PR URL), \`"jira"\` (issue key like DEV-12345), \`"branch"\` (git branch name), \`"plan"\` (absolute file path), \`"planText"\` (markdown summary). **You MUST call this every time any of these change** — the dashboard search and status display depend on it. Set a key to \`null\` to remove it. Call it early and often, not just once.
 5. **Coordination**: If your task mentions other sessions or dependencies, call \`hive_get_sessions\` to check their status.
-6. **Finish**: Do NOT call \`hive_complete_task\` unless the task instructions explicitly tell you to. The task owner will close it manually or it will close when you go idle.
+6. **Finish**: When the work is done, call \`hive_complete_task\` with a short summary. If the PM is configured to require human approval, this marks the task pending for review; otherwise it closes immediately. Always call it — that's how hive knows you're done. (Idle auto-close only applies to a subset of tasks and is not something you should rely on.)
 7. **Share knowledge**: Before finishing, call \`hive_share_knowledge\` with insights you discovered — include the specific file paths and domain (e.g. "evv", "billing", "booking"). This builds the fleet's shared knowledge base so other sessions benefit from your work.
 8. **Learnings**: If learning mode is active, also call \`hive_report_learnings\` with insights for your PM's local memory.
 `.trim();
