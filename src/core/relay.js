@@ -1,4 +1,5 @@
 const tmux = require('./tmux');
+const log = require('./log');
 
 /**
  * Capture the visible pane and extract Claude's response content,
@@ -7,6 +8,84 @@ const tmux = require('./tmux');
 async function captureResponse(node, paneTarget, config) {
   const content = await node.capturePane(paneTarget);
   return tmux.stripTUIChrome(content, config);
+}
+
+/**
+ * Vim-safe clear of the Claude Code TUI input box.
+ * Escape → gg dG → i  (delete entire buffer, return to insert mode).
+ *
+ * Necessary because we cannot trust "session idle" to mean "input box empty":
+ * a previous paste may have failed mid-Enter and left text in the input,
+ * or the user may have typed something via the dashboard and walked away.
+ * Pasting on top of stale content concatenates and submits garbage.
+ */
+async function clearInputVim(node, paneTarget) {
+  await node.exec(`tmux send-keys -t "${paneTarget}" Escape`);
+  await new Promise(r => setTimeout(r, 250));
+  await node.exec(`tmux send-keys -t "${paneTarget}" g g d G`);
+  await new Promise(r => setTimeout(r, 150));
+  await node.exec(`tmux send-keys -t "${paneTarget}" i`);
+  await new Promise(r => setTimeout(r, 250));
+}
+
+/**
+ * Non-vim (readline) clear: home + kill-to-eol. Only handles single-line
+ * input, which is all the non-vim Claude Code TUI exposes today.
+ */
+async function clearInputReadline(node, paneTarget) {
+  await node.exec(`tmux send-keys -t "${paneTarget}" C-a`);
+  await node.exec(`tmux send-keys -t "${paneTarget}" C-k`);
+}
+
+async function clearInput(node, paneTarget, vimMode) {
+  if (vimMode) await clearInputVim(node, paneTarget);
+  else await clearInputReadline(node, paneTarget);
+}
+
+/**
+ * After a paste, verify the message actually landed in the input box.
+ * Claude Code's TUI condenses large/multi-line pastes to "[Pasted text #N +M lines]"
+ * — short single-line pastes appear verbatim. Returns true if either pattern
+ * is present in the visible pane.
+ */
+async function verifyPasteLanded(node, paneTarget, message) {
+  const cleaned = (message || '').replace(/\r\n/g, '\n').trim();
+  if (!cleaned) return true;
+  const visible = await node.capturePane(paneTarget, { lines: 30 });
+  if (!visible) return false;
+  const isShortSingleLine = !cleaned.includes('\n') && cleaned.length <= 120;
+  if (isShortSingleLine) {
+    return visible.includes(cleaned);
+  }
+  // Long or multi-line: prefer placeholder match (TUI usually condenses).
+  if (/\[Pasted text #\d+/.test(visible)) return true;
+  // Suffix fallback for the cases where the TUI didn't condense.
+  return visible.includes(cleaned.slice(-40));
+}
+
+/**
+ * Clear → paste → verify (retry once) → return whether the message is in
+ * the input box ready for an Enter. Does NOT submit.
+ */
+async function pasteWithVerify(node, paneTarget, message, vimMode) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (attempt > 0) {
+      log.warn(`[relay] paste did not land on ${paneTarget} (attempt ${attempt}/2), re-clearing and retrying`);
+      await clearInput(node, paneTarget, vimMode);
+    }
+    try {
+      await node.sendKeys(paneTarget, message, false);
+    } catch (err) {
+      return { ok: false, error: `Failed to send message: ${err.message}` };
+    }
+    // TUI parse latency. Vim mode needs more because we may also be racing
+    // a mode-switch repaint; non-vim has only the paste-buffer flush latency.
+    await new Promise(r => setTimeout(r, vimMode ? 250 : 150));
+    if (await verifyPasteLanded(node, paneTarget, message)) {
+      return { ok: true };
+    }
+  }
+  return { ok: false, error: 'Paste verification failed after retry — message not in input box' };
 }
 
 /**
@@ -43,45 +122,22 @@ async function ask(config, node, sessionName, message, callbacks = {}) {
     }
   }
 
-  // Ensure Claude's TUI is in INSERT mode (only needed for vim-mode terminals).
-  // Dwells must be generous: under TUI render load the mode switch can take
-  // 150-300ms, and if `i` lands in normal mode the subsequent paste is
-  // interpreted as motion keys → empty submit. 300ms each side is the floor
-  // we've seen reliable.
-  if (vimMode) {
-    await node.exec(`tmux send-keys -t "${paneTarget}" Escape`);
-    await new Promise(r => setTimeout(r, 300));
-    await node.exec(`tmux send-keys -t "${paneTarget}" i`);
-    await new Promise(r => setTimeout(r, 300));
-  } else {
-    // Clear any existing input before pasting (readline: home, kill-to-eol).
-    // NOT safe in vim insert mode: C-a re-inserts last text, C-k starts a
-    // digraph. We skip it under vimMode and rely on the prior idle wait
-    // having left the input box empty.
-    await node.exec(`tmux send-keys -t "${paneTarget}" C-a`);
-    await node.exec(`tmux send-keys -t "${paneTarget}" C-k`);
+  await clearInput(node, paneTarget, vimMode);
+
+  const paste = await pasteWithVerify(node, paneTarget, message, vimMode);
+  if (!paste.ok) {
+    return { success: false, error: paste.error };
   }
 
-  // Send the message. In vim mode, decouple paste from Enter so we can dwell
-  // between them — paste-buffer returns when tmux hands bytes to the pane,
-  // not when the TUI has parsed them, so a too-fast Enter can submit empty.
-  try {
-    if (vimMode) {
-      await node.sendKeys(paneTarget, message, false);
-      await new Promise(r => setTimeout(r, 200));
-      await node.exec(`tmux send-keys -t "${paneTarget}" Enter`);
-      if (message && message.includes('\n')) {
-        await new Promise(r => setTimeout(r, 300));
-        await node.exec(`tmux send-keys -t "${paneTarget}" Enter`);
-      }
-    } else {
-      await node.sendKeys(paneTarget, message, true);
-    }
-  } catch (err) {
-    return { success: false, error: `Failed to send message: ${err.message}` };
+  await node.exec(`tmux send-keys -t "${paneTarget}" Enter`);
+  if (message && message.includes('\n')) {
+    // Safety second Enter for multi-line — TUI sometimes swallows the first
+    // while still rendering pasted content.
+    await new Promise(r => setTimeout(r, 300));
+    await node.exec(`tmux send-keys -t "${paneTarget}" Enter`);
   }
+
   const startTime = Date.now();
-
   if (onProgress) onProgress('Message sent, waiting for response...');
 
   // Poll for idle + stream updates
@@ -191,31 +247,15 @@ async function tell(config, node, sessionName, message, { vimMode } = {}) {
     await new Promise(r => setTimeout(r, TELL_IDLE_POLL_MS));
   }
 
-  // Ensure Claude's TUI is in INSERT mode (only needed for vim-mode terminals).
-  // See ask() for full reasoning on dwell sizing.
-  if (vimMode) {
-    await node.exec(`tmux send-keys -t "${paneTarget}" Escape`);
-    await new Promise(r => setTimeout(r, 300));
-    await node.exec(`tmux send-keys -t "${paneTarget}" i`);
-    await new Promise(r => setTimeout(r, 300));
-  } else {
-    // Readline-style clear; not safe in vim insert mode (see ask()).
-    await node.exec(`tmux send-keys -t "${paneTarget}" C-a`);
-    await node.exec(`tmux send-keys -t "${paneTarget}" C-k`);
+  await clearInput(node, paneTarget, vimMode);
+
+  const paste = await pasteWithVerify(node, paneTarget, message, vimMode);
+  if (!paste.ok) {
+    return { success: false, error: paste.error };
   }
 
-  try {
-    await node.sendKeys(paneTarget, message, false);
-  } catch (err) {
-    return { success: false, error: `Failed to send message: ${err.message}` };
-  }
-  const isMultiLine = message && message.includes('\n');
-  // Pre-Enter dwell: TUI parse latency is ~150-200ms after a paste-buffer flush.
-  // Vim-mode single-line needs the dwell too — paste-buffer return ≠ parse done.
-  await new Promise(r => setTimeout(r, isMultiLine ? 250 : (vimMode ? 200 : 100)));
   await node.exec(`tmux send-keys -t "${paneTarget}" Enter`);
-  // Safety: second Enter for multi-line pastes (TUI can swallow the first)
-  if (isMultiLine) {
+  if (message && message.includes('\n')) {
     await new Promise(r => setTimeout(r, 300));
     await node.exec(`tmux send-keys -t "${paneTarget}" Enter`);
   }
