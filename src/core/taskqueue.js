@@ -617,6 +617,23 @@ class TaskQueue extends EventEmitter {
     // See: ~/dev/agents/hive/clear-paste-race-plan.md
     const sendTask = async () => {
       await relay.ask(this.config, node, sessionName, '/clear', { vimMode: this.vimMode });
+
+      // Defense-in-depth: relay.ask returns success when the session is idle,
+      // but if the Enter after `/clear` was lost (vim-mode paste race), the
+      // session was already idle and stays idle — so success is reported even
+      // though /clear never fired. The next paste then lands on top of the
+      // unsubmitted /clear and the agent runs the task on stale context.
+      // Look for `/clear` still visible in the input box and flush it.
+      try {
+        const paneTarget = `${sessionName}:.${this.config.sessions.claudePane}`;
+        const tail = await node.capturePane(paneTarget, { lines: 8 });
+        if (tail && /\/clear\s*$/m.test(tail)) {
+          log.warn(`[dispatch] /clear unsubmitted on S:${sessionNum}, sending safety Enter`);
+          await node.exec(`tmux send-keys -t "${paneTarget}" Enter`);
+          await new Promise(r => setTimeout(r, 1500));
+        }
+      } catch {}
+
       // Build message with agent file preamble if designation has agent files
       let fullMessage = this._pmManager ? this._pmManager.enrichTaskText(task) : task.text;
       const desigName = task.designation || this.designations.get(sessionNum);

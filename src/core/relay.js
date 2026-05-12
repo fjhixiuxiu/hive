@@ -43,21 +43,40 @@ async function ask(config, node, sessionName, message, callbacks = {}) {
     }
   }
 
-  // Ensure Claude's TUI is in INSERT mode (only needed for vim-mode terminals)
+  // Ensure Claude's TUI is in INSERT mode (only needed for vim-mode terminals).
+  // Dwells must be generous: under TUI render load the mode switch can take
+  // 150-300ms, and if `i` lands in normal mode the subsequent paste is
+  // interpreted as motion keys → empty submit. 300ms each side is the floor
+  // we've seen reliable.
   if (vimMode) {
     await node.exec(`tmux send-keys -t "${paneTarget}" Escape`);
-    await new Promise(r => setTimeout(r, 150));
+    await new Promise(r => setTimeout(r, 300));
     await node.exec(`tmux send-keys -t "${paneTarget}" i`);
-    await new Promise(r => setTimeout(r, 100));
+    await new Promise(r => setTimeout(r, 300));
+  } else {
+    // Clear any existing input before pasting (readline: home, kill-to-eol).
+    // NOT safe in vim insert mode: C-a re-inserts last text, C-k starts a
+    // digraph. We skip it under vimMode and rely on the prior idle wait
+    // having left the input box empty.
+    await node.exec(`tmux send-keys -t "${paneTarget}" C-a`);
+    await node.exec(`tmux send-keys -t "${paneTarget}" C-k`);
   }
 
-  // Clear any existing input before pasting (Ctrl-U = kill line, Ctrl-A = home first)
-  await node.exec(`tmux send-keys -t "${paneTarget}" C-a`);
-  await node.exec(`tmux send-keys -t "${paneTarget}" C-k`);
-
-  // Send the message
+  // Send the message. In vim mode, decouple paste from Enter so we can dwell
+  // between them — paste-buffer returns when tmux hands bytes to the pane,
+  // not when the TUI has parsed them, so a too-fast Enter can submit empty.
   try {
-    await node.sendKeys(paneTarget, message, true);
+    if (vimMode) {
+      await node.sendKeys(paneTarget, message, false);
+      await new Promise(r => setTimeout(r, 200));
+      await node.exec(`tmux send-keys -t "${paneTarget}" Enter`);
+      if (message && message.includes('\n')) {
+        await new Promise(r => setTimeout(r, 300));
+        await node.exec(`tmux send-keys -t "${paneTarget}" Enter`);
+      }
+    } else {
+      await node.sendKeys(paneTarget, message, true);
+    }
   } catch (err) {
     return { success: false, error: `Failed to send message: ${err.message}` };
   }
@@ -172,17 +191,18 @@ async function tell(config, node, sessionName, message, { vimMode } = {}) {
     await new Promise(r => setTimeout(r, TELL_IDLE_POLL_MS));
   }
 
-  // Ensure Claude's TUI is in INSERT mode (only needed for vim-mode terminals)
+  // Ensure Claude's TUI is in INSERT mode (only needed for vim-mode terminals).
+  // See ask() for full reasoning on dwell sizing.
   if (vimMode) {
     await node.exec(`tmux send-keys -t "${paneTarget}" Escape`);
-    await new Promise(r => setTimeout(r, 200));
+    await new Promise(r => setTimeout(r, 300));
     await node.exec(`tmux send-keys -t "${paneTarget}" i`);
     await new Promise(r => setTimeout(r, 300));
+  } else {
+    // Readline-style clear; not safe in vim insert mode (see ask()).
+    await node.exec(`tmux send-keys -t "${paneTarget}" C-a`);
+    await node.exec(`tmux send-keys -t "${paneTarget}" C-k`);
   }
-
-  // Clear any existing input before pasting (Ctrl-A = home, Ctrl-K = kill to end)
-  await node.exec(`tmux send-keys -t "${paneTarget}" C-a`);
-  await node.exec(`tmux send-keys -t "${paneTarget}" C-k`);
 
   try {
     await node.sendKeys(paneTarget, message, false);
@@ -190,7 +210,9 @@ async function tell(config, node, sessionName, message, { vimMode } = {}) {
     return { success: false, error: `Failed to send message: ${err.message}` };
   }
   const isMultiLine = message && message.includes('\n');
-  await new Promise(r => setTimeout(r, isMultiLine ? 200 : 100));
+  // Pre-Enter dwell: TUI parse latency is ~150-200ms after a paste-buffer flush.
+  // Vim-mode single-line needs the dwell too — paste-buffer return ≠ parse done.
+  await new Promise(r => setTimeout(r, isMultiLine ? 250 : (vimMode ? 200 : 100)));
   await node.exec(`tmux send-keys -t "${paneTarget}" Enter`);
   // Safety: second Enter for multi-line pastes (TUI can swallow the first)
   if (isMultiLine) {

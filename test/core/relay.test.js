@@ -104,16 +104,26 @@ describe('relay', () => {
       expect(result.success).toBe(false); // times out because never idle
     });
 
-    it('with vimMode sends Escape+i before message', async () => {
+    it('with vimMode sends Escape+i before message and skips C-a/C-k', async () => {
       tmux.detectState.mockReturnValue('idle');
       node.capturePane.mockResolvedValue('done');
 
       const resultPromise = relay.ask(config, node, '6-DEV', 'hello', { vimMode: true });
-      await vi.advanceTimersByTimeAsync(1000);
+      // Vim path dwells: 300ms (after Escape) + 300ms (after i) + 200ms (pre-Enter)
+      // plus polling cooldown — advance generously.
+      await vi.advanceTimersByTimeAsync(2000);
       await resultPromise;
 
       expect(node.exec).toHaveBeenCalledWith(expect.stringContaining('Escape'));
       expect(node.exec).toHaveBeenCalledWith(expect.stringContaining(' i'));
+      // C-a / C-k are NOT safe in vim insert mode (re-insert / digraph).
+      // Make sure we skipped them on the vim path.
+      const execCalls = node.exec.mock.calls.map(([cmd]) => cmd);
+      expect(execCalls.some(c => c.includes(' C-a'))).toBe(false);
+      expect(execCalls.some(c => c.includes(' C-k'))).toBe(false);
+      // Paste should happen with enter=false; Enter is sent as a separate dwelled call.
+      expect(node.sendKeys).toHaveBeenCalledWith('6-DEV:.1', 'hello', false);
+      expect(execCalls.some(c => c.endsWith(' Enter'))).toBe(true);
     });
 
     it('calls onProgress callback', async () => {
