@@ -138,19 +138,25 @@ describe('relay', () => {
       expect(onProgress).toHaveBeenCalledWith('Message sent, waiting for response...');
     });
 
-    it('returns error if paste verification keeps failing', async () => {
+    it('still sends Enter when paste verification keeps missing (advisory)', async () => {
       tmux.detectState.mockReturnValue('idle');
-      // Capture never contains the message → verification never passes.
+      // Capture never contains the message — verification will keep "missing,"
+      // but capture-after-paste racing TUI repaint is exactly what verification
+      // can't distinguish from a real miss. Withholding Enter on a false miss
+      // would silently drop messages, so we log + Enter anyway.
       node.capturePane.mockResolvedValue('totally unrelated content');
 
       const resultPromise = relay.ask(config, node, '6-DEV', 'hello-distinctive');
-      await vi.advanceTimersByTimeAsync(2000);
+      await vi.advanceTimersByTimeAsync(3000);
       const result = await resultPromise;
 
-      expect(result.success).toBe(false);
-      expect(result.error).toMatch(/verification failed/i);
-      // Two paste attempts (initial + retry) — paste-buffer never landed.
+      // Two paste attempts (initial + retry on miss).
       expect(node.sendKeys).toHaveBeenCalledTimes(2);
+      // Enter is sent regardless of verification result.
+      const execCalls = node.exec.mock.calls.map(([cmd]) => cmd);
+      expect(execCalls.some(c => c.endsWith(' Enter'))).toBe(true);
+      // ask() still completes successfully — verification is advisory.
+      expect(result.success).toBe(true);
     });
 
     it('verifies multi-line paste via "[Pasted text #N" placeholder', async () => {
