@@ -1552,6 +1552,18 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .status-chip.ci-run { background: rgba(241,250,140,0.15); color: var(--yellow); }
 .status-chip.review-ok { background: rgba(80,250,123,0.15); color: var(--green); }
 .status-chip.review-chg { background: rgba(255,85,85,0.15); color: var(--red); }
+.status-chip.review-comment { background: rgba(241,250,140,0.15); color: var(--yellow); }
+.status-chip.pr-state-merged { background: rgba(189,147,249,0.2); color: var(--purple); }
+.status-chip.pr-state-closed { background: rgba(255,85,85,0.15); color: var(--red); }
+.status-chip.pr-state-draft { background: rgba(98,114,164,0.15); color: var(--dim); }
+.td-pr-state { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 0.85em; margin-right: 4px; }
+.td-pr-state.pr-merged { background: rgba(189,147,249,0.2); color: var(--purple); }
+.td-pr-state.pr-closed { background: rgba(255,85,85,0.15); color: var(--red); }
+.td-pr-state.pr-draft { background: rgba(98,114,164,0.15); color: var(--dim); }
+.td-pr-state.pr-open { background: rgba(80,250,123,0.15); color: var(--green); }
+.td-pr-state.pr-approved { background: rgba(80,250,123,0.15); color: var(--green); }
+.td-pr-state.pr-changes { background: rgba(255,85,85,0.15); color: var(--red); }
+.td-pr-state.pr-commented { background: rgba(241,250,140,0.15); color: var(--yellow); }
 .status-chip.mode-auto { background: rgba(139,233,253,0.2); color: var(--cyan); }
 .status-chip.mode-manual { background: rgba(98,114,164,0.15); color: var(--dim); }
 .status-chip.history-chip-btn { background: rgba(189,147,249,0.15); color: var(--purple); }

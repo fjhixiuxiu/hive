@@ -64,50 +64,51 @@ async function verifyPasteLanded(node, paneTarget, message) {
 }
 
 /**
- * Clear → paste → verify (retry once if it looks missed) → return.
+ * Paste → poll-verify (no retry) → return.
  *
  * Verification is ADVISORY: capturing the pane right after a paste-buffer
  * flush often races the TUI's repaint, so a "miss" doesn't mean the paste
- * failed — only that we couldn't see it yet. We log on miss and retry once,
- * but the caller MUST still send Enter regardless. Skipping Enter on a
- * false-positive miss was a regression worse than the original race
+ * failed — only that we couldn't see it yet. We poll the pane up to
+ * VERIFY_DEADLINE_MS to give the repaint time to catch up; if we never see
+ * the message, we log and send Enter anyway. Skipping Enter on a
+ * false-positive miss is strictly worse than the visible-paste race
  * (Slack messages never reached agents because Enter was withheld).
+ *
+ * No retry path: the prior re-clear+re-paste retry deterministically
+ * doubled multi-line content when clearInputReadline (used outside vim
+ * mode) couldn't wipe a multi-line buffer — the retry paste appended
+ * onto leftover lines. Observed on dashboard manual input, Slack
+ * auto-relay, slack-poll fallback, and task-dispatch paths alike.
  *
  * Hard failure is reserved for sendKeys errors (genuine tmux failure).
  */
 async function pasteWithVerify(node, paneTarget, message, vimMode) {
-  // Generous post-paste dwell. The TUI needs to render either the inline
-  // text or the "[Pasted text #N +M lines]" placeholder before our capture
-  // can see it. Under load this can take 600-900ms.
-  const POST_PASTE_DWELL_MS = vimMode ? 800 : 500;
+  // Initial dwell then poll-verify. Under load the TUI can take 600-900ms
+  // to render the inline text or "[Pasted text #N +M lines]" placeholder.
+  const INITIAL_DWELL_MS = vimMode ? 800 : 500;
+  const VERIFY_DEADLINE_MS = 2000;
+  const VERIFY_POLL_MS = 200;
 
   try {
     await node.sendKeys(paneTarget, message, false);
   } catch (err) {
     return { ok: false, error: `Failed to send message: ${err.message}` };
   }
-  await new Promise(r => setTimeout(r, POST_PASTE_DWELL_MS));
+  await new Promise(r => setTimeout(r, INITIAL_DWELL_MS));
 
   if (await verifyPasteLanded(node, paneTarget, message)) {
     return { ok: true };
   }
 
-  // Possible miss — re-clear and re-paste once. If the original paste
-  // actually succeeded, the re-clear wipes it and the second paste is the
-  // one that lands. Either way the Enter the caller sends will submit
-  // exactly one message.
-  log.warn(`[relay] paste verification missed on ${paneTarget}, retrying once`);
-  await clearInput(node, paneTarget, vimMode);
-  try {
-    await node.sendKeys(paneTarget, message, false);
-  } catch (err) {
-    return { ok: false, error: `Failed to send message on retry: ${err.message}` };
+  const pollStart = Date.now();
+  while (Date.now() - pollStart < VERIFY_DEADLINE_MS) {
+    await new Promise(r => setTimeout(r, VERIFY_POLL_MS));
+    if (await verifyPasteLanded(node, paneTarget, message)) {
+      return { ok: true };
+    }
   }
-  await new Promise(r => setTimeout(r, POST_PASTE_DWELL_MS));
 
-  if (!await verifyPasteLanded(node, paneTarget, message)) {
-    log.warn(`[relay] paste verification still missing on ${paneTarget} after retry — sending Enter anyway (advisory)`);
-  }
+  log.warn(`[relay] paste verification missed on ${paneTarget} after ${INITIAL_DWELL_MS + VERIFY_DEADLINE_MS}ms — sending Enter anyway (advisory, no retry)`);
   return { ok: true };
 }
 

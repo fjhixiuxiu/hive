@@ -325,6 +325,33 @@ describe('TaskQueue', () => {
     });
   });
 
+  describe('slackDedup persistence', () => {
+    // Persistent dedup of processed Slack @mentions across bot restarts.
+    // The Slack bot reads/writes the Map directly; TaskQueue only round-trips it.
+    it('initializes as an empty Map', () => {
+      expect(tq.slackDedup).toBeInstanceOf(Map);
+      expect(tq.slackDedup.size).toBe(0);
+    });
+
+    it('serializes slackDedup entries into saved state', () => {
+      tq.slackDedup.set('1778695122.824589', 1778695200000);
+      let saved;
+      vi.spyOn(fs, 'writeFileSync').mockImplementation((p, json) => {
+        if (typeof json === 'string') saved = JSON.parse(json);
+      });
+      tq._saveState();
+      expect(saved.slackDedup).toEqual({ '1778695122.824589': 1778695200000 });
+    });
+
+    it('restores slackDedup entries from disk on load', () => {
+      vi.spyOn(fs, 'readFileSync').mockReturnValue(JSON.stringify({
+        slackDedup: { '1778695122.824589': 1778695200000 },
+      }));
+      const tq2 = new TaskQueue(config, watcher, router);
+      expect(tq2.slackDedup.get('1778695122.824589')).toBe(1778695200000);
+    });
+  });
+
   describe('toggleAutoSession', () => {
     it('toggles auto-mode on and off', () => {
       tq.toggleAutoSession(6);

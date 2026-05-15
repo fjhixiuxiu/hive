@@ -138,7 +138,7 @@ describe('relay', () => {
       expect(onProgress).toHaveBeenCalledWith('Message sent, waiting for response...');
     });
 
-    it('still sends Enter when paste verification keeps missing (advisory)', async () => {
+    it('still sends Enter when paste verification keeps missing (advisory, no retry)', async () => {
       tmux.detectState.mockReturnValue('idle');
       // Capture never contains the message — verification will keep "missing,"
       // but capture-after-paste racing TUI repaint is exactly what verification
@@ -147,11 +147,13 @@ describe('relay', () => {
       node.capturePane.mockResolvedValue('totally unrelated content');
 
       const resultPromise = relay.ask(config, node, '6-DEV', 'hello-distinctive');
-      await vi.advanceTimersByTimeAsync(3000);
+      await vi.advanceTimersByTimeAsync(5000);
       const result = await resultPromise;
 
-      // Two paste attempts (initial + retry on miss).
-      expect(node.sendKeys).toHaveBeenCalledTimes(2);
+      // Exactly one paste attempt — retry path was removed because it
+      // deterministically doubled multi-line content (clearInputReadline
+      // can't wipe a multi-line buffer between attempts).
+      expect(node.sendKeys).toHaveBeenCalledTimes(1);
       // Enter is sent regardless of verification result.
       const execCalls = node.exec.mock.calls.map(([cmd]) => cmd);
       expect(execCalls.some(c => c.endsWith(' Enter'))).toBe(true);
@@ -209,25 +211,27 @@ describe('relay', () => {
       expect(result.error).toContain('Failed to send');
     });
 
-    it('retries the paste once if verification fails the first time', async () => {
+    it('poll-verifies after initial dwell instead of retrying the paste', async () => {
       tmux.detectState.mockReturnValue('idle');
-      // First capture (verify-attempt-1) misses the message; second one shows it.
+      // First few captures miss; later captures show the message. The
+      // previous behavior retried the paste (deterministic double-body on
+      // multi-line content); the new behavior keeps polling the same paste.
       let captureCalls = 0;
       node.capturePane.mockImplementation(() => {
         captureCalls++;
-        // Capture sequence: #1 settle-loop state check; #2 verify attempt 1
-        // (must miss to trigger retry); #3 verify attempt 2 (must hit).
-        if (captureCalls < 3) return Promise.resolve('idle, no message yet');
+        // Capture sequence: #1 settle-loop state check; #2 initial-dwell
+        // verify (miss); subsequent calls are poll-verify retries until hit.
+        if (captureCalls < 4) return Promise.resolve('idle, no message yet');
         return Promise.resolve('finally: hello here');
       });
 
       const resultPromise = relay.tell(config, node, '6-DEV', 'hello');
-      await vi.advanceTimersByTimeAsync(2000);
+      await vi.advanceTimersByTimeAsync(3000);
       const result = await resultPromise;
 
       expect(result.success).toBe(true);
-      // Two paste attempts total.
-      expect(node.sendKeys).toHaveBeenCalledTimes(2);
+      // Exactly one paste — no retry path.
+      expect(node.sendKeys).toHaveBeenCalledTimes(1);
     });
   });
 });

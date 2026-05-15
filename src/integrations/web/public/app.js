@@ -131,6 +131,9 @@
     }
   }, { rootMargin: '200px', threshold: 0 });
   let tasks = [];
+  // Cache of task-PR review status, keyed by "owner/repo#prNum".
+  // Populated by pr:review-result from server in response to pr:refresh.
+  const taskPrReviewCache = {};
   let workStates = [];
   let autoSessions = new Set();
   let feedEntries = [];
@@ -962,6 +965,22 @@
   // ── Message handling ──────────────────────────────
   function handleMessage(msg) {
     switch (msg.type) {
+      case 'pr:review-result': {
+        const key = msg.repo + '#' + msg.prNumber;
+        taskPrReviewCache[key] = {
+          reviewers: msg.reviewers || [],
+          rollup: msg.rollup || '',
+          state: msg.state || '',
+          merged: !!msg.merged,
+          draft: !!msg.draft,
+          mergedAt: msg.mergedAt || null,
+        };
+        updateSessionStatusLine();
+        updateTasksStatusLine();
+        updateTaskDetailPrStatus();
+        break;
+      }
+
       case 'auth':
         if (msg.ok) {
           authenticated = true; connBar.className = 'connected';
@@ -1229,6 +1248,12 @@
       case 'task:created': case 'task:dispatched': case 'task:completed': case 'task:failed': {
         const idx = tasks.findIndex(t => t.id === msg.task.id);
         if (idx >= 0) tasks[idx] = msg.task; else tasks.unshift(msg.task);
+        // Bypass the board fingerprint cache on terminal transitions. The
+        // mover-detection diff misses cases where a task's previous effective
+        // column wasn't tracked (PM filter changes, custom workStates with
+        // autoOnStatus=[] globally), and the card stays in its old column
+        // until a manual refresh. Observed on Human Review + PR Review PMs.
+        if (msg.type === 'task:completed' || msg.type === 'task:failed') resetBoardFingerprints();
         renderTasks(); updateTasksBadge(); updateChecklistButtons(); updateActionsButton(); updatePrimaryActionButton(); updateTsNavButtons(); updateSessionTaskButtons();
         // Auto-advance when a viewed task is completed/failed
         if (msg.type === 'task:completed' || msg.type === 'task:failed') {
@@ -1437,18 +1462,26 @@
       case 'context:all':
         sessionContexts = msg.contexts || {};
         updatePlanSidebar();
+        maybeRefreshTaskPrReview(currentSession);
+        maybeRefreshTaskPrReview(tasksSessionNum);
+        updateSessionStatusLine();
+        updateTasksStatusLine();
         break;
       case 'context:updated':
         if (msg.session != null) {
           if (Object.keys(msg.context).length === 0) delete sessionContexts[msg.session];
           else sessionContexts[msg.session] = msg.context;
           updatePlanSidebar();
+          maybeRefreshTaskPrReview(msg.session);
+          if (String(msg.session) === String(currentSession)) updateSessionStatusLine();
+          if (String(msg.session) === String(tasksSessionNum)) updateTasksStatusLine();
         }
         break;
       case 'context:data':
         if (msg.session != null) {
           sessionContexts[msg.session] = msg.context || {};
           updatePlanSidebar();
+          maybeRefreshTaskPrReview(msg.session);
         }
         break;
       case 'plan:file':
@@ -2328,6 +2361,13 @@
     sessionTitle.textContent = `Session ${s.num}`;
     sessionBranch.textContent = shortBranch(s.branch);
     updateSessionStatusLine();
+    // Lazy refresh PR review state. Prefer task's actionContext PR (re-review tasks
+    // point at a PR whose branch differs from the session's git branch).
+    if (ws && ws.readyState === 1) {
+      const tpr = taskPrFor(s.num);
+      if (tpr) ws.send(JSON.stringify({ type: 'pr:refresh', repo: tpr.repo, prNumber: tpr.prNumber }));
+      else ws.send(JSON.stringify({ type: 'pr:refresh', session: s.num }));
+    }
     document.getElementById('session-activity').textContent = s.lastActivity ? `active ${timeAgo(s.lastActivity)}` : '';
     previousTab = activeTab;
     userScrolledUp = false;
@@ -2551,6 +2591,49 @@
     }
   }
 
+  // If the session's context now references a PR we haven't reviewed yet, request a refresh.
+  function maybeRefreshTaskPrReview(sessionNum) {
+    if (sessionNum == null || !ws || ws.readyState !== 1) return;
+    const tpr = taskPrFor(sessionNum);
+    if (!tpr) return;
+    ws.send(JSON.stringify({ type: 'pr:refresh', repo: tpr.repo, prNumber: tpr.prNumber }));
+  }
+
+  // Find the PR a session points at (for lazy review status lookup).
+  // Sources, in priority order:
+  //   1. sessionContexts[num].pr — URL set by Claude via hive_set_context (this is
+  //      the PR rendered at the top of the panel; for re-review tasks it's the
+  //      authoritative reference even when the session's git branch differs).
+  //   2. task.actionContext.{repo,prNumber} — set by PMs for github-pr tasks.
+  //   3. task.sourceKey "owner/repo#num" — fallback parse.
+  // Returns { repo, prNumber } or null.
+  function taskPrFor(sessionNum) {
+    if (sessionNum == null) return null;
+    const sctx = sessionContexts[sessionNum];
+    if (sctx && sctx.pr) {
+      const m = /github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)/.exec(sctx.pr);
+      if (m) return { repo: m[1], prNumber: m[2] };
+    }
+    const t = tasks.find(x => String(x.assignedTo) === String(sessionNum));
+    return t ? taskPrForTask(t) : null;
+  }
+
+  // Resolve a task directly to {repo, prNumber} via actionContext or sourceKey.
+  // Used by the task-detail panel where we have the task object but the task
+  // may not be dispatched (no assignedTo → taskPrFor wouldn't find it).
+  function taskPrForTask(t) {
+    if (!t) return null;
+    const ctx = t.actionContext;
+    if (ctx && ctx.type === 'github-pr' && ctx.repo && ctx.prNumber) {
+      return { repo: ctx.repo, prNumber: String(ctx.prNumber) };
+    }
+    if (t.sourceKey) {
+      const m = /([^\s/-]+\/[^\s#]+)#(\d+)/.exec(t.sourceKey);
+      if (m) return { repo: m[1], prNumber: m[2] };
+    }
+    return null;
+  }
+
   // ── Session status line (shared) ─────────────────
   function renderStatusChips(sessionNum) {
     const s = fleetData.find(x => String(x.num) === String(sessionNum));
@@ -2610,13 +2693,47 @@
       }
     }
 
-    // Review chip
-    if (s.pr && s.pr.review) {
-      if (s.pr.review === 'APPROVED') {
-        chips.push(`<span class="status-chip review-ok">Review Approved</span>`);
-      } else if (s.pr.review === 'CHANGES_REQUESTED') {
-        chips.push(`<span class="status-chip review-chg">Changes Requested</span>`);
+    // Review chip — prefer the task's PR (re-review tasks point at a PR whose
+    // branch doesn't match the session's git branch). Fall back to session-branch PR.
+    let reviewers = null;
+    const tpr = taskPrFor(s.num);
+    let tprCached = null;
+    if (tpr) {
+      tprCached = taskPrReviewCache[tpr.repo + '#' + tpr.prNumber];
+      if (tprCached && Array.isArray(tprCached.reviewers)) reviewers = tprCached.reviewers;
+    }
+    if (!reviewers && s.pr && Array.isArray(s.pr.reviewers)) reviewers = s.pr.reviewers;
+
+    // PR state chip (Merged / Closed / Draft). Only emit when we know the
+    // state — the cache is empty until pr:refresh comes back.
+    if (tprCached) {
+      if (tprCached.merged) chips.push(`<span class="status-chip pr-state-merged" title="PR merged${tprCached.mergedAt ? ' at ' + tprCached.mergedAt : ''}">Merged</span>`);
+      else if (tprCached.state === 'closed') chips.push(`<span class="status-chip pr-state-closed" title="PR closed without merging">Closed</span>`);
+      else if (tprCached.draft) chips.push(`<span class="status-chip pr-state-draft" title="Draft PR">Draft</span>`);
+    }
+
+    if (reviewers && reviewers.length > 0) {
+      const changes = reviewers.filter(r => r.state === 'CHANGES_REQUESTED');
+      const approved = reviewers.filter(r => r.state === 'APPROVED');
+      const commented = reviewers.filter(r => r.state === 'COMMENTED');
+      if (changes.length) {
+        const extra = changes.length > 1 ? ` +${changes.length - 1}` : '';
+        const tip = changes.map(r => r.login).join(', ');
+        chips.push(`<span class="status-chip review-chg" title="Changes requested: ${tip}">Changes: ${changes[0].login}${extra}</span>`);
+      } else if (approved.length) {
+        const extra = approved.length > 1 ? ` +${approved.length - 1}` : '';
+        const tip = approved.map(r => r.login).join(', ');
+        chips.push(`<span class="status-chip review-ok" title="Approved: ${tip}">Approved: ${approved[0].login}${extra}</span>`);
+      } else if (commented.length) {
+        const extra = commented.length > 1 ? ` +${commented.length - 1}` : '';
+        const tip = commented.map(r => r.login).join(', ');
+        chips.push(`<span class="status-chip review-comment" title="Commented: ${tip}">Commented: ${commented[0].login}${extra}</span>`);
       }
+    } else if (s.pr && s.pr.review) {
+      // Fallback for branch-cached PR data without per-reviewer detail
+      if (s.pr.review === 'APPROVED') chips.push(`<span class="status-chip review-ok">Approved</span>`);
+      else if (s.pr.review === 'CHANGES_REQUESTED') chips.push(`<span class="status-chip review-chg">Changes Requested</span>`);
+      else if (s.pr.review === 'COMMENTED') chips.push(`<span class="status-chip review-comment">Commented</span>`);
     }
 
     // Last sent timestamp
@@ -4691,6 +4808,12 @@
     tasksSessionNum = String(sessionNum);
     // Restore draft for newly opened tasks-session
     tsMsgInput.value = loadDraft(sessionDraftKey('tasks', tasksSessionNum));
+    // Lazy refresh PR review state — task's actionContext PR takes priority.
+    if (ws && ws.readyState === 1) {
+      const tpr = taskPrFor(tasksSessionNum);
+      if (tpr) ws.send(JSON.stringify({ type: 'pr:refresh', repo: tpr.repo, prNumber: tpr.prNumber }));
+      else ws.send(JSON.stringify({ type: 'pr:refresh', session: tasksSessionNum }));
+    }
     if (!sameSession) {
       tsPaneCols = 0; // reset until we get pane width from server
       tsUserScrolledUp = false; tsPendingContent = null; tsLastContent = '';
@@ -6038,6 +6161,15 @@
     taskDetailTaskId = taskId;
     tasksSelectedTaskId = taskId;
 
+    // Lazy refresh PR review + meta state. Prefer the task's actionContext PR
+    // (re-review tasks point at a PR whose branch differs from the session's
+    // git branch). Falls through to session-branch PR lookup otherwise.
+    if (ws && ws.readyState === 1) {
+      const tprDetail = taskPrForTask(task);
+      if (tprDetail) ws.send(JSON.stringify({ type: 'pr:refresh', repo: tprDetail.repo, prNumber: tprDetail.prNumber }));
+      else if (task.assignedTo != null) ws.send(JSON.stringify({ type: 'pr:refresh', session: task.assignedTo }));
+    }
+
     // Highlight on board
     document.querySelectorAll('.board-card').forEach(c => c.classList.toggle('selected', c.dataset.id === taskId));
 
@@ -6198,36 +6330,7 @@
     } : null;
 
     // Context info section — shows Slack, session, and action context for debugging
-    const ctxSection = document.getElementById('task-detail-context');
-    if (ctxSection) {
-      const items = [];
-      // Slack context
-      if (task.slackChannel) items.push({ key: 'Slack Channel', val: task.slackChannel });
-      if (task.slackThreadTs) items.push({ key: 'Thread TS', val: task.slackThreadTs });
-      if (task.slackPermalink) items.push({ key: 'Permalink', val: `<a href="${esc(task.slackPermalink)}" target="_blank" rel="noopener">${esc(task.slackPermalink)}</a>` });
-      // Action context
-      if (task.actionContext) {
-        const ac = task.actionContext;
-        if (ac.type) items.push({ key: 'Action', val: ac.type });
-        if (ac.repo) items.push({ key: 'Repo', val: ac.repo });
-        if (ac.prNumber) items.push({ key: 'PR', val: `#${ac.prNumber}` });
-        if (ac.issueNumber) items.push({ key: 'Issue', val: `#${ac.issueNumber}` });
-      }
-      // Session context (plan, PR, JIRA, branch)
-      const sCtx = task.assignedTo != null ? sessionContexts[task.assignedTo] : null;
-      if (sCtx) {
-        if (sCtx.pr) items.push({ key: 'PR URL', val: `<a href="${esc(sCtx.pr)}" target="_blank" rel="noopener">${esc(sCtx.pr)}</a>` });
-        if (sCtx.jira) items.push({ key: 'JIRA', val: esc(sCtx.jira) });
-        if (sCtx.branch) items.push({ key: 'Branch', val: esc(sCtx.branch) });
-        if (sCtx.slackThread) items.push({ key: 'Slack Thread', val: esc(sCtx.slackThread) });
-      }
-      if (items.length) {
-        ctxSection.innerHTML = items.map(i => `<span class="td-ctx-item"><span class="td-ctx-key">${i.key}:</span> ${i.val}</span>`).join('');
-        ctxSection.style.display = '';
-      } else {
-        ctxSection.style.display = 'none';
-      }
-    }
+    renderTaskDetailContext(task);
 
     // Terminal + input: show for dispatched tasks
     const termContainer = document.getElementById('task-detail-terminal');
@@ -6658,6 +6761,74 @@
     const idx = allTasks.findIndex(t => t.id === taskDetailTaskId);
     document.getElementById('task-detail-prev').disabled = idx <= 0;
     document.getElementById('task-detail-next').disabled = idx < 0 || idx >= allTasks.length - 1;
+  }
+
+  // Render the task-detail context bar: Slack/action/session items plus the
+  // lazy-fetched PR state + reviews summary (when cached). Re-callable so
+  // updateTaskDetailPrStatus can refresh just the PR rows when the
+  // pr:review-result arrives after the panel opens.
+  function renderTaskDetailContext(task) {
+    const ctxSection = document.getElementById('task-detail-context');
+    if (!ctxSection || !task) return;
+    const items = [];
+    if (task.slackChannel) items.push({ key: 'Slack Channel', val: task.slackChannel });
+    if (task.slackThreadTs) items.push({ key: 'Thread TS', val: task.slackThreadTs });
+    if (task.slackPermalink) items.push({ key: 'Permalink', val: `<a href="${esc(task.slackPermalink)}" target="_blank" rel="noopener">${esc(task.slackPermalink)}</a>` });
+    if (task.actionContext) {
+      const ac = task.actionContext;
+      if (ac.type) items.push({ key: 'Action', val: ac.type });
+      if (ac.repo) items.push({ key: 'Repo', val: ac.repo });
+      if (ac.prNumber) items.push({ key: 'PR', val: `#${ac.prNumber}` });
+      if (ac.issueNumber) items.push({ key: 'Issue', val: `#${ac.issueNumber}` });
+    }
+    const sCtx = task.assignedTo != null ? sessionContexts[task.assignedTo] : null;
+    if (sCtx) {
+      if (sCtx.pr) items.push({ key: 'PR URL', val: `<a href="${esc(sCtx.pr)}" target="_blank" rel="noopener">${esc(sCtx.pr)}</a>` });
+      if (sCtx.jira) items.push({ key: 'JIRA', val: esc(sCtx.jira) });
+      if (sCtx.branch) items.push({ key: 'Branch', val: esc(sCtx.branch) });
+      if (sCtx.slackThread) items.push({ key: 'Slack Thread', val: esc(sCtx.slackThread) });
+    }
+    // PR state + reviews — populated by pr:review-result after pr:refresh.
+    const tpr = taskPrForTask(task);
+    if (tpr) {
+      const cached = taskPrReviewCache[tpr.repo + '#' + tpr.prNumber];
+      if (cached) {
+        let stateLabel = '';
+        if (cached.merged) stateLabel = 'MERGED';
+        else if (cached.state === 'closed') stateLabel = 'CLOSED';
+        else if (cached.draft) stateLabel = 'DRAFT';
+        else if (cached.state === 'open') stateLabel = 'OPEN';
+        if (stateLabel) {
+          const cls = stateLabel === 'MERGED' ? 'pr-merged' : stateLabel === 'CLOSED' ? 'pr-closed' : stateLabel === 'DRAFT' ? 'pr-draft' : 'pr-open';
+          items.push({ key: 'PR State', val: `<span class="td-pr-state ${cls}">${stateLabel}</span>` });
+        }
+        const reviewers = Array.isArray(cached.reviewers) ? cached.reviewers : [];
+        if (reviewers.length) {
+          const changes = reviewers.filter(r => r.state === 'CHANGES_REQUESTED').map(r => r.login);
+          const approved = reviewers.filter(r => r.state === 'APPROVED').map(r => r.login);
+          const commented = reviewers.filter(r => r.state === 'COMMENTED').map(r => r.login);
+          const parts = [];
+          if (changes.length) parts.push(`<span class="td-pr-state pr-changes">Changes: ${esc(changes.join(', '))}</span>`);
+          if (approved.length) parts.push(`<span class="td-pr-state pr-approved">Approved: ${esc(approved.join(', '))}</span>`);
+          if (commented.length) parts.push(`<span class="td-pr-state pr-commented">Commented: ${esc(commented.join(', '))}</span>`);
+          if (parts.length) items.push({ key: 'Reviews', val: parts.join(' ') });
+        }
+      }
+    }
+    if (items.length) {
+      ctxSection.innerHTML = items.map(i => `<span class="td-ctx-item"><span class="td-ctx-key">${i.key}:</span> ${i.val}</span>`).join('');
+      ctxSection.style.display = '';
+    } else {
+      ctxSection.style.display = 'none';
+    }
+  }
+
+  // Re-render the task-detail context when a pr:review-result lands for the
+  // task we currently have open. Cheap no-op if the panel isn't open.
+  function updateTaskDetailPrStatus() {
+    if (taskDetailTaskId == null) return;
+    const task = tasks.find(t => t.id === taskDetailTaskId);
+    if (task) renderTaskDetailContext(task);
   }
 
   function handleTaskDetailAction(action, task) {

@@ -46,6 +46,9 @@ class TaskQueue extends EventEmitter {
     this._snoozeTimers = new Map(); // taskId → setTimeout handle
     this.checklistTemplates = new Map(); // name → { name, items: [string] }
     this.sessionContext = new Map();    // session num -> { plan: '/path', pr: 'url', jira: 'KEY', ... }
+    this.slackDedup = new Map();        // Slack event.ts -> markedAt (ms). Persisted dedup of
+                                        // processed @mentions so Slack retries don't create duplicate
+                                        // tasks across bot restarts. TTL/GC owned by the bot.
 
     // Backup configuration
     this.backupConfig = {
@@ -1302,6 +1305,11 @@ class TaskQueue extends EventEmitter {
           this.sessionContext.set(Number(num), ctx);
         }
       }
+      if (data.slackDedup && typeof data.slackDedup === 'object') {
+        for (const [ts, markedAt] of Object.entries(data.slackDedup)) {
+          this.slackDedup.set(ts, Number(markedAt));
+        }
+      }
       if (data.backupConfig && typeof data.backupConfig === 'object') {
         this.backupConfig = { ...this.backupConfig, ...data.backupConfig };
       }
@@ -1381,6 +1389,7 @@ class TaskQueue extends EventEmitter {
       backupConfig: this.backupConfig,
       workStates: this.workStates,
       repoSessionCaps: this.getRepoCaps(),
+      slackDedup: Object.fromEntries(this.slackDedup),
     };
     // Merge PM data if pmManager is attached
     if (this._pmManager) {

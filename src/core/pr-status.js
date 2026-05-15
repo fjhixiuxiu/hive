@@ -110,25 +110,35 @@ async function findPR(owner, repo, branch, token) {
 
 /**
  * Get review status for a PR.
- * Returns 'APPROVED', 'CHANGES_REQUESTED', or '' (no reviews / pending).
+ * Returns { rollup, reviewers } where:
+ *   rollup: 'APPROVED' | 'CHANGES_REQUESTED' | 'COMMENTED' | ''
+ *   reviewers: [{ login, state, submittedAt }]
  */
 async function getReviewStatus(owner, repo, prNum, token) {
   const url = `https://api.github.com/repos/${owner}/${repo}/pulls/${prNum}/reviews`;
   const { status, data } = await fetchJSON(url, {
     headers: { Authorization: `token ${token}` },
   });
-  if (status !== 200 || !Array.isArray(data)) return '';
+  if (status !== 200 || !Array.isArray(data)) return { rollup: '', reviewers: [] };
 
-  // Latest non-COMMENTED review per reviewer
+  // Latest review per reviewer. GitHub returns chronological; later overrides earlier.
+  // DISMISSED drops the reviewer out entirely.
   const latest = new Map();
   for (const review of data) {
-    if (review.state === 'COMMENTED') continue;
-    latest.set(review.user.login, review.state);
+    const login = review.user && review.user.login;
+    if (!login) continue;
+    if (review.state === 'DISMISSED') { latest.delete(login); continue; }
+    latest.set(login, { login, state: review.state, submittedAt: review.submitted_at });
   }
+  const reviewers = [...latest.values()];
 
-  if ([...latest.values()].some(s => s === 'CHANGES_REQUESTED')) return 'CHANGES_REQUESTED';
-  if ([...latest.values()].some(s => s === 'APPROVED')) return 'APPROVED';
-  return '';
+  // Rollup: worst state wins (changes > approved > commented)
+  let rollup = '';
+  if (reviewers.some(r => r.state === 'CHANGES_REQUESTED')) rollup = 'CHANGES_REQUESTED';
+  else if (reviewers.some(r => r.state === 'APPROVED')) rollup = 'APPROVED';
+  else if (reviewers.some(r => r.state === 'COMMENTED')) rollup = 'COMMENTED';
+
+  return { rollup, reviewers };
 }
 
 /**
@@ -221,7 +231,7 @@ async function _fetch(branch, config, githubToken) {
 
   // Step 2: Get CI + review in parallel
   const jenkinsConfig = config.jenkins || {};
-  const [ci, review] = await Promise.all([
+  const [ci, reviewInfo] = await Promise.all([
     getJenkinsStatus(
       jenkinsConfig.baseUrl,
       jenkinsConfig.jobPath,
@@ -239,7 +249,8 @@ async function _fetch(branch, config, githubToken) {
     prFiles: String(pr.changed_files),
     ciResult: ci.result,
     ciBuild: ci.build,
-    review,
+    review: reviewInfo.rollup,
+    reviewers: reviewInfo.reviewers,
   };
 }
 
@@ -270,4 +281,60 @@ function getCached(branch) {
   return (cached && cached.data) || null;
 }
 
-module.exports = { fetch, getCached, clearCache, stats };
+// Per-PR review cache for task-driven lookups (key: owner/repo#prNum)
+const reviewCache = new Map();
+const REVIEW_CACHE_TTL = 60_000; // 1 min — lazy/on-demand, freshness matters
+
+/**
+ * Get PR meta — open/closed/merged/draft state.
+ * Returns { state, merged, draft, mergedAt }. state is 'open'|'closed'.
+ * merged is true when the closed PR was merged (vs. just closed unmerged).
+ */
+async function getPRMeta(owner, repo, prNum, token) {
+  const url = `https://api.github.com/repos/${owner}/${repo}/pulls/${prNum}`;
+  const { status, data } = await fetchJSON(url, {
+    headers: { Authorization: `token ${token}` },
+  });
+  if (status !== 200 || !data) return { state: '', merged: false, draft: false, mergedAt: null };
+  return {
+    state: data.state || '',
+    merged: !!data.merged,
+    draft: !!data.draft,
+    mergedAt: data.merged_at || null,
+  };
+}
+
+/**
+ * Fetch review status + PR meta for a specific PR (bypasses branch→PR lookup).
+ * Used when the task already knows its target PR (e.g. re-review tasks).
+ *
+ * @param {string} owner - GitHub org/user
+ * @param {string} repo  - GitHub repo name
+ * @param {string|number} prNumber
+ * @returns {Promise<{rollup, reviewers, state, merged, draft, mergedAt}|null>}
+ */
+async function fetchReviewByPR(owner, repo, prNumber) {
+  if (!owner || !repo || !prNumber) return null;
+  const githubToken = process.env.GITHUB_TOKEN;
+  if (!githubToken) return null;
+
+  const key = `${owner}/${repo}#${prNumber}`;
+  const cached = reviewCache.get(key);
+  const now = Date.now();
+  if (cached && (now - cached.ts) < REVIEW_CACHE_TTL) return cached.data;
+
+  try {
+    // Parallel fetch: reviews + PR meta. Both ETag-cached so 304s are free.
+    const [reviews, meta] = await Promise.all([
+      getReviewStatus(owner, repo, prNumber, githubToken),
+      getPRMeta(owner, repo, prNumber, githubToken),
+    ]);
+    const data = { ...reviews, ...meta };
+    reviewCache.set(key, { data, ts: now });
+    return data;
+  } catch {
+    return cached ? cached.data : null;
+  }
+}
+
+module.exports = { fetch, getCached, clearCache, stats, fetchReviewByPR };

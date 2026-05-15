@@ -10,6 +10,7 @@ const git = require('../../core/git');
 const tmux = require('../../core/tmux');
 const auth = require('../../core/auth');
 const log = require('../../core/log');
+const prStatus = require('../../core/pr-status');
 const {
   HIVE_CONSOLE_SESSION, ghExecEnv, setupPath, isSetupComplete,
   decorateTaskActions, executeTaskAction, capturePaneAnsi,
@@ -65,6 +66,45 @@ function createMessageHandler(deps) {
       case 'fleet:get':
         await sendFleetStatus(ws);
         break;
+
+      case 'pr:refresh': {
+        // Lazy refresh on panel open. Two modes:
+        //   1. Task-driven: client passes {repo, prNumber} from the active task's
+        //      actionContext (correct for re-review tasks whose PR != session branch).
+        //   2. Branch-driven: client passes {session}; we look up by git branch.
+        if (msg.repo && msg.prNumber) {
+          const slash = String(msg.repo).indexOf('/');
+          if (slash > 0) {
+            const owner = msg.repo.slice(0, slash);
+            const repoName = msg.repo.slice(slash + 1);
+            try {
+              const result = await prStatus.fetchReviewByPR(owner, repoName, msg.prNumber);
+              ws.send(JSON.stringify({
+                type: 'pr:review-result',
+                repo: msg.repo,
+                prNumber: String(msg.prNumber),
+                rollup: result ? result.rollup : '',
+                reviewers: result ? result.reviewers : [],
+                state: result ? result.state || '' : '',
+                merged: result ? !!result.merged : false,
+                draft: result ? !!result.draft : false,
+                mergedAt: result ? result.mergedAt || null : null,
+              }));
+            } catch (e) {
+              log.error('pr:refresh by PR failed:', e.message);
+            }
+          }
+        } else if (msg.session != null) {
+          const sessions = await fleet.getFleetStatus(config, router);
+          const target = sessions.find(s => String(s.num) === String(msg.session));
+          if (target && target.branch) {
+            prStatus.fetch(target.branch, config)
+              .then(() => broadcastFleetStatus())
+              .catch(() => {});
+          }
+        }
+        break;
+      }
 
       case 'peek': {
         const found = await resolveSession(msg);
@@ -566,22 +606,33 @@ function createMessageHandler(deps) {
       case 'task:complete': {
         if (!taskQueue) break;
         if (!checkPermission(ws, user, 'cancel')) break;
-        const pendingTask = taskQueue.tasks.get(msg.taskId);
-        let snap = null, snapCols = 0;
-        if (pendingTask && pendingTask.assignedTo) {
-          try {
-            const found = await fleet.findSession(config, router, pendingTask.assignedTo);
-            if (found) {
+        // Complete first so the UI gets the broadcast immediately. The tmux
+        // snapshot capture (capture-pane + display-message) can take 10–30s on
+        // a busy tmux server, which was causing the Done button to "hang" —
+        // users gave up and refreshed before the broadcast fired. Snapshot
+        // here is a "what did the pane look like at close" nicety, so capture
+        // it after completion and update the task asynchronously.
+        const task = taskQueue.completeTask(msg.taskId, msg.result || 'Manually completed', null, 0, { force: true });
+        if (task && task !== 'pending') broadcast({ type: 'task:completed', task });
+        if (task && task !== 'pending' && task.assignedTo) {
+          (async () => {
+            try {
+              const found = await fleet.findSession(config, router, task.assignedTo);
+              if (!found) return;
               const node = router.getNode(found.nodeId);
               const paneTarget = `${found.name}:.${config.sessions.claudePane}`;
-              snap = await node.exec(`tmux capture-pane -e -p -S -500 -t "${paneTarget}" 2>/dev/null`) || null;
+              const snap = await node.exec(`tmux capture-pane -e -p -S -500 -t "${paneTarget}" 2>/dev/null`) || null;
               const colsStr = await node.exec(`tmux display-message -p -t "${paneTarget}" "#{pane_width}" 2>/dev/null`);
-              snapCols = parseInt(colsStr) || 0;
-            }
-          } catch {}
+              const snapCols = parseInt(colsStr) || 0;
+              if (snap) {
+                task.snapshot = snap;
+                task.snapshotCols = snapCols;
+                taskQueue._saveState();
+                broadcast({ type: 'task:updated', task: decorateTaskActions(task, taskQueue._pmManager) });
+              }
+            } catch {}
+          })();
         }
-        const task = taskQueue.completeTask(msg.taskId, msg.result || 'Manually completed', snap, snapCols, { force: true });
-        if (task && task !== 'pending') broadcast({ type: 'task:completed', task });
         break;
       }
 
@@ -764,21 +815,14 @@ function createMessageHandler(deps) {
           const result = await executeTaskAction(actionTask, msg.actionId, pmManager, msg.comment);
           broadcast({ type: 'task:action:result', taskId: msg.taskId, actionId: msg.actionId, ok: true, message: result.message });
           if (result.closeTask || msg.closeTask) {
-            let actionSnap = null, actionSnapCols = 0;
-            if (actionTask.assignedTo) {
-              try {
-                const found = await fleet.findSession(config, router, actionTask.assignedTo);
-                if (found) {
-                  const node = router.getNode(found.nodeId);
-                  const paneTarget = `${found.name}:.${config.sessions.claudePane}`;
-                  actionSnap = await node.exec(`tmux capture-pane -e -p -S -500 -t "${paneTarget}" 2>/dev/null`) || null;
-                  const colsStr = await node.exec(`tmux display-message -p -t "${paneTarget}" "#{pane_width}" 2>/dev/null`);
-                  actionSnapCols = parseInt(colsStr) || 0;
-                }
-              } catch {}
+            // Force-complete: bypass requireHumanClose (the human just acted via
+            // the menu — that IS the human approval) and skip the tmux snapshot
+            // capture (was blocking the response 10–30s on busy tmux servers and
+            // isn't useful for action-triggered close anyway).
+            const completed = taskQueue.completeTask(msg.taskId, result.message, null, 0, { force: true });
+            if (completed && completed !== 'pending') {
+              broadcast({ type: 'task:completed', task: decorateTaskActions(completed, pmManager) });
             }
-            const completed = taskQueue.completeTask(msg.taskId, result.message, actionSnap, actionSnapCols);
-            if (completed) broadcast({ type: 'task:completed', task: decorateTaskActions(completed, pmManager) });
           }
         } catch (err) {
           ws.send(JSON.stringify({ type: 'task:action:result', taskId: msg.taskId, actionId: msg.actionId, ok: false, error: err.message }));

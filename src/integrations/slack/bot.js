@@ -116,7 +116,11 @@ function createSlackBot(taskQueue, config, router, pmManager) {
       log.info(`[slack:rcv] findActiveTaskForThread: no taskQueue or threadTs (threadTs=${threadTs})`);
       return null;
     }
-    const tasks = taskQueue.getTasksList();
+    // Iterate the live Map (not getTasksList(), which returns shallow copies via
+    // `{...rest}` spread). Callers mutate `_lastSeenSlackTs` on the returned task
+    // to advance the slack-poll high-water mark; on a copy that mutation is a
+    // no-op and slack-poll re-relays every auto-relayed message 2.5 min later.
+    const tasks = Array.from(taskQueue.tasks.values());
     // Direct match on task.slackThreadTs (existing behavior)
     const directMatch = tasks.find(t =>
       (t.status === 'queued' || t.status === 'dispatched') &&
@@ -535,10 +539,16 @@ function createSlackBot(taskQueue, config, router, pmManager) {
   // shared by app_mention + message events for the same underlying
   // message, and by Slack's retries).
   //
-  // The dedupe map is bounded by a 60s TTL via lazy GC on every set.
-  // Slack retries happen within seconds, not minutes, so 60s is plenty.
-  const _recentlyHandledMentions = new Map(); // ts → markedAt (ms)
-  const MENTION_DEDUPE_TTL_MS = 60 * 1000;
+  // TTL is 24h because Slack Socket Mode keeps retrying unacked events for
+  // tens of minutes after first delivery (observed: same event.ts redelivered
+  // every 3s for 30+ min after the original handler exceeded the 3s ack
+  // window). On bot restart (zombie probe, redeploy) Slack replays unacked
+  // events, so the map is persisted via taskQueue.slackDedup → .hive-state.json.
+  // Older entries are GC'd lazily on every set.
+  const _recentlyHandledMentions = taskQueue && taskQueue.slackDedup
+    ? taskQueue.slackDedup
+    : new Map();
+  const MENTION_DEDUPE_TTL_MS = 24 * 60 * 60 * 1000;
   function markMentionHandled(ts) {
     if (!ts) return;
     const now = Date.now();
@@ -546,6 +556,10 @@ function createSlackBot(taskQueue, config, router, pmManager) {
     // Lazy GC: drop entries older than the TTL on every set
     for (const [k, v] of _recentlyHandledMentions) {
       if (now - v > MENTION_DEDUPE_TTL_MS) _recentlyHandledMentions.delete(k);
+    }
+    // Persist so retries after a restart still hit dedup.
+    if (taskQueue && typeof taskQueue._debounceSave === 'function') {
+      taskQueue._debounceSave();
     }
   }
   function isMentionAlreadyHandled(ts) {
@@ -606,9 +620,24 @@ function createSlackBot(taskQueue, config, router, pmManager) {
       return handleMessage(event, say);
     }
 
+    // Dedup auto-relay retries. Slack retries the same event.ts when Bolt's
+    // auto-ack fails (observed: "Failed to send a WebSocket message as the
+    // client is not ready" → infinite loop pasting the same Logan/Nukul/etc
+    // message into the assigned session). Use the same persistent dedup map
+    // as @mentions: the key is event.ts which is unique per Slack message
+    // regardless of event type.
+    if (isMentionAlreadyHandled(event.ts)) {
+      log.info(`[slack:rcv] auto-relay ts=${event.ts} deduped (already relayed)`);
+      return;
+    }
+
     // Only relay if this thread is linked to an active dispatched task
     const activeTask = findActiveTaskForThread(event.thread_ts, event.channel);
     if (!activeTask || activeTask.status !== 'dispatched' || !activeTask.assignedTo) return;
+
+    // Mark BEFORE relay.tell to prevent concurrent retries from racing past
+    // the dedup check while the first invocation is still pasting.
+    markMentionHandled(event.ts);
 
     // Track high-water mark for thread polling dedup (in-memory + persisted on task)
     const threadKey = `${event.channel}:${event.thread_ts}`;

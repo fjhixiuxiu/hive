@@ -73,6 +73,24 @@ if (require.main === module) {
   const config = require('./hive.config');
   const templatePath = path.join(__dirname, 'worker.yml');
 
+  // Honor spawnedAgents from .hive-state.json (slots with custom repoDirs like
+  // iOS18, android20, hive19, nectar33, etc.). The running server patches
+  // config.sessions.repoDir at boot (src/index.js); this CLI needs the same.
+  const statePath = path.join(__dirname, '.hive-state.json');
+  let spawnedAgents = {};
+  try {
+    const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+    if (state.spawnedAgents && typeof state.spawnedAgents === 'object') {
+      spawnedAgents = state.spawnedAgents;
+    }
+  } catch { /* no state yet */ }
+  const originalRepoDir = config.sessions.repoDir;
+  config.sessions.repoDir = (n) => {
+    const spawned = spawnedAgents[String(n)] || spawnedAgents[n];
+    if (spawned && spawned.repoDir) return spawned.repoDir;
+    return originalRepoDir(n);
+  };
+
   // Parse flags and session numbers
   const args = process.argv.slice(2);
   const force = args.includes('--force');
