@@ -2,6 +2,8 @@
 Description=Hive Fleet Manager
 After=network-online.target
 Wants=network-online.target
+StartLimitIntervalSec=600
+StartLimitBurst=5
 
 [Service]
 Type=oneshot
@@ -11,6 +13,13 @@ ExecStart=/bin/bash /home/ubuntu/hive/cloud/scripts/boot.sh
 StandardOutput=journal
 StandardError=journal
 TimeoutStartSec=300
+# When a child process (e.g. a claude session) is OOM-killed, do NOT mark
+# the whole unit as failed — keep the hive web server running.
+OOMPolicy=continue
+# Backstop: if the unit truly fails (e.g. boot.sh crashes), restart it
+# instead of leaving the dashboard down indefinitely.
+Restart=on-failure
+RestartSec=15
 
 [Install]
 WantedBy=multi-user.target
