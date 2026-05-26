@@ -4,6 +4,8 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import WebSocket from 'ws';
+import fs from 'fs';
+import path from 'path';
 
 // ── CLI args ──────────────────────────────────────────
 function getArg(name) {
@@ -71,9 +73,46 @@ async function sendRequest(type, payload = {}, timeoutMs = 10000) {
 connectWs();
 
 // ── MCP Server ────────────────────────────────────────
+const SERVER_INSTRUCTIONS = `Plans (always use this flow, never just dump a plan in chat):
+
+When the user asks for a plan, proposal, design, or "think through" anything
+non-trivial, do NOT output the plan as a chat message. Instead:
+
+1. Write a self-contained HTML document to a file using your Write tool
+   (e.g. /tmp/plan-<slug>.html). Each top-level section MUST be wrapped in
+   <section data-id="kebab-case-id"> so comments can anchor. Include an empty
+   embedded comments block near the bottom:
+   <script type="application/json" id="hive-comments">[]</script>
+2. Call hive_publish_plan({ path: "/tmp/plan-<slug>.html" }) — hive reads the
+   file, stores the versioned artifact, updates session context, and notifies
+   the user's dashboard.
+3. Reply in chat with one line only: "Plan published — <title>." The dashboard
+   will surface the URL.
+
+To publish a revised version of an existing plan, overwrite the same file (or
+write a new one) and call hive_publish_plan again with its path; hive
+auto-bumps the version for the current session's plan.
+
+Never paste raw HTML into chat. Never invent a planId — it is returned to you
+by hive_publish_plan.
+
+When you receive a relay message that begins with "N new comments on your plan":
+- For each comment, call hive_reply_to_comment({ commentId, text, patch? }).
+  Pass a patch ONLY when your reply rewrites a specific section's content
+  (the patch auto-resolves the comment). For acknowledgements or follow-up
+  questions that don't change the plan, just pass text.
+- For comments where you agree but no change is needed, call
+  hive_resolve_comment({ commentId, reason? }).
+- For sweeping changes that touch many sections, call hive_publish_plan again
+  with a new HTML file — that bumps the plan version.
+Do NOT reply to comments by typing in chat — the user reads them in the
+dashboard. Use the tools.`;
+
 const server = new McpServer({
   name: 'hive',
   version: '1.0.0',
+}, {
+  instructions: SERVER_INSTRUCTIONS,
 });
 
 // Tool: hive_get_task
@@ -323,6 +362,87 @@ if (!enabledTools || enabledTools.includes('hive_create_task')) {
           return { content: [{ type: 'text', text: `Task created: #${resp.taskId}` }] };
         }
         return { content: [{ type: 'text', text: resp.error || 'Failed to create task' }], isError: true };
+      } catch (err) {
+        return { content: [{ type: 'text', text: `Error: ${err.message}` }], isError: true };
+      }
+    }
+  );
+}
+
+// Tool: hive_publish_plan
+if (!enabledTools || enabledTools.includes('hive_publish_plan')) {
+  server.tool(
+    'hive_publish_plan',
+    'Publish a plan from a file you already wrote. Use this whenever the user asks for a plan, proposal, design doc, or wants you to "think through" something non-trivial. The file must be a self-contained HTML document where each top-level section is wrapped in <section data-id="kebab-case-id"> (so comments can anchor) and includes an empty embedded comments block: <script type="application/json" id="hive-comments">[]</script>. Calling this for the same session again republishes as a new version (auto-bumped) — overwrite the same file or pass a new path. Returns { planId, version, url }. Side effects: writes planRef into session context, broadcasts plan:published to the dashboard.',
+    {
+      path: z.string().describe('Absolute or ~-prefixed path to the HTML file you wrote (e.g. "/tmp/plan-redis-cache.html"). The file must already exist; write it with your Write tool before calling this.'),
+      title: z.string().optional().describe('Human-readable plan title shown in the dashboard. Omit when republishing to keep the existing title.'),
+    },
+    async ({ path: planPath, title }) => {
+      try {
+        const resolved = planPath.replace(/^~/, process.env.HOME || '');
+        const abs = path.isAbsolute(resolved) ? resolved : path.resolve(resolved);
+        let html;
+        try {
+          html = fs.readFileSync(abs, 'utf8');
+        } catch (err) {
+          return { content: [{ type: 'text', text: `Could not read plan file at ${abs}: ${err.message}. Write the file first with your Write tool, then call this again.` }], isError: true };
+        }
+        if (!html.trim()) {
+          return { content: [{ type: 'text', text: `Plan file ${abs} is empty.` }], isError: true };
+        }
+        const resp = await sendRequest('mcp:publish_plan', { html, title });
+        if (!resp.ok) {
+          return { content: [{ type: 'text', text: resp.error || 'Failed to publish plan' }], isError: true };
+        }
+        return { content: [{ type: 'text', text: `Plan published — v${resp.version} at ${resp.url} (planId: ${resp.planId})` }] };
+      } catch (err) {
+        return { content: [{ type: 'text', text: `Error: ${err.message}` }], isError: true };
+      }
+    }
+  );
+}
+
+// Tool: hive_reply_to_comment
+if (!enabledTools || enabledTools.includes('hive_reply_to_comment')) {
+  server.tool(
+    'hive_reply_to_comment',
+    'Reply to a single open comment on your current plan. Use when you receive a relay message starting with "N new comments on your plan". Pass an optional patch to rewrite a section inline (the patch auto-resolves the comment, no version bump). For acknowledgements or follow-up questions, just pass text. Resolves to the session\'s currently pinned plan.',
+    {
+      commentId: z.string().describe('The comment id from the relay message (looks like "ca1b2c3")'),
+      text: z.string().describe('Your reply text — markdown supported'),
+      patch: z.object({
+        sectionId: z.string().describe('data-id of the section to replace'),
+        html: z.string().describe('New inner HTML for that section (no <section> wrapper)'),
+      }).optional().describe('Inline section patch. Use ONLY when this reply rewrites the section content. Auto-resolves the comment.'),
+    },
+    async ({ commentId, text, patch }) => {
+      try {
+        const resp = await sendRequest('mcp:reply_to_comment', { commentId, text, patch });
+        if (!resp.ok) return { content: [{ type: 'text', text: resp.error || 'Failed to reply' }], isError: true };
+        const status = resp.comment?.status || 'open';
+        return { content: [{ type: 'text', text: `Replied to ${commentId} (${status})` }] };
+      } catch (err) {
+        return { content: [{ type: 'text', text: `Error: ${err.message}` }], isError: true };
+      }
+    }
+  );
+}
+
+// Tool: hive_resolve_comment
+if (!enabledTools || enabledTools.includes('hive_resolve_comment')) {
+  server.tool(
+    'hive_resolve_comment',
+    'Mark a comment resolved without a reply. Use when you agree with the comment but no plan change is needed (e.g. "good catch, noted"). Optional reason becomes a system message in the thread.',
+    {
+      commentId: z.string().describe('The comment id (looks like "ca1b2c3")'),
+      reason: z.string().optional().describe('Optional short reason recorded in the thread'),
+    },
+    async ({ commentId, reason }) => {
+      try {
+        const resp = await sendRequest('mcp:resolve_comment', { commentId, reason });
+        if (!resp.ok) return { content: [{ type: 'text', text: resp.error || 'Failed' }], isError: true };
+        return { content: [{ type: 'text', text: `Resolved ${commentId}` }] };
       } catch (err) {
         return { content: [{ type: 'text', text: `Error: ${err.message}` }], isError: true };
       }

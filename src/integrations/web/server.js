@@ -13,6 +13,7 @@ const tmux = require('../../core/tmux');
 const RemoteNode = require('../../core/remote-node');
 const auth = require('../../core/auth');
 const prStatus = require('../../core/pr-status');
+const plansStore = require('../../core/plans-store');
 const log = require('../../core/log');
 const {
   HIVE_CONSOLE_SESSION, HIVE_CONSOLE_DIR, ghExecEnv, setupPath,
@@ -147,6 +148,187 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
   // -- Plan file reading (for session plan pane) ----------------------------
   // WS handler reads plan file from the session's node; exposed as a message type
   // so the dashboard can poll it. No REST needed — file is on the tmux host.
+
+  // -- Plans feature (interactive HTML plan review) -------------------------
+  app.get('/api/plans', (req, res) => {
+    const filter = {};
+    if (req.query.session != null) filter.sessionNum = Number(req.query.session);
+    if (req.query.status) filter.status = req.query.status;
+    res.json({ plans: plansStore.listPlans(filter) });
+  });
+
+  app.get('/api/plans/:planId', (req, res) => {
+    const plan = plansStore.getPlan(req.params.planId);
+    if (!plan) return res.status(404).json({ error: 'Plan not found' });
+    const html = plansStore.getPlanHtml(req.params.planId);
+    res.json({
+      ...plan.meta,
+      currentVersion: plan.currentVersion,
+      openCommentCount: plansStore.countOpenComments(html),
+    });
+  });
+
+  app.get('/plans/:planId/v:version([0-9]+)', (req, res) => {
+    const html = plansStore.getPlanHtml(req.params.planId, Number(req.params.version));
+    if (!html) return res.status(404).send('Plan version not found');
+    res.set('Content-Type', 'text/html');
+    res.send(html);
+  });
+
+  // Serve the raw plan HTML (used inside the editor iframe).
+  app.get('/plans/:planId/raw', (req, res) => {
+    const html = plansStore.getPlanHtml(req.params.planId);
+    if (!html) return res.status(404).send('Plan not found');
+    res.set('Content-Type', 'text/html');
+    res.send(html);
+  });
+
+  // Editor wrapper: iframe + comment sidebar.
+  app.get('/plans/:planId', (req, res) => {
+    const plan = plansStore.getPlan(req.params.planId);
+    if (!plan) return res.status(404).send('Plan not found');
+    res.sendFile(path.join(__dirname, 'public', 'plan-editor.html'));
+  });
+
+  // Comments REST API
+  app.use('/api/plans', express.json());
+
+  app.get('/api/plans/:planId/comments', (req, res) => {
+    if (!plansStore.getPlan(req.params.planId)) return res.status(404).json({ error: 'Plan not found' });
+    res.json({ comments: plansStore.getComments(req.params.planId) });
+  });
+
+  app.post('/api/plans/:planId/comments', (req, res) => {
+    if (!plansStore.getPlan(req.params.planId)) return res.status(404).json({ error: 'Plan not found' });
+    const { sectionId, text } = req.body || {};
+    if (!sectionId || !text) return res.status(400).json({ error: 'sectionId and text are required' });
+    try {
+      const comment = plansStore.addComment(req.params.planId, { sectionId, text, status: 'draft' });
+      const html = plansStore.getPlanHtml(req.params.planId);
+      const openCount = plansStore.countOpenComments(html);
+      broadcastPlanCommentChange(req.params.planId, openCount);
+      res.json({ comment });
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.patch('/api/plans/:planId/comments/:commentId', (req, res) => {
+    if (!plansStore.getPlan(req.params.planId)) return res.status(404).json({ error: 'Plan not found' });
+    const { status } = req.body || {};
+    if (!['draft', 'open', 'resolved', 'moved'].includes(status)) {
+      return res.status(400).json({ error: 'status must be draft|open|resolved|moved' });
+    }
+    const updated = plansStore.updateCommentStatus(req.params.planId, req.params.commentId, status);
+    if (!updated) return res.status(404).json({ error: 'Comment not found' });
+    const html = plansStore.getPlanHtml(req.params.planId);
+    const openCount = plansStore.countOpenComments(html);
+    broadcastPlanCommentChange(req.params.planId, openCount);
+    res.json({ comment: updated });
+  });
+
+  // Send all draft comments on a plan to the originating session via tmux relay.
+  // Flips each comment's status from draft → open after the message lands.
+  app.post('/api/plans/:planId/send', async (req, res) => {
+    const plan = plansStore.getPlan(req.params.planId);
+    if (!plan) return res.status(404).json({ error: 'Plan not found' });
+    const sessionNum = plan.meta.sessionId;
+    if (sessionNum == null) {
+      return res.status(400).json({ error: 'Plan has no originating session — cannot send' });
+    }
+
+    const drafts = plansStore.getComments(req.params.planId).filter(c => c.status === 'draft');
+    if (!drafts.length) return res.json({ sent: 0, message: 'No draft comments to send' });
+
+    const found = await resolveSession({ session: sessionNum });
+    if (!found) return res.status(503).json({ error: `Session ${sessionNum} not found in fleet` });
+    const node = router.getNode(found.nodeId);
+    if (!node) return res.status(503).json({ error: `Node ${found.nodeId} unavailable` });
+
+    const title = plan.meta.title || 'plan';
+    const lines = drafts.map(c => {
+      const text = (c.thread?.[0]?.text || '').trim();
+      return `[${c.id} §${c.sectionId}] ${text}`;
+    });
+    const message = [
+      `${drafts.length} new comment${drafts.length === 1 ? '' : 's'} on your plan "${title}" (planId: ${req.params.planId} v${plan.currentVersion}).`,
+      `Reply to each using hive_reply_to_comment(commentId, text, patch?). For changes that resolve a comment, include the patch. For brief acknowledgements, just reply with text.`,
+      '',
+      ...lines,
+    ].join('\n');
+
+    try {
+      const result = await relay.tell(config, node, found.name, message, {
+        vimMode: taskQueue ? taskQueue.vimMode : false,
+      });
+      if (!result.success) {
+        return res.status(503).json({ error: result.error || 'Relay failed' });
+      }
+    } catch (err) {
+      log.error('plan send relay error:', err.message);
+      return res.status(503).json({ error: err.message });
+    }
+
+    // Flip all draft comments → open now that the message landed
+    for (const c of drafts) {
+      plansStore.updateCommentStatus(req.params.planId, c.id, 'open');
+    }
+    const openCount = plansStore.countOpenComments(plansStore.getPlanHtml(req.params.planId));
+    broadcastPlanCommentChange(req.params.planId, openCount);
+    res.json({ sent: drafts.length, session: sessionNum });
+  });
+
+  // When a comment changes, find the session whose context.planRef matches
+  // and update its openCommentCount so the dashboard widget stays accurate.
+  function broadcastPlanCommentChange(planId, openCount) {
+    if (!taskQueue) return;
+    const contexts = taskQueue.getAllSessionContexts();
+    for (const [sessionNum, ctx] of Object.entries(contexts)) {
+      if (ctx && ctx.planRef && ctx.planRef.planId === planId) {
+        const num = Number(sessionNum);
+        const updated = taskQueue.setSessionContext(num, {
+          planRef: { ...ctx.planRef, openCommentCount: openCount },
+        });
+        broadcast({ type: 'context:updated', session: num, context: updated });
+      }
+    }
+    broadcast({ type: 'plan:comments-changed', planId, openCount });
+  }
+
+  // Clear planRef from every session pointing to this plan. Used on archive.
+  function clearPlanRefFromSessions(planId) {
+    if (!taskQueue) return;
+    const contexts = taskQueue.getAllSessionContexts();
+    for (const [sessionNum, ctx] of Object.entries(contexts)) {
+      if (ctx && ctx.planRef && ctx.planRef.planId === planId) {
+        const num = Number(sessionNum);
+        const updated = taskQueue.setSessionContext(num, { planRef: null });
+        broadcast({ type: 'context:updated', session: num, context: updated });
+      }
+    }
+  }
+
+  app.post('/api/plans/:planId/archive', (req, res) => {
+    if (!plansStore.getPlan(req.params.planId)) return res.status(404).json({ error: 'Plan not found' });
+    const ok = plansStore.archivePlan(req.params.planId);
+    if (!ok) return res.status(500).json({ error: 'Archive failed' });
+    clearPlanRefFromSessions(req.params.planId);
+    broadcast({ type: 'plan:archived', planId: req.params.planId });
+    res.json({ ok: true, planId: req.params.planId, status: 'archived' });
+  });
+
+  app.post('/api/plans/:planId/unarchive', (req, res) => {
+    if (!plansStore.getPlan(req.params.planId)) return res.status(404).json({ error: 'Plan not found' });
+    const ok = plansStore.unarchivePlan(req.params.planId);
+    if (!ok) return res.status(500).json({ error: 'Unarchive failed' });
+    // Note: we do NOT auto-restore planRef to sessions. User must re-pin manually.
+    broadcast({ type: 'plan:unarchived', planId: req.params.planId });
+    res.json({ ok: true, planId: req.params.planId, status: 'open' });
+  });
+
+  app.get('/plans', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'plans-index.html'));
+  });
 
   const wss = new WebSocketServer({ noServer: true });
 

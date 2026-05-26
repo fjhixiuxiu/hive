@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Plans · hive</title>
+<style>
+  :root {
+    --bg: #0d1117; --bg-soft: #161b22; --bg-deep: #010409;
+    --border: #30363d; --border-soft: #21262d;
+    --text: #c9d1d9; --text-strong: #f0f6fc; --text-dim: #8b949e;
+    --accent: #58a6ff; --warn: #d29922; --ok: #3fb950;
+  }
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    max-width: 960px; margin: 0 auto; padding: 40px 24px 80px;
+  }
+  h1 { font-size: 26px; color: var(--text-strong); margin: 0 0 18px; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  .filter-tabs {
+    display: flex; gap: 0;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 0;
+  }
+  .filter-tabs .ftab {
+    background: transparent; border: 0;
+    padding: 10px 16px;
+    color: var(--text-dim);
+    border-bottom: 2px solid transparent;
+    cursor: pointer; font-size: 14px;
+    font-family: inherit;
+  }
+  .filter-tabs .ftab:hover { color: var(--text); }
+  .filter-tabs .ftab.active { color: var(--text-strong); border-bottom-color: var(--accent); }
+  .filter-tabs .ftab .count { color: var(--text-dim); margin-left: 4px; font-size: 12px; }
+
+  .row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .row:hover { background: var(--bg-soft); }
+  .row .title { color: var(--text-strong); font-weight: 500; }
+  .row .meta { color: var(--text-dim); font-size: 12px; margin-top: 2px; }
+  .row .actions { display: flex; align-items: center; gap: 12px; }
+
+  .pill {
+    display: inline-block;
+    padding: 2px 10px; border-radius: 12px;
+    font-size: 11px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.4px;
+  }
+  .pill.open { background: #d2932222; color: var(--warn); }
+  .pill.resolved { background: #23863622; color: var(--ok); }
+  .pill.archived { background: #8b949e22; color: var(--text-dim); }
+
+  .empty { color: var(--text-dim); padding: 60px 14px; text-align: center; }
+
+  .restore-btn {
+    background: transparent; color: var(--accent);
+    border: 1px solid var(--border); border-radius: 4px;
+    padding: 4px 10px; font-size: 11px; font-weight: 600;
+    cursor: pointer;
+  }
+  .restore-btn:hover { border-color: var(--accent); }
+</style>
+</head>
+<body>
+<h1>Plans</h1>
+
+<div class="filter-tabs" id="filter-tabs">
+  <button class="ftab active" data-status="open">Open <span class="count" id="count-open"></span></button>
+  <button class="ftab" data-status="archived">Archived <span class="count" id="count-archived"></span></button>
+  <button class="ftab" data-status="all">All <span class="count" id="count-all"></span></button>
+</div>
+
+<div id="list" class="empty">Loading…</div>
+
+<script>
+let allPlans = [];
+let activeFilter = 'open';
+
+async function load() {
+  const r = await fetch('/api/plans?status=all');
+  if (!r.ok) return;
+  const data = await r.json();
+  allPlans = data.plans || [];
+  updateCounts();
+  render();
+}
+
+function updateCounts() {
+  const open = allPlans.filter(p => p.status === 'open').length;
+  const archived = allPlans.filter(p => p.status === 'archived').length;
+  document.getElementById('count-open').textContent = `(${open})`;
+  document.getElementById('count-archived').textContent = `(${archived})`;
+  document.getElementById('count-all').textContent = `(${allPlans.length})`;
+}
+
+function esc(s) {
+  return String(s || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function render() {
+  const filtered = activeFilter === 'all' ? allPlans : allPlans.filter(p => p.status === activeFilter);
+  const el = document.getElementById('list');
+  if (!filtered.length) {
+    el.className = 'empty';
+    el.innerHTML = activeFilter === 'archived' ? 'No archived plans.' : 'No plans yet.';
+    return;
+  }
+  el.className = '';
+  el.innerHTML = filtered.map(p => {
+    const updated = p.updatedAt ? new Date(p.updatedAt).toLocaleString() : '';
+    const session = p.sessionId != null ? `session ${p.sessionId} · ` : '';
+    const v = 'v' + (p.currentVersion || 1);
+    let pillCls = 'archived', pillTxt = p.status;
+    if (p.status === 'open') {
+      pillCls = p.openCommentCount > 0 ? 'open' : 'resolved';
+      pillTxt = p.openCommentCount > 0 ? `${p.openCommentCount} open` : 'no open comments';
+    }
+    const restoreBtn = p.status === 'archived'
+      ? `<button class="restore-btn" data-restore="${esc(p.id)}">Restore</button>`
+      : '';
+    return `<div class="row">
+      <div>
+        <div class="title"><a href="/plans/${esc(p.id)}">${esc(p.title || 'Untitled')}</a></div>
+        <div class="meta">${session}${v} · updated ${esc(updated)}</div>
+      </div>
+      <div class="actions">
+        <span class="pill ${pillCls}">${esc(pillTxt)}</span>
+        ${restoreBtn}
+      </div>
+    </div>`;
+  }).join('');
+
+  // Wire restore buttons
+  el.querySelectorAll('[data-restore]').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      const id = btn.dataset.restore;
+      btn.disabled = true; btn.textContent = '…';
+      const r = await fetch(`/api/plans/${id}/unarchive`, { method: 'POST' });
+      if (r.ok) {
+        await load();
+      } else {
+        alert('Restore failed: ' + (await r.text()));
+        btn.disabled = false;
+        btn.textContent = 'Restore';
+      }
+    });
+  });
+}
+
+// Filter tab clicks
+document.querySelectorAll('#filter-tabs .ftab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    activeFilter = tab.dataset.status;
+    document.querySelectorAll('#filter-tabs .ftab').forEach(t => t.classList.toggle('active', t === tab));
+    render();
+  });
+});
+
+load();
+</script>
+</body>
+</html>

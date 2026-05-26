@@ -11,6 +11,7 @@ const tmux = require('../../core/tmux');
 const auth = require('../../core/auth');
 const log = require('../../core/log');
 const prStatus = require('../../core/pr-status');
+const plansStore = require('../../core/plans-store');
 const {
   HIVE_CONSOLE_SESSION, ghExecEnv, setupPath, isSetupComplete,
   decorateTaskActions, executeTaskAction, capturePaneAnsi,
@@ -2116,6 +2117,95 @@ function createMessageHandler(deps) {
         const updated = taskQueue.setSessionContext(sessionNum, updates);
         broadcast({ type: 'context:updated', session: sessionNum, context: updated });
         ws.send(JSON.stringify({ _reqId: msg._reqId, ok: true, context: updated }));
+        break;
+      }
+
+      case 'mcp:reply_to_comment':
+      case 'mcp:resolve_comment': {
+        if (!taskQueue) { ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'No task queue' })); break; }
+        const sessionNum = resolveSessionNum(msg.session);
+        if (sessionNum == null) {
+          ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: `Cannot resolve session "${msg.session}" to a fleet number` }));
+          break;
+        }
+        const ctx = taskQueue.getSessionContext(sessionNum);
+        const planId = ctx?.planRef?.planId;
+        if (!planId) {
+          ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'This session has no active plan. Publish or pin a plan via hive_publish_plan first.' }));
+          break;
+        }
+        if (!msg.commentId || typeof msg.commentId !== 'string') {
+          ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'commentId is required' }));
+          break;
+        }
+        try {
+          let updated;
+          let hasPatch = false;
+          if (msg.type === 'mcp:reply_to_comment') {
+            updated = plansStore.replyToComment(planId, msg.commentId, { text: msg.text, patch: msg.patch });
+            hasPatch = !!(msg.patch && msg.patch.sectionId && typeof msg.patch.html === 'string');
+          } else {
+            updated = plansStore.resolveComment(planId, msg.commentId, msg.reason);
+          }
+          const html = plansStore.getPlanHtml(planId);
+          const openCount = plansStore.countOpenComments(html);
+          // Keep session-context pill accurate
+          const newCtx = taskQueue.setSessionContext(sessionNum, {
+            planRef: { ...ctx.planRef, openCommentCount: openCount },
+          });
+          broadcast({ type: 'context:updated', session: sessionNum, context: newCtx });
+          broadcast({ type: 'plan:comments-changed', planId, openCount, hasPatch });
+          ws.send(JSON.stringify({ _reqId: msg._reqId, ok: true, comment: updated }));
+        } catch (err) {
+          ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: err.message }));
+        }
+        break;
+      }
+
+      case 'mcp:publish_plan': {
+        if (!taskQueue) { ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'No task queue' })); break; }
+        const html = msg.html;
+        if (!html || typeof html !== 'string') {
+          ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'html is required' }));
+          break;
+        }
+        const sessionNum = resolveSessionNum(msg.session);
+        if (sessionNum == null) {
+          ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: `Cannot resolve session "${msg.session}" to a fleet number` }));
+          break;
+        }
+        try {
+          // If session already has a planRef pointer, bump that plan's version.
+          // Otherwise create a new plan. planRef is distinct from the legacy
+          // `plan` field (string filepath) to avoid clobbering existing search /
+          // sidebar code that treats `plan` as a string.
+          const existing = taskQueue.getSessionContext(sessionNum);
+          const existingPlanId = existing?.planRef?.planId || null;
+          const result = plansStore.publishPlan({
+            planId: existingPlanId,
+            sessionNum,
+            html,
+            title: msg.title,
+          });
+          const planRef = {
+            planId: result.planId,
+            version: result.version,
+            openCommentCount: result.openCommentCount,
+            title: result.title,
+          };
+          const updated = taskQueue.setSessionContext(sessionNum, { planRef });
+          broadcast({ type: 'context:updated', session: sessionNum, context: updated });
+          broadcast({ type: 'plan:published', session: sessionNum, planRef });
+          ws.send(JSON.stringify({
+            _reqId: msg._reqId,
+            ok: true,
+            planId: result.planId,
+            version: result.version,
+            url: `/plans/${result.planId}`,
+          }));
+        } catch (err) {
+          ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: err.message }));
+        }
         break;
       }
 

@@ -735,7 +735,8 @@
   // ── URL routing ─────────────────────────────────
   const TAB_TO_HASH = {
     'fleet-panel': '/fleet', 'tasks-panel': '/tasks', 'feed-panel': '/feed',
-    'voice-panel': '/voice', 'ideas-panel': '/ideas', 'more-panel': '/admin', 'session-panel': '/session',
+    'voice-panel': '/voice', 'ideas-panel': '/ideas', 'plans-panel': '/plans',
+    'more-panel': '/admin', 'session-panel': '/session',
   };
   const HASH_TO_TAB = {};
   for (const [tab, hash] of Object.entries(TAB_TO_HASH)) HASH_TO_TAB[hash] = tab;
@@ -847,6 +848,7 @@
     if (tab === 'session-panel' && planSidebarOpen) startPlanPolling();
     if (tab === 'fleet-panel') renderGrid();
     if (tab === 'ideas-panel' && ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'idea:list' }));
+    if (tab === 'plans-panel') loadPlansList();
     if (tab === 'voice-panel') initVoicePanel();
     else if (mtgDetailOpen) {
       // Close meeting detail when leaving voice panel
@@ -1486,6 +1488,29 @@
         break;
       case 'plan:file':
         renderPlanContent(msg);
+        break;
+      case 'plan:published':
+      case 'plan:archived':
+      case 'plan:unarchived':
+      case 'plan:comments-changed':
+        // Refresh the global Plans list if it's currently open or cached
+        if (activeTab === 'plans-panel' || plansAllCached.length) {
+          loadPlansList();
+        }
+        // If the open iframe is viewing this plan, push a refresh signal in
+        // so the comments sidebar reloads without the user clicking anything.
+        if (msg.type === 'plan:comments-changed' && msg.planId) {
+          const frame = document.getElementById('plans-panel-frame');
+          if (frame && frame.contentWindow && frame.src && frame.src.includes('/plans/' + msg.planId)) {
+            try {
+              frame.contentWindow.postMessage({
+                type: 'hive:plan-comments-changed',
+                planId: msg.planId,
+                hasPatch: !!msg.hasPatch,
+              }, '*');
+            } catch { /* iframe not ready */ }
+          }
+        }
         break;
       case 'user:permissions':
         myPermissions = msg.permissions || [];
@@ -3742,6 +3767,17 @@
 
   function buildContextLinks(ctx) {
     const links = [];
+    if (ctx.planRef && ctx.planRef.planId) {
+      const ref = ctx.planRef;
+      const title = ref.title || 'Plan';
+      const v = ref.version ? ` v${ref.version}` : '';
+      const open = ref.openCommentCount > 0
+        ? ` <span style="background:#d2932222;color:#d29922;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:600;">${ref.openCommentCount} open</span>`
+        : '';
+      // Click switches to the in-app Plan tab. Shift/Ctrl-click still opens
+      // the standalone /plans/:id URL in a new window for share-link behavior.
+      links.push(`<a href="/plans/${esc(ref.planId)}" data-plan-link="${esc(ref.planId)}">${esc(title)}${esc(v)}</a>${open}`);
+    }
     if (ctx.pr) {
       const prMatch = ctx.pr.match(/\/pull\/(\d+)/);
       const label = prMatch ? `PR #${prMatch[1]}` : 'PR';
@@ -3764,6 +3800,133 @@
     if (!planPath || !ws || ws.readyState !== 1) return;
     ws.send(JSON.stringify({ type: 'plan:read', session: num, path: planPath }));
   }
+
+  // ── Plans panel (global Plans nav view) ─────────────────
+  // State for the global Plans page (list left, editor iframe right)
+  let plansAllCached = [];
+  let plansActiveFilter = 'open';
+  let plansSelectedId = null;
+
+  async function loadPlansList() {
+    try {
+      const r = await fetch('/api/plans?status=all');
+      if (!r.ok) return;
+      const data = await r.json();
+      plansAllCached = data.plans || [];
+      renderPlansPanel();
+    } catch { /* ignore */ }
+  }
+
+  function renderPlansPanel() {
+    const listEl = document.getElementById('plans-panel-list');
+    if (!listEl) return;
+    const filtered = plansActiveFilter === 'all'
+      ? plansAllCached
+      : plansAllCached.filter(p => p.status === plansActiveFilter);
+
+    // Counts
+    const counts = { open: 0, archived: 0, all: plansAllCached.length };
+    for (const p of plansAllCached) {
+      if (p.status === 'open') counts.open++;
+      else if (p.status === 'archived') counts.archived++;
+    }
+    document.getElementById('plans-count-open').textContent = `(${counts.open})`;
+    document.getElementById('plans-count-archived').textContent = `(${counts.archived})`;
+    document.getElementById('plans-count-all').textContent = `(${counts.all})`;
+    document.querySelectorAll('#plans-panel-filters .ftab').forEach(t => {
+      t.classList.toggle('active', t.dataset.status === plansActiveFilter);
+    });
+
+    if (!filtered.length) {
+      listEl.innerHTML = `<div class="plans-empty">${plansActiveFilter === 'archived' ? 'No archived plans.' : 'No plans yet.<br>Ask Claude to plan something — it will use <code>hive_publish_plan</code>.'}</div>`;
+      return;
+    }
+    listEl.innerHTML = filtered.map(p => {
+      const updated = p.updatedAt ? timeAgo(Date.parse(p.updatedAt)) : '';
+      const session = p.sessionId != null ? `S${p.sessionId} · ` : '';
+      const v = 'v' + (p.currentVersion || 1);
+      let pillCls = 'archived', pillTxt = p.status || '';
+      if (p.status === 'open') {
+        pillCls = p.openCommentCount > 0 ? 'open' : 'resolved';
+        pillTxt = p.openCommentCount > 0 ? `${p.openCommentCount} open` : 'no open';
+      }
+      const selected = plansSelectedId === p.id ? ' selected' : '';
+      return `<div class="plan-row${selected}" data-plan-id="${esc(p.id)}">
+        <div class="plan-row-title">${esc(p.title || 'Untitled')}</div>
+        <div class="plan-row-meta">${session}${v} · ${esc(updated)}</div>
+        <div class="plan-row-pill"><span class="pill ${pillCls}">${esc(pillTxt)}</span></div>
+      </div>`;
+    }).join('');
+
+    listEl.querySelectorAll('.plan-row').forEach(row => {
+      row.addEventListener('click', () => selectPlan(row.dataset.planId));
+    });
+  }
+
+  function selectPlan(planId) {
+    plansSelectedId = planId;
+    document.querySelectorAll('#plans-panel-list .plan-row').forEach(r => {
+      r.classList.toggle('selected', r.dataset.planId === planId);
+    });
+    const frame = document.getElementById('plans-panel-frame');
+    const empty = document.getElementById('plans-panel-empty');
+    if (planId) {
+      frame.src = `/plans/${planId}`;
+      frame.style.display = '';
+      empty.style.display = 'none';
+    } else {
+      frame.src = '';
+      frame.style.display = 'none';
+      empty.style.display = '';
+    }
+  }
+
+  // Wire filter tabs once on init (deferred to allow DOM to exist)
+  function initPlansPanel() {
+    document.querySelectorAll('#plans-panel-filters .ftab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        plansActiveFilter = tab.dataset.status;
+        renderPlansPanel();
+      });
+    });
+  }
+  initPlansPanel();
+
+  // Delegated click handler for "Plan: <title>" links in the context sidebar.
+  // Switches to the global Plans panel and selects the linked plan.
+  // Shift/Ctrl-click bypasses (lets the default link behavior open a new tab).
+  document.addEventListener('click', (e) => {
+    const link = e.target.closest('[data-plan-link]');
+    if (!link) return;
+    if (e.shiftKey || e.metaKey || e.ctrlKey) return;
+    e.preventDefault();
+    const planId = link.dataset.planLink;
+    switchTab('plans-panel');
+    loadPlansList().then(() => selectPlan(planId));
+  });
+
+  // postMessage listener for the plan editor iframe → "Session N ↗" pill.
+  // The editor doesn't know about the parent's task list; it just emits
+  // { type: 'hive:open-session-drawer', sessionNum }. We map session → active
+  // task → openTaskDetail (the same slide-in drawer used from the Tasks board).
+  window.addEventListener('message', (e) => {
+    if (!e.data || e.data.type !== 'hive:open-session-drawer') return;
+    const sessionNum = e.data.sessionNum;
+    if (sessionNum == null) return;
+    // Find an active task on this session. Prefer dispatched > queued > any.
+    const dispatched = tasks.find(t => String(t.assignedTo) === String(sessionNum) && t.status === 'dispatched');
+    const queued = tasks.find(t => String(t.assignedTo) === String(sessionNum) && t.status === 'queued');
+    const anyTask = tasks.find(t => String(t.assignedTo) === String(sessionNum));
+    const task = dispatched || queued || anyTask;
+    if (task) {
+      openTaskDetail(task.id);
+      return;
+    }
+    // No active task — fall back to opening the session in the board view.
+    showToast('No active task', `Session ${sessionNum} has no active task — opening session view`, 'info');
+    const sess = fleetData.find(s => String(s.num) === String(sessionNum));
+    if (sess) openSession(sess);
+  });
 
   function renderPlanContent(msg) {
     if (!msg.path) return;

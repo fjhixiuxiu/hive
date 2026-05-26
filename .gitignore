@@ -3,9 +3,11 @@ node_modules/
 .DS_Store
 test-bot.js
 .hive-state.json
+.hive-state.json.backup-*
 .hive-knowledge.json
 .hive-meetings.json
 .hive-setup.json
+.hive-plans/
 backups/
 .claude/
 coverage/

@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Plan — hive</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --bg-soft: #161b22;
+    --bg-deep: #010409;
+    --border: #30363d;
+    --border-soft: #21262d;
+    --text: #c9d1d9;
+    --text-strong: #f0f6fc;
+    --text-dim: #8b949e;
+    --accent: #58a6ff;
+    --warn: #d29922;
+    --ok: #3fb950;
+    --bad: #f85149;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; background: var(--bg); color: var(--text); font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+
+  #layout { display: flex; height: 100vh; }
+
+  #plan-frame-wrap { flex: 1; min-width: 0; position: relative; background: var(--bg); }
+  iframe { width: 100%; height: 100%; border: 0; background: var(--bg); }
+
+  #sidebar {
+    width: 380px; flex-shrink: 0;
+    background: var(--bg-soft); border-left: 1px solid var(--border);
+    display: flex; flex-direction: column;
+  }
+  #sidebar header {
+    padding: 14px 16px; border-bottom: 1px solid var(--border);
+    display: flex; justify-content: space-between; align-items: baseline;
+  }
+  #sidebar header h2 { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-strong); }
+  #sidebar header .stats { color: var(--text-dim); font-size: 12px; }
+  #sidebar header .session-pill {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 3px 9px;
+    background: rgba(189,147,249,0.12);
+    border: 1px solid rgba(189,147,249,0.25);
+    border-radius: 12px;
+    color: #bd93f9;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    margin-left: 8px;
+    text-decoration: none;
+  }
+  #sidebar header .session-pill:hover { background: rgba(189,147,249,0.2); border-color: rgba(189,147,249,0.5); }
+  #sidebar header .session-pill .arrow { color: var(--text-dim); }
+  #comment-list { flex: 1; overflow-y: auto; padding: 12px 14px; }
+  #comment-list .empty { color: var(--text-dim); text-align: center; padding: 40px 10px; font-size: 13px; }
+
+  .comment-card {
+    background: var(--bg);
+    border: 1px solid var(--border-soft);
+    border-radius: 6px;
+    padding: 10px 12px;
+    margin-bottom: 10px;
+  }
+  .comment-card .anchor {
+    color: var(--accent); font-size: 11px; font-family: ui-monospace, monospace;
+    cursor: pointer; margin-bottom: 4px;
+  }
+  .comment-card .msg { margin: 4px 0; }
+  .comment-card .msg.user { color: var(--text); white-space: pre-wrap; word-wrap: break-word; }
+  .comment-card .msg.claude { color: var(--ok); padding-left: 10px; border-left: 2px solid var(--ok); white-space: pre-wrap; word-wrap: break-word; }
+  .comment-card .meta { color: var(--text-dim); font-size: 11px; margin-top: 4px; }
+
+  .pill {
+    display: inline-block;
+    padding: 2px 8px; border-radius: 10px;
+    font-size: 10px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.4px;
+    margin-right: 4px;
+  }
+  .pill.open { background: #d2932222; color: var(--warn); }
+  .pill.resolved { background: #23863622; color: var(--ok); }
+  .pill.draft { background: #8b949e22; color: var(--text-dim); }
+  .pill.moved { background: #1f6feb22; color: var(--accent); }
+
+  #toolbar {
+    border-top: 1px solid var(--border);
+    padding: 10px 12px;
+    display: flex; justify-content: space-between; align-items: center;
+    gap: 8px;
+    background: var(--bg-soft);
+    flex-wrap: wrap;
+  }
+  #toolbar .status { color: var(--text-dim); font-size: 11px; flex: 1; min-width: 0; }
+  #toolbar .actions { display: flex; gap: 6px; align-items: center; }
+  button.btn {
+    background: var(--accent); color: var(--bg);
+    border: 0; border-radius: 5px;
+    padding: 6px 12px; font-weight: 600; font-size: 12px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  button.btn:disabled { background: var(--border); color: var(--text-dim); cursor: not-allowed; }
+  button.btn.ghost { background: transparent; color: var(--text-dim); border: 1px solid var(--border); }
+  button.btn.ghost:hover { color: var(--text); border-color: var(--text-dim); }
+  button.btn.danger { background: transparent; color: var(--text-dim); border: 1px solid var(--border); }
+  button.btn.danger:hover { color: var(--bad); border-color: var(--bad); }
+  #archived-banner {
+    background: #8b949e22; color: var(--text-dim);
+    padding: 8px 14px; border-bottom: 1px solid var(--border);
+    font-size: 12px; display: none; align-items: center; justify-content: space-between;
+  }
+  body.archived #archived-banner { display: flex; }
+  body.archived #send-btn { display: none; }
+  body.archived #archive-btn { display: none; }
+  body.archived #unarchive-btn { display: inline-block; }
+  #unarchive-btn { display: none; }
+
+  /* Styles injected into the iframe via JS */
+  /* See injectEditorIntoFrame() */
+</style>
+</head>
+<body>
+<div id="layout">
+  <div id="plan-frame-wrap">
+    <iframe id="plan-frame" src=""></iframe>
+  </div>
+  <aside id="sidebar">
+    <header>
+      <h2 id="plan-title">Plan</h2>
+      <span class="stats" id="plan-stats"></span>
+      <a href="#" id="session-pill" class="session-pill" style="display:none" title="Open this session in the slide-out drawer">
+        <span id="session-pill-label">Session</span>
+        <span class="arrow">↗</span>
+      </a>
+    </header>
+    <div id="archived-banner">
+      <span>This plan is archived — read-only.</span>
+    </div>
+    <div id="comment-list"><div class="empty">Loading…</div></div>
+    <div id="toolbar">
+      <span class="status" id="toolbar-status">0 drafts</span>
+      <div class="actions">
+        <button class="btn danger" id="archive-btn">Archive</button>
+        <button class="btn ghost" id="unarchive-btn">Restore</button>
+        <button class="btn" id="send-btn" disabled>Send to Claude</button>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<script>
+(function () {
+  const planId = location.pathname.split('/').filter(Boolean)[1];
+  if (!planId) return;
+
+  const frame = document.getElementById('plan-frame');
+  const commentListEl = document.getElementById('comment-list');
+  const planTitleEl = document.getElementById('plan-title');
+  const planStatsEl = document.getElementById('plan-stats');
+  const toolbarStatus = document.getElementById('toolbar-status');
+  const sendBtn = document.getElementById('send-btn');
+
+  // Initial frame load
+  frame.src = '/plans/' + planId + '/raw';
+
+  let comments = [];
+  let meta = null;
+
+  async function loadMeta() {
+    const r = await fetch('/api/plans/' + planId);
+    if (!r.ok) return;
+    meta = await r.json();
+    planTitleEl.textContent = meta.title || 'Plan';
+    planStatsEl.textContent = 'v' + (meta.currentVersion || 1) + (meta.status === 'archived' ? ' · archived' : '');
+    document.body.classList.toggle('archived', meta.status === 'archived');
+    // Session pill — visible only when plan is tied to a fleet session
+    const pill = document.getElementById('session-pill');
+    const label = document.getElementById('session-pill-label');
+    if (meta.sessionId != null) {
+      label.textContent = 'Session ' + meta.sessionId;
+      pill.style.display = '';
+    } else {
+      pill.style.display = 'none';
+    }
+  }
+
+  document.getElementById('session-pill').addEventListener('click', (e) => {
+    e.preventDefault();
+    if (!meta || meta.sessionId == null) return;
+    // Tell the parent dashboard to open the session in its task-detail slide-out
+    // drawer. Parent finds the session's active task and opens openTaskDetail.
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage({ type: 'hive:open-session-drawer', sessionNum: meta.sessionId }, '*');
+    } else {
+      // Standalone /plans/:id (no parent dashboard) — fall back to opening the
+      // session in the board view.
+      window.open('/#/session/' + meta.sessionId, '_self');
+    }
+  });
+
+  async function loadComments() {
+    const r = await fetch('/api/plans/' + planId + '/comments');
+    if (!r.ok) return;
+    const data = await r.json();
+    comments = data.comments || [];
+    render();
+  }
+
+  function esc(s) {
+    return String(s || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
+  function render() {
+    // Sidebar list
+    if (!comments.length) {
+      commentListEl.innerHTML = '<div class="empty">No comments yet.<br>Click a section in the plan to add one.</div>';
+    } else {
+      commentListEl.innerHTML = comments.map(c => `
+        <div class="comment-card" data-comment-id="${esc(c.id)}">
+          <div class="anchor" data-section="${esc(c.sectionId)}">§ ${esc(c.sectionId)} · ${esc(c.id)}</div>
+          ${(c.thread || []).map(t => `<div class="msg ${t.author === 'claude' ? 'claude' : 'user'}">${esc(t.text)}</div>`).join('')}
+          <div class="meta"><span class="pill ${esc(c.status)}">${esc(c.status)}</span></div>
+        </div>
+      `).join('');
+      // Wire anchor scroll
+      commentListEl.querySelectorAll('.anchor').forEach(a => {
+        a.addEventListener('click', () => scrollFrameToSection(a.dataset.section));
+      });
+    }
+    // Stats
+    const drafts = comments.filter(c => c.status === 'draft').length;
+    const open = comments.filter(c => c.status === 'open').length;
+    const resolved = comments.filter(c => c.status === 'resolved').length;
+    toolbarStatus.textContent = `${drafts} drafts · ${open} open · ${resolved} resolved`;
+    sendBtn.disabled = drafts === 0;
+    sendBtn.textContent = drafts > 0 ? `Send ${drafts} to Claude` : 'Send to Claude';
+
+    // Inject markers in the iframe
+    injectMarkersIntoFrame();
+  }
+
+  function scrollFrameToSection(sectionId) {
+    const doc = frame.contentDocument;
+    if (!doc) return;
+    const el = doc.querySelector(`section[data-id="${sectionId}"]`);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  // Inject per-section comment buttons + a stylesheet inside the iframe.
+  function injectMarkersIntoFrame() {
+    const doc = frame.contentDocument;
+    if (!doc || !doc.body) return;
+
+    // One-time styles
+    if (!doc.getElementById('hive-editor-style')) {
+      const style = doc.createElement('style');
+      style.id = 'hive-editor-style';
+      style.textContent = `
+        section[data-id] { position: relative; }
+        .hive-comment-btn {
+          position: absolute; top: 4px; right: -42px;
+          width: 28px; height: 28px;
+          border-radius: 50%; border: 1px solid #30363d;
+          background: #161b22; color: #8b949e;
+          cursor: pointer; font-size: 14px;
+          display: flex; align-items: center; justify-content: center;
+          opacity: 0.6; transition: all 0.15s;
+        }
+        .hive-comment-btn:hover { opacity: 1; color: #58a6ff; border-color: #58a6ff; }
+        .hive-comment-btn.has-comments { opacity: 1; color: #d29922; border-color: #d29922; }
+        .hive-comment-count {
+          font-size: 10px; font-weight: 600;
+        }
+        .hive-comment-drawer {
+          margin: 8px 0; padding: 10px 12px;
+          background: #161b22; border: 1px solid #30363d; border-radius: 6px;
+        }
+        .hive-comment-drawer textarea {
+          width: 100%; min-height: 60px; padding: 8px 10px;
+          background: #0d1117; color: #c9d1d9;
+          border: 1px solid #30363d; border-radius: 4px;
+          font: 13px/1.4 -apple-system, sans-serif; resize: vertical;
+        }
+        .hive-comment-drawer textarea:focus { outline: 1px solid #58a6ff; border-color: #58a6ff; }
+        .hive-comment-drawer .actions { margin-top: 8px; display: flex; justify-content: flex-end; gap: 8px; }
+        .hive-comment-drawer button {
+          background: #58a6ff; color: #0d1117;
+          border: 0; border-radius: 4px;
+          padding: 5px 12px; font-weight: 600; font-size: 12px;
+          cursor: pointer;
+        }
+        .hive-comment-drawer button.cancel { background: transparent; color: #8b949e; border: 1px solid #30363d; }
+        .hive-comment-drawer button:disabled { opacity: 0.5; cursor: not-allowed; }
+      `;
+      doc.head.appendChild(style);
+    }
+
+    // For each section, ensure a comment button exists and reflects count
+    const sections = doc.querySelectorAll('section[data-id]');
+    sections.forEach(sec => {
+      const id = sec.getAttribute('data-id');
+      const count = comments.filter(c => c.sectionId === id && c.status !== 'resolved').length;
+      let btn = sec.querySelector(':scope > .hive-comment-btn');
+      if (!btn) {
+        btn = doc.createElement('button');
+        btn.className = 'hive-comment-btn';
+        btn.title = 'Add a comment';
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          openDrawer(sec, id);
+        });
+        sec.appendChild(btn);
+      }
+      btn.classList.toggle('has-comments', count > 0);
+      btn.innerHTML = count > 0
+        ? `<span class="hive-comment-count">${count}</span>`
+        : '+';
+    });
+  }
+
+  function openDrawer(sectionEl, sectionId) {
+    const doc = frame.contentDocument;
+    // Don't open multiple drawers in the same section
+    if (sectionEl.querySelector(':scope > .hive-comment-drawer')) return;
+    const drawer = doc.createElement('div');
+    drawer.className = 'hive-comment-drawer';
+    drawer.innerHTML = `
+      <textarea placeholder="Comment on §${sectionId}…" autofocus></textarea>
+      <div class="actions">
+        <button class="cancel">Cancel</button>
+        <button class="save" disabled>Save draft</button>
+      </div>
+    `;
+    sectionEl.appendChild(drawer);
+    const textarea = drawer.querySelector('textarea');
+    const save = drawer.querySelector('.save');
+    const cancel = drawer.querySelector('.cancel');
+    textarea.focus();
+    textarea.addEventListener('input', () => {
+      save.disabled = !textarea.value.trim();
+    });
+    cancel.addEventListener('click', () => drawer.remove());
+    save.addEventListener('click', async () => {
+      const text = textarea.value.trim();
+      if (!text) return;
+      save.disabled = true;
+      save.textContent = 'Saving…';
+      const r = await fetch('/api/plans/' + planId + '/comments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sectionId, text }),
+      });
+      if (r.ok) {
+        drawer.remove();
+        await loadComments();
+      } else {
+        save.disabled = false;
+        save.textContent = 'Save draft';
+        alert('Failed to save: ' + (await r.text()));
+      }
+    });
+  }
+
+  sendBtn.addEventListener('click', async () => {
+    const drafts = comments.filter(c => c.status === 'draft');
+    if (!drafts.length) return;
+    sendBtn.disabled = true;
+    sendBtn.textContent = 'Sending…';
+    const r = await fetch(`/api/plans/${planId}/send`, { method: 'POST' });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      sendBtn.textContent = 'Send to Claude';
+      sendBtn.disabled = false;
+      alert('Send failed: ' + (err.error || r.statusText));
+      return;
+    }
+    await loadComments();
+  });
+
+  document.getElementById('archive-btn').addEventListener('click', async () => {
+    if (!confirm('Archive this plan? It will be hidden from the session card and the default index view. You can restore it later.')) return;
+    const r = await fetch(`/api/plans/${planId}/archive`, { method: 'POST' });
+    if (!r.ok) {
+      alert('Archive failed: ' + (await r.text()));
+      return;
+    }
+    await loadMeta();
+  });
+
+  document.getElementById('unarchive-btn').addEventListener('click', async () => {
+    const r = await fetch(`/api/plans/${planId}/unarchive`, { method: 'POST' });
+    if (!r.ok) {
+      alert('Restore failed: ' + (await r.text()));
+      return;
+    }
+    await loadMeta();
+  });
+
+  frame.addEventListener('load', () => {
+    injectMarkersIntoFrame();
+  });
+
+  // Listen for parent → iframe push messages telling us comments changed
+  // (e.g. Claude just called hive_reply_to_comment). Reload the comments
+  // sidebar so the new reply appears live.
+  window.addEventListener('message', (e) => {
+    if (e.data?.type === 'hive:plan-comments-changed' && e.data.planId === planId) {
+      loadComments();
+      // Also reload the iframe so any inline section patches show up.
+      const t = e.data;
+      if (t.hasPatch) {
+        frame.contentWindow.location.reload();
+      }
+    }
+  });
+
+  loadMeta();
+  loadComments();
+})();
+</script>
+</body>
+</html>
