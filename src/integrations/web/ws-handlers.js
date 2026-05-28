@@ -194,7 +194,9 @@ function createMessageHandler(deps) {
         // Send immediately
         const { content: subContent, cols: subCols } = await capturePaneAnsi(node, paneTarget);
         ws.send(JSON.stringify({ type: 'terminal:data', session: msg.session, pane: subPaneIdx, content: subContent, cols: subCols, card: isCard }));
-        // Poll every 2s (guard against stale callbacks after clearInterval)
+        // Poll every 2s — only send when content actually changed
+        let lastSentContent = subContent;
+        let lastSentCols = subCols;
         const sub = { interval: null, session: msg.session, name, node, pane: subPaneIdx, cancelled: false };
         const subKey = `${msg.session}:${subPaneIdx}`;
         sub.interval = setInterval(async () => {
@@ -207,6 +209,9 @@ function createMessageHandler(deps) {
           try {
             const { content: pollContent, cols: pollCols } = await capturePaneAnsi(node, paneTarget);
             if (sub.cancelled) return;
+            if (pollContent === lastSentContent && pollCols === lastSentCols) return;
+            lastSentContent = pollContent;
+            lastSentCols = pollCols;
             ws.send(JSON.stringify({ type: 'terminal:data', session: msg.session, pane: subPaneIdx, content: pollContent, cols: pollCols, card: isCard }));
           } catch {
             // Node may have disconnected
