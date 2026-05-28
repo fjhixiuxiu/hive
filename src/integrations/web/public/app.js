@@ -2685,14 +2685,35 @@
       chips.push(`<span class="status-chip desig" style="background:rgba(98,114,164,0.15);color:var(--dim)" data-action="pick-desig" data-session="${s.num}">No Desig</span>`);
     }
 
-    // PR chip
+    // PR chip — prefer branch-detected PR, fall back to session context
+    let prChipNum = null;
+    let prChipUrl = null;
+    let prFromContext = false;
     if (s.pr && s.pr.prNum) {
-      const prUrl = linkTemplates.pr ? linkTemplates.pr.replace('${prNum}', s.pr.prNum) : null;
-      if (prUrl) {
-        chips.push(`<a class="status-chip pr" href="${prUrl}" target="_blank">PR #${s.pr.prNum}</a>`);
-      } else {
-        chips.push(`<span class="status-chip pr">PR #${s.pr.prNum}</span>`);
+      prChipNum = s.pr.prNum;
+      prChipUrl = linkTemplates.pr ? linkTemplates.pr.replace('${prNum}', s.pr.prNum) : null;
+    } else {
+      const ctx = sessionContexts[s.num];
+      if (ctx && ctx.pr) {
+        const m = ctx.pr.match(/\/pull\/(\d+)/);
+        if (m) {
+          prChipNum = m[1];
+          prChipUrl = ctx.pr;
+          prFromContext = true;
+        }
       }
+    }
+    if (prChipNum) {
+      if (prChipUrl) {
+        chips.push(`<a class="status-chip pr" href="${prChipUrl}" target="_blank">PR #${prChipNum}</a>`);
+      } else {
+        chips.push(`<span class="status-chip pr">PR #${prChipNum}</span>`);
+      }
+      if (prFromContext) {
+        chips.push(`<span class="status-chip pr-clear" data-action="clear-pr" data-session="${s.num}" title="Clear manual PR">&times;</span>`);
+      }
+    } else {
+      chips.push(`<span class="status-chip set-pr" data-action="set-pr" data-session="${s.num}">Set PR</span>`);
     }
 
     // JIRA chips — extract DEV-XXXXX from branch name
@@ -2866,6 +2887,26 @@
     } else if (action === 'show-history') {
       e.stopPropagation();
       showHistoryPopover(chip, sessionNum);
+    } else if (action === 'set-pr') {
+      e.stopPropagation();
+      const prNum = prompt('Enter PR number:');
+      if (prNum && /^\d+$/.test(prNum.trim())) {
+        const prUrl = linkTemplates.pr
+          ? linkTemplates.pr.replace('${prNum}', prNum.trim())
+          : null;
+        if (!prUrl) { showToast('Error', 'PR link template not configured', 'error'); return; }
+        if (!sessionContexts[sessionNum]) sessionContexts[sessionNum] = {};
+        sessionContexts[sessionNum].pr = prUrl;
+        updateSessionStatusLine();
+        updateTasksStatusLine();
+        if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'context:set', session: sessionNum, updates: { pr: prUrl } }));
+      }
+    } else if (action === 'clear-pr') {
+      e.stopPropagation();
+      if (sessionContexts[sessionNum]) delete sessionContexts[sessionNum].pr;
+      updateSessionStatusLine();
+      updateTasksStatusLine();
+      if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'context:set', session: sessionNum, updates: { pr: null } }));
     }
   }
 

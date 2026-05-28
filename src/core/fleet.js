@@ -76,9 +76,6 @@ async function getSession(config, node, sessionName, nodeId) {
   const git = isRepo ? await node.gitInfo(repoDir) : { branch: '', staged: 0, modified: 0, untracked: 0 };
   const ticket = ticketFromBranch(git.branch);
 
-  // PR/CI data is merged in separately by refreshPRStatus() — not fetched here
-  const pr = git.branch ? prStatus.getCached(git.branch) : null;
-
   return {
     name: sessionName,
     num,
@@ -86,7 +83,7 @@ async function getSession(config, node, sessionName, nodeId) {
     branch: git.branch,
     ticket,
     git,
-    pr,
+    pr: git.branch ? prStatus.getCached(git.branch) : null,
   };
 }
 

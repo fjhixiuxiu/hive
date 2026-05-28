@@ -1568,6 +1568,8 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .status-chip.mode-manual { background: rgba(98,114,164,0.15); color: var(--dim); }
 .status-chip.history-chip-btn { background: rgba(189,147,249,0.15); color: var(--purple); }
 .status-chip.last-sent { background: rgba(98,114,164,0.1); color: var(--dim); font-style: italic; }
+.status-chip.set-pr { background: rgba(139,233,253,0.1); color: var(--dim); font-style: italic; border: 1px dashed var(--dim); }
+.status-chip.pr-clear { background: rgba(255,85,85,0.15); color: var(--red); padding: 2px 5px; font-size: 10px; }
 .status-chip.desig { text-transform: uppercase; }
 .desig-popover { position: fixed; background: var(--bg2); border: 1px solid var(--bg3); border-radius: 6px; padding: 4px 0; z-index: 200; min-width: 120px; max-height: 200px; overflow-y: auto; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
 .desig-popover-item { padding: 6px 12px; font-size: var(--fs-md); cursor: pointer; white-space: nowrap; text-transform: uppercase; font-weight: 600; }
