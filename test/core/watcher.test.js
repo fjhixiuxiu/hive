@@ -197,7 +197,7 @@ describe('Watcher', () => {
       for (let i = 0; i < 5; i++) await watcher._poll();
 
       expect(retrySpy).toHaveBeenCalledWith(
-        expect.objectContaining({ num: 6, retryCount: 1, maxRetries: 3 })
+        expect.objectContaining({ num: 6, retryCount: 1 })
       );
       expect(mockNode.sendKeys).toHaveBeenCalledWith(
         expect.stringContaining('6'), 'retry', true
@@ -229,7 +229,7 @@ describe('Watcher', () => {
       expect(idleSpy).toHaveBeenCalledTimes(1);
     });
 
-    it('stops retrying after max retries and emits idle', async () => {
+    it('keeps retrying past the old cap (no max) and does not confirm idle', async () => {
       const retrySpy = vi.fn();
       const idleSpy = vi.fn();
       watcher = new Watcher(config, router);
@@ -243,28 +243,142 @@ describe('Watcher', () => {
       mockNode.sendKeys.mockResolvedValue(null);
       router.nodeFor.mockReturnValue(mockNode);
 
-      // Exhaust retries (3)
-      watcher.errorRetries.set(6, { count: 3, lastRetryAt: 0 });
+      // Already well past the old 3-retry cap, and the backoff window has elapsed
+      // (lastRetryAt long ago) so another retry is due.
+      watcher.errorRetries.set(6, { count: 9, lastRetryAt: 1 });
       watcher.seenWorking.add(6);
       watcher.prevStates.set(6, 'idle');
 
       fleetSpy.mockResolvedValue([makeSession(6, 'idle')]);
       for (let i = 0; i < 5; i++) await watcher._poll();
 
-      // Should NOT retry, SHOULD emit idle
-      expect(retrySpy).not.toHaveBeenCalled();
-      expect(idleSpy).toHaveBeenCalledTimes(1);
+      // Should STILL retry (attempt 10) and must NOT give up / confirm idle.
+      expect(retrySpy).toHaveBeenCalledWith(
+        expect.objectContaining({ num: 6, retryCount: 10 })
+      );
+      expect(mockNode.sendKeys).toHaveBeenCalledWith(
+        expect.stringContaining('6'), 'retry', true
+      );
+      expect(idleSpy).not.toHaveBeenCalled();
     });
 
-    it('clears retry count when session starts working', async () => {
+    it('honors the backoff window between retries', async () => {
+      watcher = new Watcher(config, router);
+
+      const mockNode = createMockNode();
+      mockNode.capturePane.mockResolvedValue('  ⎿  API Error: 500 {"type":"error"}\n❯ ');
+      mockNode.sendKeys.mockResolvedValue(null);
+      router.nodeFor.mockReturnValue(mockNode);
+
+      // A retry just happened (count 1 → backoff 30s) so the next attempt is not due yet.
+      watcher.errorRetries.set(6, { count: 1, lastRetryAt: Date.now() });
+      watcher.seenWorking.add(6);
+      watcher.prevStates.set(6, 'idle');
+
+      fleetSpy.mockResolvedValue([makeSession(6, 'idle')]);
+      for (let i = 0; i < 5; i++) await watcher._poll();
+
+      // Inside the backoff window → no new retry sent, but the session stays in
+      // recovery (no idle confirmation).
+      expect(mockNode.sendKeys).not.toHaveBeenCalled();
+    });
+
+    it('clears retry count only after confirmed working (2 polls)', async () => {
       watcher = new Watcher(config, router);
       watcher.errorRetries.set(6, { count: 2, lastRetryAt: Date.now() });
       watcher.prevStates.set(6, 'idle');
 
       fleetSpy.mockResolvedValue([makeSession(6, 'working')]);
       await watcher._poll();
+      // One working poll is a possible retry flicker — budget must survive.
+      expect(watcher.errorRetries.has(6)).toBe(true);
+
+      await watcher._poll();
+      // Second consecutive working poll = genuine recovery → budget cleared.
+      expect(watcher.errorRetries.has(6)).toBe(false);
+    });
+
+    it('resets the retry budget when the error clears on its own', async () => {
+      watcher = new Watcher(config, router);
+
+      const mockNode = createMockNode();
+      mockNode.capturePane.mockResolvedValue('All done. \n\n❯ ');
+      router.nodeFor.mockReturnValue(mockNode);
+
+      watcher.errorRetries.set(6, { count: 4, lastRetryAt: 1 });
+      watcher.seenWorking.add(6);
+      watcher.prevStates.set(6, 'idle');
+
+      fleetSpy.mockResolvedValue([makeSession(6, 'idle')]);
+      // 5 idle polls → idle confirmation runs the error check, finds no error, clears budget.
+      for (let i = 0; i < 5; i++) await watcher._poll();
 
       expect(watcher.errorRetries.has(6)).toBe(false);
+    });
+
+    // Decoupling guarantee: the retry must NOT depend on the idle/working verdict.
+    it('retries a stalled session even when state is reported as working', async () => {
+      const retrySpy = vi.fn();
+      watcher = new Watcher(config, router);
+      watcher.on('session:error-retry', retrySpy);
+
+      const mockNode = createMockNode();
+      // Error present, no active spinner — but detectState reports 'working' (the
+      // failure mode we don't trust). The retry must still fire.
+      mockNode.capturePane.mockResolvedValue('  ⎿  API Error: 529 Overloaded\n❯ ');
+      mockNode.sendKeys.mockResolvedValue(null);
+      router.nodeFor.mockReturnValue(mockNode);
+
+      watcher.seenWorking.add(6);
+      watcher.prevStates.set(6, 'working');
+
+      fleetSpy.mockResolvedValue([makeSession(6, 'working')]);
+      await watcher._poll();
+
+      expect(retrySpy).toHaveBeenCalledWith(expect.objectContaining({ num: 6, retryCount: 1 }));
+      expect(mockNode.sendKeys).toHaveBeenCalledWith(expect.stringContaining('6'), 'retry', true);
+    });
+
+    it('does not nudge while an active spinner is present, even with an error', async () => {
+      const retrySpy = vi.fn();
+      watcher = new Watcher(config, router);
+      watcher.on('session:error-retry', retrySpy);
+
+      const mockNode = createMockNode();
+      // Claude is handling its own retry (spinner with ellipsis) — leave it alone.
+      mockNode.capturePane.mockResolvedValue('  ⎿  API Error: 529 Overloaded\n✻ Retrying… (esc to interrupt)\n');
+      mockNode.sendKeys.mockResolvedValue(null);
+      router.nodeFor.mockReturnValue(mockNode);
+
+      watcher.seenWorking.add(6);
+      watcher.prevStates.set(6, 'working');
+
+      fleetSpy.mockResolvedValue([makeSession(6, 'working')]);
+      for (let i = 0; i < 5; i++) await watcher._poll();
+
+      expect(retrySpy).not.toHaveBeenCalled();
+      expect(mockNode.sendKeys).not.toHaveBeenCalled();
+    });
+
+    it('does not retry when watcher.errorRetry.enabled is false', async () => {
+      const retrySpy = vi.fn();
+      const disabledConfig = createMockConfig({ watcher: { interval: 1000, errorRetry: { enabled: false } } });
+      watcher = new Watcher(disabledConfig, router);
+      watcher.on('session:error-retry', retrySpy);
+
+      const mockNode = createMockNode();
+      mockNode.capturePane.mockResolvedValue('  ⎿  API Error: 529 Overloaded\n❯ ');
+      mockNode.sendKeys.mockResolvedValue(null);
+      router.nodeFor.mockReturnValue(mockNode);
+
+      watcher.seenWorking.add(6);
+      watcher.prevStates.set(6, 'idle');
+
+      fleetSpy.mockResolvedValue([makeSession(6, 'idle')]);
+      for (let i = 0; i < 5; i++) await watcher._poll();
+
+      expect(retrySpy).not.toHaveBeenCalled();
+      expect(mockNode.sendKeys).not.toHaveBeenCalled();
     });
 
     it('waits for reset time before retrying rate-limited session', async () => {
@@ -311,6 +425,8 @@ describe('Watcher', () => {
       ['HTTP 504',            '  ⎿  API Error: 504 {"type":"error","error":{"type":"timeout_error"}}\n❯ '],
       ['HTTP 408',            '  ⎿  API Error: 408 Request Timeout\n❯ '],
       ['Unable to connect',   '  ⎿  Unable to connect to the API. Check your internet connection.\n❯ '],
+      // Server-side throttle with no numeric code — the message Jeff was seeing a lot of.
+      ['temporarily limiting', '  ⎿  API Error: Server is temporarily limiting requests (not your usage limit) ·\n      Rate limited\n\n❯ '],
     ];
 
     for (const [label, paneContent] of RETRYABLE_FIXTURES) {
@@ -331,7 +447,7 @@ describe('Watcher', () => {
         for (let i = 0; i < 5; i++) await watcher._poll();
 
         expect(retrySpy).toHaveBeenCalledWith(
-          expect.objectContaining({ num: 6, retryCount: 1, maxRetries: 3 })
+          expect.objectContaining({ num: 6, retryCount: 1 })
         );
         expect(mockNode.sendKeys).toHaveBeenCalledWith(
           expect.stringContaining('6'), 'retry', true

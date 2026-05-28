@@ -42,8 +42,13 @@ const API_ERROR_PATTERNS = [
   /Check your (internet )?connection/i,
 ];
 
-const MAX_ERROR_RETRIES = 3;
-const ERROR_RETRY_DELAY = 15000; // 15s before retry (helps with rate limits)
+// Persistent auto-retry for transient API errors (rate limits, 5xx, overload).
+// No attempt cap — keep retrying until the error clears or the session resumes
+// real work. The wait between attempts grows exponentially (15s, 30s, 1m, 2m, 4m)
+// and is capped at 5m so a long server throttle (e.g. HTTP 529 "temporarily
+// limiting requests") doesn't hammer the API.
+const ERROR_RETRY_BASE = 15000;       // 15s before the first retry
+const ERROR_RETRY_MAX_DELAY = 300000; // cap exponential backoff at 5 min
 
 // Patterns to extract a reset time from rate limit messages
 // Matches: "Resets at 2:00 PM", "resets at 14:00", "Resets at 2:00 PM EDT"
@@ -141,6 +146,9 @@ class Watcher extends EventEmitter {
     this.detectedWaiting = new Set(); // session nums waiting for user (approvals or questions)
     this.sessionActivity = new Map(); // num -> timestamp of last meaningful activity
     this.errorRetries = new Map();    // num -> { count, lastRetryAt }
+    // Auto-retry of transient API errors types "retry" into the session on its own.
+    // It's on by default; set watcher.errorRetry.enabled = false to opt out entirely.
+    this.errorRetryEnabled = config.watcher?.errorRetry?.enabled !== false;
   }
 
   /**
@@ -202,9 +210,9 @@ class Watcher extends EventEmitter {
       if (node && fleet.refreshGitInfo) fleet.refreshGitInfo(this.config, node, s.name, s.nodeId).catch(() => {});
     }
 
-    // One-time scan: retry idle sessions that are stalled on API errors from before restart
+    // One-time scan: retry any session stalled on an API error from before restart.
+    // Not gated on state — _checkAndRetryErrors decides via the error text + spinner.
     for (const s of sessions) {
-      if (s.state !== 'idle') continue;
       const retried = await this._checkAndRetryErrors(s);
       if (retried) {
         this.notifiedIdle.delete(s.num);
@@ -234,11 +242,29 @@ class Watcher extends EventEmitter {
         if (wc >= 2) {
           this.seenWorking.add(s.num);
           this._pendingWorking.delete(s.num);
+          // Genuine work resumed (2 consecutive polls, not a brief retry flicker)
+          // → the error cleared, so drop the retry budget and let backoff reset.
+          this.errorRetries.delete(s.num);
         } else {
           this._pendingWorking.set(s.num, wc);
         }
       } else {
         this._pendingWorking.delete(s.num);
+      }
+
+      // State-independent API-error recovery. We deliberately do NOT gate this on the
+      // idle/working verdict — that verdict rests on a 3-line capture we don't fully
+      // trust. Instead _checkAndRetryErrors keys off the error text plus the absence
+      // of an active spinner in a 15-line capture, so a session stalled on an API
+      // error gets nudged even if detectState misreads it as 'working'.
+      if (this.seenWorking.has(s.num) && !this.detectedWaiting.has(s.num)) {
+        const retried = await this._checkAndRetryErrors(s);
+        if (retried) {
+          this.notifiedIdle.delete(s.num);
+          this.pendingIdle.delete(s.num);
+          this.prevStates.set(s.num, currState);
+          continue; // stalled on (or recovering from) an API error — skip normal handling
+        }
       }
 
       // Detect idle with confirmation: require FIVE consecutive idle polls
@@ -252,12 +278,8 @@ class Watcher extends EventEmitter {
         } else {
           const count = (this.pendingIdle.get(s.num) || 0) + 1;
           if (count >= 5) {
-            // Before confirming idle, check for API errors that stalled the session
-            const retried = await this._checkAndRetryErrors(s);
-            if (retried) {
-              this.pendingIdle.delete(s.num);
-              continue; // Skip idle confirmation — retry sent
-            }
+            // API-error stalls are handled by the state-independent check above, so
+            // reaching here means the session is genuinely idle (no error, no spinner).
             // Fifth consecutive poll showing idle — confirmed idle
             log.info(`[watcher] session ${s.num}: idle confirmed (5 polls)`);
             this.pendingIdle.delete(s.num);
@@ -344,10 +366,11 @@ class Watcher extends EventEmitter {
       }
       if (currBranch) this.prevBranch.set(s.num, currBranch);
 
-      // Clear waiting flag and error retries when session starts working
+      // Clear waiting flag when session starts working. (The error-retry budget is
+      // cleared only on *confirmed* working above, so a brief retry-induced flicker
+      // doesn't reset the exponential backoff.)
       if (currState === 'working' && prevState !== 'working') {
         this.detectedWaiting.delete(s.num);
-        this.errorRetries.delete(s.num);
       }
     }
 
@@ -366,23 +389,32 @@ class Watcher extends EventEmitter {
    * Returns true if a retry was sent (caller should skip idle confirmation).
    */
   async _checkAndRetryErrors(s) {
+    if (!this.errorRetryEnabled) return false;
+
     const node = this.router.nodeFor(s.name);
     if (!node) return false;
 
-    // Check retry budget
     const retry = this.errorRetries.get(s.num) || { count: 0, lastRetryAt: 0, retryAfter: 0 };
-    if (retry.count >= MAX_ERROR_RETRIES) return false;
 
     // If a reset time was parsed, wait until it passes
     if (retry.retryAfter && Date.now() < retry.retryAfter) return true; // waiting for reset
 
-    // Don't retry more than once per delay window (for errors without a reset time)
-    if (!retry.retryAfter && Date.now() - retry.lastRetryAt < ERROR_RETRY_DELAY) return true;
+    // Exponential backoff between attempts: 15s, 30s, 1m, 2m, 4m, capped at 5m.
+    // No attempt cap — we keep retrying until the error clears or work resumes.
+    const backoff = Math.min(ERROR_RETRY_BASE * 2 ** retry.count, ERROR_RETRY_MAX_DELAY);
+    if (!retry.retryAfter && retry.lastRetryAt && Date.now() - retry.lastRetryAt < backoff) {
+      return true; // still inside the backoff window — stay in recovery, don't confirm idle
+    }
 
     // Capture recent pane content
     const paneTarget = `${s.name}:.${this.config.sessions.claudePane}`;
     const content = await node.capturePane(paneTarget, { lines: 15 });
     if (!content) return false;
+
+    // If Claude is actively working/retrying (a spinner with an ellipsis, e.g.
+    // "✻ Retrying…"), leave it alone — it will resolve on its own. We only nudge a
+    // *stalled* session. This is the signal we trust instead of the idle/working verdict.
+    if (tmux.ACTIVE_STATUS_RE.test(content)) return false;
 
     // Check for API error patterns in the last 15 lines
     const lines = content.split('\n');
@@ -397,7 +429,16 @@ class Watcher extends EventEmitter {
       if (hasError) break;
     }
 
-    if (!hasError) return false;
+    // Error gone — the session recovered (a retry took, or it cleared on its own).
+    // Drop the budget so a future error starts a fresh backoff, then let normal
+    // idle handling resume.
+    if (!hasError) {
+      if (this.errorRetries.has(s.num)) {
+        log.info(`[watcher] session ${s.num}: API error cleared after ${retry.count} retr${retry.count === 1 ? 'y' : 'ies'}`);
+        this.errorRetries.delete(s.num);
+      }
+      return false;
+    }
 
     // Check for a reset time in the error output
     const resetAt = parseResetTime(lines);
@@ -409,8 +450,7 @@ class Watcher extends EventEmitter {
       log.info(`[watcher] session ${s.num}: rate limit detected, will retry after reset (${waitMins}m)`);
       this.emit('session:error-retry', {
         session: s, name: s.name, num: s.num,
-        retryCount: retry.count, maxRetries: MAX_ERROR_RETRIES,
-        retryAfter: resetAt, waitMins,
+        retryCount: retry.count, retryAfter: resetAt, waitMins,
       });
       return true;
     }
@@ -421,7 +461,8 @@ class Watcher extends EventEmitter {
     retry.retryAfter = 0;
     this.errorRetries.set(s.num, retry);
 
-    log.info(`[watcher] session ${s.num}: API error detected, sending retry (${retry.count}/${MAX_ERROR_RETRIES})`);
+    const nextWait = Math.round(Math.min(ERROR_RETRY_BASE * 2 ** retry.count, ERROR_RETRY_MAX_DELAY) / 1000);
+    log.info(`[watcher] session ${s.num}: API error detected, sending retry (attempt ${retry.count}, next wait ≤${nextWait}s)`);
 
     try {
       await node.sendKeys(paneTarget, 'retry', true);
@@ -435,7 +476,6 @@ class Watcher extends EventEmitter {
       name: s.name,
       num: s.num,
       retryCount: retry.count,
-      maxRetries: MAX_ERROR_RETRIES,
     });
 
     return true;

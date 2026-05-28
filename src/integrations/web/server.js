@@ -876,12 +876,12 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     broadcast({ type: 'notify', event: 'session:working', session: num, name });
   });
 
-  watcher.on('session:error-retry', ({ name, num, retryCount, maxRetries, retryAfter, waitMins }) => {
-    broadcast({ type: 'notify', event: 'session:error-retry', session: num, name, retryCount, maxRetries, retryAfter, waitMins });
+  watcher.on('session:error-retry', ({ name, num, retryCount, retryAfter, waitMins }) => {
+    broadcast({ type: 'notify', event: 'session:error-retry', session: num, name, retryCount, retryAfter, waitMins });
     if (taskQueue) {
       const detail = retryAfter
         ? `Rate limit — waiting ${waitMins}m for reset`
-        : `API error — auto-retry ${retryCount}/${maxRetries}`;
+        : `API error — auto-retry (attempt ${retryCount})`;
       taskQueue.pushFeed('state', num, detail);
     }
   });

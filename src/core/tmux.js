@@ -354,6 +354,7 @@ module.exports = {
   sendKeys,
   hasSession,
   detectState,
+  ACTIVE_STATUS_RE,
   gitInfo,
   killSession,
   stripTUIChrome,

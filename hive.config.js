@@ -128,6 +128,11 @@ module.exports = {
   watcher: {
     // How often to check for state changes (ms)
     interval: 10000,
+    // Auto-retry transient API errors (rate limits, 5xx, overload) by typing
+    // "retry" into a stalled session. Set enabled: false to opt out entirely.
+    errorRetry: {
+      enabled: true,
+    },
   },
 
   // ── GitHub + Jenkins (for PR/CI status) ───────────────
