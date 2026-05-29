@@ -78,10 +78,20 @@ async function sendKeys(target, keys, enter = true) {
   if (cleaned) {
     // Write to temp file + tmux load-buffer/paste-buffer to avoid all shell
     // escaping issues with quotes, backticks, $, !, etc.
+    //
+    // -p enables bracketed paste mode (ESC[200~ … ESC[201~). Without it,
+    // tmux streams the buffer as raw keystrokes — every embedded \n arrives
+    // as an Enter key event, and any TUI doing paste-burst heuristics (Claude
+    // Code does) strips those Enters while keeping the text, collapsing a
+    // multi-line message into one line. PR #57 ("preserve newlines") relied
+    // on paste-buffer "handling newlines natively" — true at the byte level,
+    // false in a TUI context unless bracketed paste is on. tmux's -p is a
+    // no-op for apps that haven't requested bracketed paste, so it's safe
+    // unconditionally.
     const tmpFile = `/tmp/hive-sendkeys-${process.pid}-${Date.now()}`;
     try {
       writeFileSync(tmpFile, cleaned, 'utf8');
-      const r = await exec(`tmux load-buffer "${tmpFile}" && tmux paste-buffer -t "${target}" -d`);
+      const r = await exec(`tmux load-buffer "${tmpFile}" && tmux paste-buffer -t "${target}" -d -p`);
       if (r === null) {
         throw new Error(`tmux paste failed for target=${target}, len=${cleaned.length}`);
       }
