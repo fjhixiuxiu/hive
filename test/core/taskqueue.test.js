@@ -584,6 +584,33 @@ describe('TaskQueue', () => {
       expect(task.status).toBe('queued');
     });
 
+    it('auto-creates a session for an autoCreate task when no auto-session is free', async () => {
+      // Regression: _tryAutoDispatch used to early-return when no auto-session was free
+      // (the `if (!idleAuto.length) return` before the auto-create block), so a queued
+      // task could never trigger a spawn on a fully-busy fleet. It must now attempt one.
+      sessionManagerModule.createSession.mockResolvedValue(); // override the default reject
+      fleetModule.getFleetStatus.mockResolvedValue([]);        // empty fleet: nothing free, slots open
+      tq.config.sessions.repoDir = (n) => `/tmp/wp${n}`;
+      tq._pmManager = { pms: new Map([['1', { name: 'Intake', autoCreate: true }]]) };
+      tq.tasks.set('999', { id: '999', text: 'spawn me', mode: 'auto', status: 'queued', designation: null, source: 'pm:Intake' });
+
+      await tq._tryAutoDispatch();
+
+      expect(sessionManagerModule.createSession).toHaveBeenCalled();
+    });
+
+    it('does NOT spawn for a queued task whose PM lacks autoCreate', async () => {
+      const createSpy = sessionManagerModule.createSession.mockResolvedValue();
+      fleetModule.getFleetStatus.mockResolvedValue([]);
+      tq.config.sessions.repoDir = (n) => `/tmp/wp${n}`;
+      tq._pmManager = { pms: new Map([['1', { name: 'NoAuto', autoCreate: false }]]) };
+      tq.tasks.set('998', { id: '998', text: 'do not spawn', mode: 'auto', status: 'queued', designation: null, source: 'pm:NoAuto' });
+
+      await tq._tryAutoDispatch();
+
+      expect(createSpy).not.toHaveBeenCalled();
+    });
+
     it('respects dispatch lock', async () => {
       tq.autoSessions.add(6);
       tq.dispatchLock.add(6);
