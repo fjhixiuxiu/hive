@@ -308,6 +308,32 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     }
   }
 
+  // When a task completes, archive any plans it spawned IF the PM that owns
+  // the task has opted in via autoArchivePlanOnTaskComplete. Failures here are
+  // soft-logged — they shouldn't poison the task completion flow.
+  function autoArchivePlansForTask(task) {
+    if (!task || !task.source || !task.source.startsWith('pm:')) return;
+    if (!pmManager) return;
+    const pmName = task.source.slice(3);
+    let pm = null;
+    for (const candidate of pmManager.pms.values()) {
+      if (candidate.name === pmName) { pm = candidate; break; }
+    }
+    if (!pm || !pm.autoArchivePlanOnTaskComplete) return;
+    try {
+      const linked = plansStore.listPlans({ sourceTaskId: task.id, status: 'open' });
+      for (const p of linked) {
+        if (plansStore.archivePlan(p.id)) {
+          clearPlanRefFromSessions(p.id);
+          broadcast({ type: 'plan:archived', planId: p.id, reason: 'task-completed' });
+          log.info(`[plans] auto-archived ${p.id} (task ${task.id} completed via PM "${pmName}")`);
+        }
+      }
+    } catch (err) {
+      log.warn(`[plans] auto-archive for task ${task.id} failed: ${err.message}`);
+    }
+  }
+
   app.post('/api/plans/:planId/archive', (req, res) => {
     if (!plansStore.getPlan(req.params.planId)) return res.status(404).json({ error: 'Plan not found' });
     const ok = plansStore.archivePlan(req.params.planId);
@@ -324,6 +350,46 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     // Note: we do NOT auto-restore planRef to sessions. User must re-pin manually.
     broadcast({ type: 'plan:unarchived', planId: req.params.planId });
     res.json({ ok: true, planId: req.params.planId, status: 'open' });
+  });
+
+  app.post('/api/plans/:planId/delete', (req, res) => {
+    if (!plansStore.getPlan(req.params.planId)) return res.status(404).json({ error: 'Plan not found' });
+    const ok = plansStore.deletePlan(req.params.planId);
+    if (!ok) return res.status(500).json({ error: 'Delete failed' });
+    clearPlanRefFromSessions(req.params.planId);
+    broadcast({ type: 'plan:deleted', planId: req.params.planId });
+    res.json({ ok: true, planId: req.params.planId });
+  });
+
+  // Bulk archive / unarchive / delete. Body: { action, ids: [planId, ...] }
+  // Returns { ok: [planId, ...], failed: [{ id, error }] } so the UI can show
+  // per-row failures without abandoning the whole batch.
+  app.post('/api/plans/bulk', (req, res) => {
+    const { action, ids } = req.body || {};
+    if (!['archive', 'unarchive', 'delete'].includes(action)) {
+      return res.status(400).json({ error: 'action must be archive|unarchive|delete' });
+    }
+    if (!Array.isArray(ids) || !ids.length) {
+      return res.status(400).json({ error: 'ids must be a non-empty array' });
+    }
+    const ok = [];
+    const failed = [];
+    for (const id of ids) {
+      try {
+        if (!plansStore.getPlan(id)) { failed.push({ id, error: 'not found' }); continue; }
+        let succeeded;
+        if (action === 'archive') succeeded = plansStore.archivePlan(id);
+        else if (action === 'unarchive') succeeded = plansStore.unarchivePlan(id);
+        else succeeded = plansStore.deletePlan(id);
+        if (!succeeded) { failed.push({ id, error: `${action} failed` }); continue; }
+        if (action === 'archive' || action === 'delete') clearPlanRefFromSessions(id);
+        ok.push(id);
+        broadcast({ type: `plan:${action === 'unarchive' ? 'unarchived' : action === 'archive' ? 'archived' : 'deleted'}`, planId: id });
+      } catch (err) {
+        failed.push({ id, error: err.message });
+      }
+    }
+    res.json({ ok, failed });
   });
 
   app.get('/plans', (req, res) => {
@@ -896,7 +962,10 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
   if (taskQueue) {
     taskQueue.on('task:created', (task) => broadcast({ type: 'task:created', task: decorateTaskActions(task, pmManager) }));
     taskQueue.on('task:dispatched', (task) => broadcast({ type: 'task:dispatched', task: decorateTaskActions(task, pmManager) }));
-    taskQueue.on('task:completed', (task) => broadcast({ type: 'task:completed', task: decorateTaskActions(task, pmManager) }));
+    taskQueue.on('task:completed', (task) => {
+      broadcast({ type: 'task:completed', task: decorateTaskActions(task, pmManager) });
+      autoArchivePlansForTask(task);
+    });
     taskQueue.on('task:failed', (task) => broadcast({ type: 'task:failed', task: decorateTaskActions(task, pmManager) }));
     taskQueue.on('task:cancelled', (task) => broadcast({ type: 'task:cancelled', task: decorateTaskActions(task, pmManager) }));
     taskQueue.on('task:requeued', (task) => broadcast({ type: 'task:requeued', task: decorateTaskActions(task, pmManager) }));

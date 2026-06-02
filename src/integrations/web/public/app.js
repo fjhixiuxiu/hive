@@ -3844,6 +3844,9 @@
   let plansAllCached = [];
   let plansActiveFilter = 'open';
   let plansSelectedId = null;
+  let plansSearchQuery = '';
+  const plansSelected = new Set();
+  const PLANS_STALE_MS = 30 * 24 * 60 * 60 * 1000;
 
   async function loadPlansList() {
     try {
@@ -3851,16 +3854,33 @@
       if (!r.ok) return;
       const data = await r.json();
       plansAllCached = data.plans || [];
+      // Drop selections for plans that no longer exist
+      for (const id of [...plansSelected]) {
+        if (!plansAllCached.find(p => p.id === id)) plansSelected.delete(id);
+      }
       renderPlansPanel();
     } catch { /* ignore */ }
+  }
+
+  function plansMatchesSearch(p) {
+    if (!plansSearchQuery) return true;
+    const q = plansSearchQuery.toLowerCase();
+    if ((p.title || '').toLowerCase().includes(q)) return true;
+    if (p.sessionId != null && `session ${p.sessionId}`.includes(q)) return true;
+    if (p.sessionId != null && `s${p.sessionId}`.includes(q)) return true;
+    return false;
+  }
+
+  function plansVisible() {
+    return plansAllCached
+      .filter(p => plansActiveFilter === 'all' || p.status === plansActiveFilter)
+      .filter(plansMatchesSearch);
   }
 
   function renderPlansPanel() {
     const listEl = document.getElementById('plans-panel-list');
     if (!listEl) return;
-    const filtered = plansActiveFilter === 'all'
-      ? plansAllCached
-      : plansAllCached.filter(p => p.status === plansActiveFilter);
+    const filtered = plansVisible();
 
     // Counts
     const counts = { open: 0, archived: 0, all: plansAllCached.length };
@@ -3875,8 +3895,21 @@
       t.classList.toggle('active', t.dataset.status === plansActiveFilter);
     });
 
+    // Bulk header: visible whenever we have results to act on
+    const bulkHeader = document.getElementById('plans-bulk-header');
+    if (bulkHeader) {
+      bulkHeader.style.display = filtered.length ? 'flex' : 'none';
+      const summary = document.getElementById('plans-visible-count');
+      if (summary) summary.textContent = `${filtered.length} plan${filtered.length === 1 ? '' : 's'}`;
+    }
+
     if (!filtered.length) {
-      listEl.innerHTML = `<div class="plans-empty">${plansActiveFilter === 'archived' ? 'No archived plans.' : 'No plans yet.<br>Ask Claude to plan something — it will use <code>hive_publish_plan</code>.'}</div>`;
+      if (plansSearchQuery) {
+        listEl.innerHTML = `<div class="plans-empty">No plans match your search.</div>`;
+      } else {
+        listEl.innerHTML = `<div class="plans-empty">${plansActiveFilter === 'archived' ? 'No archived plans.' : 'No plans yet.<br>Ask Claude to plan something — it will use <code>hive_publish_plan</code>.'}</div>`;
+      }
+      updatePlansBulkBar();
       return;
     }
     listEl.innerHTML = filtered.map(p => {
@@ -3889,7 +3922,9 @@
         pillTxt = p.openCommentCount > 0 ? `${p.openCommentCount} open` : 'no open';
       }
       const selected = plansSelectedId === p.id ? ' selected' : '';
+      const checked = plansSelected.has(p.id) ? 'checked' : '';
       return `<div class="plan-row${selected}" data-plan-id="${esc(p.id)}">
+        <input type="checkbox" class="plan-row-checkbox" data-plan-cb="${esc(p.id)}" ${checked}>
         <div class="plan-row-title">${esc(p.title || 'Untitled')}</div>
         <div class="plan-row-meta">${session}${v} · ${esc(updated)}</div>
         <div class="plan-row-pill"><span class="pill ${pillCls}">${esc(pillTxt)}</span></div>
@@ -3897,8 +3932,77 @@
     }).join('');
 
     listEl.querySelectorAll('.plan-row').forEach(row => {
-      row.addEventListener('click', () => selectPlan(row.dataset.planId));
+      row.addEventListener('click', (e) => {
+        // Clicks on the checkbox shouldn't switch the active plan.
+        if (e.target.matches('.plan-row-checkbox')) return;
+        selectPlan(row.dataset.planId);
+      });
     });
+    listEl.querySelectorAll('.plan-row-checkbox').forEach(cb => {
+      cb.addEventListener('change', () => {
+        const id = cb.dataset.planCb;
+        if (cb.checked) plansSelected.add(id);
+        else plansSelected.delete(id);
+        updatePlansBulkBar();
+        syncPlansSelectAll();
+      });
+    });
+
+    syncPlansSelectAll();
+    updatePlansBulkBar();
+  }
+
+  function syncPlansSelectAll() {
+    const cb = document.getElementById('plans-select-all');
+    if (!cb) return;
+    const visible = plansVisible();
+    if (!visible.length) { cb.checked = false; cb.indeterminate = false; return; }
+    const selCount = visible.filter(p => plansSelected.has(p.id)).length;
+    if (selCount === 0) { cb.checked = false; cb.indeterminate = false; }
+    else if (selCount === visible.length) { cb.checked = true; cb.indeterminate = false; }
+    else { cb.checked = false; cb.indeterminate = true; }
+  }
+
+  function updatePlansBulkBar() {
+    const bar = document.getElementById('plans-bulk-bar');
+    if (!bar) return;
+    if (plansSelected.size === 0) { bar.style.display = 'none'; return; }
+    bar.style.display = 'flex';
+    document.getElementById('plans-bulk-count-n').textContent = plansSelected.size;
+    const selectedPlans = plansAllCached.filter(p => plansSelected.has(p.id));
+    const hasOpen = selectedPlans.some(p => p.status === 'open');
+    const hasArchived = selectedPlans.some(p => p.status === 'archived');
+    document.getElementById('plans-bulk-archive').style.display = hasOpen ? '' : 'none';
+    document.getElementById('plans-bulk-unarchive').style.display = hasArchived ? '' : 'none';
+  }
+
+  async function plansBulkAction(action) {
+    const ids = [...plansSelected];
+    if (!ids.length) return;
+    try {
+      const r = await fetch('/api/plans/bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, ids }),
+      });
+      if (!r.ok) {
+        alert(`${action} failed: ` + (await r.text()));
+        return;
+      }
+      const result = await r.json();
+      if (result.failed && result.failed.length) {
+        alert(`${result.ok.length} succeeded, ${result.failed.length} failed:\n` +
+              result.failed.map(f => `  ${f.id}: ${f.error}`).join('\n'));
+      }
+      for (const id of result.ok || []) plansSelected.delete(id);
+      // If the active plan was deleted/archived, clear the right pane
+      if (action === 'delete' && plansSelectedId && (result.ok || []).includes(plansSelectedId)) {
+        selectPlan(null);
+      }
+      await loadPlansList();
+    } catch (err) {
+      alert(`${action} failed: ${err.message}`);
+    }
   }
 
   function selectPlan(planId) {
@@ -3919,13 +4023,72 @@
     }
   }
 
-  // Wire filter tabs once on init (deferred to allow DOM to exist)
+  // Wire filter tabs + search + bulk actions once on init (deferred to allow DOM to exist)
   function initPlansPanel() {
     document.querySelectorAll('#plans-panel-filters .ftab').forEach(tab => {
       tab.addEventListener('click', () => {
         plansActiveFilter = tab.dataset.status;
         renderPlansPanel();
       });
+    });
+
+    const search = document.getElementById('plans-search');
+    if (search) {
+      search.addEventListener('input', () => {
+        plansSearchQuery = search.value.trim();
+        renderPlansPanel();
+      });
+    }
+
+    const selectAll = document.getElementById('plans-select-all');
+    if (selectAll) {
+      selectAll.addEventListener('change', () => {
+        const visible = plansVisible();
+        if (selectAll.checked) {
+          for (const p of visible) plansSelected.add(p.id);
+        } else {
+          for (const p of visible) plansSelected.delete(p.id);
+        }
+        renderPlansPanel();
+      });
+    }
+
+    const stale = document.getElementById('plans-select-stale');
+    if (stale) {
+      stale.addEventListener('click', () => {
+        const cutoff = Date.now() - PLANS_STALE_MS;
+        const visible = plansVisible();
+        let added = 0;
+        for (const p of visible) {
+          if ((p.openCommentCount || 0) > 0) continue;
+          const updated = p.updatedAt ? new Date(p.updatedAt).getTime() : 0;
+          if (updated >= cutoff) continue;
+          if (!plansSelected.has(p.id)) { plansSelected.add(p.id); added++; }
+        }
+        if (added === 0) {
+          alert('No stale plans found among visible items (0 open comments, untouched 30+ days).');
+        }
+        renderPlansPanel();
+      });
+    }
+
+    const bulkArchive = document.getElementById('plans-bulk-archive');
+    if (bulkArchive) bulkArchive.addEventListener('click', () => plansBulkAction('archive'));
+    const bulkUnarchive = document.getElementById('plans-bulk-unarchive');
+    if (bulkUnarchive) bulkUnarchive.addEventListener('click', () => plansBulkAction('unarchive'));
+    const bulkDelete = document.getElementById('plans-bulk-delete');
+    if (bulkDelete) bulkDelete.addEventListener('click', () => {
+      const n = plansSelected.size;
+      const confirmed = prompt(
+        `Delete ${n} plan${n === 1 ? '' : 's'} permanently? This cannot be undone.\nType "delete" to confirm:`
+      );
+      if (confirmed !== 'delete') return;
+      plansBulkAction('delete');
+    });
+    const bulkClear = document.getElementById('plans-bulk-clear');
+    if (bulkClear) bulkClear.addEventListener('click', () => {
+      plansSelected.clear();
+      renderPlansPanel();
     });
   }
   initPlansPanel();
@@ -9101,6 +9264,7 @@
       instructions: document.getElementById('pm-form-instructions').value.trim(),
       mcpEnabled: document.getElementById('pm-form-mcp-enabled').checked,
       requireHumanClose: document.getElementById('pm-form-require-human-close').checked,
+      autoArchivePlanOnTaskComplete: document.getElementById('pm-form-auto-archive-plan').checked,
       learningEnabled: document.getElementById('pm-form-learning-enabled').checked,
       learningPrompt: document.getElementById('pm-form-learning-prompt').value.trim(),
       checklistTemplate: document.getElementById('pm-form-checklist-tpl').value || null,
@@ -9204,6 +9368,7 @@
     document.getElementById('pm-form-instructions').value = pm ? (pm.instructions || '') : '';
     document.getElementById('pm-form-mcp-enabled').checked = pm ? !!pm.mcpEnabled : false;
     document.getElementById('pm-form-require-human-close').checked = pm ? !!pm.requireHumanClose : false;
+    document.getElementById('pm-form-auto-archive-plan').checked = pm ? !!pm.autoArchivePlanOnTaskComplete : false;
     document.getElementById('pm-form-auto-create').checked = pm ? !!pm.autoCreate : false;
     document.getElementById('pm-form-designation-match').value = pm ? (pm.designationMatch || 'flexible') : 'flexible';
     updatePmDispatchCascade();

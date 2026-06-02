@@ -131,6 +131,7 @@ class ProjectManager extends EventEmitter {
       autoCreate: cfg.autoCreate || false, // when true, auto-create sessions for this PM's queued tasks
       designationMatch: cfg.designationMatch || 'flexible', // 'flexible' = fall back to undesignated sessions, 'strict' = only matching designation
       primaryAction: cfg.primaryAction || { enabled: false }, // { enabled: bool } — opt-in "Open PR/Issue/Thread" button on task cards
+      autoArchivePlanOnTaskComplete: !!cfg.autoArchivePlanOnTaskComplete, // when a task from this PM completes, archive its linked plan(s)
       enabled: false,
       seenKeys: [],
       tasksCreated: 0,
