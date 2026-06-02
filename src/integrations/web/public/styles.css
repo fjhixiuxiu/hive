@@ -3567,9 +3567,97 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   width: 340px;
   flex-shrink: 0;
   border-right: 1px solid var(--border-subtle);
-  overflow-y: auto;
   display: flex;
   flex-direction: column;
+  min-height: 0;
+}
+#plans-panel-list {
+  flex: 1;
+  overflow-y: auto;
+}
+.plans-search-row {
+  margin: 4px 0 8px;
+}
+.plans-search-row input {
+  width: 100%;
+  background: var(--bg2);
+  color: var(--fg);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font: 12px inherit;
+}
+.plans-search-row input:focus {
+  outline: none;
+  border-color: var(--purple);
+}
+.plans-bulk-header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border-subtle);
+  font-size: 11px;
+  color: var(--dim);
+}
+.plans-select-all-wrap {
+  display: flex; align-items: center; gap: 6px;
+  cursor: pointer;
+}
+.plans-select-all-wrap input { cursor: pointer; }
+.plans-stale-btn {
+  margin-left: auto;
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  color: var(--dim);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font: 10px inherit;
+  cursor: pointer;
+}
+.plans-stale-btn:hover { color: var(--fg); border-color: var(--dim); }
+.plan-row-checkbox {
+  grid-column: 0;
+  align-self: center;
+}
+#plans-panel-list .plan-row {
+  grid-template-columns: auto 1fr auto;
+}
+#plans-panel-list .plan-row .plan-row-checkbox {
+  grid-row: 1 / span 2;
+}
+#plans-panel-list .plan-row .plan-row-title,
+#plans-panel-list .plan-row .plan-row-meta { grid-column: 2; }
+#plans-panel-list .plan-row .plan-row-pill { grid-column: 3; }
+.plans-bulk-bar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg2);
+  flex-shrink: 0;
+}
+.plans-bulk-count {
+  color: var(--fg);
+  font-size: 12px;
+  font-weight: 600;
+}
+.plans-bulk-actions {
+  margin-left: auto;
+  display: flex; align-items: center; gap: 4px;
+}
+.plans-bulk-actions button {
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  padding: 4px 10px;
+  font: 11px inherit;
+  cursor: pointer;
+}
+.plans-bulk-actions button:hover { border-color: var(--dim); }
+.plans-bulk-actions button.danger { color: var(--red); border-color: var(--red); }
+.plans-bulk-actions button.danger:hover { background: rgba(255, 85, 85, 0.12); }
+.plans-bulk-clear {
+  padding: 4px 8px !important;
+  color: var(--dim) !important;
 }
 .plans-panel-sidebar-header {
   padding: 10px 14px 0;

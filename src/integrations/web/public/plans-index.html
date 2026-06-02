@@ -8,17 +8,35 @@
     --bg: #0d1117; --bg-soft: #161b22; --bg-deep: #010409;
     --border: #30363d; --border-soft: #21262d;
     --text: #c9d1d9; --text-strong: #f0f6fc; --text-dim: #8b949e;
-    --accent: #58a6ff; --warn: #d29922; --ok: #3fb950;
+    --accent: #58a6ff; --warn: #d29922; --ok: #3fb950; --danger: #f85149;
   }
   * { box-sizing: border-box; }
   body {
     background: var(--bg); color: var(--text);
     font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    max-width: 960px; margin: 0 auto; padding: 40px 24px 80px;
+    max-width: 960px; margin: 0 auto; padding: 40px 24px 120px;
   }
   h1 { font-size: 26px; color: var(--text-strong); margin: 0 0 18px; }
   a { color: var(--accent); text-decoration: none; }
   a:hover { text-decoration: underline; }
+
+  .search-row {
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 12px;
+  }
+  .search-row input {
+    flex: 1; background: var(--bg-soft);
+    color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 8px 12px;
+    font: 14px inherit;
+  }
+  .search-row input:focus { outline: none; border-color: var(--accent); }
+  .search-row .clear-btn {
+    background: transparent; border: 1px solid var(--border);
+    color: var(--text-dim); border-radius: 6px;
+    padding: 8px 12px; cursor: pointer; font: 13px inherit;
+  }
+  .search-row .clear-btn:hover { color: var(--text); border-color: var(--text-dim); }
 
   .filter-tabs {
     display: flex; gap: 0;
@@ -37,15 +55,33 @@
   .filter-tabs .ftab.active { color: var(--text-strong); border-bottom-color: var(--accent); }
   .filter-tabs .ftab .count { color: var(--text-dim); margin-left: 4px; font-size: 12px; }
 
+  .header-row {
+    display: flex; align-items: center; gap: 12px;
+    padding: 8px 16px; border-bottom: 1px solid var(--border-soft);
+    color: var(--text-dim); font-size: 12px;
+  }
+  .header-row .stale-btn {
+    background: transparent; border: 1px solid var(--border);
+    color: var(--text-dim); border-radius: 4px;
+    padding: 3px 10px; font-size: 11px; cursor: pointer;
+    margin-left: auto;
+  }
+  .header-row .stale-btn:hover { color: var(--text); border-color: var(--text-dim); }
+
   .row {
-    display: flex; justify-content: space-between; align-items: center;
-    padding: 14px 16px;
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 16px;
     border-bottom: 1px solid var(--border-soft);
   }
   .row:hover { background: var(--bg-soft); }
+  .row.selected { background: #58a6ff11; }
+  .row .body { flex: 1; min-width: 0; }
   .row .title { color: var(--text-strong); font-weight: 500; }
   .row .meta { color: var(--text-dim); font-size: 12px; margin-top: 2px; }
-  .row .actions { display: flex; align-items: center; gap: 12px; }
+  .row .actions { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+
+  input[type="checkbox"] { cursor: pointer; }
+  .plan-checkbox, .select-all-cb { width: 16px; height: 16px; }
 
   .pill {
     display: inline-block;
@@ -66,10 +102,37 @@
     cursor: pointer;
   }
   .restore-btn:hover { border-color: var(--accent); }
+
+  .bulk-bar {
+    position: fixed; left: 0; right: 0; bottom: 0;
+    background: var(--bg-soft);
+    border-top: 1px solid var(--border);
+    padding: 12px 24px;
+    display: flex; align-items: center; gap: 12px;
+    z-index: 10;
+    box-shadow: 0 -4px 16px rgba(0,0,0,0.4);
+  }
+  .bulk-bar .count { color: var(--text-strong); font-weight: 600; }
+  .bulk-bar button {
+    background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 6px 14px; cursor: pointer;
+    font: 13px inherit;
+  }
+  .bulk-bar button:hover { border-color: var(--text-dim); }
+  .bulk-bar .danger { color: var(--danger); border-color: var(--danger); }
+  .bulk-bar .danger:hover { background: #f8514922; }
+  .bulk-bar .spacer { flex: 1; }
+  .bulk-bar .clear { color: var(--text-dim); }
 </style>
 </head>
 <body>
 <h1>Plans</h1>
+
+<div class="search-row">
+  <input id="search" type="search" placeholder="Search by title or session (e.g. &quot;session 4&quot;)…" autocomplete="off">
+  <button class="clear-btn" id="clear-search" style="display:none;">Clear</button>
+</div>
 
 <div class="filter-tabs" id="filter-tabs">
   <button class="ftab active" data-status="open">Open <span class="count" id="count-open"></span></button>
@@ -77,17 +140,40 @@
   <button class="ftab" data-status="all">All <span class="count" id="count-all"></span></button>
 </div>
 
+<div class="header-row" id="header-row" style="display:none;">
+  <input type="checkbox" class="select-all-cb" id="select-all" title="Select all visible">
+  <span id="header-summary"></span>
+  <button class="stale-btn" id="select-stale" title="Select plans with 0 open comments, untouched for 30+ days">Select stale</button>
+</div>
+
 <div id="list" class="empty">Loading…</div>
 
+<div class="bulk-bar" id="bulk-bar" style="display:none;">
+  <span class="count"><span id="bulk-count">0</span> selected</span>
+  <button id="bulk-archive">Archive</button>
+  <button id="bulk-unarchive">Unarchive</button>
+  <button id="bulk-delete" class="danger">Delete…</button>
+  <div class="spacer"></div>
+  <button id="bulk-clear" class="clear">Clear selection</button>
+</div>
+
 <script>
+const STALE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
 let allPlans = [];
 let activeFilter = 'open';
+let searchQuery = '';
+const selected = new Set();
 
 async function load() {
   const r = await fetch('/api/plans?status=all');
   if (!r.ok) return;
   const data = await r.json();
   allPlans = data.plans || [];
+  // Drop selections for plans that no longer exist (e.g. after delete elsewhere).
+  for (const id of [...selected]) {
+    if (!allPlans.find(p => p.id === id)) selected.delete(id);
+  }
   updateCounts();
   render();
 }
@@ -104,15 +190,43 @@ function esc(s) {
   return String(s || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
+function matchesSearch(p) {
+  if (!searchQuery) return true;
+  const q = searchQuery.toLowerCase();
+  if ((p.title || '').toLowerCase().includes(q)) return true;
+  if (p.sessionId != null && `session ${p.sessionId}`.includes(q)) return true;
+  return false;
+}
+
+function visiblePlans() {
+  return allPlans
+    .filter(p => activeFilter === 'all' || p.status === activeFilter)
+    .filter(matchesSearch);
+}
+
 function render() {
-  const filtered = activeFilter === 'all' ? allPlans : allPlans.filter(p => p.status === activeFilter);
+  const filtered = visiblePlans();
   const el = document.getElementById('list');
+  const headerRow = document.getElementById('header-row');
+
   if (!filtered.length) {
     el.className = 'empty';
-    el.innerHTML = activeFilter === 'archived' ? 'No archived plans.' : 'No plans yet.';
+    if (searchQuery) {
+      el.innerHTML = 'No plans match your search.';
+    } else if (activeFilter === 'archived') {
+      el.innerHTML = 'No archived plans.';
+    } else {
+      el.innerHTML = 'No plans yet.';
+    }
+    headerRow.style.display = 'none';
+    updateBulkBar();
     return;
   }
   el.className = '';
+  headerRow.style.display = 'flex';
+  document.getElementById('header-summary').textContent =
+    `${filtered.length} plan${filtered.length === 1 ? '' : 's'}`;
+
   el.innerHTML = filtered.map(p => {
     const updated = p.updatedAt ? new Date(p.updatedAt).toLocaleString() : '';
     const session = p.sessionId != null ? `session ${p.sessionId} · ` : '';
@@ -125,8 +239,10 @@ function render() {
     const restoreBtn = p.status === 'archived'
       ? `<button class="restore-btn" data-restore="${esc(p.id)}">Restore</button>`
       : '';
-    return `<div class="row">
-      <div>
+    const isSel = selected.has(p.id);
+    return `<div class="row ${isSel ? 'selected' : ''}">
+      <input type="checkbox" class="plan-checkbox" data-id="${esc(p.id)}" ${isSel ? 'checked' : ''}>
+      <div class="body">
         <div class="title"><a href="/plans/${esc(p.id)}">${esc(p.title || 'Untitled')}</a></div>
         <div class="meta">${session}${v} · updated ${esc(updated)}</div>
       </div>
@@ -141,6 +257,7 @@ function render() {
   el.querySelectorAll('[data-restore]').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       e.preventDefault();
+      e.stopPropagation();
       const id = btn.dataset.restore;
       btn.disabled = true; btn.textContent = '…';
       const r = await fetch(`/api/plans/${id}/unarchive`, { method: 'POST' });
@@ -153,7 +270,84 @@ function render() {
       }
     });
   });
+
+  // Wire checkboxes
+  el.querySelectorAll('.plan-checkbox').forEach(cb => {
+    cb.addEventListener('change', () => {
+      if (cb.checked) selected.add(cb.dataset.id);
+      else selected.delete(cb.dataset.id);
+      updateBulkBar();
+      // Re-color row without full re-render
+      const row = cb.closest('.row');
+      if (row) row.classList.toggle('selected', cb.checked);
+      syncSelectAll();
+    });
+  });
+
+  syncSelectAll();
+  updateBulkBar();
 }
+
+function syncSelectAll() {
+  const cb = document.getElementById('select-all');
+  const visible = visiblePlans();
+  if (!visible.length) { cb.checked = false; cb.indeterminate = false; return; }
+  const selCount = visible.filter(p => selected.has(p.id)).length;
+  if (selCount === 0) { cb.checked = false; cb.indeterminate = false; }
+  else if (selCount === visible.length) { cb.checked = true; cb.indeterminate = false; }
+  else { cb.checked = false; cb.indeterminate = true; }
+}
+
+function updateBulkBar() {
+  const bar = document.getElementById('bulk-bar');
+  if (selected.size === 0) { bar.style.display = 'none'; return; }
+  bar.style.display = 'flex';
+  document.getElementById('bulk-count').textContent = selected.size;
+
+  // Show archive/unarchive based on selection's actual statuses
+  const selectedPlans = allPlans.filter(p => selected.has(p.id));
+  const hasOpen = selectedPlans.some(p => p.status === 'open');
+  const hasArchived = selectedPlans.some(p => p.status === 'archived');
+  document.getElementById('bulk-archive').style.display = hasOpen ? '' : 'none';
+  document.getElementById('bulk-unarchive').style.display = hasArchived ? '' : 'none';
+}
+
+async function bulkAction(action) {
+  const ids = [...selected];
+  if (!ids.length) return;
+  const r = await fetch('/api/plans/bulk', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, ids }),
+  });
+  if (!r.ok) {
+    alert(`${action} failed: ` + (await r.text()));
+    return;
+  }
+  const result = await r.json();
+  if (result.failed && result.failed.length) {
+    alert(`${result.ok.length} succeeded, ${result.failed.length} failed:\n` +
+          result.failed.map(f => `  ${f.id}: ${f.error}`).join('\n'));
+  }
+  for (const id of result.ok || []) selected.delete(id);
+  await load();
+}
+
+// Search
+const searchInput = document.getElementById('search');
+const clearBtn = document.getElementById('clear-search');
+searchInput.addEventListener('input', () => {
+  searchQuery = searchInput.value.trim();
+  clearBtn.style.display = searchQuery ? '' : 'none';
+  render();
+});
+clearBtn.addEventListener('click', () => {
+  searchInput.value = '';
+  searchQuery = '';
+  clearBtn.style.display = 'none';
+  render();
+  searchInput.focus();
+});
 
 // Filter tab clicks
 document.querySelectorAll('#filter-tabs .ftab').forEach(tab => {
@@ -162,6 +356,50 @@ document.querySelectorAll('#filter-tabs .ftab').forEach(tab => {
     document.querySelectorAll('#filter-tabs .ftab').forEach(t => t.classList.toggle('active', t === tab));
     render();
   });
+});
+
+// Select all visible
+document.getElementById('select-all').addEventListener('change', (e) => {
+  const visible = visiblePlans();
+  if (e.target.checked) {
+    for (const p of visible) selected.add(p.id);
+  } else {
+    for (const p of visible) selected.delete(p.id);
+  }
+  render();
+});
+
+// Select stale: visible plans with 0 open comments and not updated in 30+ days
+document.getElementById('select-stale').addEventListener('click', () => {
+  const cutoff = Date.now() - STALE_MS;
+  const visible = visiblePlans();
+  let added = 0;
+  for (const p of visible) {
+    if ((p.openCommentCount || 0) > 0) continue;
+    const updated = p.updatedAt ? new Date(p.updatedAt).getTime() : 0;
+    if (updated >= cutoff) continue;
+    if (!selected.has(p.id)) { selected.add(p.id); added++; }
+  }
+  if (added === 0) {
+    alert('No stale plans found among visible items (0 open comments, untouched 30+ days).');
+  }
+  render();
+});
+
+// Bulk actions
+document.getElementById('bulk-archive').addEventListener('click', () => bulkAction('archive'));
+document.getElementById('bulk-unarchive').addEventListener('click', () => bulkAction('unarchive'));
+document.getElementById('bulk-delete').addEventListener('click', () => {
+  const n = selected.size;
+  const confirmed = prompt(
+    `Delete ${n} plan${n === 1 ? '' : 's'} permanently? This cannot be undone.\nType "delete" to confirm:`
+  );
+  if (confirmed !== 'delete') return;
+  bulkAction('delete');
+});
+document.getElementById('bulk-clear').addEventListener('click', () => {
+  selected.clear();
+  render();
 });
 
 load();

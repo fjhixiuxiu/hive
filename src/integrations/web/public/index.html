@@ -842,14 +842,33 @@
         <div class="plans-panel-sidebar">
           <div class="plans-panel-sidebar-header">
             <span class="plans-panel-title">Plans</span>
+            <div class="plans-search-row">
+              <input id="plans-search" type="search" placeholder="Search by title or session…" autocomplete="off">
+            </div>
             <div class="plans-panel-filters" id="plans-panel-filters">
               <button class="ftab active" data-status="open">Open <span class="count" id="plans-count-open"></span></button>
               <button class="ftab" data-status="archived">Archived <span class="count" id="plans-count-archived"></span></button>
               <button class="ftab" data-status="all">All <span class="count" id="plans-count-all"></span></button>
             </div>
+            <div class="plans-bulk-header" id="plans-bulk-header" style="display:none">
+              <label class="plans-select-all-wrap">
+                <input type="checkbox" id="plans-select-all" title="Select all visible">
+                <span id="plans-visible-count"></span>
+              </label>
+              <button class="plans-stale-btn" id="plans-select-stale" data-tooltip="Select plans with 0 open comments, untouched for 30+ days">Select stale</button>
+            </div>
           </div>
           <div id="plans-panel-list">
             <div class="plans-empty">Loading…</div>
+          </div>
+          <div class="plans-bulk-bar" id="plans-bulk-bar" style="display:none">
+            <span class="plans-bulk-count"><span id="plans-bulk-count-n">0</span> selected</span>
+            <div class="plans-bulk-actions">
+              <button id="plans-bulk-archive">Archive</button>
+              <button id="plans-bulk-unarchive">Unarchive</button>
+              <button id="plans-bulk-delete" class="danger">Delete</button>
+              <button id="plans-bulk-clear" class="plans-bulk-clear">×</button>
+            </div>
           </div>
         </div>
         <div class="plans-panel-detail">
@@ -1297,6 +1316,11 @@
     <div class="pm-form-field full-width">
       <label style="font-size:13px;color:var(--fg);cursor:pointer;display:flex;align-items:center;gap:6px">
         <input type="checkbox" id="pm-form-require-human-close"> Require human approval to close tasks
+      </label>
+    </div>
+    <div class="pm-form-field full-width">
+      <label style="font-size:13px;color:var(--fg);cursor:pointer;display:flex;align-items:center;gap:6px">
+        <input type="checkbox" id="pm-form-auto-archive-plan"> Auto-archive plans when the source task completes
       </label>
     </div>
     <div class="pm-form-field full-width">

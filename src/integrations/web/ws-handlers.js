@@ -2186,11 +2186,16 @@ function createMessageHandler(deps) {
           // sidebar code that treats `plan` as a string.
           const existing = taskQueue.getSessionContext(sessionNum);
           const existingPlanId = existing?.planRef?.planId || null;
+          // Stamp the active task on first publish so plans can later be
+          // auto-archived when their source task completes. publishPlan
+          // ignores sourceTaskId on the version-bump path.
+          const activeTaskId = taskQueue.activeTaskBySession.get(sessionNum) || null;
           const result = plansStore.publishPlan({
             planId: existingPlanId,
             sessionNum,
             html,
             title: msg.title,
+            sourceTaskId: activeTaskId,
           });
           const planRef = {
             planId: result.planId,

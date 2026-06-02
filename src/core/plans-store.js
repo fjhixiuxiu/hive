@@ -234,8 +234,11 @@ function resolveComment(planId, commentId, reason) {
 
 // Publish a new plan or a new version of an existing plan.
 // If planId is null, creates a new plan and returns the new id.
+// sourceTaskId is stamped on creation only — republishing leaves it alone, so
+// a plan stays bound to the task it was *started for* even if the session
+// has since moved on.
 // Returns { planId, version, openCommentCount, title }.
-function publishPlan({ planId, sessionNum, html, title }) {
+function publishPlan({ planId, sessionNum, html, title, sourceTaskId }) {
   ensureDir();
   if (!html || typeof html !== 'string') {
     throw new Error('html is required and must be a string');
@@ -259,6 +262,7 @@ function publishPlan({ planId, sessionNum, html, title }) {
       title: title || 'Untitled plan',
       status: 'open',
       currentVersion: 1,
+      sourceTaskId: sourceTaskId || null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -294,7 +298,7 @@ function getPlanHtml(planId, version) {
   }
 }
 
-function listPlans({ sessionNum, status } = {}) {
+function listPlans({ sessionNum, status, sourceTaskId } = {}) {
   ensureDir();
   let entries;
   try {
@@ -309,6 +313,7 @@ function listPlans({ sessionNum, status } = {}) {
     if (sessionNum != null && meta.sessionId !== Number(sessionNum)) continue;
     // `status: 'all'` is a no-op filter; only filter when a real status is given
     if (status && status !== 'all' && meta.status !== status) continue;
+    if (sourceTaskId != null && meta.sourceTaskId !== sourceTaskId) continue;
     const html = getPlanHtml(id);
     plans.push({
       ...meta,
@@ -337,6 +342,15 @@ function unarchivePlan(planId) {
   return true;
 }
 
+// Hard delete: remove the plan's directory entirely. Returns true if the
+// directory existed and was removed.
+function deletePlan(planId) {
+  const dir = planDir(planId);
+  if (!fs.existsSync(dir)) return false;
+  fs.rmSync(dir, { recursive: true, force: true });
+  return true;
+}
+
 module.exports = {
   plansRoot,
   publishPlan,
@@ -345,6 +359,7 @@ module.exports = {
   listPlans,
   archivePlan,
   unarchivePlan,
+  deletePlan,
   countOpenComments,
   parseComments,
   setComments,

@@ -315,5 +315,51 @@ describe('plans-store', () => {
       const list = plansStore.listPlans();
       expect(list[0].openCommentCount).toBe(2);
     });
+
+    it('filters by sourceTaskId', () => {
+      plansStore.publishPlan({ sessionNum: 1, html: SAMPLE_HTML, title: 'A', sourceTaskId: 'task-1' });
+      plansStore.publishPlan({ sessionNum: 1, html: SAMPLE_HTML, title: 'B', sourceTaskId: 'task-2' });
+      plansStore.publishPlan({ sessionNum: 1, html: SAMPLE_HTML, title: 'C', sourceTaskId: null });
+      const t1 = plansStore.listPlans({ sourceTaskId: 'task-1' });
+      expect(t1.length).toBe(1);
+      expect(t1[0].title).toBe('A');
+      const t3 = plansStore.listPlans({ sourceTaskId: 'task-3' });
+      expect(t3.length).toBe(0);
+    });
+  });
+
+  describe('sourceTaskId stamping', () => {
+    it('stamps sourceTaskId on first publish', () => {
+      const r = plansStore.publishPlan({ sessionNum: 1, html: SAMPLE_HTML, title: 'A', sourceTaskId: 'task-abc' });
+      const meta = plansStore.getPlan(r.planId).meta;
+      expect(meta.sourceTaskId).toBe('task-abc');
+    });
+
+    it('defaults sourceTaskId to null when not provided', () => {
+      const r = plansStore.publishPlan({ sessionNum: 1, html: SAMPLE_HTML, title: 'A' });
+      const meta = plansStore.getPlan(r.planId).meta;
+      expect(meta.sourceTaskId).toBeNull();
+    });
+
+    it('does NOT overwrite sourceTaskId on republish', () => {
+      const v1 = plansStore.publishPlan({ sessionNum: 1, html: SAMPLE_HTML, title: 'A', sourceTaskId: 'task-orig' });
+      plansStore.publishPlan({ planId: v1.planId, html: '<p>v2</p>', sourceTaskId: 'task-different' });
+      const meta = plansStore.getPlan(v1.planId).meta;
+      expect(meta.sourceTaskId).toBe('task-orig');
+    });
+  });
+
+  describe('deletePlan', () => {
+    it('removes the plan directory and returns true', () => {
+      const r = plansStore.publishPlan({ sessionNum: 1, html: SAMPLE_HTML, title: 'A' });
+      expect(fs.existsSync(path.join(tmpDir, r.planId))).toBe(true);
+      expect(plansStore.deletePlan(r.planId)).toBe(true);
+      expect(fs.existsSync(path.join(tmpDir, r.planId))).toBe(false);
+      expect(plansStore.getPlan(r.planId)).toBeNull();
+    });
+
+    it('returns false when the plan does not exist', () => {
+      expect(plansStore.deletePlan('nope')).toBe(false);
+    });
   });
 });
