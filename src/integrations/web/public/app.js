@@ -1293,7 +1293,10 @@
       case 'task:updated': {
         const idx = tasks.findIndex(t => t.id === msg.task.id);
         if (idx >= 0) tasks[idx] = msg.task; else tasks.unshift(msg.task);
-        renderTasks(); updateTasksBadge(); updateChecklistButtons(); updateActionsButton(); updatePrimaryActionButton(); refreshChecklistPopup(); updateSessionTaskButtons(); break;
+        renderTasks(); updateTasksBadge(); updateChecklistButtons(); updateActionsButton(); updatePrimaryActionButton(); refreshChecklistPopup(); updateTsNavButtons(); updateSessionTaskButtons();
+        // Task detail slide-out: refresh if the viewed task was updated (rename, title change, etc.)
+        if (taskDetailTaskId === msg.task.id) openTaskDetail(msg.task.id);
+        break;
       }
       case 'task:cancelled': {
         const idx = tasks.findIndex(t => t.id === msg.task.id);
@@ -2365,6 +2368,7 @@
 
   function shortBranch(branch) { if (!branch) return 'master'; const short = branch.replace(/^[^/]+\//, ''); return short.length > 28 ? short.substring(0, 25) + '...' : short; }
   function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+  function taskDisplayName(t) { return t.title || t.text; }
 
   // ── Session detail view ───────────────────────────
   var userScrolledUp = false;
@@ -4922,7 +4926,7 @@
       btn.className = `picker-btn${manualTarget === s.num ? ' selected' : ''}${busy ? ' disabled' : ''}`;
       btn.textContent = s.num;
       if (busy) {
-        btn.title = activeTask ? `Busy: ${activeTask.text}` : `State: ${s.state}`;
+        btn.title = activeTask ? `Busy: ${taskDisplayName(activeTask)}` : `State: ${s.state}`;
       } else {
         btn.addEventListener('click', () => { manualTarget = s.num; taskDialogPicker.querySelectorAll('.picker-btn').forEach(b => b.classList.remove('selected')); btn.classList.add('selected'); });
       }
@@ -4934,9 +4938,10 @@
   function openTaskDialog(taskId) {
     editingTaskId = taskId;
     const textEl = document.getElementById('task-dialog-text');
+    const titleInputEl = document.getElementById('task-dialog-title');
     const desigEl = document.getElementById('task-dialog-designation');
     const assigneeEl = document.getElementById('task-dialog-assignee');
-    const titleEl = document.getElementById('task-dialog-title');
+    const headingEl = document.getElementById('task-dialog-heading');
     const saveBtn = document.getElementById('task-dialog-save');
 
     // Populate assignee dropdown with real users
@@ -4948,8 +4953,9 @@
     if (taskId) {
       const task = tasks.find(t => t.id === taskId);
       if (!task) return;
-      titleEl.textContent = 'Edit Task';
+      headingEl.textContent = 'Edit Task';
       saveBtn.textContent = 'Save';
+      titleInputEl.value = task.title || '';
       textEl.value = task.text;
       desigEl.value = task.designation || '';
       assigneeEl.value = task.assignee || '';
@@ -4957,8 +4963,9 @@
       manualTarget = task.targetSession || null;
       document.getElementById('task-dialog-require-human-close').checked = !!task.requireHumanClose;
     } else {
-      titleEl.textContent = 'Create Task';
+      headingEl.textContent = 'Create Task';
       saveBtn.textContent = 'Create';
+      titleInputEl.value = '';
       textEl.value = loadDraft(TASK_DRAFT_KEY);
       desigEl.value = '';
       assigneeEl.value = '';
@@ -4976,28 +4983,32 @@
 
   document.getElementById('task-dialog-save').addEventListener('click', () => {
     const text = document.getElementById('task-dialog-text').value.trim();
+    const title = document.getElementById('task-dialog-title').value.trim() || null;
     if (!text || !ws || ws.readyState !== 1) return;
     if (taskMode === 'manual' && !manualTarget) { showToast('Select session', 'Tap an idle session number', 'error'); return; }
     const desig = document.getElementById('task-dialog-designation').value || undefined;
 
     const requireHumanClose = document.getElementById('task-dialog-require-human-close').checked;
     const assignee = document.getElementById('task-dialog-assignee').value || null;
+    const toastSnippet = taskDisplayName({ title, text }).substring(0, 40);
     if (editingTaskId) {
-      ws.send(JSON.stringify({ type: 'task:update', taskId: editingTaskId, updates: { text, mode: taskMode, targetSession: taskMode === 'manual' ? manualTarget : null, designation: desig || null, requireHumanClose, assignee } }));
-      showToast('Task updated', text.substring(0, 40), 'success');
+      ws.send(JSON.stringify({ type: 'task:update', taskId: editingTaskId, updates: { text, title, mode: taskMode, targetSession: taskMode === 'manual' ? manualTarget : null, designation: desig || null, requireHumanClose, assignee } }));
+      showToast('Task updated', toastSnippet, 'success');
     } else {
-      ws.send(JSON.stringify({ type: 'task:create', text, mode: taskMode, targetSession: taskMode === 'manual' ? manualTarget : undefined, designation: desig, requireHumanClose, assignee }));
+      ws.send(JSON.stringify({ type: 'task:create', text, title, mode: taskMode, targetSession: taskMode === 'manual' ? manualTarget : undefined, designation: desig, requireHumanClose, assignee }));
       clearDraft(TASK_DRAFT_KEY);
-      showToast('Task created', text.substring(0, 40), 'success');
+      showToast('Task created', toastSnippet, 'success');
     }
     taskDialog.classList.remove('visible');
     editingTaskId = null;
   });
   document.getElementById('task-dialog-cancel').addEventListener('click', () => { taskDialog.classList.remove('visible'); editingTaskId = null; });
   document.getElementById('task-dialog-text').addEventListener('input', (e) => { if (!editingTaskId) saveDraft(TASK_DRAFT_KEY, e.target.value); });
-  document.getElementById('task-dialog-text').addEventListener('keydown', (e) => {
+  const submitTaskDialogOnCmdEnter = (e) => {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); document.getElementById('task-dialog-save').click(); }
-  });
+  };
+  document.getElementById('task-dialog-text').addEventListener('keydown', submitTaskDialogOnCmdEnter);
+  document.getElementById('task-dialog-title').addEventListener('keydown', submitTaskDialogOnCmdEnter);
 
   // ── Assign dialog ──────────────────────────────────
   let assigningTaskId = null;
@@ -5008,7 +5019,7 @@
     const task = tasks.find(t => t.id === taskId);
     if (!task) return;
     assigningTaskId = taskId;
-    document.getElementById('assign-dialog-task').textContent = task.text;
+    document.getElementById('assign-dialog-task').textContent = taskDisplayName(task);
     // Populate dropdown: idle sessions with no active task
     const activeTaskSessions = new Set(tasks.filter(t => t.status === 'dispatched').map(t => t.assignedTo));
     const available = fleetData.filter(s => s.state === 'idle' && !activeTaskSessions.has(s.num)).sort((a, b) => a.num - b.num);
@@ -5731,6 +5742,7 @@
     const matchesSearch = (t) => {
       if (!q) return true;
       if (t.text.toLowerCase().includes(q)) return true;
+      if ((t.title || '').toLowerCase().includes(q)) return true;
       if ((t.source || '').toLowerCase().includes(q)) return true;
       if ((t.designation || '').toLowerCase().includes(q)) return true;
       if (String(t.assignedTo || '').includes(q)) return true;
@@ -6292,6 +6304,7 @@
     const matchesSearch = (t) => {
       if (!q) return true;
       if (t.text.toLowerCase().includes(q)) return true;
+      if ((t.title || '').toLowerCase().includes(q)) return true;
       if ((t.source || '').toLowerCase().includes(q)) return true;
       if ((t.designation || '').toLowerCase().includes(q)) return true;
       if (String(t.assignedTo || '').includes(q)) return true;
@@ -6353,8 +6366,9 @@
     const colFingerprints = new Map();
     for (const wState of states) {
       const colTasks = grouped.get(wState.id) || [];
-      // Include task id, text length, status, assignedTo, workState so we detect meaningful changes
-      colFingerprints.set(wState.id, colTasks.map(t => `${t.id}:${t.status}:${t.assignedTo || ''}:${t.workState || ''}:${t.text.length}`).join('|'));
+      // Include task id, displayed name, status, assignedTo, workState so we detect meaningful changes.
+      // Length alone misses same-length renames (e.g. title "Initial title" → "Updated title").
+      colFingerprints.set(wState.id, colTasks.map(t => `${t.id}:${t.status}:${t.assignedTo || ''}:${t.workState || ''}:${taskDisplayName(t)}`).join('|'));
     }
 
     // Snapshot existing card positions for FLIP
@@ -6463,7 +6477,7 @@
 
       const boardEditIcon = hasPerm('create-tasks') ? `<button class="task-edit-icon" data-id="${t.id}" title="Edit task">&#9998;</button>` : '';
       el.innerHTML = `
-        <div class="board-card-top"><div class="board-card-title">${esc(t.text)}</div>${boardEditIcon}</div>
+        <div class="board-card-top"><div class="board-card-title">${esc(taskDisplayName(t))}</div>${boardEditIcon}</div>
         <div class="board-card-meta">${statusDot}${desigBadge}${sourceBadge}${sessionBadge}<span>${timeStr}</span>${assigneeBadge}</div>
       `;
 
@@ -6535,7 +6549,7 @@
     document.querySelectorAll('.board-card').forEach(c => c.classList.toggle('selected', c.dataset.id === taskId));
 
     // Header: title + meta
-    document.getElementById('task-detail-title').textContent = task.text;
+    document.getElementById('task-detail-title').textContent = taskDisplayName(task);
     const sourceLabel = task.source ? task.source.replace(/^pm:/, '') : '';
     const pmdc = task.designation ? getDesigColor(task.designation) : null;
     const desigHtml = task.designation ? `<span class="task-designation" style="background:${pmdc.bg};color:${pmdc.fg}">${esc(task.designation)}</span>` : '';
@@ -7456,7 +7470,7 @@
 
     const editIcon = hasPerm('create-tasks') ? `<button class="task-edit-icon" data-id="${t.id}" title="Edit task">&#9998;</button>` : '';
     return `<div class="task-card-row"><input type="checkbox" class="task-checkbox" data-id="${t.id}"${checked}><div class="task-card ${t.status}${selected}" data-id="${t.id}">
-      <div class="task-top"><span class="task-hex">${hex}</span><div class="task-body"><div class="task-text">${esc(t.text)}</div><div class="task-info">${sourceBadge}${pendingBadge}${waitBadge}<span class="task-time">${timeStr}</span></div></div>${editIcon}</div>${actions}</div></div>`;
+      <div class="task-top"><span class="task-hex">${hex}</span><div class="task-body"><div class="task-text">${esc(taskDisplayName(t))}</div><div class="task-info">${sourceBadge}${pendingBadge}${waitBadge}<span class="task-time">${timeStr}</span></div></div>${editIcon}</div>${actions}</div></div>`;
   }
 
   // ── Comment panel (rendered into tab content divs) ─────
@@ -7815,7 +7829,7 @@
     const bodyEl = document.getElementById('task-confirm-body');
     const submitEl = document.getElementById('task-confirm-submit');
     const picker = document.getElementById('task-confirm-snooze-picker');
-    const snippet = (task.text || '').slice(0, 80);
+    const snippet = taskDisplayName(task).slice(0, 80);
     _confirmAction = { type, taskId };
     if (type === 'cancel') {
       titleEl.textContent = 'Cancel Task';
@@ -7890,7 +7904,7 @@
     const task = tasks.find(t => t.id === taskId);
     if (!task) return;
     const input = document.getElementById('task-rename-input');
-    input.value = task.text || '';
+    input.value = taskDisplayName(task);
     document.getElementById('task-rename-dialog').dataset.taskId = taskId;
     document.getElementById('task-rename-dialog').classList.add('visible');
     setTimeout(() => { input.focus(); input.select(); }, 50);
@@ -7906,7 +7920,7 @@
     const newText = document.getElementById('task-rename-input').value.trim();
     if (!newText || !taskId || !ws || ws.readyState !== 1) return;
     ws.send(JSON.stringify({ type: 'task:rename', taskId, text: newText }));
-    showToast('Updated', 'Task description saved', 'success');
+    showToast('Renamed', newText.substring(0, 40), 'success');
     closeRenameDialog();
   });
 

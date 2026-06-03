@@ -246,69 +246,147 @@ describe('TaskQueue', () => {
   });
 
   describe('renameTask', () => {
-    it('updates task text on a queued task', () => {
-      const task = tq.createTask('Original title', 'auto', null, null);
+    it('sets title and leaves text untouched on a queued task', () => {
+      const task = tq.createTask('Original prompt body', 'auto', null, null);
       const renamed = tq.renameTask(task.id, 'New title');
       expect(renamed).not.toBeNull();
-      expect(renamed.text).toBe('New title');
-      expect(tq.tasks.get(task.id).text).toBe('New title');
+      expect(renamed.title).toBe('New title');
+      expect(renamed.text).toBe('Original prompt body');
     });
 
-    it('updates task text on a dispatched task', () => {
-      const task = tq.createTask('Original title', 'manual', null, null);
+    it('sets title on a dispatched task without touching text', () => {
+      const task = tq.createTask('Original prompt body', 'manual', null, null);
       task.status = 'dispatched';
       task.assignedTo = 1;
       const renamed = tq.renameTask(task.id, 'Dispatched rename');
       expect(renamed).not.toBeNull();
-      expect(renamed.text).toBe('Dispatched rename');
+      expect(renamed.title).toBe('Dispatched rename');
+      expect(renamed.text).toBe('Original prompt body');
     });
 
-    it('updates task text on a snoozed task', () => {
-      const task = tq.createTask('Snooze me', 'auto', null, null);
+    it('sets title on a snoozed task without touching text', () => {
+      const task = tq.createTask('Snooze me prompt', 'auto', null, null);
       task.status = 'snoozed';
       const renamed = tq.renameTask(task.id, 'Snoozed rename');
       expect(renamed).not.toBeNull();
-      expect(renamed.text).toBe('Snoozed rename');
+      expect(renamed.title).toBe('Snoozed rename');
+      expect(renamed.text).toBe('Snooze me prompt');
+    });
+
+    it('overwrites an existing title', () => {
+      const task = tq.createTask('Original text', 'auto', null, null, { title: 'Original title' });
+      tq.renameTask(task.id, 'Renamed title');
+      expect(tq.tasks.get(task.id).title).toBe('Renamed title');
+      expect(tq.tasks.get(task.id).text).toBe('Original text');
     });
 
     it('returns null for non-existent task', () => {
       expect(tq.renameTask('999', 'anything')).toBeNull();
     });
 
-    it('returns null for empty text', () => {
-      const task = tq.createTask('Original', 'auto', null, null);
+    it('returns null for empty input and leaves the task alone', () => {
+      const task = tq.createTask('Original prompt', 'auto', null, null);
       expect(tq.renameTask(task.id, '')).toBeNull();
       expect(tq.renameTask(task.id, '   ')).toBeNull();
-      expect(tq.tasks.get(task.id).text).toBe('Original');
+      expect(tq.tasks.get(task.id).text).toBe('Original prompt');
+      expect(tq.tasks.get(task.id).title).toBeNull();
     });
 
-    it('returns null for non-string text', () => {
-      const task = tq.createTask('Original', 'auto', null, null);
+    it('returns null for non-string input', () => {
+      const task = tq.createTask('Original prompt', 'auto', null, null);
       expect(tq.renameTask(task.id, null)).toBeNull();
       expect(tq.renameTask(task.id, undefined)).toBeNull();
-      expect(tq.tasks.get(task.id).text).toBe('Original');
+      expect(tq.tasks.get(task.id).text).toBe('Original prompt');
+      expect(tq.tasks.get(task.id).title).toBeNull();
     });
 
-    it('trims whitespace from new title', () => {
-      const task = tq.createTask('Original', 'auto', null, null);
+    it('trims whitespace from the new title', () => {
+      const task = tq.createTask('Original prompt', 'auto', null, null);
       const renamed = tq.renameTask(task.id, '  Trimmed title  ');
-      expect(renamed.text).toBe('Trimmed title');
+      expect(renamed.title).toBe('Trimmed title');
+      expect(renamed.text).toBe('Original prompt');
     });
 
     it('emits task:updated event', () => {
-      const task = tq.createTask('Original', 'auto', null, null);
+      const task = tq.createTask('Original prompt', 'auto', null, null);
       const handler = vi.fn();
       tq.on('task:updated', handler);
-      tq.renameTask(task.id, 'Updated');
-      expect(handler).toHaveBeenCalledWith(expect.objectContaining({ text: 'Updated' }));
+      tq.renameTask(task.id, 'Updated title');
+      expect(handler).toHaveBeenCalledWith(expect.objectContaining({ title: 'Updated title' }));
     });
 
     it('persists state after rename', () => {
-      const task = tq.createTask('Original', 'auto', null, null);
+      const task = tq.createTask('Original prompt', 'auto', null, null);
       const writeSpy = vi.spyOn(fs, 'writeFileSync');
       writeSpy.mockClear();
-      tq.renameTask(task.id, 'Persisted');
+      tq.renameTask(task.id, 'Persisted title');
       expect(writeSpy).toHaveBeenCalled();
+    });
+  });
+
+  describe('task title field', () => {
+    it('createTask stores meta.title on the task', () => {
+      const task = tq.createTask('Long prompt description', 'auto', null, null, { title: 'Short title' });
+      expect(task.title).toBe('Short title');
+    });
+
+    it('createTask without meta.title leaves title null', () => {
+      const task = tq.createTask('Long prompt', 'auto', null, null);
+      expect(task.title).toBeNull();
+    });
+
+    it('createTask with empty meta.title leaves title null', () => {
+      const task = tq.createTask('Long prompt', 'auto', null, null, { title: '' });
+      expect(task.title).toBeNull();
+    });
+
+    it('updateTask sets title on a queued task', () => {
+      const task = tq.createTask('Prompt', 'auto', null, null);
+      const updated = tq.updateTask(task.id, { title: 'New title' });
+      expect(updated.title).toBe('New title');
+    });
+
+    it('updateTask sets title on a snoozed task', () => {
+      const task = tq.createTask('Prompt', 'auto', null, null);
+      task.status = 'snoozed';
+      const updated = tq.updateTask(task.id, { title: 'Snoozed title' });
+      expect(updated.title).toBe('Snoozed title');
+    });
+
+    it('updateTask with empty string clears title to null', () => {
+      const task = tq.createTask('Prompt', 'auto', null, null, { title: 'Original' });
+      const updated = tq.updateTask(task.id, { title: '' });
+      expect(updated.title).toBeNull();
+    });
+
+    it('updateTask does NOT change title on a dispatched task', () => {
+      const task = tq.createTask('Prompt', 'auto', null, null, { title: 'Before dispatch' });
+      task.status = 'dispatched';
+      task.assignedTo = 1;
+      tq.updateTask(task.id, { title: 'Should be ignored' });
+      expect(tq.tasks.get(task.id).title).toBe('Before dispatch');
+    });
+
+    it('updateTask emits task:updated when title changes', () => {
+      const task = tq.createTask('Prompt', 'auto', null, null);
+      const handler = vi.fn();
+      tq.on('task:updated', handler);
+      tq.updateTask(task.id, { title: 'New' });
+      expect(handler).toHaveBeenCalledWith(expect.objectContaining({ title: 'New' }));
+    });
+
+    it('survives _saveState → _loadState round-trip', () => {
+      let written = null;
+      fs.writeFileSync.mockImplementation((_path, payload) => { written = payload; });
+      tq.createTask('Long prompt', 'auto', null, null, { title: 'My title' });
+      tq._saveState();
+      expect(written).not.toBeNull();
+      // Reload into a fresh TaskQueue by feeding the captured JSON back via readFileSync
+      fs.readFileSync.mockImplementation(() => written);
+      const tq2 = new TaskQueue(config, watcher, router);
+      const reloaded = Array.from(tq2.tasks.values()).find(t => t.text === 'Long prompt');
+      expect(reloaded).toBeDefined();
+      expect(reloaded.title).toBe('My title');
     });
   });
 

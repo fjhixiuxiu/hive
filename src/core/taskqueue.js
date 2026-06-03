@@ -155,6 +155,7 @@ class TaskQueue extends EventEmitter {
     const task = {
       id: String(nextTaskId++),
       text,
+      title: (meta && meta.title) || null,
       mode, // 'auto' or 'manual'
       targetSession: targetSession || null,
       designation: designation || null,
@@ -255,9 +256,12 @@ class TaskQueue extends EventEmitter {
 
     // Other fields only on queued/snoozed tasks
     if (task.status === 'queued' || task.status === 'snoozed') {
-      const allowed = ['text', 'mode', 'targetSession', 'designation', 'actionContext'];
+      const normalized = ('title' in updates && updates.title === '')
+        ? { ...updates, title: null }
+        : updates;
+      const allowed = ['text', 'title', 'mode', 'targetSession', 'designation', 'actionContext'];
       for (const key of allowed) {
-        if (key in updates) task[key] = updates[key];
+        if (key in normalized) task[key] = normalized[key];
       }
     }
 
@@ -267,16 +271,18 @@ class TaskQueue extends EventEmitter {
   }
 
   /**
-   * Rename a task (update its text). Works on any status.
+   * Rename a task — edits ONLY the displayed title. The prompt body
+   * (`task.text`) is never touched. If the task previously had no
+   * title, this sets one for the first time. Works on any status.
    * Returns the updated task or null if not found.
    */
-  renameTask(taskId, newText) {
+  renameTask(taskId, newName) {
     const task = this.tasks.get(taskId);
     if (!task) return null;
-    if (!newText || typeof newText !== 'string') return null;
-    const trimmed = newText.trim();
+    if (!newName || typeof newName !== 'string') return null;
+    const trimmed = newName.trim();
     if (!trimmed) return null;
-    task.text = trimmed;
+    task.title = trimmed;
     this.emit('task:updated', task);
     this._saveState();
     return task;
@@ -1333,6 +1339,8 @@ class TaskQueue extends EventEmitter {
           if (t.status === 'snoozed' && t.snoozedUntil) {
             this._armSnoozeTimer(t);
           }
+          // Normalize fields added in later versions so old tasks have a consistent shape
+          if (!('title' in t)) t.title = null;
           this.tasks.set(t.id, t);
           if (Number(t.id) >= nextTaskId) nextTaskId = Number(t.id) + 1;
         }

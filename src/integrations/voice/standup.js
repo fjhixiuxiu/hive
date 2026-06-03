@@ -19,11 +19,11 @@ class StandupReport {
 
     const completed = tasks
       .filter(t => t.status === 'completed' && t.completedAt >= since)
-      .map(t => this._summarize(t.text));
+      .map(t => this._summarize(t.title || t.text));
 
     const active = tasks
       .filter(t => t.status === 'dispatched')
-      .map(t => this._summarize(t.text));
+      .map(t => this._summarize(t.title || t.text));
 
     const queued = tasks.filter(t => t.status === 'queued');
 

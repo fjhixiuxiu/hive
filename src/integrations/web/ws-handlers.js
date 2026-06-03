@@ -517,6 +517,7 @@ function createMessageHandler(deps) {
           createdBy: user?.login || null,
           requireHumanClose,
           assignee: msg.assignee || null,
+          title: msg.title || null,
         });
         ws.send(JSON.stringify({ type: 'task:created', task }));
         break;
@@ -1962,7 +1963,7 @@ function createMessageHandler(deps) {
         const sessionNum = resolveSessionNum(msg.session);
         const task = activeTaskFor(sessionNum);
         console.log(`[mcp] get_task S:${sessionNum ?? msg.session} → ${task ? `task ${task.id} ("${(task.text || '').slice(0, 60)}")` : 'no task'}`);
-        ws.send(JSON.stringify({ _reqId: msg._reqId, task: task ? { id: task.id, text: task.text, status: task.status, designation: task.designation, checklist: task.checklist || [] } : null }));
+        ws.send(JSON.stringify({ _reqId: msg._reqId, task: task ? { id: task.id, text: task.text, title: task.title || null, status: task.status, designation: task.designation, checklist: task.checklist || [] } : null }));
         break;
       }
 
