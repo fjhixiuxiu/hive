@@ -133,17 +133,18 @@ async function ask(config, node, sessionName, message, callbacks = {}) {
   const { pollInterval, cooldown, timeout } = config.relay;
   const streamInterval = config.relay.streamInterval || 3000;
 
-  // Check if session is idle first (skip entirely for manual user input via force=true,
-  // since the user can see the session state in the UI and chose to send anyway)
-  if (!force) {
-    const beforeContent = await node.capturePane(paneTarget, { lines: 3 });
-    const currentState = tmux.detectState(beforeContent, config);
-    if (currentState === 'working') {
-      return { success: false, error: 'Session is busy. Use /peek to see what it\'s doing.' };
-    }
-    if (currentState === 'off') {
-      return { success: false, error: 'Claude is not running in this session.' };
-    }
+  // Always reject when Claude isn't running. force=true is meant to bypass the
+  // "session is busy" guard (manual input that wants to interrupt a working
+  // turn), NOT the "no TUI" guard. Skipping the 'off' check let the vim-mode
+  // clear sequence (Escape → gg dG → i) land in a bash prompt as literal
+  // "gdGi" before whatever the user typed next.
+  const beforeContent = await node.capturePane(paneTarget, { lines: 3 });
+  const currentState = tmux.detectState(beforeContent, config);
+  if (currentState === 'off') {
+    return { success: false, error: 'Claude is not running in this session.' };
+  }
+  if (currentState === 'working' && !force) {
+    return { success: false, error: 'Session is busy. Use /peek to see what it\'s doing.' };
   }
 
   await clearInput(node, paneTarget, vimMode);

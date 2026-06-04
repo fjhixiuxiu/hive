@@ -143,7 +143,7 @@
 <div class="header-row" id="header-row" style="display:none;">
   <input type="checkbox" class="select-all-cb" id="select-all" title="Select all visible">
   <span id="header-summary"></span>
-  <button class="stale-btn" id="select-stale" title="Select plans with 0 open comments, untouched for 30+ days">Select stale</button>
+  <button class="stale-btn" id="select-stale" title="Select plans with 0 open comments whose source task is done/cancelled — or, if sessionless, untouched for 30+ days">Select stale</button>
 </div>
 
 <div id="list" class="empty">Loading…</div>
@@ -369,19 +369,28 @@ document.getElementById('select-all').addEventListener('change', (e) => {
   render();
 });
 
-// Select stale: visible plans with 0 open comments and not updated in 30+ days
+// Select stale: visible plans with 0 open comments AND
+//   - source task is terminal (completed/cancelled/missing), OR
+//   - no source task AND not updated in 30+ days (sessionless fallback)
+function isPlanStale(p, cutoff) {
+  if (p.sourceTaskId != null) {
+    const s = p.sourceTaskStatus;
+    return s === 'completed' || s === 'cancelled' || s === 'missing';
+  }
+  const updated = p.updatedAt ? new Date(p.updatedAt).getTime() : 0;
+  return updated < cutoff;
+}
 document.getElementById('select-stale').addEventListener('click', () => {
   const cutoff = Date.now() - STALE_MS;
   const visible = visiblePlans();
   let added = 0;
   for (const p of visible) {
     if ((p.openCommentCount || 0) > 0) continue;
-    const updated = p.updatedAt ? new Date(p.updatedAt).getTime() : 0;
-    if (updated >= cutoff) continue;
+    if (!isPlanStale(p, cutoff)) continue;
     if (!selected.has(p.id)) { selected.add(p.id); added++; }
   }
   if (added === 0) {
-    alert('No stale plans found among visible items (0 open comments, untouched 30+ days).');
+    alert('No stale plans found among visible items (0 open comments, source task done/cancelled, OR untouched 30+ days if sessionless).');
   }
   render();
 });

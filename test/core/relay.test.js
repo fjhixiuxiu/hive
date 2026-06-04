@@ -104,6 +104,23 @@ describe('relay', () => {
       expect(result.success).toBe(false); // times out because never idle
     });
 
+    it('with force=true still rejects when Claude is off (no key leak into bash)', async () => {
+      // Regression: force=true must not bypass the 'off' guard. If it did,
+      // vim-mode's Escape → gg dG → i clear sequence would land in the bash
+      // prompt as literal "gdGi" before whatever the user typed next.
+      tmux.detectState.mockReturnValue('off');
+      node.capturePane.mockResolvedValue('Nukuls-MacBook-Pro:hive dev$ ');
+
+      const result = await relay.ask(config, node, '6-DEV', 'hello', { force: true, vimMode: true });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('not running');
+      // Critically, no keys were sent — clearInputVim never ran.
+      expect(node.sendKeys).not.toHaveBeenCalled();
+      const execCalls = node.exec.mock.calls.map(([cmd]) => cmd);
+      expect(execCalls.some(c => c.includes(' g g d G'))).toBe(false);
+    });
+
     it('with vimMode does gg-dG clear and Escape→i (no readline C-a/C-k)', async () => {
       tmux.detectState.mockReturnValue('idle');
       node.capturePane.mockResolvedValue('hello in input box');
