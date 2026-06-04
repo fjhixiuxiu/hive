@@ -154,7 +154,19 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     const filter = {};
     if (req.query.session != null) filter.sessionNum = Number(req.query.session);
     if (req.query.status) filter.status = req.query.status;
-    res.json({ plans: plansStore.listPlans(filter) });
+    const plans = plansStore.listPlans(filter);
+    // Enrich with the originating task's status so the "Select stale" client
+    // can flag plans whose source task is completed/cancelled (terminal) —
+    // those are stale regardless of age. Plans with no sourceTaskId fall
+    // back to the 30-day rule client-side.
+    if (taskQueue) {
+      for (const p of plans) {
+        if (p.sourceTaskId == null) continue;
+        const t = taskQueue.tasks.get(p.sourceTaskId) || taskQueue.tasks.get(String(p.sourceTaskId));
+        p.sourceTaskStatus = t ? t.status : 'missing';
+      }
+    }
+    res.json({ plans });
   });
 
   app.get('/api/plans/:planId', (req, res) => {

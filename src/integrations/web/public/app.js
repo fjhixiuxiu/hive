@@ -3852,6 +3852,21 @@
   const plansSelected = new Set();
   const PLANS_STALE_MS = 30 * 24 * 60 * 60 * 1000;
 
+  // A plan is "stale" if:
+  //   - its source task is terminal (completed/cancelled, or missing entirely), OR
+  //   - it has NO source task (sessionless / published before a task was active)
+  //     AND it hasn't been updated since `cutoff`.
+  // Plans whose source task is still active (queued/dispatched/etc) are never
+  // stale — the work is in flight.
+  function isPlanStale(p, cutoff) {
+    if (p.sourceTaskId != null) {
+      const s = p.sourceTaskStatus;
+      return s === 'completed' || s === 'cancelled' || s === 'missing';
+    }
+    const updated = p.updatedAt ? new Date(p.updatedAt).getTime() : 0;
+    return updated < cutoff;
+  }
+
   async function loadPlansList() {
     try {
       const r = await fetch('/api/plans?status=all');
@@ -4065,12 +4080,11 @@
         let added = 0;
         for (const p of visible) {
           if ((p.openCommentCount || 0) > 0) continue;
-          const updated = p.updatedAt ? new Date(p.updatedAt).getTime() : 0;
-          if (updated >= cutoff) continue;
+          if (!isPlanStale(p, cutoff)) continue;
           if (!plansSelected.has(p.id)) { plansSelected.add(p.id); added++; }
         }
         if (added === 0) {
-          alert('No stale plans found among visible items (0 open comments, untouched 30+ days).');
+          alert('No stale plans found among visible items (0 open comments, source task done/cancelled, OR untouched 30+ days if sessionless).');
         }
         renderPlansPanel();
       });
