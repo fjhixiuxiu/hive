@@ -724,6 +724,85 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .plan-sidebar-empty {
   color: var(--dim); font-size: var(--fs-md); text-align: center; padding: 24px 10px;
 }
+
+/* ── Inline plan-ref view (when ctx.planRef is set) ── */
+/* Renders the published plan HTML (in a shadow-DOM container) and the
+   comments list as switchable tabs so each fills the full body height. */
+.plan-ref-host {
+  display: flex; flex-direction: column; height: 100%;
+}
+.plan-ref-subtabs {
+  display: flex; gap: 0; border-bottom: 1px solid var(--bg3); flex-shrink: 0;
+  background: var(--bg2); padding: 0 14px;
+}
+.plan-ref-subtab {
+  background: none; border: none; border-bottom: 2px solid transparent;
+  color: var(--dim); font-size: var(--fs-md); font-weight: 600;
+  padding: 10px 16px; cursor: pointer; transition: color 0.15s;
+  margin-bottom: -1px;
+}
+.plan-ref-subtab:hover { color: var(--fg); }
+.plan-ref-subtab.active { color: var(--purple); border-bottom-color: var(--purple); }
+.plan-ref-subtab .count-badge {
+  display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 8px;
+  background: var(--bg3); color: var(--dim); font-size: 10px; font-weight: 700;
+}
+.plan-ref-subtab.has-drafts .count-badge { background: rgba(210,153,34,0.25); color: var(--yellow); }
+.plan-ref-tab-body { flex: 1; min-height: 0; overflow-y: auto; }
+.plan-ref-tab-body[hidden] { display: none !important; }
+.plan-ref-html { background: var(--bg); padding: 8px 40px 24px; }
+.plan-ref-html > div { /* the shadow host element */
+  display: block; width: 100%;
+  background: #ffffff; border-radius: 6px;
+}
+.plan-ref-comments {
+  display: flex; flex-direction: column; gap: 10px; padding: 14px;
+}
+.plan-ref-comments-empty {
+  color: var(--dim); font-size: var(--fs-md); text-align: center; padding: 40px 16px;
+  font-style: italic;
+}
+.plan-ref-comment {
+  background: var(--bg); border: 1px solid var(--bg3); border-radius: 6px;
+  padding: 12px 14px; font-size: var(--fs-md);
+  transition: border-color 0.15s;
+}
+.plan-ref-comment:hover { border-color: var(--purple); }
+.plan-ref-comment .anchor {
+  color: var(--cyan); font-family: 'SF Mono', monospace; font-size: var(--fs-sm);
+  cursor: pointer; display: inline-block; margin-bottom: 6px;
+  background: var(--bg2); padding: 2px 8px; border-radius: 10px;
+}
+.plan-ref-comment .anchor:hover { background: var(--bg3); }
+.plan-ref-comment .msg { white-space: pre-wrap; word-wrap: break-word; margin: 6px 0; line-height: 1.5; }
+.plan-ref-comment .msg.claude {
+  color: var(--green); padding: 8px 10px;
+  background: rgba(63,185,80,0.08); border-left: 3px solid var(--green); border-radius: 3px;
+}
+.plan-ref-comment .meta { margin-top: 8px; display: flex; gap: 6px; align-items: center; }
+.plan-ref-comment .pill {
+  display: inline-block; padding: 2px 8px; border-radius: 10px;
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+}
+.plan-ref-comment .pill.open { background: rgba(210,153,34,0.2); color: var(--yellow); }
+.plan-ref-comment .pill.resolved { background: rgba(63,185,80,0.2); color: var(--green); }
+.plan-ref-comment .pill.draft { background: var(--bg3); color: var(--dim); }
+.plan-ref-comment .pill.moved { background: rgba(31,111,235,0.2); color: var(--cyan); }
+.plan-sidebar-footer {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 10px; border-top: 1px solid var(--bg3);
+  background: var(--bg2); flex-shrink: 0; gap: 8px;
+}
+.plan-sidebar-footer-status { color: var(--dim); font-size: var(--fs-sm); flex: 1; min-width: 0; }
+.plan-sidebar-send-btn {
+  background: var(--purple); color: var(--bg); border: 0; border-radius: 4px;
+  padding: 5px 12px; font-weight: 600; font-size: var(--fs-sm); cursor: pointer;
+  white-space: nowrap;
+}
+.plan-sidebar-send-btn:disabled {
+  background: var(--bg3); color: var(--dim); cursor: not-allowed;
+}
+.plan-sidebar-send-btn:not(:disabled):hover { filter: brightness(1.1); }
 .plan-toggle {
   background: none; border: none; border-left: 1px solid var(--bg3);
   color: var(--dim); font-size: var(--fs-lg);
@@ -2190,6 +2269,62 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 }
 #task-detail-terminal .xterm { height: 100%; }
 #task-detail-terminal .xterm-viewport { overflow-y: auto !important; }
+
+/* Backdrop for the plan drawer — click anywhere outside the pane to dismiss. */
+.td-plan-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 94;
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.22s ease;
+}
+.td-plan-overlay.open { opacity: 1; pointer-events: auto; }
+
+/* Plan drawer — second slide-out, layered on top of the task-detail panel.
+   Slides in from the right, covers a wide portion of the screen. */
+.td-plan-pane {
+  position: fixed; top: 0; right: 0; bottom: 0;
+  width: min(1280px, 90vw); min-width: 520px;
+  background: var(--bg2);
+  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  border-left: 1px solid var(--bg3);
+  box-shadow: -16px 0 48px rgba(0,0,0,0.5), -4px 0 12px rgba(0,0,0,0.2);
+  z-index: 95;
+  display: flex; flex-direction: column;
+  transform: translateX(100%);
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.td-plan-pane.open { transform: translateX(0); }
+
+.td-plan-header {
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 18px; border-bottom: 1px solid var(--bg3); flex-shrink: 0;
+}
+.td-plan-header #td-plan-title {
+  font-weight: 700; font-size: var(--fs-lg); color: var(--fg);
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.td-plan-close {
+  background: none; border: none; color: var(--dim); font-size: 22px;
+  cursor: pointer; padding: 4px 10px; line-height: 1; border-radius: 6px;
+  flex-shrink: 0;
+}
+.td-plan-close:hover { color: var(--fg); background: var(--bg3); }
+
+.td-plan-body { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; padding: 0; }
+.td-plan-footer {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 16px; border-top: 1px solid var(--bg3);
+  background: var(--bg2); flex-shrink: 0; gap: 12px;
+}
+.td-plan-footer .plan-ref-footer-status { color: var(--dim); font-size: var(--fs-sm); flex: 1; min-width: 0; }
+.td-plan-footer .plan-ref-send-btn {
+  background: var(--purple); color: var(--bg); border: 0; border-radius: 5px;
+  padding: 7px 16px; font-weight: 700; font-size: var(--fs-sm); cursor: pointer;
+  white-space: nowrap; transition: filter 0.15s;
+}
+.td-plan-footer .plan-ref-send-btn:disabled { background: var(--bg3); color: var(--dim); cursor: not-allowed; }
+.td-plan-footer .plan-ref-send-btn:not(:disabled):hover { filter: brightness(1.15); }
 /* Task detail git section */
 .td-git-section { border-top: 1px solid var(--bg3); flex-shrink: 0; }
 .td-git-toggle {
