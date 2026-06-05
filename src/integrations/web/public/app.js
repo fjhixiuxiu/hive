@@ -162,6 +162,10 @@
   let taskStatusFilter = null; // null = show all, 'waiting', 'working'
   let gitFilesSidebarOpen = localStorage.getItem('gitFilesSidebarOpen') === 'true';
   let planSidebarOpen = false;
+  // Sessions where the user explicitly closed the plan sidebar — we won't
+  // auto-open it again for that session this page-load. Avoids fighting
+  // the user every time they come back to a session they closed.
+  const planSidebarUserClosed = new Set();
   let contextActiveTab = null; // null = auto-select first, or 'plan'/'output'
   let planPollTimer = null;          // interval for polling plan file
   let sessionContexts = {};          // session num -> { plan: path, pr: url, ... }
@@ -1515,6 +1519,19 @@
             } catch { /* iframe not ready */ }
           }
         }
+        // If the inline session-sidebar drawer is viewing this plan, refresh.
+        if (msg.planId && msg.planId === currentPlanRefId) {
+          if (msg.type === 'plan:published') {
+            // Plan body changed → re-mount HTML, comments, markers.
+            const title = msg.planRef?.title || document.getElementById('plan-sidebar-title')?.textContent || 'Plan';
+            renderPlanRefBody(msg.planId, title);
+          } else if (msg.type === 'plan:comments-changed') {
+            // Only comments changed → preserve any open drawer, just refresh list + markers.
+            refreshPlanRefComments(msg.planId);
+          } else if (msg.type === 'plan:archived' || msg.type === 'plan:unarchived') {
+            refreshPlanRefComments(msg.planId);
+          }
+        }
         break;
       case 'user:permissions':
         myPermissions = msg.permissions || [];
@@ -2417,6 +2434,13 @@
     document.getElementById('session-terminal-content').classList.add('active');
     document.getElementById('session-git-content').classList.remove('active');
     closeAllCommentsDrawers();
+    // Auto-open the plan sidebar if this session has a published plan and
+    // the user hasn't explicitly closed it for this session in this page-load.
+    const sessCtx = sessionContexts[s.num] || {};
+    if (sessCtx.planRef?.planId && !planSidebarUserClosed.has(String(s.num)) && !planSidebarOpen) {
+      planSidebarOpen = true;
+      applyPlanSidebarState('session');
+    }
     // Update plan sidebar for this session
     updatePlanSidebar();
     if (planSidebarOpen) startPlanPolling();
@@ -3750,6 +3774,13 @@
       applyGitFilesSidebarState(target);
       closeSidebarDiff(target);
     }
+    // Toggle resets the user-closed memory for this session so auto-open
+    // works again next time the user comes back.
+    const num = currentSession || tasksSessionNum;
+    if (num) {
+      if (planSidebarOpen) planSidebarUserClosed.delete(String(num));
+      else planSidebarUserClosed.add(String(num));
+    }
     applyPlanSidebarState(target);
     if (planSidebarOpen) {
       startPlanPolling();
@@ -3763,6 +3794,10 @@
 
   function closePlanSidebar(target) {
     planSidebarOpen = false;
+    // Remember this for the current session so auto-open doesn't re-open
+    // it the next time the user clicks back into the same session.
+    const num = currentSession || tasksSessionNum;
+    if (num) planSidebarUserClosed.add(String(num));
     applyPlanSidebarState(target);
     stopPlanPolling();
     // Refit terminal
@@ -3796,6 +3831,7 @@
     const planPath = ctx.plan || null;
     const planText = ctx.planText || null;
     const output = ctx.output || null;
+    const planRefId = ctx.planRef?.planId || null;
     const hasPlan = planPath || planText;
     // Path line
     const pathEl = document.getElementById('plan-sidebar-path');
@@ -3808,16 +3844,17 @@
     const tsCtxEl = document.getElementById('ts-plan-sidebar-context');
     if (ctxEl) ctxEl.innerHTML = contextHtml;
     if (tsCtxEl) tsCtxEl.innerHTML = contextHtml;
-    // Build tabs
+    // Build tabs — planRef takes priority because it's the rich, commentable view
     const tabs = [];
+    if (planRefId) tabs.push('planref');
     if (hasPlan) tabs.push('plan');
     if (output) tabs.push('output');
     // Render tab bar (only if multiple tabs)
+    const tabLabel = (t) => t === 'planref' ? 'Plan' : (t === 'plan' ? 'Plan (md)' : 'Output');
     const tabsHtml = tabs.length > 1
       ? tabs.map(t => {
           const active = (contextActiveTab === t || (!contextActiveTab && t === tabs[0])) ? ' active' : '';
-          const label = t === 'plan' ? 'Plan' : 'Output';
-          return `<button class="plan-sidebar-tab${active}" data-ctx-tab="${t}">${label}</button>`;
+          return `<button class="plan-sidebar-tab${active}" data-ctx-tab="${t}">${tabLabel(t)}</button>`;
         }).join('')
       : '';
     const tabsEl = document.getElementById('plan-sidebar-tabs');
@@ -3834,11 +3871,15 @@
     if (!planSidebarOpen) return;
     // Determine which tab to show
     const activeTab = contextActiveTab && tabs.includes(contextActiveTab) ? contextActiveTab : tabs[0];
+    // Footer (Send-to-Claude) only relevant when showing planref
+    setPlanFooterVisible(activeTab === 'planref');
     if (!activeTab) {
       setBodyHtml('<div class="plan-sidebar-empty">No context set.<br>Agent will populate this when work begins.</div>');
       return;
     }
-    if (activeTab === 'plan') {
+    if (activeTab === 'planref') {
+      renderPlanRefBody(planRefId, ctx.planRef?.title || 'Plan');
+    } else if (activeTab === 'plan') {
       if (planPath) {
         requestPlanFile();
       } else if (planText) {
@@ -3846,6 +3887,13 @@
       }
     } else if (activeTab === 'output') {
       setBodyHtml(renderMarkdown(output));
+    }
+  }
+
+  function setPlanFooterVisible(show) {
+    for (const id of ['plan-sidebar-footer', 'ts-plan-sidebar-footer']) {
+      const el = document.getElementById(id);
+      if (el) el.style.display = show ? '' : 'none';
     }
   }
 
@@ -3861,6 +3909,400 @@
     if (body) body.innerHTML = html;
     if (tsBody) tsBody.innerHTML = html;
   }
+
+  // ── Inline plan-ref drawer (renders /plans/<id> content live in sidebar) ──
+  //
+  // Renders the published-plan HTML inside a Shadow DOM (so the plan's
+  // styles can't bleed into the dashboard and vice versa), injects
+  // per-section comment buttons, lists comments below, and ships drafts via
+  // /api/plans/<id>/send. Mirrors plan-editor.html but native (no iframe).
+  //
+  // Mount targets: any element with class `.plan-ref-mount` that is currently
+  // visible and contains a `[data-plan-ref-shell]` shell host will be kept
+  // in sync. The session sidebar bodies have `.plan-ref-mount` always; the
+  // shell is only painted into them when the planref tab is active.
+  let currentPlanRefId = null;
+  let currentPlanRefComments = [];
+  // Which subtab is showing — 'plan' or 'comments'. Persisted across renders
+  // and shared across all mount points (only one is visible at a time anyway).
+  let planRefActiveSubtab = 'plan';
+
+  function planRefMounts() {
+    // Visible mounts that currently hold a planref shell. Lets sidebar and
+    // task-detail pane render uniformly without per-target if/else.
+    return Array.from(document.querySelectorAll('.plan-ref-mount'))
+      .filter(el => el.offsetParent !== null || el.closest('#task-detail-panel.open, #plan-sidebar:not([style*="display:none"])'))
+      .filter(el => el.querySelector('[data-plan-ref-shell]') || el.dataset.planRefShellPending === '1');
+  }
+
+  function planRefFooters() {
+    return Array.from(document.querySelectorAll('[data-plan-ref-footer]'));
+  }
+
+  async function renderPlanRefBody(planId, title) {
+    if (!planId) return;
+    currentPlanRefId = planId;
+    const planActive = planRefActiveSubtab === 'plan';
+    const shellHtml = `
+      <div class="plan-ref-host" data-plan-id="${esc(planId)}" data-plan-ref-shell>
+        <div class="plan-ref-subtabs">
+          <button class="plan-ref-subtab${planActive ? ' active' : ''}" data-subtab="plan">Plan</button>
+          <button class="plan-ref-subtab${!planActive ? ' active' : ''}" data-subtab="comments">Comments<span class="count-badge">0</span></button>
+        </div>
+        <div class="plan-ref-tab-body plan-ref-html" data-subtab="plan"${planActive ? '' : ' hidden'}>
+          <div class="plan-ref-shadow-host"></div>
+        </div>
+        <div class="plan-ref-tab-body plan-ref-comments" data-subtab="comments"${!planActive ? '' : ' hidden'}>
+          <div class="plan-ref-comments-empty">Loading…</div>
+        </div>
+      </div>`;
+    // Paint shell into every plan-ref-mount so the same render code drives
+    // both sidebar and task-detail pane.
+    for (const mount of document.querySelectorAll('.plan-ref-mount')) {
+      mount.innerHTML = shellHtml;
+      mount.dataset.planRefShellPending = '';
+      // Wire subtab clicks for this mount
+      mount.querySelectorAll('.plan-ref-subtab').forEach(btn => {
+        btn.addEventListener('click', () => switchPlanRefSubtab(btn.dataset.subtab));
+      });
+    }
+    // Set titles (sidebar + task-detail pane)
+    for (const id of ['plan-sidebar-title', 'ts-plan-sidebar-title', 'td-plan-title']) {
+      const el = document.getElementById(id);
+      if (el) el.textContent = title || 'Plan';
+    }
+    try {
+      const [htmlRes, commentsRes] = await Promise.all([
+        fetch('/plans/' + encodeURIComponent(planId) + '/raw'),
+        fetch('/api/plans/' + encodeURIComponent(planId) + '/comments'),
+      ]);
+      if (!htmlRes.ok) throw new Error('Plan HTML fetch failed: ' + htmlRes.status);
+      if (!commentsRes.ok) throw new Error('Comments fetch failed: ' + commentsRes.status);
+      const planHtml = await htmlRes.text();
+      const commentsData = await commentsRes.json();
+      if (currentPlanRefId !== planId) return; // user moved on
+      currentPlanRefComments = commentsData.comments || [];
+      mountPlanShadow(planHtml, planId);
+      renderPlanRefComments();
+    } catch (err) {
+      for (const mount of document.querySelectorAll('.plan-ref-mount')) {
+        mount.innerHTML = `<div class="plan-sidebar-empty">Failed to load plan: ${esc(err.message)}</div>`;
+      }
+      setPlanFooterVisible(false);
+    }
+  }
+
+  function mountPlanShadow(planHtml, planId) {
+    // Shadow DOM gives us complete style isolation. The plan HTML was
+    // authored to be a standalone document — we want its <style> to apply
+    // inside the host but NOT leak into the dashboard, and the dashboard's
+    // dark theme to NOT bleed into the plan.
+    for (const host of document.querySelectorAll('.plan-ref-shadow-host')) {
+      const root = host.shadowRoot || host.attachShadow({ mode: 'open' });
+      // Strip <script> so embedded code (e.g. the hive-comments JSON island)
+      // can't execute in the shadow root. Plan content is user-published —
+      // not arbitrary, but defense-in-depth is cheap.
+      const sanitized = planHtml.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '');
+      root.innerHTML = sanitized + planRefShadowStyles();
+      injectSectionMarkers(root, planId);
+    }
+  }
+
+  function switchPlanRefSubtab(name) {
+    if (name !== 'plan' && name !== 'comments') return;
+    planRefActiveSubtab = name;
+    for (const mount of document.querySelectorAll('.plan-ref-mount')) {
+      mount.querySelectorAll('.plan-ref-subtab').forEach(b => {
+        b.classList.toggle('active', b.dataset.subtab === name);
+      });
+      mount.querySelectorAll('.plan-ref-tab-body').forEach(b => {
+        b.hidden = b.dataset.subtab !== name;
+      });
+    }
+  }
+
+  function planRefShadowStyles() {
+    // Layered on top of whatever the plan brings. Forces a readable light
+    // background so plans authored for either theme look fine in the dark
+    // dashboard, and styles the comment markers we inject.
+    return `<style>
+      :host, html, body { background: #ffffff !important; color: #1a1a1a !important; }
+      body { font: 14px/1.6 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important; margin: 0 !important; padding: 24px 36px !important; max-width: none !important; overflow-wrap: break-word !important; word-wrap: break-word !important; }
+      code, pre, a, td { overflow-wrap: anywhere !important; word-break: break-word !important; }
+      pre { white-space: pre-wrap !important; }
+      table { table-layout: fixed; width: 100%; }
+      section[data-id] { position: relative; padding-right: 30px; }
+      .hive-marker {
+        position: absolute; top: 4px; right: 2px;
+        width: 22px; height: 22px; border-radius: 50%;
+        border: 1px solid #d0d7de; background: #ffffff; color: #57606a;
+        cursor: pointer; font-size: 12px; line-height: 1;
+        display: flex; align-items: center; justify-content: center;
+        font-weight: 600;
+      }
+      .hive-marker:hover { border-color: #1a5fb4; color: #1a5fb4; }
+      .hive-marker.has { border-color: #d29922; color: #d29922; }
+      .hive-drawer {
+        margin: 6px 0; padding: 8px; background: #f6f8fa;
+        border: 1px solid #d0d7de; border-radius: 5px;
+      }
+      .hive-drawer textarea {
+        width: 100%; min-height: 50px; padding: 6px 8px;
+        background: #ffffff; color: #1a1a1a; border: 1px solid #d0d7de;
+        border-radius: 4px; font: 12px/1.4 inherit; resize: vertical; box-sizing: border-box;
+      }
+      .hive-drawer-actions { margin-top: 6px; display: flex; gap: 6px; justify-content: flex-end; }
+      .hive-drawer button {
+        background: #1a5fb4; color: #ffffff; border: 0; border-radius: 4px;
+        padding: 4px 10px; font-weight: 600; font-size: 11px; cursor: pointer;
+      }
+      .hive-drawer button.cancel { background: transparent; color: #57606a; border: 1px solid #d0d7de; }
+      .hive-drawer button:disabled { opacity: 0.5; cursor: not-allowed; }
+    </style>`;
+  }
+
+  function injectSectionMarkers(root, planId) {
+    const sections = root.querySelectorAll('section[data-id]');
+    sections.forEach(sec => {
+      const sectionId = sec.getAttribute('data-id');
+      // Don't double-inject if mountPlanShadow is called twice on the same html
+      let btn = sec.querySelector(':scope > .hive-marker');
+      if (!btn) {
+        btn = document.createElement('button');
+        btn.className = 'hive-marker';
+        btn.title = 'Comment on this section';
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          openInlineCommentDrawer(sec, sectionId, planId);
+        });
+        sec.appendChild(btn);
+      }
+      const count = currentPlanRefComments.filter(c => c.sectionId === sectionId && c.status !== 'resolved').length;
+      btn.classList.toggle('has', count > 0);
+      btn.textContent = count > 0 ? String(count) : '+';
+    });
+  }
+
+  function openInlineCommentDrawer(sectionEl, sectionId, planId) {
+    // Don't stack drawers on the same section
+    if (sectionEl.querySelector(':scope > .hive-drawer')) {
+      sectionEl.querySelector(':scope > .hive-drawer textarea')?.focus();
+      return;
+    }
+    const drawer = document.createElement('div');
+    drawer.className = 'hive-drawer';
+    drawer.innerHTML = `
+      <textarea placeholder="Comment on §${sectionId}…"></textarea>
+      <div class="hive-drawer-actions">
+        <button class="cancel">Cancel</button>
+        <button class="save" disabled>Save draft</button>
+      </div>`;
+    sectionEl.appendChild(drawer);
+    const ta = drawer.querySelector('textarea');
+    const save = drawer.querySelector('.save');
+    const cancel = drawer.querySelector('.cancel');
+    ta.focus();
+    ta.addEventListener('input', () => { save.disabled = !ta.value.trim(); });
+    cancel.addEventListener('click', () => drawer.remove());
+    save.addEventListener('click', async () => {
+      const text = ta.value.trim();
+      if (!text) return;
+      save.disabled = true;
+      save.textContent = 'Saving…';
+      try {
+        const r = await fetch('/api/plans/' + encodeURIComponent(planId) + '/comments', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sectionId, text }),
+        });
+        if (!r.ok) throw new Error(await r.text());
+        drawer.remove();
+        // Server broadcasts plan:comments-changed; that handler refreshes
+        // the list. Belt-and-suspenders: also refresh here so the user
+        // sees their comment immediately even if the broadcast is delayed.
+        await refreshPlanRefComments(planId);
+      } catch (err) {
+        save.disabled = false;
+        save.textContent = 'Save draft';
+        alert('Failed to save: ' + err.message);
+      }
+    });
+  }
+
+  async function refreshPlanRefComments(planId) {
+    if (planId !== currentPlanRefId) return;
+    try {
+      const r = await fetch('/api/plans/' + encodeURIComponent(planId) + '/comments');
+      if (!r.ok) return;
+      const data = await r.json();
+      if (planId !== currentPlanRefId) return; // raced
+      currentPlanRefComments = data.comments || [];
+      renderPlanRefComments();
+      // Re-render marker counts without touching the plan HTML (preserves
+      // any open drawer + typed-but-unsaved text).
+      for (const host of document.querySelectorAll('.plan-ref-shadow-host')) {
+        if (host.shadowRoot) injectSectionMarkers(host.shadowRoot, planId);
+      }
+    } catch { /* swallow — next event will retry */ }
+  }
+
+  function renderPlanRefComments() {
+    const comments = currentPlanRefComments;
+    const empty = '<div class="plan-ref-comments-empty">No comments yet. Click a § marker on the plan to add one.</div>';
+    const listHtml = comments.length === 0 ? empty : comments.map(c => `
+      <div class="plan-ref-comment" data-comment-id="${esc(c.id)}">
+        <span class="anchor" data-section="${esc(c.sectionId)}">§ ${esc(c.sectionId)}</span>
+        ${(c.thread || []).map(t => `<div class="msg ${t.author === 'claude' ? 'claude' : 'user'}">${esc(t.text)}</div>`).join('')}
+        <div><span class="pill ${esc(c.status)}">${esc(c.status)}</span></div>
+      </div>`).join('');
+    for (const list of document.querySelectorAll('.plan-ref-comments')) {
+      list.innerHTML = listHtml;
+    }
+    // Wire anchor → scroll the nearest shadow host
+    document.querySelectorAll('.plan-ref-comments .anchor').forEach(a => {
+      a.addEventListener('click', () => {
+        const sectionId = a.dataset.section;
+        // Find the shadow host inside the same mount as this anchor
+        const mount = a.closest('.plan-ref-mount');
+        const host = mount?.querySelector('.plan-ref-shadow-host');
+        const el = host?.shadowRoot?.querySelector(`section[data-id="${sectionId}"]`);
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    });
+    // Update footer status + send button across all footers
+    const drafts = comments.filter(c => c.status === 'draft').length;
+    const open = comments.filter(c => c.status === 'open').length;
+    const resolved = comments.filter(c => c.status === 'resolved').length;
+    const statusText = `${drafts} draft · ${open} open · ${resolved} resolved`;
+    for (const footer of planRefFooters()) {
+      const statusEl = footer.querySelector('.plan-ref-footer-status');
+      const btn = footer.querySelector('.plan-ref-send-btn');
+      if (statusEl) statusEl.textContent = statusText;
+      if (btn) {
+        btn.disabled = drafts === 0;
+        btn.textContent = drafts > 0 ? `Send ${drafts} to Claude` : 'Send to Claude';
+      }
+    }
+    // Update the Comments tab count badge
+    const total = comments.length;
+    for (const tab of document.querySelectorAll('.plan-ref-subtab[data-subtab="comments"]')) {
+      const badge = tab.querySelector('.count-badge');
+      if (badge) badge.textContent = String(total);
+      tab.classList.toggle('has-drafts', drafts > 0);
+    }
+  }
+
+  async function sendPlanRefDrafts() {
+    const planId = currentPlanRefId;
+    if (!planId) return;
+    const drafts = currentPlanRefComments.filter(c => c.status === 'draft');
+    if (!drafts.length) return;
+    for (const id of ['plan-sidebar-send-btn', 'ts-plan-sidebar-send-btn']) {
+      const btn = document.getElementById(id);
+      if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
+    }
+    try {
+      const r = await fetch('/api/plans/' + encodeURIComponent(planId) + '/send', { method: 'POST' });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error(err.error || r.statusText);
+      }
+      await refreshPlanRefComments(planId);
+      showToast('Sent to Claude', `${drafts.length} comment(s) delivered`, 'success');
+    } catch (err) {
+      alert('Send failed: ' + err.message);
+      // Restore button state via a re-render
+      renderPlanRefComments();
+    }
+  }
+
+  // Wire the Send buttons across all footers (sidebar × 2 + task-detail).
+  for (const btn of document.querySelectorAll('.plan-ref-send-btn')) {
+    btn.addEventListener('click', sendPlanRefDrafts);
+  }
+
+  // ── Task-detail plan pane (slide-out drawer over the task drawer) ──
+  //
+  // A second slide-out that layers on top of the task-detail panel when the
+  // user clicks "📋 Plan" in the toolbar. Reuses the same render functions
+  // as the session sidebar — the pane body is just another `.plan-ref-mount`.
+  // No auto-open: the user opens it explicitly so the task drawer stays
+  // uncluttered until they want the plan.
+
+  function openTaskDetailPlanPane(planRef) {
+    const pane = document.getElementById('task-detail-plan-pane');
+    const overlay = document.getElementById('task-detail-plan-overlay');
+    if (!pane || !planRef?.planId) return;
+    pane.classList.add('open');
+    if (overlay) overlay.classList.add('open');
+    renderPlanRefBody(planRef.planId, planRef.title || 'Plan');
+  }
+
+  function closeTaskDetailPlanPane() {
+    const pane = document.getElementById('task-detail-plan-pane');
+    const overlay = document.getElementById('task-detail-plan-overlay');
+    if (pane) pane.classList.remove('open');
+    if (overlay) overlay.classList.remove('open');
+  }
+
+  function updateTaskDetailPlanPane(task) {
+    const toggle = document.getElementById('task-detail-plan-toggle');
+    if (!toggle) return;
+    const sessNum = task?.assignedTo;
+    const ctx = sessNum != null ? (sessionContexts[sessNum] || {}) : {};
+    const planRef = ctx.planRef;
+    if (!planRef?.planId) {
+      // No plan for this task's session — hide the toggle and close any open pane
+      toggle.style.display = 'none';
+      closeTaskDetailPlanPane();
+      return;
+    }
+    // There IS a plan — show the toggle with open-comment count
+    const cnt = planRef.openCommentCount || 0;
+    toggle.style.display = '';
+    toggle.textContent = cnt > 0 ? `📋 Plan (${cnt})` : '📋 Plan';
+    // If the pane is already open (user opened it on prior task), refresh content
+    const pane = document.getElementById('task-detail-plan-pane');
+    if (pane?.classList.contains('open')) {
+      renderPlanRefBody(planRef.planId, planRef.title || 'Plan');
+    }
+  }
+
+  // Wire toggle + close for the task-detail plan pane
+  (function wireTaskDetailPlanPaneControls() {
+    const toggle = document.getElementById('task-detail-plan-toggle');
+    const close = document.getElementById('task-detail-plan-close');
+    if (toggle) {
+      toggle.addEventListener('click', () => {
+        const pane = document.getElementById('task-detail-plan-pane');
+        if (!pane) return;
+        if (pane.classList.contains('open')) {
+          closeTaskDetailPlanPane();
+        } else {
+          const task = tasks.find(t => t.id === taskDetailTaskId);
+          const ctx = task?.assignedTo != null ? (sessionContexts[task.assignedTo] || {}) : {};
+          if (ctx.planRef?.planId) openTaskDetailPlanPane(ctx.planRef);
+        }
+      });
+    }
+    if (close) close.addEventListener('click', closeTaskDetailPlanPane);
+    // Click on backdrop dismisses (matches the task-detail-overlay pattern)
+    const overlay = document.getElementById('task-detail-plan-overlay');
+    if (overlay) overlay.addEventListener('click', closeTaskDetailPlanPane);
+    // When the parent task-detail drawer closes, dismiss the plan pane too
+    const tdClose = document.getElementById('task-detail-close');
+    if (tdClose) tdClose.addEventListener('click', closeTaskDetailPlanPane);
+    // Esc dismisses topmost: if plan pane open, close it first; else let
+    // existing handlers close the task-detail panel.
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape') return;
+      const pane = document.getElementById('task-detail-plan-pane');
+      if (pane?.classList.contains('open')) {
+        e.stopPropagation();
+        closeTaskDetailPlanPane();
+      }
+    }, true);
+  })();
 
   function buildContextLinks(ctx) {
     const links = [];
@@ -6616,6 +7058,10 @@
 
     // Highlight on board
     document.querySelectorAll('.board-card').forEach(c => c.classList.toggle('selected', c.dataset.id === taskId));
+
+    // Plan pane: open if the task's session has a published planRef and the
+    // user hasn't explicitly closed it for this task this page-load.
+    updateTaskDetailPlanPane(task);
 
     // Header: title + meta
     document.getElementById('task-detail-title').textContent = taskDisplayName(task);

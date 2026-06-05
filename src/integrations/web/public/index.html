@@ -382,14 +382,18 @@
             </div>
             <div id="ts-plan-sidebar" class="plan-sidebar" style="display:none">
               <div class="plan-sidebar-header">
-                <span>Context</span>
+                <span id="ts-plan-sidebar-title">Context</span>
                 <button class="plan-sidebar-close" data-target="ts">&times;</button>
               </div>
               <div class="plan-sidebar-path" id="ts-plan-sidebar-path"></div>
               <div class="plan-sidebar-context" id="ts-plan-sidebar-context"></div>
               <div class="plan-sidebar-tabs" id="ts-plan-sidebar-tabs"></div>
-              <div class="plan-sidebar-body" id="ts-plan-sidebar-body">
+              <div class="plan-sidebar-body plan-ref-mount" id="ts-plan-sidebar-body">
                 <div class="plan-sidebar-empty">No context set.<br>Agent will populate this when work begins.</div>
+              </div>
+              <div class="plan-sidebar-footer" id="ts-plan-sidebar-footer" data-plan-ref-footer style="display:none">
+                <span class="plan-ref-footer-status"></span>
+                <button class="plan-ref-send-btn" disabled>Send to Claude</button>
               </div>
               <div class="plan-sidebar-resize" data-target="ts"></div>
             </div>
@@ -967,14 +971,18 @@
         </div>
         <div id="plan-sidebar" class="plan-sidebar" style="display:none">
           <div class="plan-sidebar-header">
-            <span>Context</span>
+            <span id="plan-sidebar-title">Context</span>
             <button class="plan-sidebar-close" data-target="session">&times;</button>
           </div>
           <div class="plan-sidebar-path" id="plan-sidebar-path"></div>
           <div class="plan-sidebar-context" id="plan-sidebar-context"></div>
           <div class="plan-sidebar-tabs" id="plan-sidebar-tabs"></div>
-          <div class="plan-sidebar-body" id="plan-sidebar-body">
+          <div class="plan-sidebar-body plan-ref-mount" id="plan-sidebar-body">
             <div class="plan-sidebar-empty">No context set.<br>Agent will populate this when work begins.</div>
+          </div>
+          <div class="plan-sidebar-footer" id="plan-sidebar-footer" data-plan-ref-footer style="display:none">
+            <span class="plan-ref-footer-status"></span>
+            <button class="plan-ref-send-btn" disabled>Send to Claude</button>
           </div>
           <div class="plan-sidebar-resize" data-target="session"></div>
         </div>
@@ -1664,6 +1672,7 @@
     <button class="td-assignee-btn" id="task-detail-assignee" data-tooltip="Set assignee"></button>
     <span class="td-spacer"></span>
     <span id="task-detail-checklist" class="td-checklist"></span>
+    <button class="task-detail-action" id="task-detail-plan-toggle" style="display:none" data-tooltip="Toggle plan pane">📋 Plan</button>
     <button class="task-detail-action" id="task-detail-open-session">Open Session</button>
     <div class="font-size-controls td-font-compact" id="td-font-controls">
       <button class="font-size-btn" data-action="font-down" data-tooltip="Decrease font size">A&minus;</button>
@@ -1711,6 +1720,20 @@
     <button id="task-detail-mode-toggle">Ask</button>
     <textarea id="task-detail-input" rows="3" placeholder="Message Claude..." autocomplete="off"></textarea>
     <button id="task-detail-send">Send</button>
+  </div>
+</div>
+
+<!-- Plan drawer — second slide-out, layered on top of task-detail-panel -->
+<div id="task-detail-plan-overlay" class="td-plan-overlay"></div>
+<div id="task-detail-plan-pane" class="td-plan-pane">
+  <div class="td-plan-header">
+    <span id="td-plan-title">Plan</span>
+    <button class="td-plan-close" id="task-detail-plan-close" data-tooltip="Hide plan">&times;</button>
+  </div>
+  <div class="td-plan-body plan-ref-mount" data-plan-ref-shell></div>
+  <div class="td-plan-footer" data-plan-ref-footer>
+    <span class="plan-ref-footer-status"></span>
+    <button class="plan-ref-send-btn" disabled>Send to Claude</button>
   </div>
 </div>
 
