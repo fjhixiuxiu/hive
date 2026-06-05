@@ -162,6 +162,24 @@ function setDesignationDef(name, { agentFiles, description, color }) {
   return def;
 }
 
+function renameDesignationDef(oldName, newName) {
+  if (!oldName || !newName || oldName === newName) return false;
+  if (!this.designationDefs.has(oldName)) return false;
+  if (this.designationDefs.has(newName)) return false;
+  const def = this.designationDefs.get(oldName);
+  def.name = newName;
+  this.designationDefs.delete(oldName);
+  this.designationDefs.set(newName, def);
+  // Update session assignments
+  for (const [num, des] of this.designations) {
+    if (des === oldName) this.designations.set(num, newName);
+  }
+  this._saveState();
+  this.emit('designationDefs:changed', this.getDesignationDefs());
+  this.emit('designations:changed', this.getDesignations());
+  return true;
+}
+
 function removeDesignationDef(name) {
   if (!this.designationDefs.has(name)) return false;
   this.designationDefs.delete(name);
@@ -300,6 +318,7 @@ module.exports = {
   getDesignations,
   getDesignationDefs,
   setDesignationDef,
+  renameDesignationDef,
   removeDesignationDef,
   // Agent Roots + Scanning
   getAgentRoots,

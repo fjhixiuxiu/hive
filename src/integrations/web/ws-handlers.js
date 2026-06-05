@@ -932,6 +932,20 @@ function createMessageHandler(deps) {
         break;
       }
 
+      case 'designationDef:update': {
+        if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'admin')) break;
+        if (msg.oldName && msg.oldName !== msg.name) {
+          const renamed = taskQueue.renameDesignationDef(msg.oldName, msg.name);
+          if (!renamed) {
+            ws.send(JSON.stringify({ type: 'error', message: `Failed to rename designation "${msg.oldName}" to "${msg.name}"` }));
+            break;
+          }
+        }
+        taskQueue.setDesignationDef(msg.name, { agentFiles: msg.agentFiles, description: msg.description, color: msg.color });
+        break;
+      }
+
       case 'designationDef:remove': {
         if (!taskQueue) break;
         if (!checkPermission(ws, user, 'admin')) break;

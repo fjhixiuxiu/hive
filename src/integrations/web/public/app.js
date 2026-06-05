@@ -232,6 +232,8 @@
   let showNavButtons = localStorage.getItem('hive_show_nav_buttons') !== 'false';
   let showFleetStrip = localStorage.getItem('hive_show_fleet_strip') === 'true';
   let readingMode = false;
+  let minibarGroupByRepo = localStorage.getItem('hive_minibar_group_repo') === 'true';
+  let minibarDesigSort = localStorage.getItem('hive_minibar_desig_sort') === 'true';
   let fleetViewMode = localStorage.getItem('hive_fleet_view') || 'grid';
   // Migrate old 'terminals' mode → grid + live
   if (fleetViewMode === 'terminals') { fleetViewMode = 'grid'; localStorage.setItem('hive_fleet_view', 'grid'); }
@@ -3281,14 +3283,31 @@
   backBtn.addEventListener('click', closeSession);
 
   // ── Session navigation (Prev / Next / Next Idle / Mini fleet strip) ──
+
   function _repoBaseName(repoDir) {
     if (!repoDir) return 'unknown';
     const last = repoDir.replace(/\/+$/, '').split('/').pop() || '';
     return last.replace(/\d+$/, '') || last;
   }
 
+  function _minibarSort(a, b) {
+    if (minibarGroupByRepo && minibarDesigSort) {
+      const ra = _repoBaseName(a.repoDir), rb = _repoBaseName(b.repoDir);
+      if (ra !== rb) return ra.localeCompare(rb);
+      const da = designations[a.num] || '', db = designations[b.num] || '';
+      if (da !== db) return da.localeCompare(db);
+    } else if (minibarGroupByRepo) {
+      const ra = _repoBaseName(a.repoDir), rb = _repoBaseName(b.repoDir);
+      if (ra !== rb) return ra.localeCompare(rb);
+    } else if (minibarDesigSort) {
+      const da = designations[a.num] || '', db = designations[b.num] || '';
+      if (da !== db) return da.localeCompare(db);
+    }
+    return a.num - b.num;
+  }
+
   function getSortedSessionList() {
-    return fleetData.filter(s => s.state !== 'off').sort((a, b) => a.num - b.num);
+    return fleetData.filter(s => s.state !== 'off').sort(_minibarSort);
   }
 
   function navigateToSession(s) {
@@ -3448,34 +3467,56 @@
     const strip = document.getElementById('mini-fleet-strip');
     if (!showFleetStrip || activeTab !== 'session-panel') { strip.style.display = 'none'; return; }
     strip.style.display = 'flex';
-    const sorted = fleetData.slice().sort((a, b) => a.num - b.num);
+    const sorted = fleetData.slice().sort(_minibarSort);
     strip.innerHTML = '';
-    sorted.forEach(s => {
-      const box = document.createElement('div');
-      box.className = 'mini-fleet-box';
-      if (s.state === 'idle') box.classList.add('s-idle');
-      else if (s.state === 'working') box.classList.add('s-working');
-      else box.classList.add('s-off');
-      if (String(s.num) === currentSession) box.classList.add('current');
-      box.textContent = s.num;
-      const desig = designations[s.num];
-      if (desig) {
-        const dc = getDesigColor(desig);
-        box.style.borderTopColor = dc.fg;
-        box.style.borderTopWidth = '2px';
-      }
-      if (autoSessions.has(s.num)) {
-        box.style.borderBottomColor = 'var(--cyan)';
-        box.style.borderBottomWidth = '2px';
-      }
-      if (s.state !== 'off') {
-        box.addEventListener('click', () => navigateToSession(s));
-      }
-      strip.appendChild(box);
-    });
+    if (minibarGroupByRepo) {
+      let lastRepo = null;
+      sorted.forEach(s => {
+        const repo = _repoBaseName(s.repoDir);
+        if (repo !== lastRepo) {
+          if (lastRepo !== null) {
+            const sep = document.createElement('div');
+            sep.className = 'mini-fleet-sep';
+            strip.appendChild(sep);
+          }
+          const label = document.createElement('div');
+          label.className = 'mini-fleet-label';
+          label.textContent = repo;
+          strip.appendChild(label);
+          lastRepo = repo;
+        }
+        strip.appendChild(_createMiniFleetBox(s));
+      });
+    } else {
+      sorted.forEach(s => strip.appendChild(_createMiniFleetBox(s)));
+    }
     // Scroll current into view
     const cur = strip.querySelector('.current');
     if (cur) cur.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+  }
+
+  function _createMiniFleetBox(s) {
+    const box = document.createElement('div');
+    box.className = 'mini-fleet-box';
+    if (s.state === 'idle') box.classList.add('s-idle');
+    else if (s.state === 'working') box.classList.add('s-working');
+    else box.classList.add('s-off');
+    if (String(s.num) === currentSession) box.classList.add('current');
+    box.textContent = s.num;
+    const desig = designations[s.num];
+    if (desig) {
+      const dc = getDesigColor(desig);
+      box.style.borderTopColor = dc.fg;
+      box.style.borderTopWidth = '2px';
+    }
+    if (autoSessions.has(s.num)) {
+      box.style.borderBottomColor = 'var(--cyan)';
+      box.style.borderBottomWidth = '2px';
+    }
+    if (s.state !== 'off') {
+      box.addEventListener('click', () => navigateToSession(s));
+    }
+    return box;
   }
 
   function applyNavPreferences() {
@@ -3575,9 +3616,23 @@
   document.getElementById('toggle-task-autocomplete').addEventListener('click', function() {
     if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'taskAutoComplete:toggle' }));
   });
+  document.getElementById('toggle-minibar-group').addEventListener('click', function() {
+    minibarGroupByRepo = !minibarGroupByRepo;
+    localStorage.setItem('hive_minibar_group_repo', minibarGroupByRepo);
+    this.classList.toggle('on', minibarGroupByRepo);
+    applyNavPreferences();
+  });
+  document.getElementById('toggle-minibar-desig-sort').addEventListener('click', function() {
+    minibarDesigSort = !minibarDesigSort;
+    localStorage.setItem('hive_minibar_desig_sort', minibarDesigSort);
+    this.classList.toggle('on', minibarDesigSort);
+    applyNavPreferences();
+  });
   // Initialize toggle button states
   document.getElementById('toggle-nav-buttons').classList.toggle('on', showNavButtons);
   document.getElementById('toggle-fleet-strip').classList.toggle('on', showFleetStrip);
+  document.getElementById('toggle-minibar-group').classList.toggle('on', minibarGroupByRepo);
+  document.getElementById('toggle-minibar-desig-sort').classList.toggle('on', minibarDesigSort);
 
   // ── Session tab switching ──────────────────────
   $$('.session-tab').forEach(tab => {
@@ -8655,7 +8710,7 @@
     if (def) {
       titleEl.textContent = 'Edit Designation';
       nameInput.value = def.name;
-      nameInput.disabled = true;
+      nameInput.disabled = false;
       descInput.value = def.description || '';
       desigDefSelectedFiles = [...(def.agentFiles || [])];
       desigDefSelectedColor = def.color || 'orange';
@@ -8761,7 +8816,11 @@
     if (!name) { showToast('Error', 'Name required', 'error'); return; }
     const description = document.getElementById('desig-def-description').value.trim();
     if (ws && ws.readyState === 1) {
-      ws.send(JSON.stringify({ type: 'designationDef:set', name, agentFiles: desigDefSelectedFiles, description, color: desigDefSelectedColor }));
+      const payload = { type: 'designationDef:update', name, agentFiles: desigDefSelectedFiles, description, color: desigDefSelectedColor };
+      if (editingDesigDef && editingDesigDef.name !== name) {
+        payload.oldName = editingDesigDef.name;
+      }
+      ws.send(JSON.stringify(payload));
     }
     closeDesigDefDialog();
   });

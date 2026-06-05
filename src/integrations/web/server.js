@@ -840,8 +840,8 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     _previewCache.pending = (async () => {
       const t0 = Date.now();
       const sessions = await fleet.getFleetStatus(config, router);
-      for (const s of sessions) {
-        // Prefer watcher-tracked activity (state transitions), fall back to tmux window_activity
+      // Fetch previews in parallel (each is an independent tmux capture-pane)
+      await Promise.all(sessions.map(async (s) => {
         const watcherActivity = watcher.sessionActivity.get(s.num);
         if (watcherActivity) s.lastActivity = watcherActivity;
         try {
@@ -855,13 +855,13 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
         } catch {
           s.preview = '';
         }
-        // Git summary from already-fetched data (no extra shell calls)
+        s.repoDir = s.num != null ? config.sessions.repoDir(s.num) : '';
         s.gitSummary = {
           lastCommit: '',
           lastCommitTime: '',
           totalChanges: s.git ? s.git.staged + s.git.modified + s.git.untracked : 0,
         };
-      }
+      }));
       const withPreview = sessions.filter(s => s.preview).length;
       log.info(`[perf] getFleetWithPreviews: ${Date.now() - t0}ms (${withPreview}/${sessions.length} have previews)`);
       _previewCache.result = sessions;

@@ -1427,6 +1427,8 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .mini-fleet-box.s-working { background:rgba(241,250,140,0.2); color:var(--yellow); }
 .mini-fleet-box.s-off { background:rgba(98,114,164,0.15); color:var(--dim); }
 .mini-fleet-box.current { border-color:var(--purple); }
+.mini-fleet-sep { width:1px; min-width:1px; height:20px; background:var(--bg3); flex-shrink:0; align-self:center; margin:0 4px; }
+.mini-fleet-label { font-size:9px; color:var(--dim); align-self:center; padding:0 4px; white-space:nowrap; flex-shrink:0; }
 
 /* ── Session detail (now inside content area) ─── */
 #session-panel {
