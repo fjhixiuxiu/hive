@@ -532,6 +532,7 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
         autoCreate: data.autoCreate || false,
         primaryAction: data.primaryAction || { enabled: false },
         designationMatch: data.designationMatch || 'flexible',
+        autoArchivePlanOnTaskComplete: !!data.autoArchivePlanOnTaskComplete,
         enabled: data.enabled || false,
         seenKeys: Array.isArray(data.seenKeys) ? data.seenKeys : [],
         tasksCreated: data.tasksCreated || 0,
