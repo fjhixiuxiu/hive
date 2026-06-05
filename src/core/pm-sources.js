@@ -22,10 +22,49 @@ You have hive MCP tools available. Use them:
 // ETag cache: url → { etag, data } — GitHub 304s don't count against rate limit
 const _etagCache = new Map();
 
+// GitHub rate-limit gate: when we get a 403/429 with Retry-After (or read
+// X-RateLimit-Reset showing 0 remaining), every subsequent _httpRequest to
+// api.github.com short-circuits with "rate-limited (resumes in Ns)" until
+// the timestamp passes. Without this, hive walks straight back into the
+// secondary-limit window on the next poll cycle. The "gate" is per-host so
+// JIRA / hive's own internal calls keep working.
+const _hostGateUntil = new Map(); // host → epoch-ms when we may try again
+
+function _hostOf(urlStr) {
+  try { return new URL(urlStr).host; } catch { return ''; }
+}
+
+function _gateRemaining(host) {
+  const until = _hostGateUntil.get(host);
+  if (!until) return 0;
+  const ms = until - Date.now();
+  if (ms <= 0) { _hostGateUntil.delete(host); return 0; }
+  return ms;
+}
+
+function _setGate(host, seconds) {
+  // Clamp to [5s, 10min] — never sit idle longer than the next hourly reset
+  const clamped = Math.max(5, Math.min(600, seconds || 60));
+  const until = Date.now() + clamped * 1000;
+  const prev = _hostGateUntil.get(host) || 0;
+  // Take the later of existing and new — don't shorten an active backoff
+  if (until > prev) _hostGateUntil.set(host, until);
+}
+
 function _httpRequest(urlStr, headers, body) {
   return new Promise((resolve, reject) => {
     const url = new URL(urlStr);
     const mod = url.protocol === 'https:' ? https : http;
+    const host = url.host;
+
+    // Gate check — if we're in a rate-limit cooldown for this host, fail
+    // fast without making the network call. Saves the request itself from
+    // being counted and prevents the burst-amplification that was eating
+    // GitHub's secondary limit.
+    const gateMs = _gateRemaining(host);
+    if (gateMs > 0) {
+      return reject(new Error(`rate-limited (resumes in ${Math.ceil(gateMs / 1000)}s)`));
+    }
 
     const reqHeaders = { ...headers };
 
@@ -57,11 +96,30 @@ function _httpRequest(urlStr, headers, body) {
             if (etag && !body) {
               _etagCache.set(urlStr, { etag, data: parsed });
             }
+            // Proactive gate: if remaining hit 0, lock the host until reset
+            // so we don't blow past the cap with concurrent in-flight calls.
+            const remaining = parseInt(res.headers['x-ratelimit-remaining'], 10);
+            const reset = parseInt(res.headers['x-ratelimit-reset'], 10);
+            if (Number.isFinite(remaining) && remaining === 0 && Number.isFinite(reset)) {
+              _setGate(host, Math.max(5, reset - Math.floor(Date.now() / 1000)));
+            }
             resolve(parsed);
           } catch (e) {
             reject(new Error(`Invalid JSON response: ${e.message}`));
           }
         } else {
+          // Honor Retry-After on 403/429 — gate the host so subsequent
+          // requests bail before hitting the wire. Without this, hive's
+          // 5-min poll cycle re-fires every burst and walks back into
+          // GitHub's secondary rate limit immediately.
+          if (res.statusCode === 403 || res.statusCode === 429) {
+            const ra = parseInt(res.headers['retry-after'], 10);
+            const reset = parseInt(res.headers['x-ratelimit-reset'], 10);
+            let backoff = 60;
+            if (Number.isFinite(ra) && ra > 0) backoff = ra;
+            else if (Number.isFinite(reset)) backoff = Math.max(5, reset - Math.floor(Date.now() / 1000));
+            _setGate(host, backoff);
+          }
           // Extract clean error: JSON message if possible, otherwise just the status code
           let detail = `HTTP ${res.statusCode}`;
           try { const j = JSON.parse(data); if (j.message) detail += `: ${j.message}`; } catch {
