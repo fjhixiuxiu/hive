@@ -18,15 +18,12 @@ const NUMBERED_OPTION_PATTERN = /^\d+[.)]\s+.{5,}/;
  *   'approval:requested'    - { session, name, num, prompt }  -- Claude needs permission
  */
 
-// Patterns that indicate Claude hit a retryable API error
+// Patterns that UNAMBIGUOUSLY indicate a retryable API error — specific enough that
+// they don't show up in ordinary prose, so they match anywhere in the pane.
 const API_ERROR_PATTERNS = [
   // HTTP status codes (Anthropic API)
   /API Error:?\s*\(?\s*(408|429|500|502|503|504|529)\b/,
-  // Error body phrases
-  /overloaded/i,
-  /rate.?limit/i,
-  /usage.?limit/i,
-  /capacity/i,
+  /usage limit reached/i,   // quota message ("Usage limit reached. Resets at …") — no "API Error" prefix
   /Internal server error/i,
   /timeout_error/i,
   // Timeout / streaming
@@ -40,7 +37,50 @@ const API_ERROR_PATTERNS = [
   /fetch failed/i,
   /Unable to connect to (the )?API/i,
   /Check your (internet )?connection/i,
+  // TLS handshake / record errors — transient. The Python ssl bracketed
+  // message is the canonical shape (e.g. "API Error: [SSL: SSLV3_ALERT_BAD_RECORD_MAC]
+  // ssl/tls alert bad record mac (_ssl.c:2548)"). The `SSL: <UPPER_SNAKE>` form
+  // doesn't appear in ordinary prose, so it's safe to match anywhere.
+  /\bSSL: [A-Z][A-Z0-9_]+/,
+  /\bssl\/tls alert\b/i,
+  /\bTLS\/SSL connection (has been )?closed\b/i,
+  // Catch-all for any Python ssl module error. The "(_ssl.c:NNNN)" suffix is
+  // appended by CPython's ssl.c on every TLS error and doesn't appear in
+  // ordinary prose. This subsumes the more specific patterns above but we
+  // keep them anyway as documentation of what we've actually seen.
+  /\(_ssl\.c:\d+\)/,
+  // Anthropic's structured JSON error envelope — fires even when the error
+  // body is otherwise empty (e.g. message=""), which is what S:20 hit:
+  //   API Error: {"type":"error","error":{"type":"api_error","message":""}}
+  // The exact substring `"type":"api_error"` won't appear in ordinary prose.
+  /"type"\s*:\s*"api_error"/,
+  // Claude Code's auto-mode safety classifier (claude-opus-4-7) errored out.
+  // Fixture from S:12:
+  //   Error: claude-opus-4-7 is temporarily unavailable, so auto mode cannot
+  //   determine the safety of Bash right now. Wait briefly and then try this
+  //   action again.
+  // The exact phrase "auto mode cannot determine the safety" is unique to this
+  // specific Claude-Code error path and not something that shows up in prose.
+  /auto mode cannot determine the safety/i,
 ];
+
+// These phrases ALSO occur in normal prose — notably when Claude *explains* that it
+// hit a rate limit ("the stale rate-limit-era queue draining"). Matching them bare
+// made the watcher read Claude's own recovery message as a live error and spam
+// "retry" in a feedback loop. So they only count when on an actual "API Error" line.
+const API_ERROR_LINE_RE = /API Error/i;
+const API_ERROR_PHRASES = [
+  /overloaded/i,
+  /rate.?limit/i,
+  /capacity/i,
+  /temporarily limiting requests/i,
+];
+
+function lineHasRetryableError(line) {
+  if (API_ERROR_PATTERNS.some(p => p.test(line))) return true;
+  if (API_ERROR_LINE_RE.test(line)) return API_ERROR_PHRASES.some(p => p.test(line));
+  return false;
+}
 
 // Persistent auto-retry for transient API errors (rate limits, 5xx, overload).
 // No attempt cap — keep retrying until the error clears or the session resumes
@@ -149,6 +189,7 @@ class Watcher extends EventEmitter {
     // Auto-retry of transient API errors types "retry" into the session on its own.
     // It's on by default; set watcher.errorRetry.enabled = false to opt out entirely.
     this.errorRetryEnabled = config.watcher?.errorRetry?.enabled !== false;
+    this._prevFleetNums = null;       // last poll's set of fleet session nums (drop/add diagnostics)
   }
 
   /**
@@ -225,6 +266,21 @@ class Watcher extends EventEmitter {
   async _poll() {
     const sessions = await fleet.getFleetStatus(this.config, this.router);
 
+    // Diagnostic: log when the fleet snapshot gains/loses sessions. A session that
+    // drops out (e.g. under load / slow tmux capture) silently stops being polled —
+    // and so stops being eligible for error-retry — without any other trace.
+    const fleetNums = new Set(sessions.map(s => s.num));
+    if (this._prevFleetNums) {
+      const dropped = [...this._prevFleetNums].filter(n => !fleetNums.has(n));
+      const added = [...fleetNums].filter(n => !this._prevFleetNums.has(n));
+      if (dropped.length || added.length) {
+        log.info(`[watcher] fleet membership changed (${fleetNums.size} sessions)` +
+          `${dropped.length ? ` — dropped: ${dropped.join(',')}` : ''}` +
+          `${added.length ? ` — added: ${added.join(',')}` : ''}`);
+      }
+    }
+    this._prevFleetNums = fleetNums;
+
     for (const s of sessions) {
       const prevState = this.prevStates.get(s.num);
       const currState = s.state;
@@ -254,10 +310,12 @@ class Watcher extends EventEmitter {
 
       // State-independent API-error recovery. We deliberately do NOT gate this on the
       // idle/working verdict — that verdict rests on a 3-line capture we don't fully
-      // trust. Instead _checkAndRetryErrors keys off the error text plus the absence
-      // of an active spinner in a 15-line capture, so a session stalled on an API
-      // error gets nudged even if detectState misreads it as 'working'.
-      if (this.seenWorking.has(s.num) && !this.detectedWaiting.has(s.num)) {
+      // trust. _checkAndRetryErrors keys off the error text plus the absence of an
+      // active spinner in a 15-line capture, so a session stalled on an API error gets
+      // nudged even if detectState misreads it as 'working'. The seenWorking /
+      // detectedWaiting gates now live INSIDE it (so a skipped-but-erroring session is
+      // logged, not silently dropped).
+      {
         const retried = await this._checkAndRetryErrors(s);
         if (retried) {
           this.notifiedIdle.delete(s.num);
@@ -396,38 +454,23 @@ class Watcher extends EventEmitter {
 
     const retry = this.errorRetries.get(s.num) || { count: 0, lastRetryAt: 0, retryAfter: 0 };
 
-    // If a reset time was parsed, wait until it passes
-    if (retry.retryAfter && Date.now() < retry.retryAfter) return true; // waiting for reset
-
-    // Exponential backoff between attempts: 15s, 30s, 1m, 2m, 4m, capped at 5m.
-    // No attempt cap — we keep retrying until the error clears or work resumes.
-    const backoff = Math.min(ERROR_RETRY_BASE * 2 ** retry.count, ERROR_RETRY_MAX_DELAY);
-    if (!retry.retryAfter && retry.lastRetryAt && Date.now() - retry.lastRetryAt < backoff) {
-      return true; // still inside the backoff window — stay in recovery, don't confirm idle
-    }
-
-    // Capture recent pane content
+    // Capture the pane and look for a retryable error FIRST, so the gates below only
+    // act (or log a hold-off reason) for sessions that actually show one.
+    //
+    // NOTE on the post-capture slice: tmux's `-S -15` ("start 15 lines BEFORE
+    // the visible top") plus a default-height pane (~54 lines) returns ~69
+    // total lines — far more than the "look at the last 15 lines" intent of
+    // this check. Without slicing here, the watcher matched OLD API errors
+    // still resident in scrollback long after they'd scrolled out of view,
+    // firing endless false-positive retries (S:26 hit this loud and clear:
+    // an SSL error from earlier in the session kept resurfacing every poll
+    // until the user manually nuked the spurious "retry" prompts).
     const paneTarget = `${s.name}:.${this.config.sessions.claudePane}`;
     const content = await node.capturePane(paneTarget, { lines: 15 });
     if (!content) return false;
 
-    // If Claude is actively working/retrying (a spinner with an ellipsis, e.g.
-    // "✻ Retrying…"), leave it alone — it will resolve on its own. We only nudge a
-    // *stalled* session. This is the signal we trust instead of the idle/working verdict.
-    if (tmux.ACTIVE_STATUS_RE.test(content)) return false;
-
-    // Check for API error patterns in the last 15 lines
-    const lines = content.split('\n');
-    let hasError = false;
-    for (const line of lines) {
-      for (const pat of API_ERROR_PATTERNS) {
-        if (pat.test(line)) {
-          hasError = true;
-          break;
-        }
-      }
-      if (hasError) break;
-    }
+    const lines = content.split('\n').slice(-15);
+    const hasError = lines.some(lineHasRetryableError);
 
     // Error gone — the session recovered (a retry took, or it cleared on its own).
     // Drop the budget so a future error starts a fresh backoff, then let normal
@@ -438,6 +481,40 @@ class Watcher extends EventEmitter {
         this.errorRetries.delete(s.num);
       }
       return false;
+    }
+
+    // ── A retryable error IS present. Decide whether to nudge; log any hold-off
+    //    reason so a genuinely-stuck session is never silently skipped. ──
+
+    // A retryable error in the pane is itself proof claude ran and made an API
+    // call — it can't produce that output otherwise. So promote seenWorking
+    // unconditionally when we see one. The original gate (intended to skip
+    // sessions where the pane is just stale text and claude isn't running) was
+    // deadlocking: a session whose first observed event was an API error stayed
+    // permanently un-retried because no working→idle transition could ever fire
+    // (the retry that would cause one was the very thing the gate blocked).
+    if (!this.seenWorking.has(s.num)) {
+      log.info(`[watcher] session ${s.num}: promoting seenWorking on retryable error (was never marked working)`);
+      this.seenWorking.add(s.num);
+    }
+    // A retryable API error means Claude stalled on an API *call*, not on a user prompt —
+    // so a lingering detectedWaiting flag (e.g. from an already-answered AskUserQuestion)
+    // is stale. Clear it and fall through to retry, rather than deadlocking: the flag
+    // otherwise only clears on a working transition the stuck session can never reach
+    // (the retry that would get it there is the very thing the flag is blocking).
+    if (this.detectedWaiting.has(s.num)) {
+      log.info(`[watcher] session ${s.num}: clearing stale detectedWaiting — retryable error present (Claude not awaiting user)`);
+      this.detectedWaiting.delete(s.num);
+    }
+    // Claude is actively working / self-retrying (spinner with an ellipsis, e.g.
+    // "✻ Retrying…") — leave it alone. Common and benign, so not logged (too noisy).
+    if (tmux.ACTIVE_STATUS_RE.test(content)) return false;
+
+    // Honor a parsed reset time, then the exponential backoff window, before re-sending.
+    if (retry.retryAfter && Date.now() < retry.retryAfter) return true; // waiting for reset
+    const backoff = Math.min(ERROR_RETRY_BASE * 2 ** retry.count, ERROR_RETRY_MAX_DELAY);
+    if (!retry.retryAfter && retry.lastRetryAt && Date.now() - retry.lastRetryAt < backoff) {
+      return true; // still inside the backoff window — stay in recovery, don't confirm idle
     }
 
     // Check for a reset time in the error output
