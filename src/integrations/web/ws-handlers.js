@@ -999,6 +999,19 @@ function createMessageHandler(deps) {
         break;
       }
 
+      case 'autoCreateForManualTasks:toggle': {
+        if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'dispatch')) break;
+        taskQueue.autoCreateForManualTasks = !taskQueue.autoCreateForManualTasks;
+        taskQueue._saveState();
+        broadcast({ type: 'autoCreateForManualTasks:status', enabled: taskQueue.autoCreateForManualTasks });
+        // Kick the dispatcher in case turning it on should immediately spawn for the existing backlog.
+        if (taskQueue.autoCreateForManualTasks) {
+          taskQueue._tryAutoDispatch().catch(() => {});
+        }
+        break;
+      }
+
       case 'kill': {
         if (!checkPermission(ws, user, 'restart')) break;
         const found = await fleet.findSession(config, router, msg.session);

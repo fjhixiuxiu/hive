@@ -149,6 +149,7 @@
   let taskMode = 'auto';
   let vimMode = false;
   let taskAutoComplete = true;
+  let autoCreateForManualTasks = false;
   let manualTarget = null;
   let activeTaskTab = 'inprogress';
   let tasksViewMode = 'list'; // 'list' or 'board'
@@ -1407,6 +1408,12 @@
         taskAutoComplete = msg.enabled;
         const btn = document.getElementById('toggle-task-autocomplete');
         if (btn) btn.classList.toggle('on', taskAutoComplete);
+        break;
+      }
+      case 'autoCreateForManualTasks:status': {
+        autoCreateForManualTasks = msg.enabled;
+        const btn = document.getElementById('toggle-auto-create-manual');
+        if (btn) btn.classList.toggle('on', autoCreateForManualTasks);
         break;
       }
       case 'spawn:slots':
@@ -3639,6 +3646,9 @@
   });
   document.getElementById('toggle-task-autocomplete').addEventListener('click', function() {
     if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'taskAutoComplete:toggle' }));
+  });
+  document.getElementById('toggle-auto-create-manual').addEventListener('click', function() {
+    if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'autoCreateForManualTasks:toggle' }));
   });
   document.getElementById('toggle-minibar-group').addEventListener('click', function() {
     minibarGroupByRepo = !minibarGroupByRepo;

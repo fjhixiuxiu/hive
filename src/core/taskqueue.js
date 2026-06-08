@@ -42,6 +42,7 @@ class TaskQueue extends EventEmitter {
     this.spawnSlotMax = 32;
     this.vimMode = false;
     this.taskAutoComplete = true; // when false, tasks require manual completion
+    this.autoCreateForManualTasks = false; // when true, _tryAutoDispatch spawns a session for any queued auto-mode task that has no source PM
     this.repoSessionCaps = new Map(); // repoBaseName -> max session count
     this._snoozeTimers = new Map(); // taskId → setTimeout handle
     this.checklistTemplates = new Map(); // name → { name, items: [string] }
@@ -745,9 +746,17 @@ class TaskQueue extends EventEmitter {
         }
       }
 
-      // Then: auto-mode tasks
-      const queuedTasks = Array.from(this.tasks.values())
-        .filter(t => t.status === 'queued' && t.mode === 'auto');
+      // Then: tasks eligible for auto-dispatch. Always: auto-mode queued. When
+      // autoCreateForManualTasks is on: also manual-mode queued tasks that have
+      // no targetSession — those are "untriaged" queue entries (often from a
+      // PM in manual triage mode). Manual tasks WITH a targetSession stay out
+      // of this list — they're handled by the targeted retry above.
+      const queuedTasks = Array.from(this.tasks.values()).filter(t => {
+        if (t.status !== 'queued') return false;
+        if (t.mode === 'auto') return true;
+        if (t.mode === 'manual' && !t.targetSession && this.autoCreateForManualTasks) return true;
+        return false;
+      });
       if (!queuedTasks.length) return;
 
       const COOLDOWN_MS = 15000; // 15s cooldown after completion before re-dispatch
@@ -793,11 +802,18 @@ class TaskQueue extends EventEmitter {
         }
       }
 
-      // Auto-create session for queued tasks whose source PM has autoCreate enabled
+      // Auto-create session for queued tasks. Two paths qualify:
+      //  - The task's source PM has autoCreate enabled (the original #285 path).
+      //  - The global autoCreateForManualTasks setting is on AND the task has no
+      //    targetSession. Catches both dashboard-typed tasks (no PM) and PM
+      //    manual-triage tasks (source PM, but no autoCreate of its own) — both
+      //    cases would otherwise sit in the queue indefinitely.
       const autoCreateTasks = queuedTasks.filter(t => {
         if (t.status !== 'queued') return false;
         const pm = this._getSourcePm(t);
-        return pm && pm.autoCreate;
+        if (pm && pm.autoCreate) return true;
+        if (this.autoCreateForManualTasks && !t.targetSession) return true;
+        return false;
       });
 
       // Group by designation + matchMode (both affect which sessions count)
@@ -1301,6 +1317,7 @@ class TaskQueue extends EventEmitter {
       }
       if (data.vimMode !== undefined) this.vimMode = data.vimMode;
       if (data.taskAutoComplete !== undefined) this.taskAutoComplete = data.taskAutoComplete;
+      if (typeof data.autoCreateForManualTasks === 'boolean') this.autoCreateForManualTasks = data.autoCreateForManualTasks;
       if (data.spawnSlotMin !== undefined) this.spawnSlotMin = data.spawnSlotMin;
       if (data.spawnSlotMax !== undefined) this.spawnSlotMax = data.spawnSlotMax;
       if (data.repoSessionCaps && typeof data.repoSessionCaps === 'object') {
@@ -1390,6 +1407,7 @@ class TaskQueue extends EventEmitter {
       feed: this.feed,
       vimMode: this.vimMode,
       taskAutoComplete: this.taskAutoComplete,
+      autoCreateForManualTasks: this.autoCreateForManualTasks,
       spawnSlotMin: this.spawnSlotMin,
       spawnSlotMax: this.spawnSlotMax,
       checklistTemplates: this.getChecklistTemplates(),

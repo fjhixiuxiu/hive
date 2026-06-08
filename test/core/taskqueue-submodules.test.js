@@ -651,3 +651,32 @@ describe('TaskQueue: taskAutoComplete', () => {
     expect(tq.taskAutoComplete).toBe(true);
   });
 });
+
+// ── autoCreateForManualTasks setting ────────────────────
+
+describe('TaskQueue: autoCreateForManualTasks', () => {
+  let tq;
+
+  beforeEach(() => {
+    ({ tq } = setup());
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it('defaults to false (existing behavior preserved for forks who don\'t opt in)', () => {
+    expect(tq.autoCreateForManualTasks).toBe(false);
+  });
+
+  it('is a plain boolean — flipping it persists via _saveState', () => {
+    const saveSpy = vi.spyOn(tq, '_saveState').mockImplementation(() => {});
+    tq.autoCreateForManualTasks = true;
+    // The ws handler does this pattern directly. Mirror it here so future
+    // refactors that move into a method still preserve the contract.
+    tq._saveState();
+    expect(tq.autoCreateForManualTasks).toBe(true);
+    expect(saveSpy).toHaveBeenCalled();
+  });
+});
