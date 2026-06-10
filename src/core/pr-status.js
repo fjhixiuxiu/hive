@@ -18,6 +18,12 @@ const cache = new Map();
 const CACHE_TTL = 300_000; // 5 minutes
 const HTTP_TIMEOUT = 5_000; // 5s per API call
 
+// Shared keep-alive agents. Without these, every request opens a fresh TCP
+// socket; under sustained polling that leaks FDs on macOS until the process
+// hits the per-process file-descriptor limit.
+const httpsKeepAlive = new https.Agent({ keepAlive: true, maxSockets: 4 });
+const httpKeepAlive  = new http.Agent({  keepAlive: true, maxSockets: 4 });
+
 // ETag cache: url → { etag, data } — GitHub 304s don't count against rate limit
 const etagCache = new Map();
 
@@ -51,6 +57,7 @@ function fetchJSON(url, options = {}) {
     const req = mod.request(url, {
       method: options.method || 'GET',
       headers,
+      agent: mod === https ? httpsKeepAlive : httpKeepAlive,
     }, (res) => {
       let data = '';
       res.on('data', chunk => data += chunk);
@@ -337,4 +344,12 @@ async function fetchReviewByPR(owner, repo, prNumber) {
   }
 }
 
-module.exports = { fetch, getCached, clearCache, stats, fetchReviewByPR };
+module.exports = {
+  fetch,
+  getCached,
+  clearCache,
+  stats,
+  fetchReviewByPR,
+  // Internal — exposed for unit tests; matches the `_httpRequest` pattern in pm-sources.js.
+  _fetchJSON: fetchJSON,
+};

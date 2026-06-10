@@ -18,6 +18,9 @@ const {
   resolveMcpSessionNum,
 } = require('./ws-helpers');
 
+// Shared keep-alive agent for the Slack chat.postMessage call (see src/core/pr-status.js for rationale).
+const slackKeepAlive = new https.Agent({ keepAlive: true, maxSockets: 2 });
+
 /**
  * Create the WebSocket message handler.
  * @param {object} deps - Closure dependencies from createWebServer
@@ -2368,6 +2371,7 @@ function createMessageHandler(deps) {
             const req = https.request('https://slack.com/api/chat.postMessage', {
               method: 'POST',
               headers: { 'Authorization': `Bearer ${slackToken}`, 'Content-Type': 'application/json' },
+              agent: slackKeepAlive,
             }, (res) => {
               let data = '';
               res.on('data', chunk => data += chunk);

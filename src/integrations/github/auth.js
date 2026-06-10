@@ -4,6 +4,9 @@ const path = require('path');
 const https = require('https');
 const log = require('../../core/log');
 
+// Shared keep-alive agent (see src/core/pr-status.js for the FD-leak rationale).
+const httpsKeepAlive = new https.Agent({ keepAlive: true, maxSockets: 2 });
+
 /**
  * GitHub App authentication — JWT signing + installation token management.
  * No external dependencies; uses Node's built-in crypto module.
@@ -53,6 +56,7 @@ class GitHubAppAuth {
           ...headers,
         },
         timeout: 15000,
+        agent: httpsKeepAlive,
       }, (res) => {
         let data = '';
         res.on('data', (chunk) => data += chunk);
