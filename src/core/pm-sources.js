@@ -2,6 +2,10 @@ const https = require('https');
 const http = require('http');
 const log = require('./log');
 
+// Shared keep-alive agents (see src/core/pr-status.js for the FD-leak rationale).
+const httpsKeepAlive = new https.Agent({ keepAlive: true, maxSockets: 4 });
+const httpKeepAlive  = new http.Agent({  keepAlive: true, maxSockets: 4 });
+
 const MCP_INSTRUCTIONS = `
 ## Hive Integration
 
@@ -78,6 +82,7 @@ function _httpRequest(urlStr, headers, body) {
       method: body ? 'POST' : 'GET',
       headers: reqHeaders,
       timeout: 30000,
+      agent: mod === https ? httpsKeepAlive : httpKeepAlive,
     };
 
     const req = mod.request(urlStr, options, (res) => {
@@ -148,6 +153,7 @@ function _httpMethod(method, urlStr, headers, body) {
       method,
       headers: reqHeaders,
       timeout: 30000,
+      agent: mod === https ? httpsKeepAlive : httpKeepAlive,
     }, (res) => {
       let resBody = '';
       res.on('data', (chunk) => resBody += chunk);

@@ -16,6 +16,9 @@ const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const log = require('./log');
 
+// Shared keep-alive agent (see src/core/pr-status.js for the FD-leak rationale).
+const httpsKeepAlive = new https.Agent({ keepAlive: true, maxSockets: 2 });
+
 // Generate a random secret on startup if not provided
 const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(32).toString('hex');
 const JWT_EXPIRY = '7d';
@@ -51,6 +54,7 @@ function httpRequest(url, options = {}) {
     const req = https.request(url, {
       headers: { 'User-Agent': 'hive-ai', 'Accept': 'application/json', ...options.headers },
       method: options.method || 'GET',
+      agent: httpsKeepAlive,
     }, (res) => {
       let data = '';
       res.on('data', chunk => data += chunk);
