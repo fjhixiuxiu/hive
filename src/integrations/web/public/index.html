@@ -1198,6 +1198,17 @@
       <label class="pm-form-label">Trigger Phrases <span style="color:var(--dim)">(comma-separated)</span></label>
       <input class="pm-form-input" id="pm-form-gh-triggers" type="text" placeholder="ready for review, ptal, addressed" autocomplete="off">
     </div>
+    <div class="pm-form-field pm-fields-re-reviews full-width" style="display:none">
+      <label class="pm-form-label">Max Items Per Poll <span style="color:var(--dim)">(0 = unlimited; oldest first)</span></label>
+      <input class="pm-form-input" id="pm-form-gh-max-per-poll" type="number" min="0" placeholder="0" autocomplete="off">
+    </div>
+    <div class="pm-form-field pm-fields-re-reviews full-width" style="display:none">
+      <label class="pm-form-label" style="display:flex;align-items:center;gap:8px;cursor:pointer">
+        <input type="checkbox" id="pm-form-gh-skip-approved" style="margin:0">
+        <span>Skip PRs that already have an approved review</span>
+      </label>
+      <span style="font-size:11px;color:var(--dim);margin-top:4px;display:block;">Drops PRs where any reviewer's state is APPROVED — saves tokens by not re-reviewing greenlit work. Adds one API call per matched PR when on.</span>
+    </div>
     <div class="pm-form-field pm-fields-command full-width" style="display:none">
       <label class="pm-form-label">Command</label>
       <input class="pm-form-input" id="pm-form-command" type="text" placeholder="/cp-review" autocomplete="off">

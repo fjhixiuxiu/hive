@@ -558,6 +558,13 @@ async function _fetchReReviews(source, pmId) {
     .split(',').map(t => t.trim().toLowerCase()).filter(Boolean);
   if (triggers.length === 0) throw new Error('No trigger phrases configured');
 
+  // Optional cost-control settings:
+  //   maxPerPoll      — cap NEW (non-already-queued) results per poll; pull oldest first
+  //   skipIfApproved  — drop PRs where any review state is APPROVED (any reviewer)
+  // Both default off / unlimited so existing PMs see no behavior change.
+  const maxPerPoll = Number.isInteger(source.maxPerPoll) && source.maxPerPoll > 0 ? source.maxPerPoll : null;
+  const skipIfApproved = source.skipIfApproved === true;
+
   const headers = this._githubHeaders();
 
   // 1. Fetch all open PRs (paginate — repos can have >100 open PRs)
@@ -612,6 +619,7 @@ async function _fetchReReviews(source, pmId) {
           _alreadyQueued: true,
           _repo: source.repo,
           _prNumber: pr.number,
+          _commentCreatedAt: comment.created_at,
         });
         continue;
       }
@@ -623,13 +631,51 @@ async function _fetchReReviews(source, pmId) {
         storyPoints: null,
         _repo: source.repo,
         _prNumber: pr.number,
+        _commentCreatedAt: comment.created_at,
       });
     }
   }
 
   if (!this._reReviewPollTimes) this._reReviewPollTimes = {};
   this._reReviewPollTimes[pmId] = Date.now();
-  return results;
+
+  // No throttling configured → return as-is, preserving existing order semantics.
+  if (!maxPerPoll && !skipIfApproved) return results;
+
+  // Otherwise: sort by comment timestamp (oldest first — FIFO across the human-review
+  // backlog so nothing gets buried), then iterate filling a bucket up to maxPerPoll
+  // of NEW (non-already-queued) results, dropping any whose PR has an APPROVED review
+  // when skipIfApproved is on. The skipped-because-already-queued markers always pass
+  // through so the caller can still react on them.
+  results.sort((a, b) => (a._commentCreatedAt || '').localeCompare(b._commentCreatedAt || ''));
+  const filtered = [];
+  let kept = 0;
+  for (const r of results) {
+    if (r._alreadyQueued) { filtered.push(r); continue; }
+    if (skipIfApproved) {
+      const approved = await this._hasAnyApprovedReview(r._repo, r._prNumber);
+      if (approved) continue;
+    }
+    filtered.push(r);
+    kept++;
+    if (maxPerPoll && kept >= maxPerPoll) break;
+  }
+  return filtered;
+}
+
+// Cheap GitHub API call to check whether ANY review on this PR is APPROVED. Used
+// by skipIfApproved to drop PRs that someone has already greenlit. Fails open
+// (returns false) on transport error so a brief API hiccup doesn't drop the PM's
+// view of every PR.
+async function _hasAnyApprovedReview(repo, prNumber) {
+  try {
+    const url = `https://api.github.com/repos/${repo}/pulls/${prNumber}/reviews?per_page=100`;
+    const reviews = await this._httpRequest(url, this._githubHeaders());
+    if (!Array.isArray(reviews)) return false;
+    return reviews.some(r => r && r.state === 'APPROVED');
+  } catch {
+    return false;
+  }
 }
 
 // ── Checklist seeding ───────────────────────────────────
@@ -754,6 +800,7 @@ module.exports = {
   _getZohoToken,
   _fetchZoho,
   _fetchReReviews,
+  _hasAnyApprovedReview,
   _fetchNectar,
   _claimNectarTask,
   // Helpers

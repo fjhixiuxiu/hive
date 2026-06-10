@@ -9740,13 +9740,18 @@
         }
         if (!source.query && !source.repo) { showToast('Error', 'Search query or repo required', 'error'); return; }
         break;
-      case 'github-re-reviews':
+      case 'github-re-reviews': {
         source.repo = document.getElementById('pm-form-gh-repo').value.trim();
         source.reviewer = document.getElementById('pm-form-gh-reviewer').value.trim();
         source.triggerPhrases = document.getElementById('pm-form-gh-triggers').value.trim();
+        const maxPerPollRaw = parseInt(document.getElementById('pm-form-gh-max-per-poll').value, 10);
+        if (Number.isInteger(maxPerPollRaw) && maxPerPollRaw > 0) source.maxPerPoll = maxPerPollRaw;
+        else delete source.maxPerPoll;
+        source.skipIfApproved = document.getElementById('pm-form-gh-skip-approved').checked;
         if (!source.repo) { showToast('Error', 'Repo required', 'error'); return; }
         if (!source.reviewer) { showToast('Error', 'Reviewer username required', 'error'); return; }
         break;
+      }
       case 'command':
         source.command = document.getElementById('pm-form-command').value.trim();
         if (!source.command) { showToast('Error', 'Command required', 'error'); return; }
@@ -9887,6 +9892,8 @@
     document.getElementById('pm-form-gh-base').value = src.base || '';
     document.getElementById('pm-form-gh-reviewer').value = src.reviewer || '';
     document.getElementById('pm-form-gh-triggers').value = src.triggerPhrases || '';
+    document.getElementById('pm-form-gh-max-per-poll').value = Number.isInteger(src.maxPerPoll) ? src.maxPerPoll : 0;
+    document.getElementById('pm-form-gh-skip-approved').checked = src.skipIfApproved === true;
     document.getElementById('pm-form-command').value = src.command || '';
     document.getElementById('pm-form-script').value = src.script || '';
     document.getElementById('pm-form-script-action').value = src.scriptAction || 'feed';
