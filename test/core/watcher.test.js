@@ -543,7 +543,7 @@ describe('Watcher', () => {
       });
     }
 
-    it('only scans the LAST 15 lines, not the whole captured buffer', async () => {
+    it('ignores OLD errors deep in scrollback (false-positive guard)', async () => {
       // Regression: tmux's `capture-pane -S -15 -p` extends 15 lines into
       // scrollback BEYOND the visible pane — so a default-height (~54-line)
       // pane returns ~69 lines, plenty to include old errors that have long
@@ -551,7 +551,10 @@ describe('Watcher', () => {
       // an SSL error from earlier in the conversation kept matching every
       // poll, firing endless "retry" prompts even though the live tail of
       // the pane only showed clean post-recovery prose. The fix slices to
-      // the last 15 lines post-capture so we look at what's actually recent.
+      // the recent tail post-capture so we look at what's actually on screen.
+      // (Slice width is 15 in the no-tasks-panel case, 30 when the tasks panel
+      // is visible — see the two sibling tests below. Old errors at 40+ lines
+      // deep are outside both windows.)
       const oldError = '  ⎿  API Error: [SSL: SSLV3_ALERT_BAD_RECORD_MAC] ssl/tls alert bad record mac (_ssl.c:2548)';
       const filler = Array.from({ length: 40 }, (_, i) => `  line ${i} of post-recovery work`).join('\n');
       const recentTail = [
@@ -579,6 +582,205 @@ describe('Watcher', () => {
       // No false-positive retry on a clean tail despite the old error in scrollback.
       expect(mockNode.sendKeys).not.toHaveBeenCalled();
       expect(retrySpy).not.toHaveBeenCalled();
+    });
+
+    it('detects an API error pushed above the screen by the tasks-block panel', async () => {
+      // Regression for S:5 ("Sautéed for 12m 41s" with no retry): when Claude Code
+      // renders the tasks-block (header + up to 5 tasks + summary ≈ 9 lines) on top
+      // of the input + status footer (~5 lines), an "API Error" line sitting just
+      // above the panel ends up ~16-20 lines from the bottom — outside the old
+      // 15-line slice window, even though it's plainly on screen. The slice is
+      // widened to 30 when the panel header is detected.
+      const errorAndPanel = [
+        '⏺ API Error: Server is temporarily limiting requests (not your usage',
+        '  limit) · Rate limited',
+        '',
+        '✻ Sautéed for 12m 41s',
+        '',
+        '  18 tasks (9 done, 2 in progress, 7 open)',
+        '  ◼ QA PR #31137 (DEV-47900) — Stop EVV Test Connection 409',
+        '  ◼ 31137 S3 — Multiple Test Connections before Save',
+        '  ◻ QA PR #31056 (DEV-47745) — Unify EVV visit outbox writes',
+        '  ◻ Phase 2 final teardown + summary',
+        '  ◻ 31137 S4 — Multi-link aggregator',
+        '   … +4 pending, 9 completed',
+        '',
+        '─────────────────────────────────────────',
+        '❯ wait for build',
+        '─────────────────────────────────────────',
+        '  ⏵⏵ auto mode on (shift+tab to cycle) · PR #31124',
+      ].join('\n');
+      const filler = Array.from({ length: 20 }, (_, i) => `  prior work line ${i}`).join('\n');
+      const paneContent = `${filler}\n${errorAndPanel}`;
+
+      const retrySpy = vi.fn();
+      watcher = new Watcher(config, router);
+      watcher.on('session:error-retry', retrySpy);
+      const mockNode = createMockNode();
+      mockNode.capturePane.mockResolvedValue(paneContent);
+      mockNode.sendKeys.mockResolvedValue(null);
+      router.nodeFor.mockReturnValue(mockNode);
+      watcher.seenWorking.add(6);
+      watcher.prevStates.set(6, 'idle');
+      fleetSpy.mockResolvedValue([makeSession(6, 'idle')]);
+      await watcher._poll();
+
+      expect(retrySpy).toHaveBeenCalledWith(expect.objectContaining({ num: 6, retryCount: 1 }));
+      expect(mockNode.sendKeys).toHaveBeenCalledWith(expect.stringContaining('6'), 'retry', true);
+    });
+
+    it('detects the compressed tasks panel (no header, just spinner + summary)', async () => {
+      // Variant of the tasks-block panel: when an in-progress agent task has
+      // sub-tasks, Claude Code drops the "N tasks (X done, ...)" header and
+      // renders a spinner line ("· Running …") + `⎿` continuation marker +
+      // indented ✔/◼/◻ rows + the "+N pending, N completed" summary. The
+      // panel still pushes the API Error line out of the narrow window, so
+      // the widening must still kick in — keyed off the summary line here
+      // since the header is absent.
+      const errorAndPanel = [
+        '⏺ API Error: Server is temporarily limiting requests (not your usage',
+        '  limit) · Rate limited',
+        '',
+        '· Sautéed for 8m 12s',
+        '',
+        '⏺ Calling playwright 2 times… (ctrl+o to expand)',
+        '',
+        '· Running QA on PR #31137… (2m 36s · ↓ 4.0k tokens)',
+        '  ⎿  ✔ 31137 S4 — Multi-link aggregator: correct positional update on l…',
+        '     ◼ QA PR #31137 (DEV-47900) — Stop EVV Test Connection 409',
+        '     ◼ 31137 S5 — Diagnostic result still records',
+        '     ◻ QA PR #31056 (DEV-47745) — Unify EVV visit outbox writes',
+        '     ◻ Phase 2 final teardown + summary',
+        '      … +3 pending, 10 completed',
+        '',
+        '─────────────────────────────────────────',
+        '❯ wait for build',
+        '─────────────────────────────────────────',
+        '  ⏵⏵ auto mode on (shift+tab to cycle) · PR #31137',
+      ].join('\n');
+      const filler = Array.from({ length: 20 }, (_, i) => `  prior work line ${i}`).join('\n');
+      const paneContent = `${filler}\n${errorAndPanel}`;
+
+      const retrySpy = vi.fn();
+      watcher = new Watcher(config, router);
+      watcher.on('session:error-retry', retrySpy);
+      const mockNode = createMockNode();
+      mockNode.capturePane.mockResolvedValue(paneContent);
+      mockNode.sendKeys.mockResolvedValue(null);
+      router.nodeFor.mockReturnValue(mockNode);
+      watcher.seenWorking.add(6);
+      watcher.prevStates.set(6, 'idle');
+      fleetSpy.mockResolvedValue([makeSession(6, 'idle')]);
+      await watcher._poll();
+
+      expect(retrySpy).toHaveBeenCalledWith(expect.objectContaining({ num: 6, retryCount: 1 }));
+      expect(mockNode.sendKeys).toHaveBeenCalledWith(expect.stringContaining('6'), 'retry', true);
+    });
+
+    it('keeps the narrow window when no tasks panel is rendered', async () => {
+      // Companion to the tasks-panel tests: without a panel header or summary
+      // line, the slice stays at 15 lines so the false-positive guard remains
+      // tight. An error ~20 lines from the bottom must NOT fire a retry — that's
+      // exactly the scrollback case the original guard was protecting.
+      const oldError = '  ⎿  API Error: 529 Overloaded';
+      const filler = Array.from({ length: 18 }, (_, i) => `  prose recovery line ${i}`).join('\n');
+      const cleanTail = ['⏺ Work resumed and completed.', '❯ ', '  ⏵⏵ auto mode on'].join('\n');
+      const paneContent = `${oldError}\n${filler}\n${cleanTail}`;
+
+      const retrySpy = vi.fn();
+      watcher = new Watcher(config, router);
+      watcher.on('session:error-retry', retrySpy);
+      const mockNode = createMockNode();
+      mockNode.capturePane.mockResolvedValue(paneContent);
+      mockNode.sendKeys.mockResolvedValue(null);
+      router.nodeFor.mockReturnValue(mockNode);
+      watcher.seenWorking.add(6);
+      watcher.prevStates.set(6, 'idle');
+      fleetSpy.mockResolvedValue([makeSession(6, 'idle')]);
+      await watcher._poll();
+
+      expect(retrySpy).not.toHaveBeenCalled();
+      expect(mockNode.sendKeys).not.toHaveBeenCalled();
+    });
+
+    it('does not send a duplicate retry when one is already submitted after the error', async () => {
+      // Regression for S:7 stray-retry loop: API Error appeared, the watcher
+      // sent "retry", Claude began producing a substantive multi-paragraph
+      // response. The original API Error text was still in the slice window,
+      // and once the backoff window elapsed AND Claude briefly fell idle
+      // between paragraphs, the watcher fired ANOTHER retry — and then a
+      // third. The fix: if a `> retry` / `❯ retry` line is already in the
+      // pane BELOW the most recent error, that retry has been submitted and
+      // we must not send a duplicate, even when the backoff has elapsed.
+      const paneContent = [
+        '⏺ API Error: [SSL: SSLV3_ALERT_BAD_RECORD_MAC] ssl/tls alert bad record mac (_ssl.c:2548)',
+        '',
+        '✻ Cooked for 1m 15s',
+        '',
+        '❯ retry',                                     // <- retry already submitted
+        '',
+        '⏺ Good news: paste the discovery output.',
+        '',
+        '✻ Sautéed for 1m 12s',
+        '',
+        '❯ ',
+        '  ⏵⏵ auto mode on (shift+tab to cycle)',
+      ].join('\n');
+
+      const retrySpy = vi.fn();
+      watcher = new Watcher(config, router);
+      watcher.on('session:error-retry', retrySpy);
+      const mockNode = createMockNode();
+      mockNode.capturePane.mockResolvedValue(paneContent);
+      mockNode.sendKeys.mockResolvedValue(null);
+      router.nodeFor.mockReturnValue(mockNode);
+
+      // One retry already happened and the backoff window has long since elapsed
+      // — without the guard this would re-fire another stray retry every poll.
+      watcher.errorRetries.set(6, { count: 1, lastRetryAt: 1 });
+      watcher.seenWorking.add(6);
+      watcher.prevStates.set(6, 'idle');
+
+      fleetSpy.mockResolvedValue([makeSession(6, 'idle')]);
+      for (let i = 0; i < 5; i++) await watcher._poll();
+
+      expect(retrySpy).not.toHaveBeenCalled();
+      expect(mockNode.sendKeys).not.toHaveBeenCalled();
+      expect(log.info).toHaveBeenCalledWith(expect.stringContaining('retry already submitted'));
+    });
+
+    it('does send a retry when the only retry token sits ABOVE the latest error', async () => {
+      // Sibling to the stray-retry test: an older retry from a prior error
+      // window must NOT mask a fresh error. The submitted-retry guard only
+      // skips when the retry line appears BELOW the most recent error.
+      const paneContent = [
+        '⏺ API Error: 529 Overloaded',          // <- old error
+        '',
+        '❯ retry',                              // <- old retry (above the fresh error)
+        '',
+        '⏺ Recovery prose.',
+        '',
+        '⏺ API Error: 503 Service Unavailable', // <- FRESH error below the old retry
+        '❯ ',
+        '  ⏵⏵ auto mode on',
+      ].join('\n');
+
+      const retrySpy = vi.fn();
+      watcher = new Watcher(config, router);
+      watcher.on('session:error-retry', retrySpy);
+      const mockNode = createMockNode();
+      mockNode.capturePane.mockResolvedValue(paneContent);
+      mockNode.sendKeys.mockResolvedValue(null);
+      router.nodeFor.mockReturnValue(mockNode);
+
+      watcher.seenWorking.add(6);
+      watcher.prevStates.set(6, 'idle');
+
+      fleetSpy.mockResolvedValue([makeSession(6, 'idle')]);
+      await watcher._poll();
+
+      expect(retrySpy).toHaveBeenCalledWith(expect.objectContaining({ num: 6, retryCount: 1 }));
+      expect(mockNode.sendKeys).toHaveBeenCalledWith(expect.stringContaining('6'), 'retry', true);
     });
 
     it('retries after reset time has passed', async () => {

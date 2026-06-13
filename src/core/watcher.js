@@ -82,6 +82,40 @@ function lineHasRetryableError(line) {
   return false;
 }
 
+// Claude Code's tasks-block panel — when visible it eats ~9 lines (header + up
+// to 5 task rows + summary + blank lines) on top of the ~5-line input/status
+// footer, pushing any "API Error" line ~15-20 lines from the bottom of the
+// visible pane. The narrow scan window below (NARROW_SLICE_LINES) is sized for
+// the common no-panel case; when the panel is detected we widen the scan
+// (WIDE_SLICE_LINES) to include the error above it.
+//
+// The panel has TWO rendering modes we need to detect:
+//   (A) Idle / Sautéed mode — opens with an "N tasks (X done, Y in progress,
+//       Z open)" header, followed by bare ◼/◻ task rows.
+//   (B) Working mode with sub-tasks — opens with a spinner line ("· Running …"),
+//       then a `⎿` continuation marker and indented ✔/◼/◻ rows.
+// Both modes close with a "+N pending, N completed" summary line, which is the
+// most reliable common signal (that exact "+digits pending, digits completed"
+// shape doesn't appear in ordinary prose). Detecting EITHER the header OR the
+// summary covers both modes.
+const TASKS_PANEL_HEADER_RE = /^\s*\d+\s+tasks?\s*\(\d+\s+done\b/i;
+const TASKS_PANEL_SUMMARY_RE = /\+\d+\s+pending,\s+\d+\s+completed\b/i;
+const NARROW_SLICE_LINES = 15;
+const WIDE_SLICE_LINES = 30;
+
+// A `retry` user-prompt line already sitting in the pane. Claude Code renders
+// submitted user messages with a `>` or `❯` prefix, so a line like `❯ retry`
+// (or `> retry`) below the most recent API Error means a retry was already
+// submitted — by us on a prior poll, or by the user manually. Don't send
+// another one or we generate a stray-retry loop after Claude has recovered
+// (the original error text can still linger in the slice window while Claude's
+// substantive response is being typed). Real fixture from S:7:
+//   API Error: [SSL: SSLV3_ALERT_BAD_RECORD_MAC] ...
+//   ✻ Cooked for 1m 15s
+//   ❯ retry           <- already sent
+//   ⏺ Good news: ...  <- Claude's response (still streaming or just finished)
+const RETRY_SUBMITTED_RE = /^\s*[>❯]\s+retry\s*$/i;
+
 // Persistent auto-retry for transient API errors (rate limits, 5xx, overload).
 // No attempt cap — keep retrying until the error clears or the session resumes
 // real work. The wait between attempts grows exponentially (15s, 30s, 1m, 2m, 4m)
@@ -459,18 +493,40 @@ class Watcher extends EventEmitter {
     //
     // NOTE on the post-capture slice: tmux's `-S -15` ("start 15 lines BEFORE
     // the visible top") plus a default-height pane (~54 lines) returns ~69
-    // total lines — far more than the "look at the last 15 lines" intent of
-    // this check. Without slicing here, the watcher matched OLD API errors
-    // still resident in scrollback long after they'd scrolled out of view,
-    // firing endless false-positive retries (S:26 hit this loud and clear:
-    // an SSL error from earlier in the session kept resurfacing every poll
-    // until the user manually nuked the spurious "retry" prompts).
+    // total lines. Without slicing we matched OLD API errors still resident in
+    // scrollback long after they'd scrolled out of view, firing endless
+    // false-positive retries (S:26 hit this loud and clear: an SSL error from
+    // earlier in the conversation kept resurfacing every poll until the user
+    // manually nuked the spurious "retry" prompts).
+    //
+    // Slice WIDTH is conditional: the default 15-line window keeps the
+    // false-positive guard tight, but Claude Code's tasks-block panel pushes
+    // the API Error line up by ~9 lines, putting it outside a 15-line slice
+    // even though it's plainly on screen (Session 5 sat in "Sautéed for 12m
+    // 41s" with no retry because of this). When we detect the panel inside
+    // the narrow window, we widen to 30 just for that poll. S:26's old SSL
+    // error sat ~40+ lines deep, outside both windows.
     const paneTarget = `${s.name}:.${this.config.sessions.claudePane}`;
     const content = await node.capturePane(paneTarget, { lines: 15 });
     if (!content) return false;
 
-    const lines = content.split('\n').slice(-15);
-    const hasError = lines.some(lineHasRetryableError);
+    const allLines = content.split('\n');
+    const narrow = allLines.slice(-NARROW_SLICE_LINES);
+    const tasksPanelVisible = narrow.some(l =>
+      TASKS_PANEL_HEADER_RE.test(l) || TASKS_PANEL_SUMMARY_RE.test(l));
+    const lines = tasksPanelVisible
+      ? allLines.slice(-WIDE_SLICE_LINES)
+      : narrow;
+
+    // Track the LATEST index of each marker so we can answer "was a retry
+    // submitted AFTER the most recent error?" — the stray-retry guard below.
+    let lastErrorIdx = -1;
+    let lastRetrySubmittedIdx = -1;
+    for (let i = 0; i < lines.length; i++) {
+      if (lineHasRetryableError(lines[i])) lastErrorIdx = i;
+      if (RETRY_SUBMITTED_RE.test(lines[i])) lastRetrySubmittedIdx = i;
+    }
+    const hasError = lastErrorIdx >= 0;
 
     // Error gone — the session recovered (a retry took, or it cleared on its own).
     // Drop the budget so a future error starts a fresh backoff, then let normal
@@ -481,6 +537,17 @@ class Watcher extends EventEmitter {
         this.errorRetries.delete(s.num);
       }
       return false;
+    }
+
+    // A `retry` line is already in the pane below the most recent error — a
+    // retry was already submitted (by us on a prior poll, or by the user).
+    // Don't send another, even if our backoff window has elapsed. Claude is
+    // either still streaming the response or just finished; the original error
+    // text lingering in the slice would otherwise trigger a stray duplicate.
+    // Stay in recovery (return true) so normal idle handling doesn't fire either.
+    if (lastRetrySubmittedIdx > lastErrorIdx) {
+      log.info(`[watcher] session ${s.num}: retry already submitted in pane after API error — skipping (no duplicate)`);
+      return true;
     }
 
     // ── A retryable error IS present. Decide whether to nudge; log any hold-off
