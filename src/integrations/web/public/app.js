@@ -982,10 +982,30 @@
           merged: !!msg.merged,
           draft: !!msg.draft,
           mergedAt: msg.mergedAt || null,
+          ciState: msg.ciState || null,
+          // Rich tooltip fields
+          title: msg.title || '',
+          author: msg.author || '',
+          authorAvatar: msg.authorAvatar || '',
+          baseBranch: msg.baseBranch || '',
+          headBranch: msg.headBranch || '',
+          additions: msg.additions || 0,
+          deletions: msg.deletions || 0,
+          changedFiles: msg.changedFiles || 0,
+          mergedBy: msg.mergedBy || '',
+          mergedByAvatar: msg.mergedByAvatar || '',
+          updatedAt: msg.updatedAt || null,
+          createdAt: msg.createdAt || null,
+          mergeable: msg.mergeable,
+          mergeableState: msg.mergeableState || '',
+          checks: msg.checks || [],
+          ts: Date.now(),
         };
         updateSessionStatusLine();
         updateTasksStatusLine();
         updateTaskDetailPrStatus();
+        updatePRBadgesOnCards(msg.repo, msg.prNumber);
+        updateOpenTooltipIfMatches(msg.repo, msg.prNumber);
         break;
       }
 
@@ -1483,6 +1503,7 @@
           else sessionContexts[msg.session] = msg.context;
           updatePlanSidebar();
           maybeRefreshTaskPrReview(msg.session);
+          updateCardBadgesForSession(msg.session);
           if (String(msg.session) === String(currentSession)) updateSessionStatusLine();
           if (String(msg.session) === String(tasksSessionNum)) updateTasksStatusLine();
         }
@@ -1492,6 +1513,7 @@
           sessionContexts[msg.session] = msg.context || {};
           updatePlanSidebar();
           maybeRefreshTaskPrReview(msg.session);
+          updateCardBadgesForSession(msg.session);
         }
         break;
       case 'plan:file':
@@ -2686,6 +2708,457 @@
     }
     return null;
   }
+
+  // ── PR + CI mini badges on cards (board, task list, queued) ─────
+  // One pair of pills per card, glyph-only (matches /tmp/plan-ci-badges.html).
+  // PR badge → PR root. CI badge → /checks. Both open in new tab.
+
+  // Debounced pr:refresh per repo+pr — avoid spamming on every render tick.
+  const _prRefreshLastSent = {}; // key -> ts
+  const PR_REFRESH_MIN_INTERVAL = 90_000; // 90s; PR review + CI state rarely changes faster
+  function ensurePrRefreshFor(repo, prNumber) {
+    if (!ws || ws.readyState !== 1) return;
+    const key = repo + '#' + prNumber;
+    const last = _prRefreshLastSent[key] || 0;
+    if (Date.now() - last < PR_REFRESH_MIN_INTERVAL) return;
+    _prRefreshLastSent[key] = Date.now();
+    ws.send(JSON.stringify({ type: 'pr:refresh', repo, prNumber }));
+  }
+
+  // Multi-source PR resolver for card badges.
+  // PRs can live in several places depending on how the task got here:
+  //   1. PM github tasks  → task.actionContext.{repo,prNumber}
+  //   2. PM tasks pre-actionContext era → task.sourceKey "owner/repo#N"
+  //   3. Slack-relayed / manual tasks → session context published by Claude
+  //      via hive_set_context({pr: 'https://github.com/owner/repo/pull/N'})
+  //   4. Last resort → scan the task text body for a github PR URL
+  function cardPrFor(t) {
+    if (!t) return null;
+    // 1 + 2: existing PM-aware lookup
+    const fromTask = taskPrForTask(t);
+    if (fromTask) return fromTask;
+    // 3: dispatched task → session's published PR context
+    if (t.assignedTo != null) {
+      const sctx = sessionContexts[t.assignedTo];
+      if (sctx && sctx.pr) {
+        const m = /github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)/.exec(sctx.pr);
+        if (m) return { repo: m[1], prNumber: m[2] };
+      }
+    }
+    // 4: regex-fish a github PR URL out of the task body
+    if (t.text) {
+      const m = /github\.com\/([^/\s]+\/[^/\s]+)\/pull\/(\d+)/.exec(t.text);
+      if (m) return { repo: m[1], prNumber: m[2] };
+    }
+    return null;
+  }
+
+  // Render one badge pair for a task object. Returns '' if no PR resolvable.
+  function renderTaskPrBadges(t) {
+    const tpr = cardPrFor(t);
+    if (!tpr) return '';
+    return renderPrBadgesForRef(tpr);
+  }
+
+  // Lower-level: given { repo, prNumber }, build the badge HTML.
+  function renderPrBadgesForRef(tpr) {
+    const key = tpr.repo + '#' + tpr.prNumber;
+    const cached = taskPrReviewCache[key];
+    const prUrl = 'https://github.com/' + tpr.repo + '/pull/' + tpr.prNumber;
+    const checksUrl = prUrl + '/checks';
+
+    // PR pill: derive from cached review/state. Defaults to pending while we fetch.
+    let prCls = 'pending';
+    let prIcon = '⧗';
+    let prTitle = 'Awaiting review';
+    if (cached) {
+      if (cached.merged) { prCls = 'merged'; prIcon = '●'; prTitle = 'Merged'; }
+      else if (cached.state === 'closed') { prCls = 'closed'; prIcon = '✗'; prTitle = 'Closed'; }
+      else if (cached.draft) { prCls = 'draft'; prIcon = '◌'; prTitle = 'Draft'; }
+      else if (cached.rollup === 'CHANGES_REQUESTED') { prCls = 'changes'; prIcon = '✗'; prTitle = 'Changes requested'; }
+      else if (cached.rollup === 'APPROVED') { prCls = 'approved'; prIcon = '✓'; prTitle = 'Approved'; }
+      // commented or empty → keep pending hourglass
+    }
+
+    // CI pill: from cached.ciState. Skip CI badge once merged/closed (stops polling).
+    let ciHtml = '';
+    if (!cached || (!cached.merged && cached.state !== 'closed')) {
+      let ciCls = 'queue', ciIcon = '◌', ciTitle = 'CI queued / no runs';
+      const s = cached && cached.ciState;
+      if (s === 'success') { ciCls = 'pass'; ciIcon = '✓'; ciTitle = 'CI passing'; }
+      else if (s === 'failure' || s === 'error') { ciCls = 'fail'; ciIcon = '✗'; ciTitle = 'CI failing'; }
+      else if (s === 'pending') { ciCls = 'run'; ciIcon = '⧗'; ciTitle = 'CI running'; }
+      ciHtml = '<a class="cardpr-badge ci ' + ciCls + '" href="' + checksUrl + '" target="_blank" rel="noopener" draggable="false" title="' + esc(ciTitle) + '" data-pr-key="' + esc(key) + '"><span class="cardpr-label">CI</span><span class="cardpr-icon">' + ciIcon + '</span></a>';
+    }
+
+    // Fire refresh in the background; result will patch this card via WS.
+    ensurePrRefreshFor(tpr.repo, tpr.prNumber);
+
+    return '<a class="cardpr-badge pr ' + prCls + '" href="' + prUrl + '" target="_blank" rel="noopener" draggable="false" title="' + esc(prTitle) + '" data-pr-key="' + esc(key) + '"><span class="cardpr-label">PR</span><span class="cardpr-icon">' + prIcon + '</span></a>' + ciHtml;
+  }
+
+  // Patch all rendered cards in place for one PR. Cheaper than re-rendering boards.
+  function updatePRBadgesOnCards(repo, prNumber) {
+    const key = repo + '#' + prNumber;
+    document.querySelectorAll('.cardpr-badges[data-pr-key="' + CSS.escape(key) + '"]').forEach(host => {
+      const t = tasks.find(x => x.id === host.dataset.taskId);
+      if (!t) return;
+      host.innerHTML = renderTaskPrBadges(t);
+    });
+  }
+
+  // Refresh badge host(s) for any tasks dispatched to `sessionNum` — called
+  // when context.pr publishes/changes after the card is already rendered
+  // (slack-relayed + manual tasks pick up their PR this way).
+  function updateCardBadgesForSession(sessionNum) {
+    if (sessionNum == null) return;
+    const matchingTasks = tasks.filter(x => String(x.assignedTo) === String(sessionNum));
+    if (!matchingTasks.length) return;
+    for (const t of matchingTasks) {
+      const tpr = cardPrFor(t);
+      // Find any rendered card hosts for this task across views
+      document.querySelectorAll('.cardpr-badges[data-task-id="' + CSS.escape(t.id) + '"]').forEach(host => {
+        if (tpr) {
+          host.dataset.prKey = tpr.repo + '#' + tpr.prNumber;
+          host.innerHTML = renderTaskPrBadges(t);
+        } else {
+          host.removeAttribute('data-pr-key');
+          host.innerHTML = '';
+        }
+      });
+    }
+  }
+
+  // ── Hover tooltips for PR + CI badges ─────
+  // Single floating element reused for every hover. 400ms show delay, 120ms
+  // grace on dismiss so the cursor can travel into the tooltip and click links.
+
+  let _tipEl = null;
+  let _tipShowTimer = null;
+  let _tipHideTimer = null;
+  let _tipOpenKey = null; // "repo#prNumber:kind"
+  let _tipBumpInterval = null; // tighter refresh while tooltip is open
+
+  function ensureTipEl() {
+    if (_tipEl) return _tipEl;
+    _tipEl = document.createElement('div');
+    _tipEl.className = 'cardpr-tip';
+    _tipEl.style.display = 'none';
+    _tipEl.addEventListener('mouseenter', () => { if (_tipHideTimer) clearTimeout(_tipHideTimer); });
+    _tipEl.addEventListener('mouseleave', scheduleHideTip);
+    document.body.appendChild(_tipEl);
+    return _tipEl;
+  }
+
+  function timeAgoShort(iso) {
+    if (!iso) return '';
+    const ms = Date.now() - Date.parse(iso);
+    if (isNaN(ms)) return '';
+    const s = Math.floor(ms / 1000);
+    if (s < 60) return s + 's ago';
+    const m = Math.floor(s / 60);
+    if (m < 60) return m + 'm ago';
+    const h = Math.floor(m / 60);
+    if (h < 24) return h + 'h ago';
+    const d = Math.floor(h / 24);
+    return d + 'd ago';
+  }
+
+  function fmtDuration(ms) {
+    if (ms == null) return '';
+    const s = Math.round(ms / 1000);
+    if (s < 60) return s + 's';
+    const m = Math.floor(s / 60);
+    const rs = s % 60;
+    if (m < 60) return rs ? m + 'm ' + rs + 's' : m + 'm';
+    const h = Math.floor(m / 60);
+    return h + 'h ' + (m % 60) + 'm';
+  }
+
+  function initials(login) {
+    if (!login) return '?';
+    const parts = String(login).replace(/[-_]/g, ' ').split(/\s+/).filter(Boolean);
+    if (!parts.length) return String(login).slice(0, 2).toUpperCase();
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  }
+
+  function renderAvatar(login, avatarUrl, opts) {
+    opts = opts || {};
+    const muted = opts.muted ? ' muted' : '';
+    if (avatarUrl) {
+      return '<img class="cardpr-tip-avatar' + muted + '" src="' + esc(avatarUrl) + '&size=36" alt="' + esc(login) + '" />';
+    }
+    return '<span class="cardpr-tip-avatar' + muted + '">' + esc(initials(login)) + '</span>';
+  }
+
+  function renderPRTooltipBody(repo, prNumber, cached) {
+    const prUrl = 'https://github.com/' + repo + '/pull/' + prNumber;
+    const prState = cached
+      ? (cached.merged ? { cls: 'merged', icon: '●', label: 'Merged' }
+        : cached.state === 'closed' ? { cls: 'closed', icon: '✗', label: 'Closed' }
+        : cached.draft ? { cls: 'draft', icon: '◌', label: 'Draft' }
+        : cached.rollup === 'CHANGES_REQUESTED' ? { cls: 'changes', icon: '✗', label: 'Changes requested' }
+        : cached.rollup === 'APPROVED' ? { cls: 'approved', icon: '✓', label: 'Approved' }
+        : { cls: 'pending', icon: '⧗', label: 'Awaiting review' })
+      : { cls: 'pending', icon: '⧗', label: 'Loading' };
+
+    let html = '';
+    html += '<div class="cardpr-tip-head">'
+      + '<a class="cardpr-tip-pr-num" href="' + prUrl + '" target="_blank" rel="noopener">#' + esc(prNumber) + '</a>'
+      + '<span class="cardpr-badge pr ' + prState.cls + '"><span class="cardpr-label">PR</span><span class="cardpr-icon">' + prState.icon + '</span></span>'
+      + '<span class="cardpr-tip-state">' + esc(prState.label) + '</span>'
+      + '<span class="cardpr-tip-ext">↗</span>'
+      + '</div>';
+
+    if (!cached) {
+      html += '<div class="cardpr-tip-loading">Loading details…</div>';
+      return html;
+    }
+
+    if (cached.title) {
+      html += '<div class="cardpr-tip-title">' + esc(cached.title) + '</div>';
+    }
+
+    if (cached.author) {
+      const opened = cached.createdAt ? '<span class="muted"> · opened ' + esc(timeAgoShort(cached.createdAt)) + '</span>' : '';
+      html += '<div class="cardpr-tip-row"><span class="cardpr-tip-k">Author</span>'
+        + '<span class="cardpr-tip-v">' + renderAvatar(cached.author, cached.authorAvatar) + ' '
+        + '<a class="cardpr-tip-name" href="https://github.com/' + esc(cached.author) + '" target="_blank" rel="noopener">' + esc(cached.author) + '</a>'
+        + opened + '</span></div>';
+    }
+
+    if (cached.headBranch || cached.baseBranch) {
+      html += '<div class="cardpr-tip-row"><span class="cardpr-tip-k">Branch</span>'
+        + '<span class="cardpr-tip-v"><code class="cardpr-tip-branch">' + esc(cached.headBranch || '?') + '</code> '
+        + '<span class="muted">→ ' + esc(cached.baseBranch || 'main') + '</span></span></div>';
+    }
+
+    if (cached.additions || cached.deletions || cached.changedFiles) {
+      html += '<div class="cardpr-tip-row"><span class="cardpr-tip-k">Changes</span>'
+        + '<span class="cardpr-tip-v"><span class="cardpr-tip-add">+' + cached.additions + '</span> '
+        + '<span class="cardpr-tip-del">−' + cached.deletions + '</span> '
+        + '<span class="muted">across ' + cached.changedFiles + ' file' + (cached.changedFiles === 1 ? '' : 's') + '</span></span></div>';
+    }
+
+    if (cached.merged && cached.mergedBy) {
+      const mat = cached.mergedAt ? '<span class="muted"> · ' + esc(timeAgoShort(cached.mergedAt)) + '</span>' : '';
+      html += '<div class="cardpr-tip-row"><span class="cardpr-tip-k">Merged by</span>'
+        + '<span class="cardpr-tip-v">' + renderAvatar(cached.mergedBy, cached.mergedByAvatar) + ' '
+        + '<a class="cardpr-tip-name" href="https://github.com/' + esc(cached.mergedBy) + '" target="_blank" rel="noopener">' + esc(cached.mergedBy) + '</a>'
+        + mat + '</span></div>';
+    } else if (!cached.merged && cached.mergeable === false) {
+      html += '<div class="cardpr-tip-row"><span class="cardpr-tip-k">Mergeable</span>'
+        + '<span class="cardpr-tip-v"><span class="cardpr-dotchip warn">✗</span> Conflicts</span></div>';
+    } else if (!cached.merged && cached.mergeable === true) {
+      html += '<div class="cardpr-tip-row"><span class="cardpr-tip-k">Mergeable</span>'
+        + '<span class="cardpr-tip-v"><span class="cardpr-dotchip ok">●</span> Clean</span></div>';
+    }
+
+    // Reviews
+    const reviewers = cached.reviewers || [];
+    if (reviewers.length) {
+      html += '<div class="cardpr-tip-sep"></div>';
+      html += '<div class="cardpr-tip-section">Reviews</div>';
+      const byState = { CHANGES_REQUESTED: [], APPROVED: [], COMMENTED: [] };
+      for (const r of reviewers) {
+        if (byState[r.state]) byState[r.state].push(r);
+      }
+      const order = ['CHANGES_REQUESTED', 'APPROVED', 'COMMENTED'];
+      for (const st of order) {
+        for (const r of byState[st]) {
+          const cfg = st === 'CHANGES_REQUESTED' ? { dot: 'warn', icon: '✗', verb: 'requested changes' }
+                    : st === 'APPROVED' ? { dot: 'ok', icon: '✓', verb: 'approved' }
+                    : { dot: 'dim', icon: '💬', verb: 'commented' };
+          const when = r.submittedAt ? '<span class="muted"> · ' + esc(timeAgoShort(r.submittedAt)) + '</span>' : '';
+          html += '<div class="cardpr-tip-review">'
+            + '<span class="cardpr-dotchip ' + cfg.dot + '">' + cfg.icon + '</span>'
+            + renderAvatar(r.login, r.avatarUrl) + ' '
+            + '<a class="cardpr-tip-name" href="https://github.com/' + esc(r.login) + '" target="_blank" rel="noopener">' + esc(r.login) + '</a>'
+            + ' <span class="muted">' + cfg.verb + '</span>'
+            + when + '</div>';
+        }
+      }
+    }
+
+    const lastSeen = cached.updatedAt ? 'Last activity ' + timeAgoShort(cached.updatedAt) : '';
+    html += '<div class="cardpr-tip-sep"></div>';
+    html += '<div class="cardpr-tip-footer"><span class="muted">' + esc(lastSeen) + '</span>'
+      + '<a class="cardpr-tip-link" href="' + prUrl + '" target="_blank" rel="noopener">view on GitHub ↗</a></div>';
+
+    return html;
+  }
+
+  function renderCITooltipBody(repo, prNumber, cached) {
+    const prUrl = 'https://github.com/' + repo + '/pull/' + prNumber;
+    const checksUrl = prUrl + '/checks';
+
+    let ciCfg = { cls: 'queue', icon: '◌', label: 'No CI runs yet' };
+    if (cached) {
+      const s = cached.ciState;
+      if (s === 'success') ciCfg = { cls: 'pass', icon: '✓', label: 'CI passing' };
+      else if (s === 'failure' || s === 'error') ciCfg = { cls: 'fail', icon: '✗', label: 'CI failing' };
+      else if (s === 'pending') ciCfg = { cls: 'run', icon: '⧗', label: 'CI running' };
+    }
+
+    let html = '';
+    html += '<div class="cardpr-tip-head">'
+      + '<span class="cardpr-badge ci ' + ciCfg.cls + '"><span class="cardpr-label">CI</span><span class="cardpr-icon">' + ciCfg.icon + '</span></span>'
+      + '<span class="cardpr-tip-title-inline">' + esc(ciCfg.label) + '</span>'
+      + '<a class="cardpr-tip-ext" href="' + checksUrl + '" target="_blank" rel="noopener">↗</a>'
+      + '</div>';
+
+    if (!cached) {
+      html += '<div class="cardpr-tip-loading">Loading details…</div>';
+      return html;
+    }
+
+    const checks = cached.checks || [];
+    if (!checks.length) {
+      html += '<div class="cardpr-tip-loading muted">No checks reported on this PR yet.</div>';
+      html += '<div class="cardpr-tip-sep"></div>';
+      html += '<div class="cardpr-tip-footer"><span class="muted">' + esc(cached.updatedAt ? 'Updated ' + timeAgoShort(cached.updatedAt) : '') + '</span>'
+        + '<a class="cardpr-tip-link" href="' + checksUrl + '" target="_blank" rel="noopener">all checks ↗</a></div>';
+      return html;
+    }
+
+    // Tally
+    const counts = { success: 0, failure: 0, pending: 0, skipped: 0, neutral: 0, cancelled: 0 };
+    for (const c of checks) counts[c.state] = (counts[c.state] || 0) + 1;
+    const parts = [];
+    if (counts.failure) parts.push(counts.failure + ' failing');
+    if (counts.pending) parts.push(counts.pending + ' running');
+    if (counts.success) parts.push(counts.success + ' passing');
+    if (counts.skipped) parts.push(counts.skipped + ' skipped');
+    html += '<div class="cardpr-tip-sub muted">' + esc(parts.join(' · ')) + '</div>';
+    html += '<div class="cardpr-tip-sep"></div>';
+
+    // Sort: failures first, then running, then passing, then skipped
+    const order = { failure: 0, pending: 1, success: 2, neutral: 3, cancelled: 4, skipped: 5 };
+    const sorted = checks.slice().sort((a, b) => (order[a.state] || 9) - (order[b.state] || 9));
+
+    html += '<div class="cardpr-tip-checklist">';
+    for (const c of sorted) {
+      const cfg = c.state === 'success' ? { dot: 'ok', icon: '✓' }
+                : c.state === 'failure' ? { dot: 'warn', icon: '✗' }
+                : c.state === 'pending' ? { dot: 'running', icon: '⧗' }
+                : c.state === 'skipped' || c.state === 'cancelled' ? { dot: 'dim', icon: '⊘' }
+                : { dot: 'dim', icon: '·' };
+      const dur = c.durationMs != null ? '<span class="muted">' + esc(fmtDuration(c.durationMs)) + '</span>' : (c.state === 'pending' ? '<span class="muted">running</span>' : '');
+      const nameHtml = c.url
+        ? '<a class="cardpr-tip-name" href="' + esc(c.url) + '" target="_blank" rel="noopener">' + esc(c.name) + '</a>'
+        : '<span class="cardpr-tip-name">' + esc(c.name) + '</span>';
+      html += '<div class="cardpr-tip-check' + (c.state === 'skipped' ? ' muted' : '') + '">'
+        + '<span class="cardpr-dotchip ' + cfg.dot + '">' + cfg.icon + '</span>'
+        + nameHtml + dur + '</div>';
+    }
+    html += '</div>';
+
+    html += '<div class="cardpr-tip-sep"></div>';
+    html += '<div class="cardpr-tip-footer"><span class="muted">Refreshed ' + esc(cached.ts ? timeAgoShort(new Date(cached.ts).toISOString()) : 'just now') + '</span>'
+      + '<a class="cardpr-tip-link" href="' + checksUrl + '" target="_blank" rel="noopener">all checks ↗</a></div>';
+
+    return html;
+  }
+
+  function showTooltipFor(anchor, kind, repo, prNumber) {
+    const tip = ensureTipEl();
+    const cached = taskPrReviewCache[repo + '#' + prNumber] || null;
+    tip.innerHTML = (kind === 'ci' ? renderCITooltipBody(repo, prNumber, cached) : renderPRTooltipBody(repo, prNumber, cached));
+    tip.style.display = 'block';
+    _tipOpenKey = repo + '#' + prNumber + ':' + kind;
+    positionTooltip(anchor);
+    // Bump refresh cadence while open so data stays live
+    if (_tipBumpInterval) clearInterval(_tipBumpInterval);
+    _tipBumpInterval = setInterval(() => {
+      // Bypass the 90s debounce by clearing the entry
+      delete _prRefreshLastSent[repo + '#' + prNumber];
+      ensurePrRefreshFor(repo, prNumber);
+    }, 30_000);
+    // And kick off an immediate refresh on open
+    delete _prRefreshLastSent[repo + '#' + prNumber];
+    ensurePrRefreshFor(repo, prNumber);
+  }
+
+  function positionTooltip(anchor) {
+    if (!_tipEl || !anchor) return;
+    const r = anchor.getBoundingClientRect();
+    const tipRect = _tipEl.getBoundingClientRect();
+    const margin = 8;
+    let top = r.top - tipRect.height - margin;
+    let left = r.left + (r.width / 2) - (tipRect.width / 2);
+    if (top < margin) {
+      // Flip below
+      top = r.bottom + margin;
+      _tipEl.classList.add('flipped');
+    } else {
+      _tipEl.classList.remove('flipped');
+    }
+    if (left < margin) left = margin;
+    if (left + tipRect.width > window.innerWidth - margin) left = window.innerWidth - tipRect.width - margin;
+    _tipEl.style.top = top + 'px';
+    _tipEl.style.left = left + 'px';
+  }
+
+  function scheduleHideTip() {
+    if (_tipHideTimer) clearTimeout(_tipHideTimer);
+    _tipHideTimer = setTimeout(hideTip, 120);
+  }
+
+  function hideTip() {
+    if (_tipEl) _tipEl.style.display = 'none';
+    _tipOpenKey = null;
+    if (_tipBumpInterval) { clearInterval(_tipBumpInterval); _tipBumpInterval = null; }
+  }
+
+  function updateOpenTooltipIfMatches(repo, prNumber) {
+    if (!_tipOpenKey || !_tipEl || _tipEl.style.display === 'none') return;
+    const [openKey, kind] = _tipOpenKey.split(':');
+    if (openKey !== repo + '#' + prNumber) return;
+    const cached = taskPrReviewCache[repo + '#' + prNumber] || null;
+    _tipEl.innerHTML = (kind === 'ci' ? renderCITooltipBody(repo, prNumber, cached) : renderPRTooltipBody(repo, prNumber, cached));
+  }
+
+  // Delegated hover handlers — one set for the whole document.
+  document.addEventListener('mouseover', (e) => {
+    const badge = e.target.closest && e.target.closest('.cardpr-badge');
+    if (!badge) return;
+    const host = badge.closest('.cardpr-badges');
+    if (!host || !host.dataset.prKey) return;
+    const [repo, prNumber] = host.dataset.prKey.split('#');
+    if (!repo || !prNumber) return;
+    const kind = badge.classList.contains('ci') ? 'ci' : 'pr';
+    if (_tipShowTimer) clearTimeout(_tipShowTimer);
+    if (_tipHideTimer) clearTimeout(_tipHideTimer);
+    _tipShowTimer = setTimeout(() => showTooltipFor(badge, kind, repo, prNumber), 400);
+  }, true);
+  document.addEventListener('mouseout', (e) => {
+    const badge = e.target.closest && e.target.closest('.cardpr-badge');
+    if (!badge) return;
+    if (_tipShowTimer) { clearTimeout(_tipShowTimer); _tipShowTimer = null; }
+    scheduleHideTip();
+  }, true);
+  // Click on a badge should open the link but NOT bubble up to the card
+  // (which would open the task detail panel). Run on capture so we win
+  // before any card-level bubble listeners fire. Don't preventDefault —
+  // the anchor's target="_blank" still opens the link.
+  document.addEventListener('click', (e) => {
+    const badge = e.target.closest && e.target.closest('.cardpr-badge');
+    if (!badge) return;
+    e.stopPropagation();
+    // Hide tooltip on click so it doesn't linger over the freshly opened tab
+    hideTip();
+  }, true);
+  // Mousedown/mouseup also bubble; some card listeners fire on those.
+  document.addEventListener('mousedown', (e) => {
+    if (e.target.closest && e.target.closest('.cardpr-badge')) e.stopPropagation();
+  }, true);
+  document.addEventListener('mouseup', (e) => {
+    if (e.target.closest && e.target.closest('.cardpr-badge')) e.stopPropagation();
+  }, true);
+  // Dismiss on scroll / resize
+  window.addEventListener('scroll', hideTip, true);
+  window.addEventListener('resize', hideTip);
 
   // ── Session status line (shared) ─────────────────
   function renderStatusChips(sessionNum) {
@@ -6987,9 +7460,13 @@
       const timeStr = t.status === 'dispatched' ? timeAgo(t.dispatchedAt || t.createdAt) : timeAgo(t.createdAt);
 
       const boardEditIcon = hasPerm('create-tasks') ? `<button class="task-edit-icon" data-id="${t.id}" title="Edit task">&#9998;</button>` : '';
+      const tprForBadges = cardPrFor(t);
+      const prBadgesHost = tprForBadges
+        ? `<span class="cardpr-badges" data-task-id="${esc(t.id)}" data-pr-key="${esc(tprForBadges.repo + '#' + tprForBadges.prNumber)}">${renderTaskPrBadges(t)}</span>`
+        : '';
       el.innerHTML = `
         <div class="board-card-top"><div class="board-card-title">${esc(taskDisplayName(t))}</div>${boardEditIcon}</div>
-        <div class="board-card-meta">${statusDot}${desigBadge}${sourceBadge}${sessionBadge}<span>${timeStr}</span>${assigneeBadge}</div>
+        <div class="board-card-meta">${statusDot}${desigBadge}${sourceBadge}${sessionBadge}<span>${timeStr}</span>${prBadgesHost}${assigneeBadge}</div>
       `;
 
       // Drag start
@@ -7984,8 +8461,12 @@
     }
 
     const editIcon = hasPerm('create-tasks') ? `<button class="task-edit-icon" data-id="${t.id}" title="Edit task">&#9998;</button>` : '';
+    const tprForBadges = cardPrFor(t);
+    const prBadgesHost = tprForBadges
+      ? `<span class="cardpr-badges" data-task-id="${esc(t.id)}" data-pr-key="${esc(tprForBadges.repo + '#' + tprForBadges.prNumber)}">${renderTaskPrBadges(t)}</span>`
+      : '';
     return `<div class="task-card-row"><input type="checkbox" class="task-checkbox" data-id="${t.id}"${checked}><div class="task-card ${t.status}${selected}" data-id="${t.id}">
-      <div class="task-top"><span class="task-hex">${hex}</span><div class="task-body"><div class="task-text">${esc(taskDisplayName(t))}</div><div class="task-info">${sourceBadge}${pendingBadge}${waitBadge}<span class="task-time">${timeStr}</span></div></div>${editIcon}</div>${actions}</div></div>`;
+      <div class="task-top"><span class="task-hex">${hex}</span><div class="task-body"><div class="task-text">${esc(taskDisplayName(t))}</div><div class="task-info">${sourceBadge}${pendingBadge}${waitBadge}<span class="task-time">${timeStr}</span>${prBadgesHost}</div></div>${editIcon}</div>${actions}</div></div>`;
   }
 
   // ── Comment panel (rendered into tab content divs) ─────

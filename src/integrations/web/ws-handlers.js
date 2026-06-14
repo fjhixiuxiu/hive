@@ -90,6 +90,23 @@ function createMessageHandler(deps) {
                 merged: result ? !!result.merged : false,
                 draft: result ? !!result.draft : false,
                 mergedAt: result ? result.mergedAt || null : null,
+                ciState: result ? result.ciState || null : null,
+                // Rich detail fields for hover tooltips
+                title: result ? result.title || '' : '',
+                author: result ? result.author || '' : '',
+                authorAvatar: result ? result.authorAvatar || '' : '',
+                baseBranch: result ? result.baseBranch || '' : '',
+                headBranch: result ? result.headBranch || '' : '',
+                additions: result ? result.additions || 0 : 0,
+                deletions: result ? result.deletions || 0 : 0,
+                changedFiles: result ? result.changedFiles || 0 : 0,
+                mergedBy: result ? result.mergedBy || '' : '',
+                mergedByAvatar: result ? result.mergedByAvatar || '' : '',
+                updatedAt: result ? result.updatedAt || null : null,
+                createdAt: result ? result.createdAt || null : null,
+                mergeable: result ? result.mergeable : null,
+                mergeableState: result ? result.mergeableState || '' : '',
+                checks: result ? result.checks || [] : [],
               }));
             } catch (e) {
               log.error('pr:refresh by PR failed:', e.message);
