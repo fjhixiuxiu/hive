@@ -302,13 +302,130 @@ async function getPRMeta(owner, repo, prNum, token) {
   const { status, data } = await fetchJSON(url, {
     headers: { Authorization: `token ${token}` },
   });
-  if (status !== 200 || !data) return { state: '', merged: false, draft: false, mergedAt: null };
+  if (status !== 200 || !data) {
+    return { state: '', merged: false, draft: false, mergedAt: null, headSha: null,
+             title: '', author: '', authorAvatar: '', baseBranch: '', headBranch: '',
+             additions: 0, deletions: 0, changedFiles: 0, mergedBy: '', mergedByAvatar: '',
+             updatedAt: null, createdAt: null, mergeable: null, mergeableState: '' };
+  }
   return {
     state: data.state || '',
     merged: !!data.merged,
     draft: !!data.draft,
     mergedAt: data.merged_at || null,
+    headSha: data.head && data.head.sha ? data.head.sha : null,
+    title: data.title || '',
+    author: data.user && data.user.login ? data.user.login : '',
+    authorAvatar: data.user && data.user.avatar_url ? data.user.avatar_url : '',
+    baseBranch: data.base && data.base.ref ? data.base.ref : '',
+    headBranch: data.head && data.head.ref ? data.head.ref : '',
+    additions: data.additions || 0,
+    deletions: data.deletions || 0,
+    changedFiles: data.changed_files || 0,
+    mergedBy: data.merged_by && data.merged_by.login ? data.merged_by.login : '',
+    mergedByAvatar: data.merged_by && data.merged_by.avatar_url ? data.merged_by.avatar_url : '',
+    updatedAt: data.updated_at || null,
+    createdAt: data.created_at || null,
+    mergeable: data.mergeable, // null | true | false
+    mergeableState: data.mergeable_state || '',
   };
+}
+
+/**
+ * Get combined CI/check rollup for a commit SHA.
+ * Uses GitHub's combined status API which merges:
+ *   - Statuses (Jenkins-style external status reports)
+ *   - Check runs (GitHub Actions / check-suite reports)
+ * Returns 'success' | 'failure' | 'pending' | 'error' | null.
+ */
+async function getCIRollup(owner, repo, sha, token) {
+  if (!sha) return null;
+  const url = `https://api.github.com/repos/${owner}/${repo}/commits/${sha}/status`;
+  try {
+    const { status, data } = await fetchJSON(url, {
+      headers: { Authorization: `token ${token}` },
+    });
+    if (status !== 200 || !data) return null;
+    // data.state is 'success' | 'failure' | 'pending' (statuses-only rollup).
+    // total_count = 0 means no statuses ever posted — treat as null, not pending.
+    if (data.total_count === 0) return null;
+    return data.state || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Get per-check breakdown for a commit SHA.
+ * Merges two GitHub sources into a single unified list:
+ *   - "Statuses" (Jenkins-style external reports): /commits/{sha}/status
+ *   - "Check runs" (GitHub Actions, etc.): /commits/{sha}/check-runs
+ *
+ * Returns array of { name, state, url, durationMs }
+ *   state ∈ {success, failure, pending, neutral, skipped, cancelled}
+ *   durationMs: null when still running
+ */
+async function getCheckDetails(owner, repo, sha, token) {
+  if (!sha) return [];
+  try {
+    const [statusRes, checksRes] = await Promise.all([
+      fetchJSON(`https://api.github.com/repos/${owner}/${repo}/commits/${sha}/status`, {
+        headers: { Authorization: `token ${token}` },
+      }).catch(() => ({ status: 0, data: null })),
+      fetchJSON(`https://api.github.com/repos/${owner}/${repo}/commits/${sha}/check-runs?per_page=50`, {
+        headers: { Authorization: `token ${token}`, Accept: 'application/vnd.github+json' },
+      }).catch(() => ({ status: 0, data: null })),
+    ]);
+
+    const out = [];
+    // 1. Statuses (commit status API). Latest per context.
+    if (statusRes.status === 200 && statusRes.data && Array.isArray(statusRes.data.statuses)) {
+      for (const s of statusRes.data.statuses) {
+        out.push({
+          name: s.context || '(unnamed status)',
+          state: normaliseState(s.state),
+          url: s.target_url || '',
+          durationMs: null, // status API doesn't carry timing
+        });
+      }
+    }
+    // 2. Check-runs (GitHub Actions). Each run has status (in_progress/completed)
+    //    and conclusion (success/failure/skipped/neutral/cancelled/timed_out).
+    if (checksRes.status === 200 && checksRes.data && Array.isArray(checksRes.data.check_runs)) {
+      for (const c of checksRes.data.check_runs) {
+        let state;
+        if (c.status === 'completed') state = normaliseState(c.conclusion);
+        else state = 'pending'; // queued or in_progress
+        let durationMs = null;
+        if (c.started_at && c.completed_at) {
+          const start = Date.parse(c.started_at);
+          const end = Date.parse(c.completed_at);
+          if (!isNaN(start) && !isNaN(end) && end >= start) durationMs = end - start;
+        }
+        out.push({
+          name: c.name || '(unnamed check)',
+          state,
+          url: c.html_url || c.details_url || '',
+          durationMs,
+        });
+      }
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+function normaliseState(s) {
+  if (!s) return 'pending';
+  const v = String(s).toLowerCase();
+  if (v === 'success' || v === 'passed') return 'success';
+  if (v === 'failure' || v === 'failed' || v === 'error' || v === 'timed_out') return 'failure';
+  if (v === 'skipped') return 'skipped';
+  if (v === 'cancelled' || v === 'canceled') return 'cancelled';
+  if (v === 'neutral') return 'neutral';
+  if (v === 'pending' || v === 'queued' || v === 'in_progress') return 'pending';
+  return 'pending';
 }
 
 /**
@@ -336,7 +453,18 @@ async function fetchReviewByPR(owner, repo, prNumber) {
       getReviewStatus(owner, repo, prNumber, githubToken),
       getPRMeta(owner, repo, prNumber, githubToken),
     ]);
-    const data = { ...reviews, ...meta };
+    // CI lookups need the head SHA from meta. Skip CI when PR is closed.
+    let ciState = null;
+    let checks = [];
+    if (!meta.merged && meta.state !== 'closed' && meta.headSha) {
+      const [rollup, details] = await Promise.all([
+        getCIRollup(owner, repo, meta.headSha, githubToken),
+        getCheckDetails(owner, repo, meta.headSha, githubToken),
+      ]);
+      ciState = rollup;
+      checks = details;
+    }
+    const data = { ...reviews, ...meta, ciState, checks };
     reviewCache.set(key, { data, ts: now });
     return data;
   } catch {
