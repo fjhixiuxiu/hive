@@ -124,11 +124,17 @@ async function hasSession(name) {
 }
 
 /**
- * Check if a line is a Claude Code TUI separator (─ repeated across the pane).
+ * Check if a line is a Claude Code TUI separator (a box-drawing horizontal rule
+ * repeated across the pane). The normal input box uses solid ─/━, but permission
+ * prompts (edit/tool approvals) render their divider with the dashed variants
+ * (╌ U+254C and friends). Missing those made any session parked on an approval
+ * prompt look separator-less, so detectState fell through to 'off' — hive
+ * reported a live, waiting-for-approval session as dead.
  */
 function isSeparator(line) {
   const trimmed = line.trim();
-  return trimmed.length >= 10 && /^[─━]+$/.test(trimmed);
+  // ─ ━ (solid), ╌ ╍ (double-dash), ┄ ┅ ┈ ┉ (triple/quadruple-dash) horizontals.
+  return trimmed.length >= 10 && /^[─━╌╍┄┅┈┉]+$/.test(trimmed);
 }
 
 /**

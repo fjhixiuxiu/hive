@@ -53,6 +53,39 @@ describe('tmux — pure functions', () => {
       const content = '  \u2713 Step 1\n  \u2713 Step 2\n  \u2713 Step 3\n> ';
       expect(tmux.detectState(content, config)).toBe('idle');
     });
+
+    // Regression: a session parked on a tool/edit-permission prompt. Claude Code
+    // draws that prompt's divider with the DASHED box-drawing rule (\u254c U+254C),
+    // not the solid \u2500 used by the normal input box, and renders a todo-list
+    // footer BELOW the prompt. isSeparator used to match only \u2500/\u2501, so the pane
+    // looked separator-less and detectState fell through to 'off' \u2014 hive reported
+    // the live, waiting-for-approval session as dead.
+    it('returns "idle" for an edit-permission prompt with a dashed (\u254c) divider', () => {
+      const dashed = '\u254c'.repeat(120); // \u254c\u254c\u254c\u2026 \u2014 the permission-prompt divider
+      const content = [
+        '              const geoId = new mongoose.Types.ObjectId();',
+        dashed,
+        ' Do you want to make this edit to messageQueueService.spec.js?',
+        ' \u276f 1. Yes',
+        '   2. Yes, allow all edits during this session (shift+tab)',
+        '   3. No',
+        '',
+        ' Esc to cancel \u00b7 Tab to amend',
+        '',
+        '  3 tasks (2 done, 1 open)',
+        '  \u2714 Add skipAckTaskExclusionRequeue model static',
+        '  \u2714 Wire guard into queueVisit before validation short-circuit',
+        '  \u25fb Add model unit + integration tests',
+        '',
+      ].join('\n');
+      expect(tmux.detectState(content, config)).toBe('idle');
+    });
+
+    it('recognizes a dashed (\u254c) separator for the working-content case too', () => {
+      const dashed = '\u254c'.repeat(40);
+      // Active content above a dashed separator \u2192 working (mirrors the solid-\u2500 case).
+      expect(tmux.detectState(`Compiling typescript...\n${dashed}\nModel: Opus`, config)).toBe('working');
+    });
   });
 
   describe('stripTUIChrome', () => {
