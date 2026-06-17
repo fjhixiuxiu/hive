@@ -259,9 +259,16 @@ function createMessageHandler(deps) {
         const isConsoleResize = String(msg.session) === 'hive-console';
         const sub = isConsoleResize ? consoleSubs.get(ws) : termSubs.get(ws);
         if (!sub || !msg.cols || !msg.rows) break;
-        const resizePane = isConsoleResize ? 1 : config.sessions.claudePane;
-        const resizeTarget = `${sub.name}:.${resizePane}`;
-        await sub.node.exec(`tmux resize-pane -t "${resizeTarget}" -x ${msg.cols} -y ${msg.rows} 2>/dev/null`);
+        if (isConsoleResize) {
+          // hive-console is a single-pane window with no client attached.
+          // tmux resize-pane is a no-op here (pane snaps back to client/default
+          // window size). resize-window sets the window size directly, which
+          // sizes the single pane to match.
+          await sub.node.exec(`tmux resize-window -t "${sub.name}" -x ${msg.cols} -y ${msg.rows} 2>/dev/null`);
+        } else {
+          const resizeTarget = `${sub.name}:.${config.sessions.claudePane}`;
+          await sub.node.exec(`tmux resize-pane -t "${resizeTarget}" -x ${msg.cols} -y ${msg.rows} 2>/dev/null`);
+        }
         break;
       }
 

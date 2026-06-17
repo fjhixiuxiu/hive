@@ -196,6 +196,7 @@
   let consoleScrolledUp = false;
   let consolePending = null;
   let consoleWriting = false;
+  let consoleExpanded = localStorage.getItem('hive_console_expanded') === 'true';
 
   // Color map: name → { css var, rgba bg }
   const DESIG_COLORS = {
@@ -3476,16 +3477,47 @@
   }
 
   // ── Console (Session 0) ───────────────────────────────
+  function applyConsoleExpandedClass() {
+    const panel = document.getElementById('console-panel');
+    const btn = document.getElementById('console-expand-toggle');
+    panel.classList.toggle('expanded', consoleExpanded);
+    btn.setAttribute('aria-pressed', String(consoleExpanded));
+    btn.setAttribute('data-tooltip', consoleExpanded ? 'Collapse panel' : 'Expand panel');
+  }
+
+  function sendConsoleTerminalResize() {
+    if (ws && ws.readyState === 1 && consoleTerm) {
+      ws.send(JSON.stringify({ type: 'terminal:resize', session: 'hive-console', cols: consoleTerm.cols, rows: consoleTerm.rows }));
+    }
+  }
+
+  function syncConsoleTmuxSize() {
+    if (!consoleTerm || !consoleFit) return;
+    consoleFit.fit();
+    sendConsoleTerminalResize();
+  }
+
+  function setConsoleExpanded(next) {
+    if (consoleExpanded === next) return;
+    consoleExpanded = next;
+    localStorage.setItem('hive_console_expanded', String(consoleExpanded));
+    applyConsoleExpandedClass();
+    if (!consoleOpen) return;
+    // One frame for the new width to apply to layout, then refit + resize tmux.
+    requestAnimationFrame(syncConsoleTmuxSize);
+  }
+
   function openConsole() {
     consoleOpen = true;
     document.getElementById('console-panel').classList.add('open');
     document.getElementById('console-overlay').classList.add('open');
     document.getElementById('console-btn').classList.add('active');
+    applyConsoleExpandedClass();
     updateConsoleBtnLogo();
     if (!consoleTerm) {
       consoleTerm = new Terminal({
         theme: currentTheme === 'light' ? XTERM_LIGHT : XTERM_DARK,
-        fontSize: 12, fontFamily: "'SF Mono', 'Menlo', 'Monaco', 'Courier New', monospace",
+        fontSize: consoleFontSize, fontFamily: "'SF Mono', 'Menlo', 'Monaco', 'Courier New', monospace",
         disableStdin: true, scrollback: 5000, convertEol: true, allowProposedApi: true,
         linkHandler: XTERM_LINK_HANDLER,
       });
@@ -3635,10 +3667,12 @@
   const savedTsFont = parseInt(localStorage.getItem('hive:fontSize:tasks'), 10) || 13;
   const savedFleetFont = parseInt(localStorage.getItem('hive:fontSize:fleet'), 10) || 11;
   const savedTdFont = parseInt(localStorage.getItem('hive:fontSize:taskDetail'), 10) || 12;
+  const savedConsoleFont = parseInt(localStorage.getItem('hive:fontSize:console'), 10) || 12;
   let sessionFontSize = savedSessionFont;
   let tsFontSize = savedTsFont;
   let fleetFontSize = savedFleetFont;
   let tdFontSize = savedTdFont;
+  let consoleFontSize = savedConsoleFont;
 
   function updateFontLabel(id, size) {
     const el = document.getElementById(id);
@@ -3685,11 +3719,23 @@
     }
   }
 
+  function applyConsoleFontSize(size) {
+    consoleFontSize = Math.max(FONT_MIN, Math.min(FONT_MAX, size));
+    localStorage.setItem('hive:fontSize:console', consoleFontSize);
+    updateFontLabel('console-font-label', consoleFontSize);
+    if (consoleTerm) {
+      consoleTerm.options.fontSize = consoleFontSize;
+      // New font → new cell size → new cols/rows; refit and resync tmux.
+      syncConsoleTmuxSize();
+    }
+  }
+
   // Initialize labels
   updateFontLabel('session-font-label', sessionFontSize);
   updateFontLabel('ts-font-label', tsFontSize);
   updateFontLabel('fleet-font-label', fleetFontSize);
   updateFontLabel('td-font-label', tdFontSize);
+  updateFontLabel('console-font-label', consoleFontSize);
 
   // Wire up click handlers via event delegation
   document.getElementById('session-font-controls').addEventListener('click', (e) => {
@@ -3712,10 +3758,16 @@
     if (!btn) return;
     applyTdFontSize(tdFontSize + (btn.dataset.action === 'font-up' ? 1 : -1));
   });
+  document.getElementById('console-font-controls').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-action]');
+    if (!btn) return;
+    applyConsoleFontSize(consoleFontSize + (btn.dataset.action === 'font-up' ? 1 : -1));
+  });
 
   // Console event listeners
   document.getElementById('console-btn').addEventListener('click', toggleConsole);
   document.getElementById('console-close').addEventListener('click', closeConsole);
+  document.getElementById('console-expand-toggle').addEventListener('click', () => setConsoleExpanded(!consoleExpanded));
   document.getElementById('console-overlay').addEventListener('click', closeConsole);
   document.getElementById('console-send').addEventListener('click', sendConsoleMessage);
   document.getElementById('console-input').addEventListener('keydown', (e) => {
@@ -5475,6 +5527,7 @@
   }
 
   let resizeTimer = null;
+  let consoleResizeTimer = null;
   window.addEventListener('resize', () => {
     if (term && fitAddon && activeTab === 'session-panel' && activeSessionTab === 'terminal') {
       fitTerminal();
@@ -5487,7 +5540,11 @@
       }, 300);
     }
     if (tasksSessionFit && activeTab === 'tasks-panel') fitTasksTerminal();
-    if (consoleFit && consoleOpen) consoleFit.fit();
+    if (consoleFit && consoleOpen) {
+      consoleFit.fit();
+      clearTimeout(consoleResizeTimer);
+      consoleResizeTimer = setTimeout(sendConsoleTerminalResize, 300);
+    }
   });
 
   // ── Input bar ─────────────────────────────────────

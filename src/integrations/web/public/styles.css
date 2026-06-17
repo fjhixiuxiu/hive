@@ -185,6 +185,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   transition: transform 0.25s ease;
 }
 #console-panel.open { transform: translateX(0); }
+#console-panel.expanded { width: calc(100vw - 80px); }
 #console-header {
   display: flex; align-items: center; gap: 8px;
   padding: 10px 14px; border-bottom: 1px solid var(--bg3); flex-shrink: 0;
@@ -192,6 +193,15 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 #console-header-title {
   font-size: var(--fs-md); font-weight: 700; color: var(--green); flex: 1;
 }
+#console-expand-toggle {
+  background: none; border: none; color: var(--dim);
+  cursor: pointer; padding: 4px 6px; border-radius: 4px;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+#console-expand-toggle:hover { color: var(--fg); background: var(--bg3); }
+#console-expand-toggle .console-collapse-icon { display: none; }
+#console-panel.expanded #console-expand-toggle .console-expand-icon { display: none; }
+#console-panel.expanded #console-expand-toggle .console-collapse-icon { display: inline; }
 #console-close {
   background: none; border: none; color: var(--dim); font-size: var(--fs-2xl);
   cursor: pointer; padding: 2px 6px; border-radius: 4px;
@@ -3427,6 +3437,8 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
     width: 100vw !important;
     max-width: 100vw !important;
   }
+  /* Already full-screen on mobile, so expand toggle is meaningless */
+  #console-expand-toggle { display: none; }
 
   /* Auth screen stays centered but inputs hit 16px */
   #auth-input { font-size: 16px; padding: 14px 16px; width: min(320px, 88vw); }
