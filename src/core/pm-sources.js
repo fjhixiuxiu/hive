@@ -761,6 +761,7 @@ async function _fetchNectar(source) {
   return items.map(t => ({
     key: t.id,
     summary: `[${t.type}] ${t.input?.version || 'unknown'} — ${t.input?.tickets?.length || 0} tickets`,
+    issueType: 'task', // Route through auto-dispatch in _evaluateComplexity
     _nectarTask: t, // Attach full task data for enrichment
   }));
 }
