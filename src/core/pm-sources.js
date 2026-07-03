@@ -222,11 +222,12 @@ function _parsePRFromKey(key) {
   return null;
 }
 
-function _hasActiveTaskForPR(repo, number) {
+function _hasActiveTaskForPR(repo, number, pmName) {
   const pattern = `${repo}#${number}`;
+  const sourceFilter = pmName ? `pm:${pmName}` : null;
   for (const task of this.taskQueue.tasks.values()) {
     if ((task.status === 'queued' || task.status === 'dispatched') && task.text.includes(pattern)) {
-      return true;
+      if (!sourceFilter || task.source === sourceFilter) return true;
     }
   }
   return false;
@@ -615,8 +616,12 @@ async function _fetchReReviews(source, pmId) {
       const body = rawBody.toLowerCase();
       if (!triggers.some(t => body.includes(t))) continue;
 
-      // If there's already a queued/dispatched task, flag it for "already queued" reply
-      if (this._hasActiveTaskForPR(source.repo, pr.number)) {
+      // If THIS PM already has a queued/dispatched task for this PR, flag it for
+      // "already queued" reply. Scoped per-PM so an in-flight task from a different
+      // PM (e.g. regular Re-reviews) doesn't swallow a trigger meant for this one
+      // (e.g. Urgent Human Review).
+      const pmName = this.pms.get(pmId)?.name;
+      if (this._hasActiveTaskForPR(source.repo, pr.number, pmName)) {
         results.push({
           key: `re-review-${source.repo}#${pr.number}-${comment.id}`,
           summary: `Re-review PR #${pr.number}: ${pr.title}`,

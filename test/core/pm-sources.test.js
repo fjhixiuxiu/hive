@@ -967,6 +967,16 @@ describe('PM helpers: _hasActiveTaskForPR', () => {
     taskQueue.tasks.set('1', { id: '1', status: 'queued', text: 'something else' });
     expect(pm._hasActiveTaskForPR('org/repo', 55)).toBe(false);
   });
+
+  it('scopes to the same PM when pmName is provided', () => {
+    taskQueue.tasks.set('1', { id: '1', status: 'dispatched', text: 'org/repo#55 review', source: 'pm:Re-reviews' });
+    // Without pmName, any PM's task counts (legacy behavior)
+    expect(pm._hasActiveTaskForPR('org/repo', 55)).toBe(true);
+    // Same PM name → true
+    expect(pm._hasActiveTaskForPR('org/repo', 55, 'Re-reviews')).toBe(true);
+    // Different PM name → false (so the other PM can still create its own task)
+    expect(pm._hasActiveTaskForPR('org/repo', 55, 'Urgent Human Review')).toBe(false);
+  });
 });
 
 // ── enrichTaskText / _buildFullText ─────────────────────
