@@ -1,7 +1,47 @@
-const { App } = require('@slack/bolt');
+const { App, SocketModeReceiver } = require('@slack/bolt');
+const { WebClient, retryPolicies } = require('@slack/web-api');
 const fleet = require('../../core/fleet');
 const relay = require('../../core/relay');
 const log = require('../../core/log');
+
+// Slack's `apps.connections.open` (the Socket Mode handshake) is a Tier-1
+// endpoint — roughly one call per minute. The @slack/web-api default of
+// `maxRequestConcurrency: 100` combined with the default
+// `tenRetriesInAboutThirtyMinutes` retry policy means a reconnect storm can
+// park 100 rate-limited handshakes in the client's p-queue, each squatting a
+// concurrency slot for ~30 minutes. The reconnect loop keeps enqueueing, the
+// queue never drains, and every queued entry retains an axios request config
+// (~20KB). Observed in production: 58,974 queued `apps.connections.open` calls
+// holding 1.18GB of old-space after 7 days of uptime.
+//
+// Keeping concurrency low and failing fast bounds the queue: slots free up in
+// minutes instead of half-hours, so the loop can't outrun the drain.
+const HANDSHAKE_CLIENT_OPTIONS = {
+  maxRequestConcurrency: 5,
+  retryConfig: retryPolicies.fiveRetriesInFiveMinutes,
+};
+
+/**
+ * Wrap an async function so overlapping invocations are skipped while one is
+ * still running.
+ *
+ * `setInterval(async …)` fires on schedule regardless of whether the previous
+ * tick finished. When the Slack API is slow — exactly the case during a
+ * reconnect storm — ticks pile up on top of each other, multiplying the very
+ * API pressure that made them slow.
+ */
+function nonOverlapping(fn) {
+  let running = false;
+  return async (...args) => {
+    if (running) return undefined;
+    running = true;
+    try {
+      return await fn(...args);
+    } finally {
+      running = false;
+    }
+  };
+}
 
 /**
  * Create and start the Slack bot (Socket Mode).
@@ -25,19 +65,54 @@ function createSlackBot(taskQueue, config, router, pmManager) {
     return null;
   }
 
+  // Build the Socket Mode receiver explicitly.
+  //
+  // Bolt's App constructor accepts neither `socketModeOptions` nor a way to
+  // reach the SocketModeClient's internal WebClient: it forwards only
+  // `installerOptions.clientOptions` to SocketModeReceiver, which in turn
+  // passes just { appToken, logLevel, logger, clientOptions } to
+  // SocketModeClient. Passing `socketModeOptions` to `new App()` is silently
+  // dropped — the ping timeouts below never took effect. Constructing the
+  // receiver ourselves is the only way to set both.
+  const receiver = new SocketModeReceiver({
+    appToken,
+    installerOptions: { clientOptions: HANDSHAKE_CLIENT_OPTIONS },
+  });
+
+  // Raise the client-side ping timeout. The SDK default is 5s, which is too
+  // tight when the event loop is busy driving 20 tmux sessions — a missed
+  // pong drops the socket, and every drop costs a rate-limited handshake.
+  //
+  // Note: only clientPingTimeoutMS is touched. The dead `socketModeOptions`
+  // block this replaces also set serverPingTimeoutMS: 15000, annotated
+  // "default 5s". That annotation was wrong — the server-side default is
+  // 30000, so honouring that value now would *tighten* the timeout and cause
+  // more disconnects, not fewer. Leaving it at the SDK default.
+  receiver.client.clientPingTimeoutMS = 15000;
+  receiver.client.pingPongLoggingEnabled = false;
+
   const app = new App({
     token: botToken,
-    appToken,
-    socketMode: true,
+    receiver,
     ignoreSelf: false, // Allow bot's own messages through — channel monitors may need them
     clientOptions: {
       slackApiUrl: 'https://slack.com/api/',
+      maxRequestConcurrency: 10,
+      retryConfig: retryPolicies.fiveRetriesInFiveMinutes,
     },
-    socketModeOptions: {
-      pingPongLoggingEnabled: false,
-      serverPingTimeoutMS: 15000,  // 15s (default 5s — too tight when event loop is busy)
-      clientPingTimeoutMS: 15000,
-    },
+  });
+
+  // Dedicated client for health checks. The watchdog below must never share a
+  // queue with application traffic: when the main client's queue saturates,
+  // `auth.test()` sits behind every backlogged request and neither resolves
+  // nor rejects, so the watchdog silently stops watching — which is exactly
+  // how the 1.18GB leak went unnoticed for 7 days. Its own client with a hard
+  // timeout keeps self-healing alive independent of queue state.
+  const healthClient = new WebClient(botToken, {
+    slackApiUrl: 'https://slack.com/api/',
+    maxRequestConcurrency: 2,
+    retryConfig: retryPolicies.rapidRetryPolicy,
+    timeout: 10000,
   });
 
   // Strip the bot mention from the message text
@@ -846,7 +921,19 @@ function createSlackBot(taskQueue, config, router, pmManager) {
   }
 
   // Cleanly restart the bot and reset the zombie-detector baseline.
+  //
+  // Guarded against overlap: app.start() blocks on `apps.connections.open`,
+  // which can take minutes when Slack is rate-limiting. Without the guard a
+  // second restart can begin while the first is still mid-flight, leaving
+  // orphaned SlackWebSocket objects each running their own reconnect loop —
+  // observed in production as 24 live sockets behind a single client.
+  let restartInFlight = false;
   async function restartBot(reason) {
+    if (restartInFlight) {
+      console.warn(`[slack] Restart already in flight — skipping (reason: ${reason})`);
+      return;
+    }
+    restartInFlight = true;
     console.warn(`[slack] Restarting bot (reason: ${reason})`);
     try {
       await app.stop();
@@ -855,6 +942,8 @@ function createSlackBot(taskQueue, config, router, pmManager) {
       console.log(`[slack] Bot restarted (reason: ${reason})`);
     } catch (restartErr) {
       console.error(`[slack] Restart failed: ${restartErr.message}`);
+    } finally {
+      restartInFlight = false;
     }
   }
 
@@ -874,10 +963,11 @@ function createSlackBot(taskQueue, config, router, pmManager) {
   // channel masks the failure on every other channel.
   const HEALTH_INTERVAL = 5 * 60 * 1000;      // 5 min
   const PROBE_WINDOW_MS = 15 * 60 * 1000;     // only consider messages from the last 15 min
-  setInterval(async () => {
-    // Step 1: Web API liveness
+  setInterval(nonOverlapping(async () => {
+    // Step 1: Web API liveness — via healthClient, which has its own queue and
+    // a hard timeout, so a saturated app.client can't mute the watchdog.
     try {
-      await app.client.auth.test();
+      await healthClient.auth.test();
     } catch (err) {
       return restartBot(`auth.test failed: ${err.message}`);
     }
@@ -946,7 +1036,7 @@ function createSlackBot(taskQueue, config, router, pmManager) {
       }
     }
 
-  }, HEALTH_INTERVAL);
+  }), HEALTH_INTERVAL);
 
   // ── Thread polling fallback ──────────────────────────
   // Socket Mode silently drops thread reply events. Every THREAD_POLL_INTERVAL,
@@ -954,7 +1044,7 @@ function createSlackBot(taskQueue, config, router, pmManager) {
   // the bot missed. This replaces the old Step 3 zombie detection which could
   // only detect and restart — this detects and relays directly.
   const THREAD_POLL_INTERVAL = 150_000; // 2.5 min
-  setInterval(async () => {
+  setInterval(nonOverlapping(async () => {
     if (!taskQueue) return;
     let relayed = 0;
     for (const t of taskQueue.tasks.values()) {
@@ -1006,7 +1096,7 @@ function createSlackBot(taskQueue, config, router, pmManager) {
       }
     }
     if (relayed > 0) console.log(`[slack-poll] Cycle complete: ${relayed} message(s) relayed`);
-  }, THREAD_POLL_INTERVAL);
+  }), THREAD_POLL_INTERVAL);
 
   // Start the bot and resolve bot user ID for @mention filtering
   let botUserId = null;
@@ -1026,4 +1116,5 @@ function createSlackBot(taskQueue, config, router, pmManager) {
   return app;
 }
 
-module.exports = { createSlackBot };
+// nonOverlapping and HANDSHAKE_CLIENT_OPTIONS are exported for testing.
+module.exports = { createSlackBot, nonOverlapping, HANDSHAKE_CLIENT_OPTIONS };
