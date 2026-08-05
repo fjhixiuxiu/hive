@@ -85,6 +85,31 @@ SSH: `ssh hive-support`
 | TF Workspace | `support` (uses `support.tfvars`) |
 | HIVE_TITLE | `Viv Support Hive` |
 
+### QA Hive (`qa` workspace)
+
+URL: `https://qa-hive.vivtechnologies.com`
+SSH: `ssh hive-qa`
+
+| Resource | ID / ARN |
+|---|---|
+| EC2 Instance | `i-01d44045307e968de` |
+| Public IP | `54.88.43.156` |
+| Private IP | `10.0.3.194` |
+| VPC | `vpc-02651295c24f8bc7f` (Jenkins) |
+| Subnet | `subnet-0d5dee6be35a20916` (`internal-tools-1a`, us-east-1a) |
+| ALB | `qa-hive-alb-210948200.us-east-1.elb.amazonaws.com` |
+| ALB Subnets | `subnet-0d5dee6be35a20916` (1a), `subnet-094867cafbdcc387d` (1b) |
+| Target Group | `qa-hive-tg` |
+| ALB SG | `sg-09f6f5f88c9a6a2f2` (`qa-hive-alb-sg`) |
+| EC2 SG | `sg-0968e1989ed5f46e6` (`qa-hive-ec2-sg`) |
+| Office SSH SG | `sg-043c84f65239ea620` (`toronto-office-jenkins-ssh`) |
+| Fleet SG | `sg-0eccb5c1f5c931f9c` (`hive-fleet-sg`, Jenkins VPC) |
+| IAM Role | `qa-hive-ec2-role` |
+| IAM Profile | `qa-hive-ec2-profile` |
+| Secret | `hive/qa-env` |
+| TF Workspace | `qa` (uses `qa.tfvars`) |
+| HIVE_TITLE | `Viv QA Hive` |
+
 ### Shared Resources (across all hives)
 
 | Resource | ID / ARN | Purpose |
@@ -125,6 +150,7 @@ tofu init
 tofu workspace list
 # * default    (review-hive)
 #   support    (support-hive)
+#   qa         (qa-hive)
 ```
 
 ### Apply to an existing hive
@@ -139,6 +165,11 @@ tofu apply -var-file=review.tfvars
 tofu workspace select support
 tofu plan -var-file=support.tfvars
 tofu apply -var-file=support.tfvars
+
+# QA hive
+tofu workspace select qa
+tofu plan -var-file=qa.tfvars
+tofu apply -var-file=qa.tfvars
 ```
 
 ### Spawning a new hive
@@ -205,6 +236,12 @@ ssh hive-support                          # alias for ubuntu@54.166.91.211
 ssh -i ~/.ssh/jenkins.pem ubuntu@54.166.91.211
 ```
 
+### QA Hive
+```bash
+ssh hive-qa                               # alias for ubuntu@54.88.43.156
+ssh -i ~/.ssh/jenkins.pem ubuntu@54.88.43.156
+```
+
 ### Common Operations
 
 **Restart Hive (picks up new secret values):**
@@ -253,3 +290,4 @@ DNS is managed in **GoDaddy** (not Route 53). The wildcard ACM cert `*.vivtechno
 |---|---|
 | `review-hive.vivtechnologies.com` | `hive-alb-356434589.us-east-1.elb.amazonaws.com` |
 | `support-hive.vivtechnologies.com` | `support-hive-alb-2018772839.us-east-1.elb.amazonaws.com` |
+| `qa-hive.vivtechnologies.com` | `qa-hive-alb-210948200.us-east-1.elb.amazonaws.com` |
