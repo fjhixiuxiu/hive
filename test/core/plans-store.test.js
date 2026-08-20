@@ -133,6 +133,47 @@ describe('plans-store', () => {
       expect(plansStore.getPlanHtml(v1.planId)).toContain('two');
       expect(plansStore.getPlanHtml(v1.planId, 1)).toContain('one');
     });
+
+    it('injects color-scheme:light so dark-mode browsers do not auto-darken light plans', () => {
+      const res = plansStore.publishPlan({
+        sessionNum: 1,
+        html: '<!DOCTYPE html><html><head><title>P</title></head><body><p>hi</p></body></html>',
+        title: 'H',
+      });
+      const out = plansStore.getPlanHtml(res.planId);
+      expect(out).toContain('name="color-scheme" content="light"');
+      expect(out).toContain('hi'); // original content preserved
+      expect(out.indexOf('color-scheme')).toBeLessThan(out.indexOf('<title>')); // injected after <head>
+    });
+
+    it('does not override a plan that already declares its own color-scheme', () => {
+      const res = plansStore.publishPlan({
+        sessionNum: 1,
+        html: '<html><head><meta name="color-scheme" content="dark"></head><body>x</body></html>',
+        title: 'D',
+      });
+      const out = plansStore.getPlanHtml(res.planId);
+      expect((out.match(/name="color-scheme"/g) || []).length).toBe(1); // not double-injected
+      expect(out).toContain('content="dark"'); // author's declaration preserved
+    });
+
+    it('forces light with !important so a plan\'s CSS color-scheme:light-dark cannot win the cascade', () => {
+      // Regression: plans generated with `:root{color-scheme:light dark}` in a
+      // <style> have no color-scheme <meta>, so injection runs — but a bare
+      // injected `color-scheme:light` loses the cascade to the plan's later
+      // :root rule, and a dark-mode browser then renders white-on-white. The
+      // injected rule must be !important to win regardless of source order.
+      const res = plansStore.publishPlan({
+        sessionNum: 1,
+        html: '<!DOCTYPE html><html><head><title>P</title>'
+          + '<style>:root{color-scheme:light dark}</style></head><body><p>hi</p></body></html>',
+        title: 'CS',
+      });
+      const out = plansStore.getPlanHtml(res.planId);
+      expect(out).toContain('color-scheme:light !important'); // injected rule wins the cascade
+      expect(out).toContain('color-scheme:light dark');       // plan's own declaration still present
+      expect(out.indexOf('color-scheme:light !important')).toBeLessThan(out.indexOf('color-scheme:light dark'));
+    });
   });
 
   describe('comments', () => {

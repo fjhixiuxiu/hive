@@ -288,11 +288,34 @@ function getPlan(planId) {
   return { meta, currentVersion: current };
 }
 
+// Plans are authored light (dark text, light code/table backgrounds, no body
+// background). Some declare no color-scheme at all; others emit a CSS
+// `:root{color-scheme:light dark}` (the plan generator's default), which a
+// dark-mode browser resolves to DARK — auto-darkening the page into a washed-out
+// theme, often rendering body text white-on-white (only explicitly-colored spans
+// survive). We force light at READ time. The `!important` is load-bearing: a bare
+// `color-scheme:light` loses the cascade to the plan's own later
+// `:root{color-scheme:light dark}` (same specificity, source order wins), and a
+// <meta> tag can't override a CSS :root rule at all. `!important` beats a normal
+// declaration regardless of source order, so the injected rule always wins. Applied
+// only at READ time — the stored file is untouched, and the comment-save path
+// (mutateComments) reads the raw file directly, so the tag never accumulates. The
+// guard keeps an explicit <meta name="color-scheme"> as the author's escape hatch.
+const COLOR_SCHEME_TAG =
+  '<meta name="color-scheme" content="light">' +
+  '<style>:root{color-scheme:light !important}html,body{background:#fff}</style>';
+
+function injectColorScheme(html) {
+  if (!html || /name=["']color-scheme["']/i.test(html)) return html;
+  if (/<head[^>]*>/i.test(html)) return html.replace(/<head[^>]*>/i, (m) => m + COLOR_SCHEME_TAG);
+  return COLOR_SCHEME_TAG + html; // no <head> — prepend
+}
+
 function getPlanHtml(planId, version) {
   const v = version || readCurrent(planId);
   if (!v) return null;
   try {
-    return fs.readFileSync(versionPath(planId, v), 'utf8');
+    return injectColorScheme(fs.readFileSync(versionPath(planId, v), 'utf8'));
   } catch {
     return null;
   }
