@@ -768,7 +768,9 @@ class TaskQueue extends EventEmitter {
         && !this.activeTaskBySession.has(s.num)
         && (now - (this.lastCompletedAt.get(s.num) || 0)) > COOLDOWN_MS
       );
-      if (!idleAuto.length) return;
+      // NOTE: do NOT early-return when idleAuto is empty. The auto-create block below
+      // must still run — spawning a session is exactly what's needed when nothing is
+      // free. The dispatch loop simply no-ops when there are no candidate sessions.
 
       // Sort by least recently used — sessions idle longest get tasks first
       idleAuto.sort((a, b) =>
@@ -817,6 +819,13 @@ class TaskQueue extends EventEmitter {
         return false;
       });
 
+      // Diagnostic: surface the spawn decision. A queued autoCreate task with no free
+      // auto-session is the case that should spawn — log the inputs so a stuck backlog
+      // is visible (this used to bail silently at the idleAuto early-return above).
+      if (autoCreateTasks.length) {
+        log.info(`[auto-dispatch] ${autoCreateTasks.length} autoCreate task(s) queued; ${idleAuto.length} free auto-session(s), ${sessions.length} in fleet`);
+      }
+
       // Group by designation + matchMode (both affect which sessions count)
       // Key: "desig|matchMode" (e.g. "webplatform|flexible" or "|flexible" for undesignated)
       const byDesigMode = new Map();
@@ -851,7 +860,10 @@ class TaskQueue extends EventEmitter {
 
         try {
           const slots = await this.getAvailableSlots();
-          if (slots.length === 0) continue;
+          if (slots.length === 0) {
+            log.info(`[auto-dispatch] queued ${desig || 'undesignated'} task but no free slots (${this.spawnSlotMin}-${this.spawnSlotMax} all occupied) — cannot spawn`);
+            continue;
+          }
           const num = slots[0];
           const repoDir = this.config.sessions.repoDir(num);
           const repoName = TaskQueue.repoBaseName(repoDir);
