@@ -4433,9 +4433,14 @@
   }
 
   function renderMarkdown(text) {
-    return typeof marked !== 'undefined' && marked.parse
+    const html = typeof marked !== 'undefined' && marked.parse
       ? marked.parse(text)
       : text.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
+    // A `plan` file pointed at a full HTML doc would otherwise leak its global
+    // <style>/<meta viewport> into the dashboard via setBodyHtml's innerHTML.
+    // stripGlobalScopeLeaks (plan-sanitize.js) drops those head-scope elements;
+    // it's a no-op on normal markdown. Guard in case the script failed to load.
+    return window.stripGlobalScopeLeaks ? window.stripGlobalScopeLeaks(html) : html;
   }
 
   function setBodyHtml(html) {
