@@ -65,7 +65,33 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     });
   }
 
-  app.use(express.static(path.join(__dirname, 'public'), {
+  // Serve index.html with dynamic asset versioning based on file mtime.
+  // {{V}} in index.html is replaced with a hash of app.js + styles.css mtimes
+  // so the browser always fetches fresh when assets change.
+  const PUBLIC_DIR = path.join(__dirname, 'public');
+  function assetVersion() {
+    try {
+      // Hash every asset that index.html cache-busts with ?v={{V}} so editing
+      // any one of them changes the version. primary-action.js is referenced
+      // the same way as app.js/styles.css and must be included or its changes
+      // would be served stale.
+      const sum = ['app.js', 'styles.css', 'primary-action.js', 'plan-sanitize.js']
+        .reduce((acc, f) => acc + fs.statSync(path.join(PUBLIC_DIR, f)).mtimeMs, 0);
+      return String(Math.floor(sum));
+    } catch { return String(Date.now()); }
+  }
+  function serveIndex(_req, res) {
+    let html;
+    try { html = fs.readFileSync(path.join(PUBLIC_DIR, 'index.html'), 'utf8'); }
+    catch (e) { return res.status(500).send('index.html not found'); }
+    html = html.replace(/\{\{V\}\}/g, assetVersion());
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Content-Type', 'text/html; charset=UTF-8');
+    res.send(html);
+  }
+  app.get('/', serveIndex);
+
+  app.use(express.static(PUBLIC_DIR, {
     setHeaders: (res, filePath) => {
       // Prevent browser caching of HTML/JS/CSS during development
       if (/\.(html|js|css)$/.test(filePath)) {
@@ -75,9 +101,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
   }));
 
   // SPA fallback — serve index.html for /ui/* routes so browser refreshes work
-  app.get('/ui/*', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
-  });
+  app.get('/ui/*', serveIndex);
 
   // -- Image upload endpoint -----------------------------------------------
   const uploadDir = path.join(os.tmpdir(), 'hive-uploads');

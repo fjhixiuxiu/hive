@@ -167,6 +167,7 @@
   // auto-open it again for that session this page-load. Avoids fighting
   // the user every time they come back to a session they closed.
   const planSidebarUserClosed = new Set();
+  let mtgDetailOpen = false; // hoisted: switchTab references it before the voice panel section runs
   let contextActiveTab = null; // null = auto-select first, or 'plan'/'output'
   let planPollTimer = null;          // interval for polling plan file
   let sessionContexts = {};          // session num -> { plan: path, pr: url, ... }
@@ -11300,7 +11301,6 @@
   // ── Voice / Meetings panel ──────────────────────────
   let voiceStatus = { active: false };
   let mtgList = [];
-  let mtgDetailOpen = false;
   let mtgDetailId = null;
   let mtgDetailData = null;
   let mtgPollTimer = null;
@@ -11885,6 +11885,10 @@
     const sidebar = document.getElementById('sidebar');
     const backdrop = document.getElementById('mobile-nav-backdrop');
 
+    function toggleSidebar() {
+      sidebar.classList.toggle('mobile-open');
+      backdrop.classList.toggle('visible');
+    }
     function addHamburger(containerId) {
       const container = document.getElementById(containerId);
       if (!container) return;
@@ -11893,31 +11897,24 @@
       btn.className = 'mobile-hamburger';
       btn.textContent = '\u2630';
       btn.style.cssText = 'background:none;border:none;color:var(--fg);font-size:20px;padding:6px 8px;cursor:pointer;min-width:36px;min-height:36px;display:flex;align-items:center;justify-content:center;flex-shrink:0;';
-      btn.addEventListener('click', () => {
-        sidebar.classList.toggle('mobile-open');
-        backdrop.classList.toggle('visible');
-      });
+      btn.addEventListener('click', toggleSidebar);
+      container.prepend(btn);
+    }
+    function addHamburgerToEl(container) {
+      if (!container || container.querySelector(':scope > .mobile-hamburger')) return;
+      const btn = document.createElement('button');
+      btn.className = 'mobile-hamburger';
+      btn.textContent = '\u2630';
+      btn.addEventListener('click', toggleSidebar);
       container.prepend(btn);
     }
     addHamburger('session-header');
-    // Add hamburger to fleet search bar
-    const fleetBar = document.querySelector('.fleet-search-bar');
-    if (fleetBar) {
-      const fb = document.createElement('button');
-      fb.className = 'mobile-hamburger';
-      fb.textContent = '\u2630';
-      fb.addEventListener('click', () => { sidebar.classList.toggle('mobile-open'); backdrop.classList.toggle('visible'); });
-      fleetBar.prepend(fb);
-    }
-    // Add hamburger to tasks toolbar
-    const tasksToggle = document.querySelector('.tasks-view-toggle');
-    if (tasksToggle) {
-      const tb = document.createElement('button');
-      tb.className = 'mobile-hamburger';
-      tb.textContent = '\u2630';
-      tb.addEventListener('click', () => { sidebar.classList.toggle('mobile-open'); backdrop.classList.toggle('visible'); });
-      tasksToggle.prepend(tb);
-    }
+    addHamburgerToEl(document.querySelector('.fleet-search-bar'));
+    addHamburgerToEl(document.querySelector('.tasks-view-toggle'));
+    addHamburgerToEl(document.querySelector('#feed-panel .notif-header'));
+    addHamburgerToEl(document.querySelector('#voice-panel .voice-header'));
+    addHamburgerToEl(document.querySelector('#ideas-panel > div'));
+    addHamburgerToEl(document.querySelector('#more-panel .more-tabs'));
 
     if (backdrop) backdrop.addEventListener('click', () => {
       sidebar.classList.remove('mobile-open');
