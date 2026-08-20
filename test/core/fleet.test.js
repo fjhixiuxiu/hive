@@ -185,6 +185,50 @@ describe('fleet', () => {
       expect(second).toBe(first);
       expect(node.listSessions).toHaveBeenCalledTimes(1);
     });
+
+    it('serves the last-known fleet when a poll comes back empty (transient tmux timeout)', async () => {
+      const config = createMockConfig();
+      const node = createMockNode();
+      node.readFile.mockResolvedValue('idle');
+      node.fileExists.mockResolvedValue(false);
+      const router = new NodeRouter();
+      router.addNode(node);
+
+      // A real poll establishes the last-known fleet.
+      node.listSessions.mockResolvedValue([{ name: '6-DEV-123', lastActivity: 1000, path: '/home/user/dev/session-6' }]);
+      const good = await fleet.getFleetStatus(config, router);
+      expect(good).toHaveLength(1);
+
+      // Next poll times out and returns nothing — must NOT report an empty fleet.
+      fleet.invalidateCache();
+      node.listSessions.mockResolvedValue([]);
+      const afterEmpty = await fleet.getFleetStatus(config, router);
+      expect(afterEmpty).toHaveLength(1);
+      expect(afterEmpty[0].name).toBe('6-DEV-123');
+    });
+
+    it('accepts an empty fleet once the fallback window has expired', async () => {
+      vi.useFakeTimers();
+      try {
+        const config = createMockConfig();
+        const node = createMockNode();
+        node.readFile.mockResolvedValue('idle');
+        node.fileExists.mockResolvedValue(false);
+        const router = new NodeRouter();
+        router.addNode(node);
+
+        node.listSessions.mockResolvedValue([{ name: '6-DEV-123', lastActivity: 1000, path: '/home/user/dev/session-6' }]);
+        await fleet.getFleetStatus(config, router); // lastGood set at t=0
+
+        vi.advanceTimersByTime(61000); // past the 60s fallback window
+        fleet.invalidateCache();
+        node.listSessions.mockResolvedValue([]);
+        const result = await fleet.getFleetStatus(config, router);
+        expect(result).toHaveLength(0); // stale last-known is not served
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 
   describe('invalidateCache', () => {

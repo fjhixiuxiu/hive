@@ -1,6 +1,7 @@
 const path = require('path');
 const tmux = require('./tmux');
 const prStatus = require('./pr-status');
+const log = require('./log');
 
 /**
  * Get node-specific config, merging overrides from config.nodes[nodeId].
@@ -87,9 +88,15 @@ async function getSession(config, node, sessionName, nodeId) {
   };
 }
 
-// Cache: { result, timestamp, pending }
-let _fleetCache = { result: null, ts: 0, pending: null };
+// Cache: { result, timestamp, pending, lastGood, lastGoodTs }
+let _fleetCache = { result: null, ts: 0, pending: null, lastGood: null, lastGoodTs: 0 };
 const FLEET_CACHE_TTL = 10000; // 10s
+// An empty session list almost always means a transient tmux listing failure (the
+// list-windows exec timed out under load), not that every session vanished. Returning
+// empty makes the watcher skip all sessions and makes auto-create think every slot is
+// free (so it can spawn onto an occupied slot). Fall back to the last-known non-empty
+// fleet while it's still fresh; past this window, accept the empty as real.
+const FLEET_EMPTY_FALLBACK_MS = 60000; // 60s
 
 /**
  * Get status for all fleet sessions (cached for 5s to avoid hammering tmux/git/API).
@@ -128,8 +135,26 @@ async function getFleetStatus(config, router) {
       }
     }
     const result = Array.from(byNum.values()).sort((a, b) => a.num - b.num);
+
+    // Guard against a transient empty listing: if we got nothing but recently had a
+    // real fleet, serve the last-known one instead of letting consumers act on "no
+    // sessions". Don't refresh lastGood from the empty result, so the fallback window
+    // is measured from the last GOOD poll.
+    if (result.length === 0 && _fleetCache.lastGood && _fleetCache.lastGood.length &&
+        (Date.now() - _fleetCache.lastGoodTs) < FLEET_EMPTY_FALLBACK_MS) {
+      log.warn(`[fleet] empty session list (likely a transient tmux timeout) — serving last-known fleet of ${_fleetCache.lastGood.length}`);
+      _fleetCache.result = _fleetCache.lastGood;
+      _fleetCache.ts = Date.now();
+      _fleetCache.pending = null;
+      return _fleetCache.lastGood;
+    }
+
     _fleetCache.result = result;
     _fleetCache.ts = Date.now();
+    if (result.length) {
+      _fleetCache.lastGood = result;
+      _fleetCache.lastGoodTs = Date.now();
+    }
     _fleetCache.pending = null;
     return result;
   })();
