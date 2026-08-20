@@ -117,10 +117,37 @@ async function sendKeys(target, keys, enter = true) {
 }
 
 /**
+ * Build an exact-match tmux session target.
+ *
+ * tmux resolves an ambiguous `-t <name>` target by prefix, so a bare `-t 3`
+ * matches a session named "30" when no exact "3" exists. The `=` prefix forces
+ * exact-name matching. Always use these helpers (never interpolate a bare
+ * session name into a `-t` target) — the prefix ambiguity wedged the
+ * auto-dispatcher into an endless "create session 3" loop, let killSession("3")
+ * kill "30", and leaked keystrokes into the wrong session's pane.
+ *
+ * @param {string|number} name - session name
+ * @returns {string} e.g. "=3"
+ */
+function sessionTarget(name) {
+  return `=${name}`;
+}
+
+/**
+ * Build an exact-match tmux pane target ("=<session>:.<pane>"). See sessionTarget.
+ * @param {string|number} name - session name
+ * @param {number} pane - pane index
+ * @returns {string} e.g. "=3:.1"
+ */
+function paneTarget(name, pane) {
+  return `=${name}:.${pane}`;
+}
+
+/**
  * Check if a tmux session exists.
  */
 async function hasSession(name) {
-  return (await exec(`tmux has-session -t "${name}" 2>/dev/null`)) !== null;
+  return (await exec(`tmux has-session -t "${sessionTarget(name)}" 2>/dev/null`)) !== null;
 }
 
 /**
@@ -297,7 +324,7 @@ async function gitInfo(repoDir) {
  * Kill a tmux session.
  */
 async function killSession(name) {
-  return (await exec(`tmux kill-session -t "${name}:" 2>/dev/null`)) !== null;
+  return (await exec(`tmux kill-session -t "${sessionTarget(name)}" 2>/dev/null`)) !== null;
 }
 
 // Claude Code TUI chrome patterns (status bars, prompt, UI elements)
@@ -368,6 +395,8 @@ module.exports = {
   listSessions,
   capturePane,
   sendKeys,
+  sessionTarget,
+  paneTarget,
   hasSession,
   detectState,
   ACTIVE_STATUS_RE,

@@ -116,7 +116,7 @@ describe('terminal:resize for hive-console (Ask panel width sync)', () => {
 
     const resizeCall = node.exec.mock.calls.find(([cmd]) => cmd.includes('resize-window'));
     expect(resizeCall).toBeTruthy();
-    expect(resizeCall[0]).toContain('-t "hive-console"');
+    expect(resizeCall[0]).toContain('-t "=hive-console"');
     expect(resizeCall[0]).toContain('-x 220');
     expect(resizeCall[0]).toContain('-y 50');
     // Specifically NOT resize-pane — that's a no-op on a single-pane detached session.
@@ -137,8 +137,8 @@ describe('terminal:resize for hive-console (Ask panel width sync)', () => {
     expect(resizeCalls[0][0]).toContain('-x 220');
     expect(resizeCalls[1][0]).toContain('-x 110');
     // Both must target hive-console — never leaks to fleet sessions
-    expect(resizeCalls[0][0]).toContain('-t "hive-console"');
-    expect(resizeCalls[1][0]).toContain('-t "hive-console"');
+    expect(resizeCalls[0][0]).toContain('-t "=hive-console"');
+    expect(resizeCalls[1][0]).toContain('-t "=hive-console"');
   });
 
   it('ignores resize without an active subscription', async () => {

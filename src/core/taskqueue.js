@@ -8,6 +8,7 @@ const { promisify } = require('util');
 const execAsync = promisify(exec);
 const relay = require('./relay');
 const fleet = require('./fleet');
+const tmux = require('./tmux');
 const sessionManager = require('./session-manager');
 const { cloneOrReuse } = require('./git-utils');
 const tqUsers = require('./tq-users');
@@ -635,7 +636,7 @@ class TaskQueue extends EventEmitter {
       // unsubmitted /clear and the agent runs the task on stale context.
       // Look for `/clear` still visible in the input box and flush it.
       try {
-        const paneTarget = `${sessionName}:.${this.config.sessions.claudePane}`;
+        const paneTarget = tmux.paneTarget(sessionName, this.config.sessions.claudePane);
         const tail = await node.capturePane(paneTarget, { lines: 8 });
         if (tail && /\/clear\s*$/m.test(tail)) {
           log.warn(`[dispatch] /clear unsubmitted on S:${sessionNum}, sending safety Enter`);
@@ -1178,7 +1179,7 @@ class TaskQueue extends EventEmitter {
       const { name: sessionName, nodeId } = found;
       const node = this.router.getNode(nodeId);
       if (node) {
-        const paneTarget = `${sessionName}:.${this.config.sessions.claudePane}`;
+        const paneTarget = tmux.paneTarget(sessionName, this.config.sessions.claudePane);
         const key = approved ? 'y' : 'n';
         await node.exec(`tmux send-keys -t "${paneTarget}" ${key}`);
       }

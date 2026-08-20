@@ -396,7 +396,7 @@ describe('multi-pane terminal viewer', () => {
 
       expect(relay.tell).not.toHaveBeenCalled();
       expect(node.sendKeys).toHaveBeenCalledWith(
-        '6-DEV-123:.0',
+        '=6-DEV-123:.0',
         'ls -la',
         true,
       );
@@ -417,7 +417,7 @@ describe('multi-pane terminal viewer', () => {
 
       expect(relay.tell).not.toHaveBeenCalled();
       expect(node.sendKeys).toHaveBeenCalledWith(
-        '6-DEV-123:.2',
+        '=6-DEV-123:.2',
         'npm start',
         true,
       );

@@ -387,7 +387,7 @@ class Watcher extends EventEmitter {
                 if (fleet.refreshGitInfo) fleet.refreshGitInfo(this.config, node, s.name, s.nodeId).catch(() => {});
                 preview = await fleet.peekSession(this.config, node, s.name);
                 // Also capture ANSI version + pane width for task snapshot display
-                const paneTarget = `${s.name}:.${this.config.sessions.claudePane}`;
+                const paneTarget = tmux.paneTarget(s.name, this.config.sessions.claudePane);
                 ansiSnapshot = await node.exec(`tmux capture-pane -e -p -S -500 -t "${paneTarget}" 2>/dev/null`) || '';
                 const colsStr = await node.exec(`tmux display-message -p -t "${paneTarget}" "#{pane_width}" 2>/dev/null`);
                 paneCols = parseInt(colsStr) || 0;
@@ -506,7 +506,7 @@ class Watcher extends EventEmitter {
     // 41s" with no retry because of this). When we detect the panel inside
     // the narrow window, we widen to 30 just for that poll. S:26's old SSL
     // error sat ~40+ lines deep, outside both windows.
-    const paneTarget = `${s.name}:.${this.config.sessions.claudePane}`;
+    const paneTarget = tmux.paneTarget(s.name, this.config.sessions.claudePane);
     const content = await node.capturePane(paneTarget, { lines: 15 });
     if (!content) return false;
 
@@ -636,7 +636,7 @@ class Watcher extends EventEmitter {
       if (!node) continue;
 
       // Capture last 8 lines and check for permission/question patterns
-      const paneTarget = `${s.name}:.${this.config.sessions.claudePane}`;
+      const paneTarget = tmux.paneTarget(s.name, this.config.sessions.claudePane);
       const content = await node.capturePane(paneTarget, { lines: 8 });
       if (!content) continue;
 

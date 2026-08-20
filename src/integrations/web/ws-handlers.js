@@ -135,7 +135,7 @@ function createMessageHandler(deps) {
         }
         const { name, nodeId } = found;
         const node = router.getNode(nodeId);
-        const paneTarget = `${name}:.${config.sessions.claudePane}`;
+        const paneTarget = tmux.paneTarget(name, config.sessions.claudePane);
         const { content: peekContent, cols: peekCols } = await capturePaneAnsi(node, paneTarget);
         ws.send(JSON.stringify({ type: 'terminal:data', session: msg.session, content: peekContent, cols: peekCols }));
         break;
@@ -150,7 +150,7 @@ function createMessageHandler(deps) {
         await Promise.all(sessions.map(async (s) => {
           const node = router.nodeFor(s.name);
           if (!node) return;
-          const paneTarget = `${s.name}:.${config.sessions.claudePane}`;
+          const paneTarget = tmux.paneTarget(s.name, config.sessions.claudePane);
           try {
             const { content: searchContent } = await capturePaneAnsi(node, paneTarget);
             const plain = searchContent.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
@@ -177,7 +177,7 @@ function createMessageHandler(deps) {
         const { name, nodeId } = found;
         const node = router.getNode(nodeId);
         try {
-          const raw = await node.exec(`tmux list-panes -t "${name}" -F '#{pane_index}|#{pane_current_command}' 2>/dev/null`);
+          const raw = await node.exec(`tmux list-panes -t "${tmux.sessionTarget(name)}" -F '#{pane_index}|#{pane_current_command}' 2>/dev/null`);
           const panes = (raw || '').trim().split('\n').filter(Boolean).map(line => {
             const [idx, cmd] = line.split('|');
             return { index: parseInt(idx, 10), command: cmd || 'unknown' };
@@ -210,7 +210,7 @@ function createMessageHandler(deps) {
         const { name, nodeId } = found;
         const node = router.getNode(nodeId);
         const subPaneIdx = isConsole ? 1 : ((typeof msg.pane === 'number') ? msg.pane : config.sessions.claudePane);
-        const paneTarget = `${name}:.${subPaneIdx}`;
+        const paneTarget = tmux.paneTarget(name, subPaneIdx);
         // Send immediately
         const { content: subContent, cols: subCols } = await capturePaneAnsi(node, paneTarget);
         ws.send(JSON.stringify({ type: 'terminal:data', session: msg.session, pane: subPaneIdx, content: subContent, cols: subCols, card: isCard }));
@@ -264,9 +264,9 @@ function createMessageHandler(deps) {
           // tmux resize-pane is a no-op here (pane snaps back to client/default
           // window size). resize-window sets the window size directly, which
           // sizes the single pane to match.
-          await sub.node.exec(`tmux resize-window -t "${sub.name}" -x ${msg.cols} -y ${msg.rows} 2>/dev/null`);
+          await sub.node.exec(`tmux resize-window -t "${tmux.sessionTarget(sub.name)}" -x ${msg.cols} -y ${msg.rows} 2>/dev/null`);
         } else {
-          const resizeTarget = `${sub.name}:.${config.sessions.claudePane}`;
+          const resizeTarget = tmux.paneTarget(sub.name, config.sessions.claudePane);
           await sub.node.exec(`tmux resize-pane -t "${resizeTarget}" -x ${msg.cols} -y ${msg.rows} 2>/dev/null`);
         }
         break;
@@ -323,7 +323,7 @@ function createMessageHandler(deps) {
         const node = router.getNode(nodeId);
         // If targeting a non-Claude pane, send text directly via sendKeys (bypass relay)
         if (typeof msg.pane === 'number' && msg.pane !== config.sessions.claudePane) {
-          const shellTarget = `${name}:.${msg.pane}`;
+          const shellTarget = tmux.paneTarget(name, msg.pane);
           try {
             await node.sendKeys(shellTarget, msg.message, true);
             if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'tell:done', session: msg.session, success: true }));
@@ -361,7 +361,7 @@ function createMessageHandler(deps) {
         const { name, nodeId } = found;
         const node = router.getNode(nodeId);
         const keysPaneIdx = (typeof msg.pane === 'number') ? msg.pane : config.sessions.claudePane;
-        const paneTarget = `${name}:.${keysPaneIdx}`;
+        const paneTarget = tmux.paneTarget(name, keysPaneIdx);
         // msg.keys is an array of tmux key names, e.g. ["Enter"], ["Up"], ["Escape"]
         // Keys bar buttons always send raw — vim preamble only applies to typed text (ask/tell)
         for (const key of (msg.keys || [])) {
@@ -377,7 +377,7 @@ function createMessageHandler(deps) {
         if (!found) {
           // Session not in fleet — try sending claude --continue to tmux directly
           const sessionName = String(msg.session);
-          const paneTarget = `${sessionName}:.${config.sessions.claudePane}`;
+          const paneTarget = tmux.paneTarget(sessionName, config.sessions.claudePane);
           try {
             const localNode = router.getNode('local');
             if (!localNode) throw new Error('No local node');
@@ -394,7 +394,7 @@ function createMessageHandler(deps) {
         }
         const { name, nodeId } = found;
         const node = router.getNode(nodeId);
-        const paneTarget = `${name}:.${config.sessions.claudePane}`;
+        const paneTarget = tmux.paneTarget(name, config.sessions.claudePane);
 
         // Check if Claude is actually running — if off, just start it
         const content = await node.capturePane(paneTarget, { lines: 3 });
@@ -436,7 +436,7 @@ function createMessageHandler(deps) {
             if (!found) { failed++; continue; }
             const { name, nodeId } = found;
             const node = router.getNode(nodeId);
-            const paneTarget = `${name}:.${config.sessions.claudePane}`;
+            const paneTarget = tmux.paneTarget(name, config.sessions.claudePane);
             // Stagger restarts: sequential with delays
             const delay = restarted * 5000;
             setTimeout(async () => {
@@ -654,7 +654,7 @@ function createMessageHandler(deps) {
               const found = await fleet.findSession(config, router, task.assignedTo);
               if (!found) return;
               const node = router.getNode(found.nodeId);
-              const paneTarget = `${found.name}:.${config.sessions.claudePane}`;
+              const paneTarget = tmux.paneTarget(found.name, config.sessions.claudePane);
               const snap = await node.exec(`tmux capture-pane -e -p -S -500 -t "${paneTarget}" 2>/dev/null`) || null;
               const colsStr = await node.exec(`tmux display-message -p -t "${paneTarget}" "#{pane_width}" 2>/dev/null`);
               const snapCols = parseInt(colsStr) || 0;
@@ -909,7 +909,7 @@ function createMessageHandler(deps) {
           try {
             const node = router.getNode(s.nodeId || 'local');
             if (!node) { failed++; continue; }
-            const paneTarget = `${s.name}:.${config.sessions.claudePane}`;
+            const paneTarget = tmux.paneTarget(s.name, config.sessions.claudePane);
             for (const key of keys) {
               await node.exec(`tmux send-keys -t "${paneTarget}" ${key}`);
             }
@@ -1049,7 +1049,7 @@ function createMessageHandler(deps) {
         const { name, nodeId } = found;
         const num = fleet.sessionNum(name, config.sessions.namePrefix);
         const node = router.getNode(nodeId);
-        await node.exec(`tmux kill-session -t "${name}:" 2>/dev/null`);
+        await node.exec(`tmux kill-session -t "${tmux.sessionTarget(name)}" 2>/dev/null`);
         if (num) taskQueue.cleanupSession(num);
         if (ws.readyState === 1) {
           ws.send(JSON.stringify({ type: 'kill:done', session: msg.session }));

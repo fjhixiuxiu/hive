@@ -65,7 +65,7 @@ describe('relay', () => {
 
       const result = await resultPromise;
       // Paste sent without Enter; Enter is a separate exec call now.
-      expect(node.sendKeys).toHaveBeenCalledWith('6-DEV:.1', 'hello', false);
+      expect(node.sendKeys).toHaveBeenCalledWith('=6-DEV:.1', 'hello', false);
       expect(result.success).toBe(true);
     });
 
@@ -138,7 +138,7 @@ describe('relay', () => {
       expect(execCalls.some(c => c.includes(' C-a'))).toBe(false);
       expect(execCalls.some(c => c.includes(' C-k'))).toBe(false);
       // Paste happens with enter=false; Enter is a separate dwelled call.
-      expect(node.sendKeys).toHaveBeenCalledWith('6-DEV:.1', 'hello', false);
+      expect(node.sendKeys).toHaveBeenCalledWith('=6-DEV:.1', 'hello', false);
       expect(execCalls.some(c => c.endsWith(' Enter'))).toBe(true);
     });
 
@@ -204,7 +204,7 @@ describe('relay', () => {
       await vi.advanceTimersByTimeAsync(1000);
       const result = await resultPromise;
       expect(result.success).toBe(true);
-      expect(node.sendKeys).toHaveBeenCalledWith('6-DEV:.1', 'do something', false);
+      expect(node.sendKeys).toHaveBeenCalledWith('=6-DEV:.1', 'do something', false);
     });
 
     it('returns error if Claude is off', async () => {

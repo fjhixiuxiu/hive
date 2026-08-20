@@ -81,26 +81,26 @@ async function createSession(name, repoDir, layout = {}, size = {}) {
 
   // 2. Split panes
   if (panes >= 2) {
-    await tmux.exec(`tmux split-window -h -t "${sessionName}" -c "${repoDir}"`);
+    await tmux.exec(`tmux split-window -h -t "${tmux.sessionTarget(sessionName)}" -c "${repoDir}"`);
   }
   if (panes >= 3) {
-    await tmux.exec(`tmux split-window -v -t "${sessionName}:.2" -c "${repoDir}"`);
+    await tmux.exec(`tmux split-window -v -t "${tmux.paneTarget(sessionName, 2)}" -c "${repoDir}"`);
   }
 
   // 3. Apply layout
   if (panes >= 2) {
-    await tmux.exec(`tmux select-layout -t "${sessionName}" ${tmuxLayout}`);
+    await tmux.exec(`tmux select-layout -t "${tmux.sessionTarget(sessionName)}" ${tmuxLayout}`);
   }
 
   // 4. Resize Claude pane (pane .1) to desired width
   if (panes >= 2) {
     const absWidth = parseWidth(claudePaneWidth, cols);
-    await tmux.exec(`tmux resize-pane -t "${sessionName}:.1" -x ${absWidth}`);
+    await tmux.exec(`tmux resize-pane -t "${tmux.paneTarget(sessionName, 1)}" -x ${absWidth}`);
   }
 
   // 5. cd into repoDir in all panes (default-command "bash --login" resets cwd to $HOME)
   for (let p = 1; p <= panes; p++) {
-    await tmux.exec(`tmux send-keys -t "${sessionName}:.${p}" "cd ${repoDir}" Enter`);
+    await tmux.exec(`tmux send-keys -t "${tmux.paneTarget(sessionName, p)}" "cd ${repoDir}" Enter`);
   }
 
   log.info(`[session-manager] created session "${sessionName}" (${cols}x${rows}, ${panes} panes)`);
@@ -114,7 +114,7 @@ async function createSession(name, repoDir, layout = {}, size = {}) {
  * @param {string} [claudeCmd='claude --continue'] - command to run
  */
 async function startClaude(name, claudePane = 1, claudeCmd = 'claude --continue') {
-  const target = `${name}:.${claudePane}`;
+  const target = tmux.paneTarget(name, claudePane);
   await tmux.exec(`tmux send-keys -t "${target}" "${claudeCmd}" Enter`);
   log.info(`[session-manager] started Claude in ${target}`);
 }

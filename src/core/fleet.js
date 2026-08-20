@@ -67,7 +67,7 @@ async function getSession(config, node, sessionName, nodeId) {
   // Claude state -- prefer cached state file, fall back to live detection
   let state = num ? await readState(nc.cache, node, num) : null;
   if (!state) {
-    const paneTarget = `${sessionName}:.${nc.sessions.claudePane}`;
+    const paneTarget = tmux.paneTarget(sessionName, nc.sessions.claudePane);
     const paneContent = await node.capturePane(paneTarget, { lines: 3 });
     state = tmux.detectState(paneContent, config);
   }
@@ -148,7 +148,7 @@ function invalidateCache() {
  * @param {string} sessionName
  */
 async function peekSession(config, node, sessionName) {
-  const paneTarget = `${sessionName}:.${config.sessions.claudePane}`;
+  const paneTarget = tmux.paneTarget(sessionName, config.sessions.claudePane);
   const content = await node.capturePane(paneTarget);
   return tmux.stripTUIChrome(content, config);
 }

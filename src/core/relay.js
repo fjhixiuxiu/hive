@@ -129,7 +129,7 @@ async function ask(config, node, sessionName, message, callbacks = {}) {
     ? { onProgress: callbacks } // backward compat: single function = onProgress
     : callbacks;
 
-  const paneTarget = `${sessionName}:.${config.sessions.claudePane}`;
+  const paneTarget = tmux.paneTarget(sessionName, config.sessions.claudePane);
   const { pollInterval, cooldown, timeout } = config.relay;
   const streamInterval = config.relay.streamInterval || 3000;
 
@@ -243,7 +243,7 @@ async function ask(config, node, sessionName, message, callbacks = {}) {
  * @param {string} message
  */
 async function tell(config, node, sessionName, message, { vimMode } = {}) {
-  const paneTarget = `${sessionName}:.${config.sessions.claudePane}`;
+  const paneTarget = tmux.paneTarget(sessionName, config.sessions.claudePane);
 
   // Wait for the session to settle before pasting. Avoids the race where the
   // session is mid-turn (e.g. processing /clear) and our paste lands in the

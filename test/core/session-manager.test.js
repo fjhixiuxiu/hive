@@ -91,22 +91,22 @@ describe('createSession', () => {
     await sessionManager.createSession('2', '/repo', { panes: 3 }, { cols: 200, rows: 50 });
 
     const calls = execSpy.mock.calls.map(c => c[0]);
-    expect(calls).toContainEqual('tmux split-window -h -t "2" -c "/repo"');
-    expect(calls).toContainEqual('tmux split-window -v -t "2:.2" -c "/repo"');
+    expect(calls).toContainEqual('tmux split-window -h -t "=2" -c "/repo"');
+    expect(calls).toContainEqual('tmux split-window -v -t "=2:.2" -c "/repo"');
   });
 
   it('applies main-vertical layout', async () => {
     await sessionManager.createSession('3', '/repo', { panes: 3 }, { cols: 200, rows: 50 });
 
     const calls = execSpy.mock.calls.map(c => c[0]);
-    expect(calls).toContainEqual('tmux select-layout -t "3" main-vertical');
+    expect(calls).toContainEqual('tmux select-layout -t "=3" main-vertical');
   });
 
   it('resizes Claude pane to 50% of cols', async () => {
     await sessionManager.createSession('4', '/repo', { panes: 3, claudePaneWidth: '50%' }, { cols: 200, rows: 50 });
 
     const calls = execSpy.mock.calls.map(c => c[0]);
-    expect(calls).toContainEqual('tmux resize-pane -t "4:.1" -x 100');
+    expect(calls).toContainEqual('tmux resize-pane -t "=4:.1" -x 100');
   });
 
   it('skips existing session', async () => {
@@ -128,7 +128,7 @@ describe('createSession', () => {
     await sessionManager.createSession('7', '/repo', { panes: 2 }, { cols: 200, rows: 50 });
 
     const calls = execSpy.mock.calls.map(c => c[0]);
-    expect(calls).toContainEqual('tmux split-window -h -t "7" -c "/repo"');
+    expect(calls).toContainEqual('tmux split-window -h -t "=7" -c "/repo"');
     // No vertical split
     expect(calls).not.toContainEqual(expect.stringContaining('split-window -v'));
   });
@@ -158,19 +158,19 @@ describe('startClaude', () => {
   it('sends claude command to the correct pane', async () => {
     await sessionManager.startClaude('1', 1);
     const calls = execSpy.mock.calls.map(c => c[0]);
-    expect(calls).toContainEqual('tmux send-keys -t "1:.1" "claude --continue" Enter');
+    expect(calls).toContainEqual('tmux send-keys -t "=1:.1" "claude --continue" Enter');
   });
 
   it('uses custom claude command', async () => {
     await sessionManager.startClaude('2', 1, 'claude --resume');
     const calls = execSpy.mock.calls.map(c => c[0]);
-    expect(calls).toContainEqual('tmux send-keys -t "2:.1" "claude --resume" Enter');
+    expect(calls).toContainEqual('tmux send-keys -t "=2:.1" "claude --resume" Enter');
   });
 
   it('uses custom pane index', async () => {
     await sessionManager.startClaude('3', 2);
     const calls = execSpy.mock.calls.map(c => c[0]);
-    expect(calls).toContainEqual('tmux send-keys -t "3:.2" "claude --continue" Enter');
+    expect(calls).toContainEqual('tmux send-keys -t "=3:.2" "claude --continue" Enter');
   });
 });
 

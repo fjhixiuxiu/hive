@@ -125,7 +125,8 @@ if (require.main === module) {
     if (action === 'recreate') {
       console.log(`Killing stale session ${n} (was ${existing[name]}, expected ${root})`);
       try {
-        execSync(`tmux kill-session -t ${JSON.stringify(name)}`, { stdio: 'inherit' });
+        // Exact-match target (=) so killing session "3" can't prefix-match "30".
+        execSync(`tmux kill-session -t "=${name}"`, { stdio: 'inherit' });
       } catch { /* ignore */ }
     }
 
@@ -136,7 +137,7 @@ if (require.main === module) {
       // Force a full-width window size — headless sessions default to 80x24
       // since no terminal client ever attaches. Without this, Claude output
       // wraps at 40 columns and becomes unreadable.
-      execSync(`tmux resize-window -t ${JSON.stringify(name)} -x 311 -y 54 2>/dev/null || true`);
+      execSync(`tmux resize-window -t "=${name}" -x 311 -y 54 2>/dev/null || true`);
     } catch (err) {
       console.error(`Failed to start session ${n}: ${err.message}`);
     }

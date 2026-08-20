@@ -1,5 +1,6 @@
 const fleet = require('../../core/fleet');
 const relay = require('../../core/relay');
+const tmux = require('../../core/tmux');
 
 // -- Formatting helpers -------------------------------------------------
 
@@ -408,7 +409,7 @@ async function restart(config, send, router, query) {
 
   const { name, nodeId } = found;
   const node = router.getNode(nodeId);
-  const paneTarget = `${name}:.${config.sessions.claudePane}`;
+  const paneTarget = tmux.paneTarget(name, config.sessions.claudePane);
   await node.sendKeys(paneTarget, '', false);
   await node.exec(`tmux send-keys -t "${paneTarget}" Escape`);
   setTimeout(async () => {
