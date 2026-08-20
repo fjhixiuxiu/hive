@@ -10173,7 +10173,12 @@
     const type = document.getElementById('pm-form-source').value;
     const isGithub = type === 'github-issues' || type === 'github-prs' || type === 'github-re-reviews';
     const isReReviews = type === 'github-re-reviews';
-    const types = ['jira', 'github', 'github-prs', 're-reviews', 'manual', 'command', 'script', 'jenkins', 'zoho', 'slack', 'slack-channel-monitor', 'github-mentions', 'nectar'];
+    // 're-reviews' MUST precede 'github' here. The Exclude Authors field is
+    // dual-tagged (pm-fields-github + pm-fields-re-reviews); each tag's pass sets
+    // display independently and the last pass wins. For github-prs/github-issues
+    // the re-reviews pass is show=false, so it must run BEFORE the github pass
+    // (show=true) or it clobbers the github pass and the field disappears.
+    const types = ['jira', 're-reviews', 'github', 'github-prs', 'manual', 'command', 'script', 'jenkins', 'zoho', 'slack', 'slack-channel-monitor', 'github-mentions', 'nectar'];
     for (const t of types) {
       let show = false;
       if (t === type) show = true;
@@ -10183,10 +10188,16 @@
       const els = document.querySelectorAll(`.pm-fields-${t}`);
       els.forEach(el => el.style.display = show ? '' : 'none');
     }
-    // Hide non-repo github fields for re-reviews (only Repo is needed; Query/Labels/State/Author/etc. don't apply)
+    // Hide non-repo github fields for re-reviews (only Repo is needed; Query/Labels/State/Author/etc. don't apply).
+    // Fields that ALSO carry the pm-fields-re-reviews tag are dual-purpose
+    // (e.g. Exclude Authors works for both github-prs and github-re-reviews)
+    // and stay visible — without this exemption the show-loop above is
+    // immediately undone by this hide-loop for any dual-tagged field.
     if (isReReviews) {
       document.querySelectorAll('.pm-fields-github').forEach((el) => {
-        if (!el.querySelector('#pm-form-gh-repo')) el.style.display = 'none';
+        if (el.querySelector('#pm-form-gh-repo')) return;
+        if (el.classList.contains('pm-fields-re-reviews')) return;
+        el.style.display = 'none';
       });
     }
     // Hide schedule for slack/github-mentions/channel-monitor (no polling); manual supports cron schedule
@@ -10286,6 +10297,7 @@
         if (Number.isInteger(maxPerPollRaw) && maxPerPollRaw > 0) source.maxPerPoll = maxPerPollRaw;
         else delete source.maxPerPoll;
         source.skipIfApproved = document.getElementById('pm-form-gh-skip-approved').checked;
+        source.excludeAuthors = document.getElementById('pm-form-gh-exclude-authors').value.trim();
         if (!source.repo) { showToast('Error', 'Repo required', 'error'); return; }
         if (!source.reviewer) { showToast('Error', 'Reviewer username required', 'error'); return; }
         break;
