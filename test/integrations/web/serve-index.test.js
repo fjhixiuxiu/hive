@@ -114,4 +114,18 @@ describe('serveIndex asset versioning', () => {
     const vb = b.match(/\/app\.js\?v=(\d+)/)[1];
     expect(va).toBe(vb); // mtime-derived, deterministic between requests
   });
+
+  it('serves /session-links.js from src/core with a JS content-type', async () => {
+    // Every chip in the app depends on this route; a 404 would blank the UI.
+    // The file lives outside public/ so backend and browser share one source
+    // (ws-handlers + tq-features both `require` it).
+    const res = await fetch(`http://127.0.0.1:${port}/session-links.js`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toMatch(/javascript/i);
+    expect(res.headers.get('cache-control')).toContain('no-store');
+    const body = await res.text();
+    expect(body).toContain('function parsePrList');
+    expect(body).toContain('function canonicalizePrRef');
+    expect(body).toContain('root.SessionLinks'); // UMD attach for the browser
+  });
 });

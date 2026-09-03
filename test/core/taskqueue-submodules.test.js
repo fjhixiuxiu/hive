@@ -198,18 +198,21 @@ describe('TaskQueue: Session Context', () => {
   });
 
   it('setSessionContext sets and returns merged context', () => {
+    // Note: pr goes through canonicalize-on-write (bare "123" → URL via
+    // config.github.repo). Dedicated canonicalize coverage lives in
+    // set-context-canonicalize.test.js.
     const result = tq.setSessionContext(5, { plan: '/path/to/plan.md', pr: '123' });
-    expect(result).toEqual({ plan: '/path/to/plan.md', pr: '123' });
+    expect(result).toEqual({ plan: '/path/to/plan.md', pr: 'https://github.com/owner/repo/pull/123' });
   });
 
   it('setSessionContext merges with existing context', () => {
     tq.setSessionContext(5, { plan: '/plan.md' });
     const result = tq.setSessionContext(5, { pr: '456' });
-    expect(result).toEqual({ plan: '/plan.md', pr: '456' });
+    expect(result).toEqual({ plan: '/plan.md', pr: 'https://github.com/owner/repo/pull/456' });
   });
 
   it('setSessionContext removes keys set to null', () => {
-    tq.setSessionContext(5, { plan: '/plan.md', pr: '123' });
+    tq.setSessionContext(5, { plan: '/plan.md', pr: 'https://github.com/owner/repo/pull/123' });
     const result = tq.setSessionContext(5, { pr: null });
     expect(result).toEqual({ plan: '/plan.md' });
     expect(result.pr).toBeUndefined();
@@ -242,7 +245,7 @@ describe('TaskQueue: Session Context', () => {
     expect(spy).toHaveBeenCalledOnce();
     const args = spy.mock.calls[0][0];
     expect(args.session).toBe(5);
-    expect(args.context).toEqual({ pr: '99' });
+    expect(args.context).toEqual({ pr: 'https://github.com/owner/repo/pull/99' });
   });
 
   it('clearSessionContext removes all context', () => {
@@ -255,14 +258,14 @@ describe('TaskQueue: Session Context', () => {
     tq.setSessionContext(1, { pr: '10' });
     tq.setSessionContext(2, { plan: '/x' });
     const all = tq.getAllSessionContexts();
-    expect(all[1]).toEqual({ pr: '10' });
+    expect(all[1]).toEqual({ pr: 'https://github.com/owner/repo/pull/10' });
     expect(all[2]).toEqual({ plan: '/x' });
   });
 
   it('coerces session number to Number', () => {
     tq.setSessionContext('5', { pr: '10' });
-    expect(tq.getSessionContext(5)).toEqual({ pr: '10' });
-    expect(tq.getSessionContext('5')).toEqual({ pr: '10' });
+    expect(tq.getSessionContext(5)).toEqual({ pr: 'https://github.com/owner/repo/pull/10' });
+    expect(tq.getSessionContext('5')).toEqual({ pr: 'https://github.com/owner/repo/pull/10' });
   });
 });
 

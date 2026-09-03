@@ -2241,7 +2241,9 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   background: var(--bg2); border-bottom: 1px solid var(--border);
   font-size: 11px; color: var(--dim); line-height: 1.6;
 }
-.td-ctx-item { white-space: nowrap; }
+/* Allow wrapping inside a value so multi-PR / multi-JIRA lists (joined by ", ")
+ * can break on narrow task-detail panels. The parent gap keeps items apart. */
+.td-ctx-item { white-space: normal; word-break: normal; }
 .td-ctx-key { color: var(--fg); font-weight: 600; }
 .td-ctx-item a { color: var(--blue); text-decoration: none; }
 .td-ctx-item a:hover { text-decoration: underline; }

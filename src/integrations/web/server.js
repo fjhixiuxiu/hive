@@ -69,15 +69,18 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
   // {{V}} in index.html is replaced with a hash of app.js + styles.css mtimes
   // so the browser always fetches fresh when assets change.
   const PUBLIC_DIR = path.join(__dirname, 'public');
+  // session-links.js is dual-use (browser + ws-handlers backend). It lives in
+  // src/core so the backend can `require` it without depending on a public/
+  // static asset; the browser gets it via the /session-links.js route below.
+  const SESSION_LINKS_JS = path.join(__dirname, '..', '..', 'core', 'session-links.js');
   function assetVersion() {
     try {
       // Hash every asset that index.html cache-busts with ?v={{V}} so editing
-      // any one of them changes the version. primary-action.js is referenced
-      // the same way as app.js/styles.css and must be included or its changes
-      // would be served stale.
-      const sum = ['app.js', 'styles.css', 'primary-action.js', 'plan-sanitize.js']
-        .reduce((acc, f) => acc + fs.statSync(path.join(PUBLIC_DIR, f)).mtimeMs, 0);
-      return String(Math.floor(sum));
+      // any one of them changes the version.
+      const publicAssets = ['app.js', 'styles.css', 'primary-action.js', 'plan-sanitize.js']
+        .map(f => fs.statSync(path.join(PUBLIC_DIR, f)).mtimeMs);
+      publicAssets.push(fs.statSync(SESSION_LINKS_JS).mtimeMs);
+      return String(Math.floor(publicAssets.reduce((a, b) => a + b, 0)));
     } catch { return String(Date.now()); }
   }
   function serveIndex(_req, res) {
@@ -90,6 +93,14 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     res.send(html);
   }
   app.get('/', serveIndex);
+
+  // Serve the shared session-links UMD module (lives in src/core so backend
+  // and browser can share the same source).
+  app.get('/session-links.js', (_req, res) => {
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Content-Type', 'application/javascript; charset=UTF-8');
+    res.sendFile(SESSION_LINKS_JS);
+  });
 
   app.use(express.static(PUBLIC_DIR, {
     setHeaders: (res, filePath) => {

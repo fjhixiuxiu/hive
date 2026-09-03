@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const log = require('./log');
+const sessionLinks = require('./session-links');
 
 // ── Checklist Templates ─────────────────────────────────
 
@@ -42,9 +43,16 @@ function setSessionContext(sessionNum, updates) {
   const num = Number(sessionNum);
   const existing = this.sessionContext.get(num) || {};
   const merged = { ...existing };
+  const defaultRepo = this.config && this.config.github && this.config.github.repo;
   for (const [k, v] of Object.entries(updates)) {
     if (v === null || v === undefined) {
       delete merged[k];
+    } else if (k === 'pr' && typeof v === 'string') {
+      // Canonicalize on write — every incoming PR shape (URL, PR #N, #N, N,
+      // owner/repo#N, repo#N) becomes a full URL, so downstream readers
+      // (chip renderers, extractPRs, taskPrFor) only handle the canonical
+      // form. Runs on comma-separated multi-value too.
+      merged[k] = sessionLinks.canonicalizePrField(v, defaultRepo);
     } else {
       merged[k] = v;
     }

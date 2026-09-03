@@ -1990,6 +1990,10 @@
 
   function cardPrHtml(pr) {
     if (!pr || !pr.prNum) return { pr: '', ci: '', review: '' };
+    // Dense cards + fleet-table col-pr keep the bare `#N` — every card runs
+    // against the same fleet-wide `linkTemplates.pr`, so a repo prefix would
+    // repeat identically on every row without disambiguating anything. Repo
+    // context lives one click away in the session panel + task-detail rows.
     const prStr = `#${pr.prNum}`;
     let ciStr = '';
     if (pr.ciResult === 'success') ciStr = '<span class="card-ci pass">CI ✓</span>';
@@ -2417,8 +2421,27 @@
   }
 
   function shortBranch(branch) { if (!branch) return 'master'; const short = branch.replace(/^[^/]+\//, ''); return short.length > 28 ? short.substring(0, 25) + '...' : short; }
-  function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+  // HTML-escape for text AND double-quoted attributes. `textContent`→`innerHTML`
+  // covers `<`, `>`, `&`; we add `"` → `&quot;` so callers that concat into
+  // `href="..."` / `title="..."` don't rely on the URL never containing a
+  // quote. Zero single-quoted attributes in the app, so `&#39;` isn't needed.
+  function esc(s) {
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML.replace(/"/g, '&quot;');
+  }
   function taskDisplayName(t) { return t.title || t.text; }
+  // Short-label PR title for a task: "repo#N" from actionContext.repo, else
+  // "PR #N" as a last resort. Used by task-list session-title updates.
+  function taskShortPrLabel(t) {
+    const ctx = t && t.actionContext;
+    if (!ctx || !ctx.prNumber) return '';
+    if (ctx.repo) {
+      const short = String(ctx.repo).split('/').pop();
+      return short + '#' + ctx.prNumber;
+    }
+    return 'PR #' + ctx.prNumber;
+  }
 
   // ── Session detail view ───────────────────────────
   var userScrolledUp = false;
@@ -2691,12 +2714,25 @@
   //   2. task.actionContext.{repo,prNumber} — set by PMs for github-pr tasks.
   //   3. task.sourceKey "owner/repo#num" — fallback parse.
   // Returns { repo, prNumber } or null.
+  // Derive the fleet's default repo ("owner/repo") from linkTemplates.pr so
+  // taskPrFor / cardPrFor can pick a "primary" PR when the session lists
+  // many. Host-agnostic to match PR_URL_RE — GitHub Enterprise fleets get a
+  // real primary-PR pick instead of falling to [0].
+  function fleetDefaultRepo() {
+    if (!linkTemplates.pr) return '';
+    const m = /https?:\/\/[^/\s]+\/([^/]+\/[^/]+)\/pull\//i.exec(linkTemplates.pr);
+    return m ? m[1] : '';
+  }
+
   function taskPrFor(sessionNum) {
     if (sessionNum == null) return null;
     const sctx = sessionContexts[sessionNum];
     if (sctx && sctx.pr) {
-      const m = /github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)/.exec(sctx.pr);
-      if (m) return { repo: m[1], prNumber: m[2] };
+      // Multi-PR sessions still need a single "primary" PR for review/CI polling.
+      // Prefer the PR in the fleet's home repo, then fall back to first-parsed.
+      const prs = SessionLinks.parsePrList(sctx.pr);
+      const primary = SessionLinks.primaryPr(prs, fleetDefaultRepo());
+      if (primary && primary.owner) return { repo: primary.ownerRepo, prNumber: primary.prNumber };
     }
     const t = tasks.find(x => String(x.assignedTo) === String(sessionNum));
     return t ? taskPrForTask(t) : null;
@@ -2750,8 +2786,8 @@
     if (t.assignedTo != null) {
       const sctx = sessionContexts[t.assignedTo];
       if (sctx && sctx.pr) {
-        const m = /github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)/.exec(sctx.pr);
-        if (m) return { repo: m[1], prNumber: m[2] };
+        const primary = SessionLinks.primaryPr(SessionLinks.parsePrList(sctx.pr), fleetDefaultRepo());
+        if (primary && primary.owner) return { repo: primary.ownerRepo, prNumber: primary.prNumber };
       }
     }
     // 4: regex-fish a github PR URL out of the task body
@@ -2797,13 +2833,13 @@
       if (s === 'success') { ciCls = 'pass'; ciIcon = '✓'; ciTitle = 'CI passing'; }
       else if (s === 'failure' || s === 'error') { ciCls = 'fail'; ciIcon = '✗'; ciTitle = 'CI failing'; }
       else if (s === 'pending') { ciCls = 'run'; ciIcon = '⧗'; ciTitle = 'CI running'; }
-      ciHtml = '<a class="cardpr-badge ci ' + ciCls + '" href="' + checksUrl + '" target="_blank" rel="noopener" draggable="false" title="' + esc(ciTitle) + '" data-pr-key="' + esc(key) + '"><span class="cardpr-label">CI</span><span class="cardpr-icon">' + ciIcon + '</span></a>';
+      ciHtml = '<a class="cardpr-badge ci ' + ciCls + '" href="' + esc(checksUrl) + '" target="_blank" rel="noopener" draggable="false" title="' + esc(ciTitle) + '" data-pr-key="' + esc(key) + '"><span class="cardpr-label">CI</span><span class="cardpr-icon">' + ciIcon + '</span></a>';
     }
 
     // Fire refresh in the background; result will patch this card via WS.
     ensurePrRefreshFor(tpr.repo, tpr.prNumber);
 
-    return '<a class="cardpr-badge pr ' + prCls + '" href="' + prUrl + '" target="_blank" rel="noopener" draggable="false" title="' + esc(prTitle) + '" data-pr-key="' + esc(key) + '"><span class="cardpr-label">PR</span><span class="cardpr-icon">' + prIcon + '</span></a>' + ciHtml;
+    return '<a class="cardpr-badge pr ' + prCls + '" href="' + esc(prUrl) + '" target="_blank" rel="noopener" draggable="false" title="' + esc(prTitle) + '" data-pr-key="' + esc(key) + '"><span class="cardpr-label">PR</span><span class="cardpr-icon">' + prIcon + '</span></a>' + ciHtml;
   }
 
   // Patch all rendered cards in place for one PR. Cheaper than re-rendering boards.
@@ -3197,30 +3233,31 @@
       chips.push(`<span class="status-chip desig" style="background:rgba(98,114,164,0.15);color:var(--dim)" data-action="pick-desig" data-session="${s.num}">No Desig</span>`);
     }
 
-    // PR chip — prefer branch-detected PR, fall back to session context
-    let prChipNum = null;
-    let prChipUrl = null;
-    let prFromContext = false;
+    // PR + JIRA chips — labels are short-form (`repo#num`, `DEV-1234`), each
+    // href points at the full URL. Union of branch-detected PR (from git
+    // scan, always one) and agent-published ctx.pr (may be multi-value), so
+    // a session with an open branch PR can still render additional PRs the
+    // agent published. Dedup on label preserves branch-first order.
+    const ctx = sessionContexts[s.num];
+    const branchPrs = [];
     if (s.pr && s.pr.prNum) {
-      prChipNum = s.pr.prNum;
-      prChipUrl = linkTemplates.pr ? linkTemplates.pr.replace('${prNum}', s.pr.prNum) : null;
-    } else {
-      const ctx = sessionContexts[s.num];
-      if (ctx && ctx.pr) {
-        const m = ctx.pr.match(/\/pull\/(\d+)/);
-        if (m) {
-          prChipNum = m[1];
-          prChipUrl = ctx.pr;
-          prFromContext = true;
-        }
-      }
+      const url = linkTemplates.pr ? linkTemplates.pr.replace('${prNum}', s.pr.prNum) : '';
+      const parsed = url ? SessionLinks.parsePrList(url) : [];
+      if (parsed.length) branchPrs.push(...parsed);
+      // Fallback stub: template missing or unparseable → keep the PR visible
+      // as bare `PR #N` rather than dropping it.
+      else branchPrs.push({ prNumber: s.pr.prNum, url: '', label: 'PR #' + s.pr.prNum });
     }
-    if (prChipNum) {
-      if (prChipUrl) {
-        chips.push(`<a class="status-chip pr" href="${prChipUrl}" target="_blank">PR #${prChipNum}</a>`);
-      } else {
-        chips.push(`<span class="status-chip pr">PR #${prChipNum}</span>`);
-      }
+    const ctxPrs = ctx && ctx.pr ? SessionLinks.parsePrList(ctx.pr) : [];
+    const prSeen = Object.create(null);
+    const prs = [];
+    for (const p of branchPrs) { if (!prSeen[p.label]) { prSeen[p.label] = 1; prs.push(p); } }
+    for (const p of ctxPrs) { if (!prSeen[p.label]) { prSeen[p.label] = 1; prs.push(p); } }
+    // `×` clears the manual context — only show when any chip came from ctx
+    // that isn't already covered by the branch scan.
+    const prFromContext = ctxPrs.some(p => !branchPrs.find(b => b.label === p.label));
+    if (prs.length) {
+      chips.push(SessionLinks.renderChips(prs, { escape: esc, chipClass: 'status-chip pr' }));
       if (prFromContext) {
         chips.push(`<span class="status-chip pr-clear" data-action="clear-pr" data-session="${s.num}" title="Clear manual PR">&times;</span>`);
       }
@@ -3228,13 +3265,22 @@
       chips.push(`<span class="status-chip set-pr" data-action="set-pr" data-session="${s.num}">Set PR</span>`);
     }
 
-    // JIRA chips — extract DEV-XXXXX from branch name
-    const jiraMatches = branch.match(/DEV-\d+/g);
-    if (jiraMatches) {
-      for (const ticket of jiraMatches) {
-        const jiraUrl = `https://vivtechnologies.atlassian.net/browse/${ticket}`;
-        chips.push(`<a class="status-chip jira" href="${jiraUrl}" target="_blank">${ticket}</a>`);
-      }
+    // JIRA — union of keys from ctx.jira (agent-published, any prefix) and
+    // keys parsed out of the branch name (strict 3+ letter prefix so
+    // year-shaped noise like `RC-2024` doesn't produce a chip). Dedup preserves
+    // ctx.jira order first.
+    const jiraBase = linkTemplates.jira || undefined;
+    const jiras = SessionLinks.parseJiraList(ctx && ctx.jira, jiraBase)
+      .concat(SessionLinks.parseJiraList(branch, jiraBase, { strict: true }));
+    const jirasDedup = [];
+    const jiraSeen = Object.create(null);
+    for (const j of jiras) {
+      if (jiraSeen[j.key]) continue;
+      jiraSeen[j.key] = 1;
+      jirasDedup.push({ label: j.key, url: j.url });
+    }
+    if (jirasDedup.length) {
+      chips.push(SessionLinks.renderChips(jirasDedup, { escape: esc, chipClass: 'status-chip jira' }));
     }
 
     // CI chip
@@ -4859,14 +4905,13 @@
       links.push(`<a href="/plans/${esc(ref.planId)}" data-plan-link="${esc(ref.planId)}">${esc(title)}${esc(v)}</a>${open}`);
     }
     if (ctx.pr) {
-      const prMatch = ctx.pr.match(/\/pull\/(\d+)/);
-      const label = prMatch ? `PR #${prMatch[1]}` : 'PR';
-      links.push(`<a href="${esc(ctx.pr)}" target="_blank">${label}</a>`);
+      const html = SessionLinks.renderChips(SessionLinks.parsePrList(ctx.pr), { escape: esc, chipClass: '', separator: ', ' });
+      if (html) links.push(html);
     }
     if (ctx.jira) {
-      const jiraBase = 'https://mavencare.atlassian.net/browse/';
-      const href = ctx.jira.startsWith('http') ? ctx.jira : jiraBase + ctx.jira;
-      links.push(`<a href="${esc(href)}" target="_blank">${esc(ctx.jira)}</a>`);
+      const jiras = SessionLinks.parseJiraList(ctx.jira, linkTemplates.jira || undefined).map(j => ({ label: j.key, url: j.url }));
+      const html = SessionLinks.renderChips(jiras, { escape: esc, chipClass: '', separator: ', ' });
+      if (html) links.push(html);
     }
     if (ctx.branch) {
       links.push(`<a href="#" onclick="return false" style="color:var(--dim);cursor:default">${esc(ctx.branch)}</a>`);
@@ -6589,7 +6634,7 @@
       // Show session panel tabs for queued tasks with actions
       document.getElementById('tasks-session-tabs').style.display = '';
       document.getElementById('tasks-session-empty').style.display = 'none';
-      document.getElementById('tasks-session-title').textContent = `PR #${(task.actionContext && task.actionContext.prNumber) || ''}`;
+      document.getElementById('tasks-session-title').textContent = taskShortPrLabel(task);
     }
     renderCommentPanel(task.id);
     updateChecklistButtons();
@@ -7054,7 +7099,7 @@
           if (task.actions && task.actions.length) {
             document.getElementById('tasks-session-tabs').style.display = '';
             document.getElementById('tasks-session-empty').style.display = 'none';
-            document.getElementById('tasks-session-title').textContent = `PR #${(task.actionContext && task.actionContext.prNumber) || ''}`;
+            document.getElementById('tasks-session-title').textContent = taskShortPrLabel(task);
           }
           autoOpenActionsPopup();
           tasksScroll.querySelectorAll('.task-card').forEach(c => c.classList.remove('selected'));
@@ -8213,17 +8258,28 @@
     if (task.slackChannel) items.push({ key: 'Slack Channel', val: task.slackChannel });
     if (task.slackThreadTs) items.push({ key: 'Thread TS', val: task.slackThreadTs });
     if (task.slackPermalink) items.push({ key: 'Permalink', val: `<a href="${esc(task.slackPermalink)}" target="_blank" rel="noopener">${esc(task.slackPermalink)}</a>` });
+    // Skip the actionContext PR row when sCtx.pr will render its own — a
+    // github-pr task on an assigned session would otherwise emit two `PR`
+    // rows (one bare `#N`, one linked `repo#N`).
+    const sCtx = task.assignedTo != null ? sessionContexts[task.assignedTo] : null;
+    const sCtxHasPr = !!(sCtx && sCtx.pr && SessionLinks.parsePrList(sCtx.pr).length);
     if (task.actionContext) {
       const ac = task.actionContext;
       if (ac.type) items.push({ key: 'Action', val: ac.type });
       if (ac.repo) items.push({ key: 'Repo', val: ac.repo });
-      if (ac.prNumber) items.push({ key: 'PR', val: `#${ac.prNumber}` });
+      if (ac.prNumber && !sCtxHasPr) items.push({ key: 'PR', val: esc(taskShortPrLabel(task)) });
       if (ac.issueNumber) items.push({ key: 'Issue', val: `#${ac.issueNumber}` });
     }
-    const sCtx = task.assignedTo != null ? sessionContexts[task.assignedTo] : null;
     if (sCtx) {
-      if (sCtx.pr) items.push({ key: 'PR URL', val: `<a href="${esc(sCtx.pr)}" target="_blank" rel="noopener">${esc(sCtx.pr)}</a>` });
-      if (sCtx.jira) items.push({ key: 'JIRA', val: esc(sCtx.jira) });
+      if (sCtx.pr) {
+        const val = SessionLinks.renderChips(SessionLinks.parsePrList(sCtx.pr), { escape: esc, chipClass: '', separator: ', ' });
+        if (val) items.push({ key: 'PR', val });
+      }
+      if (sCtx.jira) {
+        const jiras = SessionLinks.parseJiraList(sCtx.jira, linkTemplates.jira || undefined).map(j => ({ label: j.key, url: j.url }));
+        const val = SessionLinks.renderChips(jiras, { escape: esc, chipClass: '', separator: ', ' });
+        if (val) items.push({ key: 'JIRA', val });
+      }
       if (sCtx.branch) items.push({ key: 'Branch', val: esc(sCtx.branch) });
       if (sCtx.slackThread) items.push({ key: 'Slack Thread', val: esc(sCtx.slackThread) });
     }

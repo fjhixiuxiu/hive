@@ -12,6 +12,7 @@ const auth = require('../../core/auth');
 const log = require('../../core/log');
 const prStatus = require('../../core/pr-status');
 const plansStore = require('../../core/plans-store');
+const sessionLinks = require('../../core/session-links');
 const {
   HIVE_CONSOLE_SESSION, ghExecEnv, setupPath, isSetupComplete,
   decorateTaskActions, executeTaskAction, capturePaneAnsi,
@@ -700,11 +701,12 @@ function createMessageHandler(deps) {
           // sourceKey
           const skMatch = (t.sourceKey || '').match(/^(.+)#(\d+)$/);
           if (skMatch) add(skMatch[1], skMatch[2]);
-          // session context
+          // session context (may be single URL, comma-separated, or array)
           const ctx = taskQueue.sessionContext.get(t.assignedTo);
           if (ctx && ctx.pr) {
-            const prUrlMatch = ctx.pr.match(/github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)/);
-            if (prUrlMatch) add(prUrlMatch[1], prUrlMatch[2]);
+            for (const pr of sessionLinks.parsePrList(ctx.pr)) {
+              if (pr.owner) add(pr.ownerRepo, pr.prNumber);
+            }
           }
           // task text — owner/repo#N or just #N with known repo
           const textMatches = (t.text || '').matchAll(/(?:([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+))?#(\d{4,})/g);

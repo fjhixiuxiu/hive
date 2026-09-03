@@ -13,6 +13,7 @@ const sessionManager = require('./session-manager');
 const { cloneOrReuse } = require('./git-utils');
 const tqUsers = require('./tq-users');
 const tqFeatures = require('./tq-features');
+const sessionLinks = require('./session-links');
 
 const STATE_FILE = path.join(__dirname, '..', '..', '.hive-state.json');
 
@@ -1337,8 +1338,21 @@ class TaskQueue extends EventEmitter {
         for (const [k, v] of Object.entries(data.repoSessionCaps)) this.repoSessionCaps.set(k, v);
       }
       if (data.sessionContext && typeof data.sessionContext === 'object') {
+        // Heal legacy shapes on load. State written before canonicalize-on-write
+        // (`PR #N`, bare `N`) or by the first commit of this PR (arrays) is
+        // unrenderable until the next `branch:changed`. Canonicalize `pr`
+        // and flatten array-shaped `jira` now so the dashboard shows chips
+        // immediately after restart.
+        const defaultRepo = this.config && this.config.github && this.config.github.repo;
         for (const [num, ctx] of Object.entries(data.sessionContext)) {
-          this.sessionContext.set(Number(num), ctx);
+          const healed = { ...ctx };
+          if (healed.pr !== undefined && healed.pr !== null) {
+            healed.pr = sessionLinks.canonicalizePrField(healed.pr, defaultRepo);
+          }
+          if (Array.isArray(healed.jira)) {
+            healed.jira = healed.jira.filter(v => typeof v === 'string').join(', ');
+          }
+          this.sessionContext.set(Number(num), healed);
         }
       }
       if (data.slackDedup && typeof data.slackDedup === 'object') {

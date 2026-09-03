@@ -180,13 +180,14 @@ module.exports = {
   },
 
   // ── Web dashboard links ───────────────────────────────
-  // URL templates for PR and CI links in the dashboard.
-  // Use ${prNum} and ${ciBuild} as placeholders.
-  // Set to null to disable linking.
+  // URL templates for PR, CI, and JIRA links in the dashboard.
+  // Use ${prNum}, ${ciBuild} as placeholders. `jira` is a base URL (a key
+  // like `DEV-1234` is appended). Set any to null to disable linking.
   links: {
     pr: (setup && setup.githubRepo)
       ? `https://github.com/${setup.githubRepo}/pull/\${prNum}`
       : 'https://github.com/mavencare/webplatform/pull/${prNum}',
     ci: 'https://jenkins.vivtechnologies.com/job/webplatform/job/PR-${prNum}/${ciBuild}/',
+    jira: (process.env.JIRA_BASE_URL || 'https://vivtechnologies.atlassian.net').replace(/\/+$/, '') + '/browse/',
   },
 };

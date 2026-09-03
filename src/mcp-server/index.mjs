@@ -284,8 +284,8 @@ if (!enabledTools || enabledTools.includes('hive_get_context')) {
 if (!enabledTools || enabledTools.includes('hive_set_context')) {
   server.tool(
     'hive_set_context',
-    'Share context with hive. IMPORTANT: You MUST call this when you: (1) open or start working on a PR (set "pr"), (2) switch branches (set "branch"), (3) post to or engage in a Slack thread (set "slackThread" to "CHANNEL_ID:THREAD_TS") — this enables automatic routing of follow-up thread messages to your session. Set a value to null to remove it.',
-    { updates: z.record(z.string(), z.union([z.string(), z.null()])).describe('Key-value pairs to set (e.g. { "pr": "https://github.com/owner/repo/pull/123", "branch": "feat/my-branch", "slackThread": "CHANNEL_ID:THREAD_TS", "plan": "/path/to/plan.md" })') },
+    'Share context with hive. IMPORTANT: You MUST call this when you: (1) open or start working on a PR (set "pr"), (2) switch branches (set "branch"), (3) post to or engage in a Slack thread (set "slackThread" to "CHANNEL_ID:THREAD_TS") — this enables automatic routing of follow-up thread messages to your session. Multi-value: "pr" and "jira" accept comma-separated strings — "https://github.com/o/webplatform/pull/1, https://github.com/o/devops/pull/2" or "DEV-1, DEV-2" — for sessions spanning multiple PRs / tickets. Set a value to null to remove it.',
+    { updates: z.record(z.string(), z.union([z.string(), z.null()])).describe('Key-value pairs to set (e.g. { "pr": "https://github.com/owner/repo/pull/123", "branch": "feat/my-branch", "slackThread": "CHANNEL_ID:THREAD_TS", "plan": "/path/to/plan.md" }). For multiple PRs or JIRA tickets pass a comma-separated string ("DEV-1, DEV-2").') },
     async ({ updates }) => {
       try {
         const resp = await sendRequest('mcp:set_context', { updates });
