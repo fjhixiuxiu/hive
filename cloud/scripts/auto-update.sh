@@ -1,6 +1,6 @@
 #!/bin/bash
-# Hive auto-update script — pulls latest code, reinstalls deps if changed,
-# and restarts the hive server.
+# Hive auto-update script — pulls latest code, ensures node_modules matches
+# package-lock.json, and restarts the hive server if new commits landed.
 #
 # Runs via systemd timer every 5 minutes. All git/npm commands run as
 # ubuntu to avoid root-owned files in the repo.
@@ -56,19 +56,22 @@ fi
 
 NEW_HEAD=$(run_as_ubuntu "git rev-parse HEAD")
 
+# Ensure node_modules matches package-lock.json on every run — not just when
+# package.json is in the pulled diff. The old conditional missed dep drift when
+# a prior npm install partially failed, or when the pull range happened to skip
+# the commit that added a devDep (e.g. jsdom was in package.json on origin but
+# never landed in /home/ubuntu/hive/node_modules, breaking vitest with
+# "Cannot find package 'jsdom'"). npm install is idempotent (~300ms when
+# everything is in sync), so running it unconditionally self-heals cheaply.
+log "Ensuring dependencies are installed..."
+run_as_ubuntu "npm install --no-audit --no-fund"
+
 if [ "${OLD_HEAD}" = "${NEW_HEAD}" ]; then
-  log "Already up to date. Nothing to do."
+  log "No new commits. Nothing else to do."
   exit 0
 fi
 
 log "Updated: ${OLD_HEAD:0:7} → ${NEW_HEAD:0:7}"
-
-CHANGED=$(run_as_ubuntu "git diff --name-only ${OLD_HEAD} ${NEW_HEAD}")
-
-if echo "${CHANGED}" | grep -qE '^package(-lock)?\.json$'; then
-  log "Dependencies changed — running npm install..."
-  run_as_ubuntu "npm install"
-fi
 
 # Copy service files in case they changed
 sudo cp "${HIVE_DIR}"/cloud/templates/hive-update.service /etc/systemd/system/ 2>/dev/null || true

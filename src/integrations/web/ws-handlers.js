@@ -1831,6 +1831,20 @@ function createMessageHandler(deps) {
             }
           }
 
+          // Step 3c: sync node_modules with the new lockfile before running tests.
+          // Idempotent (~300ms when already in sync), so it's cheap when no deps
+          // changed and self-heals when they did — otherwise `npm test` blows up
+          // with "Cannot find package 'X'" the moment a pulled commit adds a dep.
+          sendLog('install', 'Running npm install...');
+          try {
+            const installOut = execSync('npm install --no-audit --no-fund 2>&1', { cwd: hiveDir, encoding: 'utf8', timeout: 300000 });
+            sendLog('install', installOut || 'Done.');
+          } catch (installErr) {
+            sendLog('install', installErr.stdout || installErr.message);
+            ws.send(JSON.stringify({ type: 'update:error', error: 'npm install failed — aborting restart.' }));
+            break;
+          }
+
           // Step 4: npm test
           sendLog('test', 'Running npm test...');
           try {
