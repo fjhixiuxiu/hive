@@ -110,7 +110,38 @@
   function clearDraft(key) {
     try { localStorage.removeItem(key); } catch (e) { /* ignore */ }
   }
+  // One draft per SESSION, deliberately shared across panels: the same session
+  // opened in the fleet panel, the task stream or a task card shows the same
+  // unsent text.
   function sessionDraftKey(_panel, sessionNum) { return `hive-draft:session:${sessionNum}`; }
+
+  // ...but a draft belongs to the session it was TYPED for, not to whatever the
+  // panel points at when the box is next read. Each input carries its owner, so
+  // switching sessions can never file text under the wrong one — that is how a
+  // message meant for S:20 ended up in S:21's box.
+  function markDraftOwner(inputEl, sessionNum) {
+    if (!inputEl) return;
+    if (sessionNum == null || sessionNum === '') delete inputEl.dataset.draftOwner;
+    else inputEl.dataset.draftOwner = String(sessionNum);
+  }
+  function draftOwnerMatches(inputEl, sessionNum) {
+    return !!inputEl && inputEl.dataset.draftOwner === String(sessionNum);
+  }
+  /**
+   * Save-on-switch, ownership-checked. Text whose owner is not the session being
+   * left is dropped rather than misfiled — it was never that session's to keep.
+   */
+  function stashDraftOnSwitch(inputEl, panel, leavingSession) {
+    if (!inputEl || leavingSession == null) return;
+    const key = sessionDraftKey(panel, leavingSession);
+    if (inputEl.value.trim() && draftOwnerMatches(inputEl, leavingSession)) saveDraft(key, inputEl.value);
+    else clearDraft(key);
+  }
+  function restoreDraftOnOpen(inputEl, panel, sessionNum) {
+    if (!inputEl) return;
+    inputEl.value = loadDraft(sessionDraftKey(panel, sessionNum));
+    markDraftOwner(inputEl, sessionNum);
+  }
   const TASK_DRAFT_KEY = 'hive-draft:task-dialog';
   let fleetData = [];
   let linkTemplates = {};
@@ -2460,14 +2491,10 @@
 
   function openSession(s, fromRoute) {
     // Save draft from previous session before switching
-    if (currentSession && msgInput.value.trim()) {
-      saveDraft(sessionDraftKey('fleet', currentSession), msgInput.value);
-    } else if (currentSession) {
-      clearDraft(sessionDraftKey('fleet', currentSession));
-    }
+    stashDraftOnSwitch(msgInput, 'fleet', currentSession);
     currentSession = String(s.num);
     // Restore draft for newly opened session
-    msgInput.value = loadDraft(sessionDraftKey('fleet', currentSession));
+    restoreDraftOnOpen(msgInput, 'fleet', currentSession);
     paneCols = 0; // reset until we get pane width from server
     sessionTitle.textContent = `Session ${s.num}`;
     sessionBranch.textContent = shortBranch(s.branch);
@@ -5660,7 +5687,11 @@
   // A touchend listener fires before the keyboard-dismiss animation
   // steals the gesture, so the send actually goes through.
   sendBtn.addEventListener('touchend', (e) => { e.preventDefault(); sendMessage(); });
-  msgInput.addEventListener('input', () => { if (currentSession) saveDraft(sessionDraftKey('fleet', currentSession), msgInput.value); });
+  msgInput.addEventListener('input', () => {
+    if (!currentSession) return;
+    markDraftOwner(msgInput, currentSession);
+    saveDraft(sessionDraftKey('fleet', currentSession), msgInput.value);
+  });
   msgInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); return; }
     if (!currentSession) return;
@@ -6340,18 +6371,14 @@
   function openTaskSession(sessionNum) {
     const sameSession = tasksSessionNum === String(sessionNum);
     // Save draft from previous tasks-session before switching
-    if (tasksSessionNum && tsMsgInput.value.trim()) {
-      saveDraft(sessionDraftKey('tasks', tasksSessionNum), tsMsgInput.value);
-    } else if (tasksSessionNum) {
-      clearDraft(sessionDraftKey('tasks', tasksSessionNum));
-    }
+    stashDraftOnSwitch(tsMsgInput, 'tasks', tasksSessionNum);
     // Unsubscribe from previous (even if same — forces re-subscribe for fresh data)
     if (tasksSessionNum && ws && ws.readyState === 1) {
       ws.send(JSON.stringify({ type: 'terminal:unsubscribe' }));
     }
     tasksSessionNum = String(sessionNum);
     // Restore draft for newly opened tasks-session
-    tsMsgInput.value = loadDraft(sessionDraftKey('tasks', tasksSessionNum));
+    restoreDraftOnOpen(tsMsgInput, 'tasks', tasksSessionNum);
     // Lazy refresh PR review state — task's actionContext PR takes priority.
     if (ws && ws.readyState === 1) {
       const tpr = taskPrFor(tasksSessionNum);
@@ -6661,7 +6688,11 @@
     showToast('Sent', `${tasksSessionMode === 'ask' ? 'Ask' : 'Tell'} → session ${tasksSessionNum}`, 'success');
   }
   tsSendBtn.addEventListener('click', sendTasksMessage);
-  tsMsgInput.addEventListener('input', () => { if (tasksSessionNum) saveDraft(sessionDraftKey('tasks', tasksSessionNum), tsMsgInput.value); });
+  tsMsgInput.addEventListener('input', () => {
+    if (!tasksSessionNum) return;
+    markDraftOwner(tsMsgInput, tasksSessionNum);
+    saveDraft(sessionDraftKey('tasks', tasksSessionNum), tsMsgInput.value);
+  });
   tsMsgInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendTasksMessage(); return; }
     if (!tasksSessionNum) return;
@@ -7923,10 +7954,15 @@
         const dy = tdTouchStartY - (e.changedTouches[0] || {}).clientY;
         if (Math.abs(dy) > 20) { setTimeout(checkTaskDetailScroll, 150); setTimeout(checkTaskDetailScroll, 500); }
       });
+      // Save the outgoing session's draft before repointing the panel. The input
+      // handler already saves on every keystroke, so this is belt-and-braces —
+      // but it keeps all three open-panel paths on the same stash/reassign/restore
+      // dance, which is what the sniff test below asserts.
+      stashDraftOnSwitch(document.getElementById('task-detail-input'), 'task-detail', taskDetailSession);
       taskDetailSession = String(task.assignedTo);
       tdActivePane = null; tdSessionPanes = []; tdClaudePaneIdx = null;
       renderPaneTabs('td');
-      document.getElementById('task-detail-input').value = loadDraft(sessionDraftKey('task-detail', taskDetailSession));
+      restoreDraftOnOpen(document.getElementById('task-detail-input'), 'task-detail', taskDetailSession);
       // Render slash command bar (reuse tsCommands from tasks session)
       renderTaskDetailCmdBar();
       // Subscribe immediately so data starts flowing
@@ -8508,7 +8544,11 @@
   }
   document.getElementById('task-detail-send').addEventListener('click', sendTaskDetailMessage);
 
-  document.getElementById('task-detail-input').addEventListener('input', (e) => { if (taskDetailSession) saveDraft(sessionDraftKey('task-detail', taskDetailSession), e.target.value); });
+  document.getElementById('task-detail-input').addEventListener('input', (e) => {
+    if (!taskDetailSession) return;
+    markDraftOwner(e.target, taskDetailSession);
+    saveDraft(sessionDraftKey('task-detail', taskDetailSession), e.target.value);
+  });
   document.getElementById('task-detail-input').addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendTaskDetailMessage(); return; }
     if (e.key === 'Escape') { closeTaskDetail(); return; }
@@ -10151,8 +10191,13 @@
     if (ws && ws.readyState === 1) {
       ws.send(JSON.stringify({ type: 'pm:ensure-session', id: pm.id }));
     }
-    // Build a synthetic session object for openSession
+    // Build a synthetic session object for openSession.
+    // Same save/restore dance openSession does — this path used to reassign
+    // currentSession underneath a box that still held another session's text,
+    // which then got saved under the PM session on the next keystroke.
+    stashDraftOnSwitch(msgInput, 'fleet', currentSession);
     currentSession = sessionName;
+    restoreDraftOnOpen(msgInput, 'fleet', currentSession);
     paneCols = 0;
     sessionTitle.textContent = pm.name;
     sessionBranch.textContent = 'channel monitor';

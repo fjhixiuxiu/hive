@@ -1,4 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 
 // ---------------------------------------------------------------------------
 // Unit tests: Draft persistence module logic (extracted for testability)
@@ -24,7 +27,7 @@ function createDraftModule(storage) {
   function clearDraft(key) {
     try { storage.removeItem(key); } catch (e) { /* ignore */ }
   }
-  // Unified key — all panels share the same draft per session
+  // One draft per session, deliberately shared across panels.
   function sessionDraftKey(_panel, sessionNum) { return `hive-draft:session:${sessionNum}`; }
   const TASK_DRAFT_KEY = 'hive-draft:task-dialog';
 
@@ -38,24 +41,47 @@ function createDraftModule(storage) {
 function createInputSimulator(draftModule) {
   const { saveDraft, loadDraft, clearDraft, sessionDraftKey, TASK_DRAFT_KEY } = draftModule;
 
+  // Mirrors app.js: a draft belongs to the session it was typed for, carried on
+  // the input element itself, so a switch cannot file it under another session.
+  const markOwner = (input, num) => {
+    if (num == null || num === '') delete input.dataset.draftOwner;
+    else input.dataset.draftOwner = String(num);
+  };
+  const ownerMatches = (input, num) => input.dataset.draftOwner === String(num);
+  const stashOnSwitch = (input, panel, leaving) => {
+    if (leaving == null) return;
+    const key = sessionDraftKey(panel, leaving);
+    if (input.value.trim() && ownerMatches(input, leaving)) saveDraft(key, input.value);
+    else clearDraft(key);
+  };
+  const restoreOnOpen = (input, panel, num) => {
+    input.value = loadDraft(sessionDraftKey(panel, num));
+    markOwner(input, num);
+  };
+
   function simulateFleetSession() {
     let currentSession = null;
-    const input = { value: '' };
+    const input = { value: '', dataset: {} };
 
     return {
       input,
       getCurrentSession: () => currentSession,
       openSession(sessionNum) {
-        if (currentSession && input.value.trim()) {
-          saveDraft(sessionDraftKey('fleet', currentSession), input.value);
-        } else if (currentSession) {
-          clearDraft(sessionDraftKey('fleet', currentSession));
-        }
+        stashOnSwitch(input, 'fleet', currentSession);
         currentSession = String(sessionNum);
-        input.value = loadDraft(sessionDraftKey('fleet', currentSession));
+        restoreOnOpen(input, 'fleet', currentSession);
+      },
+      // The bypass that caused the bug: currentSession reassigned under a box
+      // that still holds another session's text.
+      hijackSession(sessionNum) {
+        stashOnSwitch(input, 'fleet', currentSession);
+        currentSession = String(sessionNum);
+        restoreOnOpen(input, 'fleet', currentSession);
       },
       onInput() {
-        if (currentSession) saveDraft(sessionDraftKey('fleet', currentSession), input.value);
+        if (!currentSession) return;
+        markOwner(input, currentSession);
+        saveDraft(sessionDraftKey('fleet', currentSession), input.value);
       },
       send() {
         const text = input.value.trim();
@@ -69,22 +95,20 @@ function createInputSimulator(draftModule) {
 
   function simulateTasksSession() {
     let tasksSessionNum = null;
-    const input = { value: '' };
+    const input = { value: '', dataset: {} };
 
     return {
       input,
       getSessionNum: () => tasksSessionNum,
       openTaskSession(sessionNum) {
-        if (tasksSessionNum && input.value.trim()) {
-          saveDraft(sessionDraftKey('tasks', tasksSessionNum), input.value);
-        } else if (tasksSessionNum) {
-          clearDraft(sessionDraftKey('tasks', tasksSessionNum));
-        }
+        stashOnSwitch(input, 'tasks', tasksSessionNum);
         tasksSessionNum = String(sessionNum);
-        input.value = loadDraft(sessionDraftKey('tasks', tasksSessionNum));
+        restoreOnOpen(input, 'tasks', tasksSessionNum);
       },
       onInput() {
-        if (tasksSessionNum) saveDraft(sessionDraftKey('tasks', tasksSessionNum), input.value);
+        if (!tasksSessionNum) return;
+        markOwner(input, tasksSessionNum);
+        saveDraft(sessionDraftKey('tasks', tasksSessionNum), input.value);
       },
       send() {
         const text = input.value.trim();
@@ -98,17 +122,20 @@ function createInputSimulator(draftModule) {
 
   function simulateTaskDetailSession() {
     let taskDetailSession = null;
-    const input = { value: '' };
+    const input = { value: '', dataset: {} };
 
     return {
       input,
       getSession: () => taskDetailSession,
       openTaskDetail(sessionNum) {
+        stashOnSwitch(input, 'task-detail', taskDetailSession);
         taskDetailSession = String(sessionNum);
-        input.value = loadDraft(sessionDraftKey('task-detail', taskDetailSession));
+        restoreOnOpen(input, 'task-detail', taskDetailSession);
       },
       onInput() {
-        if (taskDetailSession) saveDraft(sessionDraftKey('task-detail', taskDetailSession), input.value);
+        if (!taskDetailSession) return;
+        markOwner(input, taskDetailSession);
+        saveDraft(sessionDraftKey('task-detail', taskDetailSession), input.value);
       },
       send() {
         const text = input.value.trim();
@@ -122,7 +149,7 @@ function createInputSimulator(draftModule) {
 
   function simulateTaskDialog() {
     let editingTaskId = null;
-    const input = { value: '' };
+    const input = { value: '', dataset: {} };
 
     return {
       input,
@@ -596,5 +623,160 @@ describe('Cross-panel shared session drafts', () => {
     dialog.create();
     expect(storage._store['hive-draft:session:1']).toBe('session draft');
     expect(storage._store['hive-draft:task-dialog']).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A draft belongs to the session it was typed for
+//
+// Reported: a message typed for S:20 was delivered to S:20, and the same text
+// later turned up in S:21's input box. Sharing one draft per session across
+// panels is deliberate; sharing it across SESSIONS is the bug. Every input now
+// carries the session its text was typed for, and a switch that finds a
+// mismatch drops the text instead of filing it under the session being left.
+// ---------------------------------------------------------------------------
+
+describe('drafts stick to the session they were typed for', () => {
+  let storage, draft, sim;
+
+  beforeEach(() => {
+    storage = createLocalStorageMock();
+    draft = createDraftModule(storage);
+    sim = createInputSimulator(draft);
+  });
+
+  it('does not carry text into the next session opened', () => {
+    const fleet = sim.simulateFleetSession();
+    fleet.openSession(20);
+    fleet.input.value = 'But I think with BookingAudit logs we CAN autopsy';
+    fleet.onInput();
+
+    fleet.openSession(21);
+
+    expect(fleet.input.value).toBe('');
+    expect(storage.getItem('hive-draft:session:21')).toBeNull();
+    // ...and S:20 keeps it, because that is whose text it is.
+    expect(storage.getItem('hive-draft:session:20')).toBe('But I think with BookingAudit logs we CAN autopsy');
+  });
+
+  it('gives the text back when you return to the session that owns it', () => {
+    const fleet = sim.simulateFleetSession();
+    fleet.openSession(20);
+    fleet.input.value = 'half-written thought';
+    fleet.onInput();
+    fleet.openSession(21);
+    fleet.openSession(20);
+
+    expect(fleet.input.value).toBe('half-written thought');
+  });
+
+  it('drops text whose owner is not the session being left, rather than misfiling it', () => {
+    const fleet = sim.simulateFleetSession();
+    fleet.openSession(20);
+    fleet.input.value = 'meant for twenty';
+    fleet.onInput();
+
+    // The panel is repointed underneath the box without going through the
+    // save/restore dance — the shape of the openPmSessionPanel bypass.
+    fleet.hijackSession(21);
+
+    // 21 must not inherit it...
+    expect(storage.getItem('hive-draft:session:21')).toBeNull();
+    expect(fleet.input.value).toBe('');
+    // ...and it is still 20's.
+    expect(storage.getItem('hive-draft:session:20')).toBe('meant for twenty');
+  });
+
+  it('still shares one draft across panels for the SAME session', () => {
+    const fleet = sim.simulateFleetSession();
+    const tasks = sim.simulateTasksSession();
+    fleet.openSession(20);
+    fleet.input.value = 'typed in the fleet panel';
+    fleet.onInput();
+
+    tasks.openTaskSession(20);
+
+    expect(tasks.input.value).toBe('typed in the fleet panel');
+  });
+
+  it('a send clears the draft so it cannot resurface anywhere', () => {
+    const fleet = sim.simulateFleetSession();
+    const tasks = sim.simulateTasksSession();
+    fleet.openSession(20);
+    fleet.input.value = 'sent to twenty';
+    fleet.onInput();
+    fleet.send();
+
+    tasks.openTaskSession(20);
+    fleet.openSession(21);
+
+    expect(tasks.input.value).toBe('');
+    expect(fleet.input.value).toBe('');
+    expect(storage.getItem('hive-draft:session:20')).toBeNull();
+  });
+
+  it('typing under one session then another keeps each with its own', () => {
+    const fleet = sim.simulateFleetSession();
+    fleet.openSession(20);
+    fleet.input.value = 'twenty text';
+    fleet.onInput();
+    fleet.openSession(21);
+    fleet.input.value = 'twenty-one text';
+    fleet.onInput();
+
+    expect(storage.getItem('hive-draft:session:20')).toBe('twenty text');
+    expect(storage.getItem('hive-draft:session:21')).toBe('twenty-one text');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The simulators above are a COPY of app.js's logic, which is exactly how the
+// old behaviour stayed "tested" while being wrong. These read the real file.
+// ---------------------------------------------------------------------------
+
+describe('app.js actually routes drafts through the ownership helpers', () => {
+  const appJs = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'src', 'integrations', 'web', 'public', 'app.js'),
+    'utf8',
+  );
+
+  it('defines the ownership helpers', () => {
+    expect(appJs).toMatch(/function markDraftOwner\(/);
+    expect(appJs).toMatch(/function draftOwnerMatches\(/);
+    expect(appJs).toMatch(/function stashDraftOnSwitch\(/);
+    expect(appJs).toMatch(/function restoreDraftOnOpen\(/);
+  });
+
+  it('never restores a session draft straight into an input, bypassing the owner tag', () => {
+    // The helper itself is the one legitimate place; the task-DIALOG draft is
+    // not session-scoped and is deliberately untouched.
+    const helperStart = appJs.indexOf('function restoreDraftOnOpen(');
+    const withoutHelper = appJs.slice(0, helperStart) + appJs.slice(appJs.indexOf('}', appJs.indexOf('markDraftOwner(inputEl', helperStart)) + 1);
+    const bypasses = withoutHelper.match(/\.value = loadDraft\(sessionDraftKey\(/g) || [];
+    expect(bypasses).toEqual([]);
+  });
+
+  it('stamps the owner wherever a session draft is saved on input', () => {
+    // Every saveDraft(sessionDraftKey(...)) that runs on typing must be paired
+    // with a markDraftOwner in the same handler.
+    const handlers = appJs.match(/addEventListener\('input',[\s\S]{0,320}?\}\);/g) || [];
+    const sessionSavers = handlers.filter(h => h.includes('sessionDraftKey'));
+    expect(sessionSavers.length).toBeGreaterThan(0);
+    for (const h of sessionSavers) expect(h).toMatch(/markDraftOwner\(/);
+  });
+
+  it('reassigns a panel session var only alongside the save/restore dance', () => {
+    // Every `<panelSessionVar> = <something>` that is not the null reset must be
+    // bracketed by stashDraftOnSwitch / restoreDraftOnOpen. All three vars drive
+    // an input handler, so a future bypass on any of them files one session's
+    // draft under another.
+    const re = /^[ \t]*(?:currentSession|tasksSessionNum|taskDetailSession) = (?!null)[^\n]*$/gm;
+    const assignments = [...appJs.matchAll(re)];
+    expect(assignments.length).toBeGreaterThanOrEqual(3);
+    for (const m of assignments) {
+      const around = appJs.slice(Math.max(0, m.index - 400), m.index + 400);
+      expect(around, `no stash near: ${m[0].trim()}`).toMatch(/stashDraftOnSwitch\(/);
+      expect(around, `no restore near: ${m[0].trim()}`).toMatch(/restoreDraftOnOpen\(/);
+    }
   });
 });
