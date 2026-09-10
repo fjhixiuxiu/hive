@@ -1327,6 +1327,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   font-weight: 700; padding: 8px 12px; border-radius: 6px; cursor: pointer; flex: 1;
 }
 .task-dialog-mode-btn.selected { background: var(--purple); color: var(--bg); }
+.task-dialog-hint { color: var(--dim); font-size: var(--fs-sm); margin-top: 4px; display: block; }
 #task-dialog-picker {
   display: none; width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch;
   gap: 6px; padding: 4px 0; flex-wrap: wrap;

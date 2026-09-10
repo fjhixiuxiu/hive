@@ -546,6 +546,9 @@ function createMessageHandler(deps) {
           requireHumanClose,
           assignee: msg.assignee || null,
           title: msg.title || null,
+          // Absent means the back of the queue, which is where set() puts a new
+          // task anyway — so a client that never sends this behaves as before.
+          queuePosition: msg.queuePosition != null ? msg.queuePosition : null,
         });
         ws.send(JSON.stringify({ type: 'task:created', task }));
         break;

@@ -1483,6 +1483,17 @@
       <label class="task-dialog-label">Designation</label>
       <select class="task-dialog-select" id="task-dialog-designation"><option value="">Any</option></select>
     </div>
+    <div class="task-dialog-field" id="task-dialog-queue-field">
+      <label class="task-dialog-label">Queue position</label>
+      <div class="task-dialog-mode-row">
+        <button class="task-dialog-mode-btn selected" data-queue="back" id="task-dialog-queue-back">Back</button>
+        <button class="task-dialog-mode-btn" data-queue="top" id="task-dialog-queue-top">Top</button>
+        <button class="task-dialog-mode-btn" data-queue="at" id="task-dialog-queue-at">Position…</button>
+      </div>
+      <input class="task-dialog-input" type="number" min="1" step="1" id="task-dialog-queue-number"
+             placeholder="Position in queue" style="display:none;margin-top:6px">
+      <span class="task-dialog-hint" id="task-dialog-queue-hint"></span>
+    </div>
     <div class="task-dialog-field">
       <label class="task-dialog-label">Mode</label>
       <div class="task-dialog-mode-row">

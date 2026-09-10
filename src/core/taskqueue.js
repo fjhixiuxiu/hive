@@ -186,6 +186,11 @@ class TaskQueue extends EventEmitter {
       pendingCompleteAt: null,
     };
     this.tasks.set(task.id, task);
+    // A new task lands at the back, which is what set() already does. Anything
+    // else has to be asked for, so the default is unchanged.
+    if (meta && meta.queuePosition != null) {
+      this.moveTaskToQueuePosition(task.id, meta.queuePosition, { silent: true });
+    }
     this.emit('task:created', task);
     const byWho = task.createdBy ? ` by ${task.createdBy}` : '';
     this.pushFeed('task', null, `Task created${byWho}: "${text}" (${mode})`);
@@ -321,6 +326,57 @@ class TaskQueue extends EventEmitter {
     this.emit('task:requeued', task);
     this.pushFeed('task', prevSession, `Task returned to queue: "${task.text}"`);
     this._saveState();
+    return task;
+  }
+
+  /**
+   * Move a task to a 1-based position among the QUEUED tasks.
+   *
+   * Position is global and means "nth to be considered", not "nth to run".
+   * _tryAutoDispatch walks the queue in order but only hands a task to a
+   * session whose designation matches, so a task at position 1 still waits for
+   * a session that can host it. One flat number, matching the one walk the
+   * dispatcher actually does.
+   *
+   * Rebuilds this.tasks because a Map has no insert-at-index — the same reason
+   * moving to the back is a delete+set. Everything else keeps its relative
+   * order, dispatched and completed tasks included: they are interleaved in
+   * the Map and reordering them would be a change nobody asked for. Refills
+   * the existing Map rather than replacing it, so held references stay valid.
+   *
+   * @param {string} taskId
+   * @param {number} position - 1 = front. Clamped to the queue's bounds.
+   * @param {object} [opts] - { silent: true } to skip the event, for callers
+   *   that are about to emit their own (createTask emits task:created).
+   */
+  moveTaskToQueuePosition(taskId, position, opts) {
+    const task = this.tasks.get(taskId);
+    if (!task || task.status !== 'queued') return null;
+
+    const target = Math.max(1, Math.floor(Number(position) || 1));
+    const entries = Array.from(this.tasks.entries()).filter(([id]) => id !== taskId);
+
+    // Walk to the slot the target-th queued task occupies. Counting queued
+    // entries as we go is what keeps position meaningful while non-queued
+    // tasks sit between them.
+    let seen = 0;
+    let insertAt = entries.length;
+    for (let i = 0; i < entries.length; i++) {
+      if (entries[i][1].status !== 'queued') continue;
+      seen++;
+      if (seen === target) { insertAt = i; break; }
+    }
+    entries.splice(insertAt, 0, [taskId, task]);
+
+    this.tasks.clear();
+    for (const [id, t] of entries) this.tasks.set(id, t);
+
+    this._saveState();
+    if (!(opts && opts.silent)) {
+      this.emit('task:moved', task);
+      this.pushFeed('task', null,
+        `Task moved to queue position ${this.getQueuePosition(taskId)}: "${task.text}"`);
+    }
     return task;
   }
 
@@ -1531,10 +1587,18 @@ class TaskQueue extends EventEmitter {
 
   // -- Serialization (for sending to clients) -----------------------
 
+  /**
+   * Where a task sits in the queue — the position the dashboard shows.
+   *
+   * Deliberately NOT sorted by createdAt. _tryAutoDispatch walks
+   * this.tasks.values() with no sort of its own, so Map insertion order IS the
+   * queue. Sorting by createdAt here made the number describe a queue that does
+   * not exist: any task moved within the Map kept displaying where it used to
+   * be, so the dashboard reported a position it did not hold. On one fleet that
+   * was 29 of 33 queued tasks.
+   */
   getQueuePosition(taskId) {
-    const queued = Array.from(this.tasks.values())
-      .filter(t => t.status === 'queued')
-      .sort((a, b) => a.createdAt - b.createdAt);
+    const queued = Array.from(this.tasks.values()).filter(t => t.status === 'queued');
     const idx = queued.findIndex(t => t.id === taskId);
     return idx >= 0 ? idx + 1 : null;
   }

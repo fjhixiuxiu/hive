@@ -147,6 +147,9 @@
   let activeTab = 'fleet-panel';
   let previousTab = 'fleet-panel'; // remember which tab was active before session view
   let taskMode = 'auto';
+  // Where a newly created task lands: 'back' (what hive has always done),
+  // 'top', or 'at' with an explicit number. Only applies when creating.
+  let taskQueueMode = 'back';
   let vimMode = false;
   let taskAutoComplete = true;
   let autoCreateForManualTasks = false;
@@ -6018,6 +6021,16 @@
     renderDialogSessionPicker();
   });
 
+  for (const mode of ['back', 'top', 'at']) {
+    const btn = document.getElementById(`task-dialog-queue-${mode}`);
+    if (!btn) continue;
+    btn.addEventListener('click', () => {
+      taskQueueMode = mode;
+      renderQueuePositionControl();
+      if (mode === 'at') document.getElementById('task-dialog-queue-number').focus();
+    });
+  }
+
   function renderDialogSessionPicker() {
     taskDialogPicker.innerHTML = '';
     const sessions = fleetData;
@@ -6035,6 +6048,37 @@
       taskDialogPicker.appendChild(btn);
     }
     if (!sessions.length) taskDialogPicker.innerHTML = '<span style="color:var(--dim);font-size:12px;padding:8px">No sessions available</span>';
+  }
+
+  /**
+   * Paint the Back / Top / Position… row and say what the choice means.
+   *
+   * The hint spells out "considered" rather than "run" on purpose: the queue is
+   * walked in order, but a task only goes to a session whose designation
+   * matches it, so position 1 is not a promise about when the work starts.
+   */
+  function renderQueuePositionControl() {
+    for (const mode of ['back', 'top', 'at']) {
+      const btn = document.getElementById(`task-dialog-queue-${mode}`);
+      if (btn) btn.classList.toggle('selected', taskQueueMode === mode);
+    }
+    const numEl = document.getElementById('task-dialog-queue-number');
+    const hintEl = document.getElementById('task-dialog-queue-hint');
+    if (!numEl || !hintEl) return;
+    numEl.style.display = taskQueueMode === 'at' ? '' : 'none';
+    const queued = tasks.filter(t => t.status === 'queued').length;
+    if (taskQueueMode === 'back') {
+      hintEl.textContent = queued
+        ? `Behind ${queued} queued task${queued === 1 ? '' : 's'}.`
+        : 'The queue is empty — this runs next.';
+    } else if (taskQueueMode === 'top') {
+      hintEl.textContent = 'First to be considered. A designated task still waits for a session that can host it.';
+    } else {
+      numEl.max = String(queued + 1);
+      hintEl.textContent = queued
+        ? `1 = front, ${queued + 1} = back. Out-of-range values are clamped.`
+        : 'The queue is empty — any position puts this first.';
+    }
   }
 
   function openTaskDialog(taskId) {
@@ -6075,6 +6119,12 @@
       manualTarget = null;
       document.getElementById('task-dialog-require-human-close').checked = true; // manual default
     }
+    // Editing never moves a task — that would make saving a typo fix silently
+    // reprioritise work. The control only exists on the create path.
+    taskQueueMode = 'back';
+    document.getElementById('task-dialog-queue-number').value = '';
+    document.getElementById('task-dialog-queue-field').style.display = taskId ? 'none' : '';
+    renderQueuePositionControl();
     document.getElementById('task-dialog-auto-btn').classList.toggle('selected', taskMode === 'auto');
     document.getElementById('task-dialog-manual-btn').classList.toggle('selected', taskMode === 'manual');
     taskDialogPicker.classList.toggle('visible', taskMode === 'manual');
@@ -6097,7 +6147,15 @@
       ws.send(JSON.stringify({ type: 'task:update', taskId: editingTaskId, updates: { text, title, mode: taskMode, targetSession: taskMode === 'manual' ? manualTarget : null, designation: desig || null, requireHumanClose, assignee } }));
       showToast('Task updated', toastSnippet, 'success');
     } else {
-      ws.send(JSON.stringify({ type: 'task:create', text, title, mode: taskMode, targetSession: taskMode === 'manual' ? manualTarget : undefined, designation: desig, requireHumanClose, assignee }));
+      // Left undefined for 'back' so the message is byte-identical to what it
+      // has always been when the default is chosen.
+      let queuePosition;
+      if (taskQueueMode === 'top') queuePosition = 1;
+      else if (taskQueueMode === 'at') {
+        const n = parseInt(document.getElementById('task-dialog-queue-number').value, 10);
+        if (Number.isFinite(n) && n > 0) queuePosition = n;
+      }
+      ws.send(JSON.stringify({ type: 'task:create', text, title, mode: taskMode, targetSession: taskMode === 'manual' ? manualTarget : undefined, designation: desig, requireHumanClose, assignee, queuePosition }));
       clearDraft(TASK_DRAFT_KEY);
       showToast('Task created', toastSnippet, 'success');
     }
