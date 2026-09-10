@@ -945,8 +945,15 @@ class TaskQueue extends EventEmitter {
           const sessionName = `${prefix}${num}`;
           const desigLabel = desig || 'undesignated';
           log.info(`[auto-dispatch] No idle ${desigLabel} session — creating session ${num}`);
-          await sessionManager.createSession(sessionName, repoDir, this.config.tmux?.defaultLayout || { panes: 2, tmuxLayout: 'main-vertical', claudePaneWidth: '60%' }, size);
-          await sessionManager.startClaude(sessionName, this.config.sessions.claudePane, 'claude');
+          const spawn = await sessionManager.createSession(sessionName, repoDir, this.config.tmux?.defaultLayout || { panes: 2, tmuxLayout: 'main-vertical', claudePaneWidth: '60%' }, size);
+          // Same guard as spawnSession: getAvailableSlots reads a cached fleet,
+          // so a slot can be taken between the read and here. Typing `claude`
+          // into a pane that already runs one stacks a second REPL on it.
+          if (spawn && spawn.skipped) {
+            log.info(`[auto-dispatch] session ${sessionName} already exists — not starting a second Claude in it`);
+          } else {
+            await sessionManager.startClaude(sessionName, this.config.sessions.claudePane, 'claude');
+          }
           this.autoSessions.add(num);
           if (desig) this.designations.set(num, desig);
           this._saveState();
@@ -1106,9 +1113,17 @@ class TaskQueue extends EventEmitter {
     const sessionName = `${prefix}${num}`;
     log.info(`[spawn] creating session ${sessionName} at ${repoDir}`);
     try {
-      await sessionManager.createSession(sessionName, repoDir, this.config.tmux?.defaultLayout || { panes: 2, tmuxLayout: 'main-vertical', claudePaneWidth: '60%' }, size);
-      await sessionManager.startClaude(sessionName, this.config.sessions.claudePane, 'claude');
-      log.info(`[spawn] session ${sessionName} created`);
+      const result = await sessionManager.createSession(sessionName, repoDir, this.config.tmux?.defaultLayout || { panes: 2, tmuxLayout: 'main-vertical', claudePaneWidth: '60%' }, size);
+      // createSession returns { created:false, skipped:true } when the slot is
+      // already live. Starting Claude anyway types `claude` into a pane that is
+      // already running one — a second REPL stacked on the first, which is how a
+      // spawn onto an occupied slot corrupted a working session.
+      if (result && result.skipped) {
+        log.info(`[spawn] session ${sessionName} already exists — not starting a second Claude in it`);
+      } else {
+        await sessionManager.startClaude(sessionName, this.config.sessions.claudePane, 'claude');
+        log.info(`[spawn] session ${sessionName} created`);
+      }
     } catch (err) {
       log.error(`[spawn] session creation failed: ${err.message}`);
       throw new Error(`Failed to start session ${num}: ${err.message}`);
@@ -1160,9 +1175,13 @@ class TaskQueue extends EventEmitter {
       }
       const sessionName = `${prefix}${num}`;
       try {
-        await sessionManager.createSession(sessionName, info.repoDir, this.config.tmux?.defaultLayout || { panes: 2, tmuxLayout: 'main-vertical', claudePaneWidth: '60%' }, size);
-        await sessionManager.startClaude(sessionName, this.config.sessions.claudePane);
-        log.info(`[respawn] session ${sessionName} (${info.name}) restarted`);
+        const respawn = await sessionManager.createSession(sessionName, info.repoDir, this.config.tmux?.defaultLayout || { panes: 2, tmuxLayout: 'main-vertical', claudePaneWidth: '60%' }, size);
+        if (respawn && respawn.skipped) {
+          log.info(`[respawn] session ${sessionName} came back on its own — leaving its Claude alone`);
+        } else {
+          await sessionManager.startClaude(sessionName, this.config.sessions.claudePane);
+          log.info(`[respawn] session ${sessionName} (${info.name}) restarted`);
+        }
         results.respawned.push(num);
       } catch (err) {
         log.error(`[respawn] session ${num} failed: ${err.message}`);
