@@ -115,6 +115,7 @@ class ProjectManager extends EventEmitter {
       instructions: cfg.instructions || '',
       targetSession: cfg.targetSession || null,
       autoThreshold: cfg.autoThreshold != null ? cfg.autoThreshold : 3,
+      forceAutoMode: cfg.forceAutoMode || false, // when true, tasks always dispatch automatically (skip story-point/type triage)
       pollInterval: cfg.pollInterval || 300000,
       schedule: cfg.schedule || null,
       taskFormat: cfg.taskFormat || null,
@@ -318,6 +319,7 @@ class ProjectManager extends EventEmitter {
       designation: pm.designation,
       instructions: pm.instructions,
       autoThreshold: pm.autoThreshold,
+      forceAutoMode: pm.forceAutoMode,
       pollInterval: pm.pollInterval,
       schedule: pm.schedule,
       taskFormat: pm.taskFormat,
@@ -516,6 +518,7 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
         instructions: data.instructions || '',
         targetSession: data.targetSession || null,
         autoThreshold: data.autoThreshold != null ? data.autoThreshold : 3,
+        forceAutoMode: data.forceAutoMode || false,
         pollInterval: data.pollInterval || 300000,
         schedule: data.schedule || null,
         taskFormat: data.taskFormat || null,
@@ -812,8 +815,7 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
           continue;
         }
 
-        // Evaluate complexity; force 'manual' if PM targets a specific session
-        const mode = pm.targetSession ? 'manual' : this._evaluateComplexity(issue, pm.autoThreshold);
+        const mode = this._taskMode(pm, issue);
         let text;
         if (pm.taskFormat) {
           text = pm.taskFormat
@@ -1121,6 +1123,17 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
       }
     }
     return null;
+  }
+
+  /**
+   * Decide the dispatch mode for a PM-created task. A targetSession always
+   * means manual routing; forceAutoMode skips complexity triage entirely;
+   * otherwise fall back to story-point / issue-type evaluation.
+   */
+  _taskMode(pm, issue) {
+    if (pm.targetSession) return 'manual';
+    if (pm.forceAutoMode) return 'auto';
+    return this._evaluateComplexity(issue, pm.autoThreshold);
   }
 
   _evaluateComplexity(issue, threshold) {

@@ -183,6 +183,30 @@ describe('ProjectManager', () => {
     });
   });
 
+  describe('_taskMode', () => {
+    it('is manual when the PM targets a specific session', () => {
+      const p = pm.create({ name: 'T', targetSession: 3, forceAutoMode: true });
+      expect(pm._taskMode(p, { storyPoints: 1 })).toBe('manual');
+    });
+
+    it('is auto for any issue when forceAutoMode is on', () => {
+      const p = pm.create({ name: 'T', forceAutoMode: true });
+      expect(pm._taskMode(p, { issueType: 'story' })).toBe('auto');
+      expect(pm._taskMode(p, { storyPoints: 8 })).toBe('auto');
+    });
+
+    it('falls back to complexity triage by default', () => {
+      const p = pm.create({ name: 'T' });
+      expect(pm._taskMode(p, { issueType: 'story' })).toBe('manual');
+      expect(pm._taskMode(p, { storyPoints: 2 })).toBe('auto');
+    });
+
+    it('defaults forceAutoMode to false', () => {
+      const p = pm.create({ name: 'T' });
+      expect(p.forceAutoMode).toBe(false);
+    });
+  });
+
   describe('manual source', () => {
     it('creates task immediately when enabled', () => {
       const created = pm.create({

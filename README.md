@@ -47,6 +47,7 @@ If you run multiple Claude Code sessions in parallel (code reviews, feature work
 - **Automated workflows** — Define JIRA-driven or manual project managers that poll for work and create tasks
 - **Configurable instructions** — Each PM has a name, poll interval, and instructions template
 - **Enable/disable** — Toggle PMs on and off from the dashboard
+- **Always-auto dispatch** — Optional per-PM override that skips story-point / issue-type triage so every discovered item auto-dispatches
 
 ### Voice Agent
 - **Join meetings** — Hive joins Zoom or Google Meet via Playwright, listens to the conversation, and responds when addressed

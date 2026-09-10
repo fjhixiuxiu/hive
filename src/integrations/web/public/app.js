@@ -10563,6 +10563,7 @@
       schedule: document.getElementById('pm-form-cron').value.trim() || null,
       slackUserId: document.getElementById('pm-form-slack-user-id').value.trim() || null,
       autoCreate: document.getElementById('pm-form-auto-create').checked,
+      forceAutoMode: document.getElementById('pm-form-force-auto').checked,
       designationMatch: document.getElementById('pm-form-designation-match').value || 'flexible',
       primaryAction: { enabled: document.getElementById('pm-form-primary-action').checked },
     };
@@ -10662,6 +10663,7 @@
     document.getElementById('pm-form-require-human-close').checked = pm ? !!pm.requireHumanClose : false;
     document.getElementById('pm-form-auto-archive-plan').checked = pm ? !!pm.autoArchivePlanOnTaskComplete : false;
     document.getElementById('pm-form-auto-create').checked = pm ? !!pm.autoCreate : false;
+    document.getElementById('pm-form-force-auto').checked = pm ? !!pm.forceAutoMode : false;
     document.getElementById('pm-form-designation-match').value = pm ? (pm.designationMatch || 'flexible') : 'flexible';
     updatePmDispatchCascade();
     document.getElementById('pm-form-primary-action').checked = pm ? !!(pm.primaryAction && pm.primaryAction.enabled) : false;
