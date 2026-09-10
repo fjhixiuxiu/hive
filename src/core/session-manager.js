@@ -67,10 +67,65 @@ async function createSession(name, repoDir, layout = {}, size = {}) {
   const tmuxLayout = layout.tmuxLayout || 'main-vertical';
   const claudePaneWidth = layout.claudePaneWidth || '50%';
 
-  // Skip if session already exists
-  if (await tmux.hasSession(sessionName)) {
+  // Decide whether it is safe to spawn. `tmux new-session` is one of the few
+  // commands allowed to *start* a server, and a client that thinks the server is
+  // dead unlinks the socket and starts a replacement — stranding every existing
+  // session on the old server. So "I couldn't reach the server" must never be
+  // read as "the session isn't there".
+  const probe = await tmux.probeSession(sessionName);
+
+  if (probe === tmux.SESSION_PROBE.EXISTS) {
     log.info(`[session-manager] session "${sessionName}" already exists, skipping`);
     return { created: false, skipped: true };
+  }
+
+  if (probe === tmux.SESSION_PROBE.UNREACHABLE) {
+    // Server is alive but not answering (typically its listen backlog filled
+    // while it was starved of CPU). Spawning now is what replaces the socket.
+    // Back off instead — callers log and retry on the next cycle.
+    throw new Error(
+      `tmux server is not responding — refusing to create session "${sessionName}" ` +
+      `because starting a server now would replace the socket and strand the running fleet`
+    );
+  }
+
+  if (probe === tmux.SESSION_PROBE.NO_SERVER) {
+    // "no server running" is ambiguous. tmux 3.6a emits that exact message both
+    // when no server has ever run AND when a live server's listen backlog has
+    // filled, so the error text cannot be trusted here — only the presence of a
+    // server process, plus the socket file, tells the cases apart.
+    const { revived, servers, socketPresent } = await tmux.reviveStrandedServer();
+
+    if (servers.length > 1) {
+      throw new Error(
+        `found ${servers.length} tmux servers (pids ${servers.map(s => s.pid).join(', ')}) ` +
+        `— socket was already replaced; refusing to create session "${sessionName}" until this is resolved`
+      );
+    }
+
+    if (servers.length === 1 && socketPresent) {
+      // Server alive, socket in place, still unreachable: it is not accepting.
+      // This is the production failure window — spawning here is precisely what
+      // replaces the socket and strands the fleet.
+      throw new Error(
+        `tmux server ${servers[0].pid} is alive but not accepting connections ` +
+        `— refusing to create session "${sessionName}" because starting a server now ` +
+        `would replace the socket and strand the running fleet`
+      );
+    }
+
+    if (revived) {
+      log.warn(`[session-manager] tmux socket was missing; sent SIGUSR1 to stranded server ${servers[0].pid} to recreate it`);
+      const after = await tmux.probeSession(sessionName);
+      if (after === tmux.SESSION_PROBE.EXISTS) {
+        log.info(`[session-manager] session "${sessionName}" recovered with the socket, skipping`);
+        return { created: false, skipped: true };
+      }
+      if (after !== tmux.SESSION_PROBE.ABSENT) {
+        throw new Error(`tmux socket recovery did not restore a reachable server (probe: ${after})`);
+      }
+    }
+    // servers.length === 0 → genuinely no server; creating one is correct.
   }
 
   // Ensure repo directory exists so tmux doesn't fall back to $HOME

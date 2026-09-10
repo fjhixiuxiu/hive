@@ -6,11 +6,14 @@ const tmux = require('../../src/core/tmux');
 const sessionManager = require('../../src/core/session-manager');
 
 // Spy on tmux functions
-let execSpy, hasSessionSpy, listSessionsSpy, killSessionSpy;
+let execSpy, hasSessionSpy, probeSessionSpy, listSessionsSpy, killSessionSpy;
 
 beforeEach(() => {
   execSpy = vi.spyOn(tmux, 'exec').mockResolvedValue('');
   hasSessionSpy = vi.spyOn(tmux, 'hasSession').mockResolvedValue(false);
+  // createSession probes rather than asking hasSession, so it can tell "session
+  // absent" apart from "server unreachable". Default: server up, session absent.
+  probeSessionSpy = vi.spyOn(tmux, 'probeSession').mockResolvedValue(tmux.SESSION_PROBE.ABSENT);
   listSessionsSpy = vi.spyOn(tmux, 'listSessions').mockResolvedValue([]);
   killSessionSpy = vi.spyOn(tmux, 'killSession').mockResolvedValue(true);
 });
@@ -110,11 +113,11 @@ describe('createSession', () => {
   });
 
   it('skips existing session', async () => {
-    hasSessionSpy.mockResolvedValueOnce(true);
+    probeSessionSpy.mockResolvedValueOnce(tmux.SESSION_PROBE.EXISTS);
     const result = await sessionManager.createSession('5', '/repo', {}, {});
 
     expect(result).toEqual({ created: false, skipped: true });
-    // Only hasSession was called, no new-session
+    // Only the probe was called, no new-session
     expect(execSpy).not.toHaveBeenCalledWith(expect.stringContaining('new-session'));
   });
 
@@ -197,7 +200,8 @@ describe('createAllSessions', () => {
   });
 
   it('skips existing sessions in legacy config', async () => {
-    hasSessionSpy.mockImplementation(async (name) => name === '1');
+    probeSessionSpy.mockImplementation(async (name) =>
+      name === '1' ? tmux.SESSION_PROBE.EXISTS : tmux.SESSION_PROBE.ABSENT);
 
     const config = {
       sessions: {

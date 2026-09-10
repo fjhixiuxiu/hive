@@ -1005,6 +1005,14 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     broadcastFleetStatus().catch(() => {});
   });
 
+  watcher.on('tmux:split-brain', ({ servers, count, fingerprint }) => {
+    broadcast({ type: 'notify', event: 'tmux:split-brain', count, servers, fingerprint });
+    if (taskQueue) {
+      taskQueue.pushFeed('state', null,
+        `⚠️ ${count} tmux servers on one socket (pids ${fingerprint}) — a fleet is stranded, see server log for recovery`);
+    }
+  });
+
   // -- TaskQueue event bridge ---------------------------------------------
 
   if (taskQueue) {

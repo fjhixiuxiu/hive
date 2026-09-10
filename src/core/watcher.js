@@ -224,6 +224,12 @@ class Watcher extends EventEmitter {
     // It's on by default; set watcher.errorRetry.enabled = false to opt out entirely.
     this.errorRetryEnabled = config.watcher?.errorRetry?.enabled !== false;
     this._prevFleetNums = null;       // last poll's set of fleet session nums (drop/add diagnostics)
+    this.serverCheckInterval = null;
+    this._lastServerAlert = null;     // pid fingerprint of the last split-brain we alerted on
+    // Watch for a second tmux server appearing on the default socket. On by
+    // default; set watcher.serverCheck.enabled = false to opt out.
+    this.serverCheckEnabled = config.watcher?.serverCheck?.enabled !== false;
+    this.serverCheckMs = config.watcher?.serverCheck?.interval || 60000;
   }
 
   /**
@@ -254,6 +260,11 @@ class Watcher extends EventEmitter {
     this.approvalInterval = setInterval(() => {
       this._checkApprovals().catch(err => log.error('Approval check error:', err.message));
     }, 10000);
+    if (this.serverCheckEnabled) {
+      this.serverCheckInterval = setInterval(() => {
+        this._checkTmuxServers().catch(err => log.error('tmux server check error:', err.message));
+      }, this.serverCheckMs);
+    }
   }
 
   stop() {
@@ -265,6 +276,47 @@ class Watcher extends EventEmitter {
       clearInterval(this.approvalInterval);
       this.approvalInterval = null;
     }
+    if (this.serverCheckInterval) {
+      clearInterval(this.serverCheckInterval);
+      this.serverCheckInterval = null;
+    }
+  }
+
+  /**
+   * Detect a tmux socket replacement: two servers running on the same socket.
+   *
+   * When a client cannot reach the tmux server it assumes the server died,
+   * unlinks the socket and starts a replacement. The original server keeps
+   * running with every session intact but with no socket to accept on, and hive
+   * starts rebuilding a duplicate fleet on the new server. Nothing else in hive
+   * notices — `tmux ls` looks plausible because the impostor sessions reuse the
+   * same numeric names.
+   *
+   * createSession refuses to be the client that does this, but any tmux client
+   * from any repo clone (a manual-QA run, tmuxinator, start-hive.sh, a plain
+   * shell) can still trigger it, so the condition is worth watching for
+   * regardless of who caused it.
+   *
+   * Recovery is `tmux kill-server` on the impostor followed by SIGUSR1 to the
+   * original, which recreates its socket with no session loss.
+   */
+  async _checkTmuxServers() {
+    const servers = await tmux.listServers();
+    if (servers.length <= 1) {
+      this._lastServerAlert = null;
+      return;
+    }
+    // Alert once per distinct set of servers, not every tick.
+    const fingerprint = servers.map(s => s.pid).sort((a, b) => a - b).join(',');
+    if (fingerprint === this._lastServerAlert) return;
+    this._lastServerAlert = fingerprint;
+
+    log.error(
+      `[watcher] ${servers.length} tmux servers are running on the default socket (pids ${fingerprint}) — ` +
+      `the socket was replaced and one fleet is stranded. Recover with: tmux kill-server (kills the impostor), ` +
+      `then kill -USR1 <original-pid> to recreate its socket.`
+    );
+    this.emit('tmux:split-brain', { servers, count: servers.length, fingerprint });
   }
 
   async _seed() {

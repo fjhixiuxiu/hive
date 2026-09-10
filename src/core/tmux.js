@@ -1,6 +1,6 @@
 const { exec: cpExec } = require('child_process');
 const { promisify } = require('util');
-const { writeFileSync, unlinkSync } = require('fs');
+const { writeFileSync, unlinkSync, existsSync: fsExistsSync } = require('fs');
 const execAsync = promisify(cpExec);
 
 /**
@@ -12,6 +12,28 @@ async function exec(cmd, opts = {}) {
     return stdout.trim();
   } catch {
     return null;
+  }
+}
+
+/**
+ * Like exec, but reports *why* a command failed instead of collapsing every
+ * failure to null. Used wherever the failure reason changes what we do next —
+ * see probeSession, where "session missing" and "server unreachable" look
+ * identical to exec but must not be treated the same.
+ */
+async function execRaw(cmd, opts = {}) {
+  try {
+    const { stdout, stderr } = await execAsync(cmd, { encoding: 'utf8', timeout: 10000, ...opts });
+    return { code: 0, stdout: (stdout || '').trim(), stderr: (stderr || '').trim(), timedOut: false };
+  } catch (err) {
+    return {
+      code: typeof err.code === 'number' ? err.code : null,
+      stdout: (err.stdout || '').trim(),
+      stderr: (err.stderr || '').trim(),
+      // execAsync kills the child on timeout; a hung tmux client means the
+      // server accepted the connection but never answered.
+      timedOut: Boolean(err.killed),
+    };
   }
 }
 
@@ -144,10 +166,136 @@ function paneTarget(name, pane) {
 }
 
 /**
+ * Outcomes of probeSession. The distinction that matters is ABSENT vs
+ * UNREACHABLE: only one of them means it is safe to run `tmux new-session`.
+ */
+const SESSION_PROBE = {
+  EXISTS: 'EXISTS',           // server answered, session is there
+  ABSENT: 'ABSENT',           // server answered, session is not there
+  NO_SERVER: 'NO_SERVER',     // no socket to connect to
+  UNREACHABLE: 'UNREACHABLE', // socket exists but the server did not answer
+};
+
+/**
+ * Ask tmux about a session, distinguishing "the session isn't there" from
+ * "I couldn't reach the server". Both exit 1, and the old hasSession threw the
+ * difference away with 2>/dev/null — which is how a stalled server got its
+ * socket replaced. See createSession for why that mattered.
+ *
+ * Verified against tmux 3.6a:
+ *   rc=0                                                  → EXISTS
+ *   "can't find session: 7"                               → ABSENT
+ *   "error connecting to /tmp/... (No such file or dir)"  → NO_SERVER
+ *   "...(Connection refused)" / hang                      → UNREACHABLE
+ *
+ * Anything unrecognised is treated as UNREACHABLE: the failure mode of guessing
+ * ABSENT is stranding the whole fleet, so unknown states must not spawn.
+ */
+function classifyProbe({ code, stderr, timedOut } = {}) {
+  if (code === 0) return SESSION_PROBE.EXISTS;
+  if (timedOut) return SESSION_PROBE.UNREACHABLE;
+  const err = stderr || '';
+  if (/can't find session/i.test(err)) return SESSION_PROBE.ABSENT;
+  if (/no server running|No such file or directory/i.test(err)) return SESSION_PROBE.NO_SERVER;
+  return SESSION_PROBE.UNREACHABLE;
+}
+
+async function probeSession(name) {
+  return classifyProbe(await execRaw(`tmux has-session -t "${sessionTarget(name)}"`));
+}
+
+/**
  * Check if a tmux session exists.
  */
 async function hasSession(name) {
-  return (await exec(`tmux has-session -t "${sessionTarget(name)}" 2>/dev/null`)) !== null;
+  return (await probeSession(name)) === SESSION_PROBE.EXISTS;
+}
+
+/**
+ * List running tmux *server* processes on the default socket.
+ *
+ * tmux daemonises its server, so a server is reparented to init (ppid 1) and
+ * keeps the argv of whatever first started it (e.g. `tmux new-session -d -s 1`).
+ * Clients are children of their invoker and short-lived. Servers on an explicit
+ * socket (-L/-S) belong to a different socket path and are ignored.
+ *
+ * More than one entry here means a socket replacement has already happened and
+ * some fleet is stranded.
+ */
+function parseServerList(psOutput) {
+  if (!psOutput) return [];
+  const servers = [];
+  for (const line of psOutput.split('\n')) {
+    const m = line.trim().match(/^(\d+)\s+(\d+)\s+(\d+)\s+(tmux\b.*)$/);
+    if (!m) continue;
+    const [, pid, pgid, ppid, args] = m;
+    // tmux daemonises its server with setsid, so the server leads its own
+    // process group (pid === pgid) and is reparented to init.
+    //
+    // ppid === 1 alone is NOT sufficient: a backgrounded tmux *client* whose
+    // shell has exited is also reparented to init while keeping its shell's
+    // process group. Measured — 160 hung `tmux list-sessions` clients were
+    // orphaned to ppid 1 and every one of them had pgid !== pid.
+    if (pid !== pgid || ppid !== '1') continue;
+    if (/\s-[LS]\s+\S+/.test(args)) continue;
+    servers.push({ pid: Number(pid), args });
+  }
+  return servers;
+}
+
+async function listServers() {
+  return parseServerList(await exec('ps -A -o pid=,pgid=,ppid=,args='));
+}
+
+/**
+ * Path of the default tmux socket, mirroring tmux's own resolution:
+ * $TMUX_TMPDIR (else /tmp) + /tmux-<uid>/default.
+ */
+function socketPath() {
+  const base = process.env.TMUX_TMPDIR || '/tmp';
+  return `${base}/tmux-${typeof process.getuid === 'function' ? process.getuid() : ''}/default`;
+}
+
+/**
+ * Whether the default tmux socket file is present.
+ *
+ * This is the discriminator the error text cannot give us. Measured on tmux
+ * 3.6a: a server whose listen backlog has filled makes clients report
+ * "no server running on <path>" — byte for byte what they report when no server
+ * has ever run. Socket present + server process alive therefore means "alive but
+ * not accepting", while socket absent + server alive means "stranded".
+ */
+function socketExists() {
+  try {
+    return fsExistsSync(socketPath());
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Recreate the socket of a server that was stranded when its socket got
+ * unlinked. From man tmux: "If the socket is accidentally removed, the SIGUSR1
+ * signal may be sent to the tmux server process to recreate it."
+ *
+ * Only acts when there is exactly one candidate and the socket really is gone.
+ * Zero servers means a fresh spawn is correct; more than one means a replacement
+ * has already happened and picking the wrong one would strand the other fleet —
+ * that needs a human. A socket that still exists means the server is alive and
+ * simply not accepting, where SIGUSR1 is not the answer.
+ *
+ * @returns {Promise<{revived: boolean, servers: object[], socketPresent: boolean}>}
+ */
+async function reviveStrandedServer() {
+  const servers = await listServers();
+  const socketPresent = socketExists();
+  if (servers.length !== 1 || socketPresent) return { revived: false, servers, socketPresent };
+  try {
+    process.kill(servers[0].pid, 'SIGUSR1');
+  } catch {
+    return { revived: false, servers, socketPresent };
+  }
+  return { revived: true, servers, socketPresent };
 }
 
 /**
@@ -392,7 +540,16 @@ function stripTUIChrome(content, config) {
 
 module.exports = {
   exec,
+  execRaw,
   listSessions,
+  probeSession,
+  classifyProbe,
+  SESSION_PROBE,
+  listServers,
+  parseServerList,
+  socketPath,
+  socketExists,
+  reviveStrandedServer,
   capturePane,
   sendKeys,
   sessionTarget,
