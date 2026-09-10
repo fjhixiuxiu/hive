@@ -1428,6 +1428,9 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .mode-chip { background: var(--bg3); border: none; color: var(--fg); font-size: var(--fs-lg); font-weight: 700; min-width: 40px; height: 36px; border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.1s, transform 0.1s; }
 .mode-chip:active { transform: scale(0.92); }
 .mode-chip.auto { background: rgba(139,233,253,0.2); color: var(--cyan); }
+/* Marked Manual, but no session behind it — still withheld from auto-create.
+   Dashed so it reads as a reservation rather than a running session. */
+.mode-chip.closed { background: transparent; border: 1px dashed var(--bg3); color: var(--dim); font-weight: 600; }
 .mode-all-btn { background: none; border: 1px solid var(--bg3); color: var(--dim); font-size: var(--fs-sm); font-weight: 600; padding: 4px 10px; border-radius: 4px; cursor: pointer; margin-top: 6px; width: 100%; }
 .mode-all-btn:active { background: var(--bg3); }
 #broadcast-target { background: var(--bg3); border: none; color: var(--fg); font-size: var(--fs-md); padding: 8px 12px; border-radius: 6px; width: 100%; margin-bottom: 8px; outline: none; }

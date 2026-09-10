@@ -515,7 +515,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     if (taskQueue) {
       ws.send(JSON.stringify({ type: 'workStates:list', states: taskQueue.getWorkStates() }));
       ws.send(JSON.stringify({ type: 'tasks:list', tasks: taskQueue.getTasksList().map(t => decorateTaskActions(t, pmManager)) }));
-      ws.send(JSON.stringify({ type: 'auto:status', sessions: taskQueue.getAutoSessions() }));
+      ws.send(JSON.stringify({ type: 'auto:status', sessions: taskQueue.getAutoSessions(), manual: taskQueue.getManualSessions() }));
       ws.send(JSON.stringify({ type: 'approvals:list', approvals: taskQueue.getPendingApprovals() }));
       const feedData = taskQueue.getFeed(null, 50);
       ws.send(JSON.stringify({ type: 'feed:entries', entries: feedData.entries, hasMore: feedData.hasMore }));
@@ -1029,7 +1029,10 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     taskQueue.on('task:snoozed', (task) => broadcast({ type: 'task:snoozed', task: decorateTaskActions(task, pmManager) }));
     taskQueue.on('task:unsnoozed', (task) => broadcast({ type: 'task:unsnoozed', task: decorateTaskActions(task, pmManager) }));
     taskQueue.on('task:updated', (task) => broadcast({ type: 'task:updated', task: decorateTaskActions(task, pmManager) }));
-    taskQueue.on('auto:changed', (sessions) => broadcast({ type: 'auto:status', sessions }));
+    // Read the marks off the queue rather than the event payload — the event
+    // carries only the auto list, and both halves have to move together or the
+    // grid keeps drawing a released slot as still reserved.
+    taskQueue.on('auto:changed', (sessions) => broadcast({ type: 'auto:status', sessions, manual: taskQueue.getManualSessions() }));
     taskQueue.on('feed:new', (entry) => broadcast({ type: 'feed:new', entry }));
     taskQueue.on('approval:new', (approval) => broadcast({ type: 'approval:new', approval }));
     taskQueue.on('approval:resolved', (approval) => broadcast({ type: 'approval:resolved', approval }));

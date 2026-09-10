@@ -30,6 +30,11 @@ class TaskQueue extends EventEmitter {
     // State
     this.tasks = new Map();           // id -> Task
     this.autoSessions = new Set();    // session numbers opted into auto-mode
+    // Slots the user explicitly switched OFF auto. Auto/Manual is otherwise
+    // just presence in autoSessions, so "Manual" is an absence — and an absence
+    // is indistinguishable from "never configured". When a manual session died,
+    // the auto-create block claimed its freed slot and added it straight back.
+    this.manualSessions = new Set();
     this.designations = new Map();    // session num -> designation string
     this.feed = [];                   // ring buffer, max 200
     this.approvals = new Map();       // id -> Approval
@@ -747,6 +752,22 @@ class TaskQueue extends EventEmitter {
   /**
    * Clean up all TaskQueue state for a killed session.
    * Fails active task, removes dispatch lock and spawned agent tracking.
+   *
+   * Only ever reached from a person closing a session — the Kill button and
+   * Shut Down All. The watcher never calls it, so a session that dies on its
+   * own (tmux crash, OOM, reboot) does not come through here.
+   *
+   * That is exactly the line the Manual mark is drawn on. Manual sticks to the
+   * SLOT so it outlives a session dying unexpectedly, which is what stops
+   * auto-create seizing a slot someone is hand-driving. But closing a session
+   * is a person releasing the slot on purpose, and holding the mark past that
+   * is a one-way ratchet: every Manual session ever closed permanently costs a
+   * slot, invisibly, because a slot with no session renders no chip to undo it.
+   *
+   * The same reasoning applies to everything else keyed by session number. A
+   * slot is reused — auto-create spawns straight back into it — so anything
+   * left behind is inherited by a session that has nothing to do with the work
+   * it describes.
    */
   cleanupSession(num) {
     const taskId = this.activeTaskBySession.get(num);
@@ -758,8 +779,29 @@ class TaskQueue extends EventEmitter {
     this.dispatchLock.delete(num);
     this.spawnedAgents.delete(num);
     this.autoSessions.delete(num);
+    this.manualSessions.delete(num);
     this.lastDispatchedAt.delete(num);
+    // The dispatch cooldown. Left behind, it is charged to whoever lands in
+    // this slot next — a brand new session made to sit out its first 15s.
+    this.lastCompletedAt.delete(num);
     this.designations.delete(num);
+    // Plan, PR, JIRA, branch. Completing a task already clears these; killing
+    // the session was the one exit that did not, so the next session in the
+    // slot woke up holding a dead session's PR. Park reads exactly these
+    // fields to decide what to watch, so a stale one gets the wrong PR parked
+    // under someone else's handoff notes.
+    this.clearSessionContext(num);
+    // A pending approval outlives the session that asked for it, and
+    // createApproval dedupes on session + pending — so the stale one is handed
+    // back instead of a new approval being raised, and the dashboard shows the
+    // dead session's prompt to the live session standing in its place.
+    for (const approval of this.approvals.values()) {
+      if (approval.session === num && approval.status === 'pending') {
+        approval.status = 'denied';
+        approval.resolvedAt = Date.now();
+        this.emit('approval:resolved', approval);
+      }
+    }
     this._saveState();
   }
 
@@ -932,7 +974,15 @@ class TaskQueue extends EventEmitter {
             log.info(`[auto-dispatch] queued ${desig || 'undesignated'} task but no free slots (${this.spawnSlotMin}-${this.spawnSlotMax} all occupied) — cannot spawn`);
             continue;
           }
-          const num = slots[0];
+          // Never claim a slot the user set to Manual. Its session dying is
+          // exactly when the slot looks free, so without this the setting is
+          // silently undone at the worst possible moment.
+          const usable = slots.filter(s => !this.manualSessions.has(s));
+          if (usable.length === 0) {
+            log.info(`[auto-dispatch] free slots (${slots.slice(0, 5).join(', ')}) are all set to Manual — not spawning`);
+            continue;
+          }
+          const num = usable[0];
           const repoDir = this.config.sessions.repoDir(num);
           const repoName = TaskQueue.repoBaseName(repoDir);
           const cap = this.repoSessionCaps.get(repoName);
@@ -1014,8 +1064,11 @@ class TaskQueue extends EventEmitter {
   toggleAutoSession(num) {
     if (this.autoSessions.has(num)) {
       this.autoSessions.delete(num);
+      // Record the choice, so it survives the session dying.
+      this.manualSessions.add(num);
     } else {
       this.autoSessions.add(num);
+      this.manualSessions.delete(num);
     }
     this._saveState();
     this.emit('auto:changed', this.getAutoSessions());
@@ -1027,13 +1080,31 @@ class TaskQueue extends EventEmitter {
 
   setAutoSessions(nums) {
     this.autoSessions.clear();
-    for (const n of nums) this.autoSessions.add(n);
+    for (const n of nums) {
+      this.autoSessions.add(n);
+      // Turning a slot on clears the manual mark; slots absent from the list
+      // are left alone — bulk-setting the auto list is not a statement about
+      // every other slot in the fleet.
+      this.manualSessions.delete(n);
+    }
     this._saveState();
     this.emit('auto:changed', this.getAutoSessions());
   }
 
   getAutoSessions() {
     return Array.from(this.autoSessions).sort((a, b) => a - b);
+  }
+
+  /**
+   * Slots the user has opted out of auto-create.
+   *
+   * The dashboard needs this separately from the auto list because Manual is
+   * an absence there: it draws a chip per LIVE session, so a marked slot whose
+   * session is gone renders nothing at all — invisible, unclickable, and still
+   * blocking auto-create. Sending the marks lets it draw those slots too.
+   */
+  getManualSessions() {
+    return Array.from(this.manualSessions).sort((a, b) => a - b);
   }
 
   // -- VIM mode -----------------------------------------------------
@@ -1131,6 +1202,15 @@ class TaskQueue extends EventEmitter {
 
     // Register spawned agent
     this.spawnedAgents.set(num, { repoDir, name });
+    // Spawning an agent by hand is a person taking the slot, so the slot is
+    // Manual — but it was Manual by absence, which is the flavour nothing
+    // remembers. The toggle is the only writer of manualSessions, so a slot
+    // that was never auto in the first place carries no mark, and auto-create
+    // seizes it the moment the session dies and frees the slot up. Worse, it
+    // does not merely borrow it: auto-create ends with autoSessions.add(num),
+    // so the slot comes back Auto and starts taking dispatches.
+    this.manualSessions.add(num);
+    this.autoSessions.delete(num);
     this._saveState();
 
     // Wait for init then rename
@@ -1381,6 +1461,9 @@ class TaskQueue extends EventEmitter {
       if (Array.isArray(data.autoSessions)) {
         for (const n of data.autoSessions) this.autoSessions.add(n);
       }
+      if (Array.isArray(data.manualSessions)) {
+        for (const n of data.manualSessions) this.manualSessions.add(n);
+      }
       if (Array.isArray(data.rules)) {
         for (const saved of data.rules) {
           const rule = this.rules.find(r => r.id === saved.id);
@@ -1511,6 +1594,7 @@ class TaskQueue extends EventEmitter {
     for (const [login, info] of this.users) usersObj[login] = info;
     const data = {
       autoSessions: Array.from(this.autoSessions),
+      manualSessions: Array.from(this.manualSessions),
       rules: this.rules.map(r => ({ id: r.id, enabled: r.enabled })),
       designations: this.getDesignations(),
       designationDefs: this.getDesignationDefs(),

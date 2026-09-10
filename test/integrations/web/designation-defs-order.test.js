@@ -38,6 +38,7 @@ function makeTaskQueueStub() {
     getWorkStates: () => [],
     getTasksList: () => [],
     getAutoSessions: () => [],
+    getManualSessions: () => [],
     getPendingApprovals: () => [],
     getFeed: () => ({ entries: [], hasMore: false }),
     getRules: () => [],

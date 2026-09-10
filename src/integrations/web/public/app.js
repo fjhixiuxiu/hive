@@ -167,6 +167,11 @@
   const taskPrReviewCache = {};
   let workStates = [];
   let autoSessions = new Set();
+  // Slots opted out of auto-create. Tracked separately from autoSessions
+  // because a marked slot whose session has gone has no fleetData entry, and it
+  // still blocks auto-create — the grid has to draw it from this set or there
+  // is no way to see it, let alone release it.
+  let manualSlots = new Set();
   let feedEntries = [];
   let feedHasMore = false;
   let lastSeenFeedId = null;
@@ -1408,7 +1413,7 @@
         renderCleanupPopup(msg.items || []);
         break;
       }
-      case 'auto:status': autoSessions = new Set(msg.sessions || []); renderAutoGrid(); if (activeTab === 'fleet-panel') renderGrid(); break;
+      case 'auto:status': autoSessions = new Set(msg.sessions || []); manualSlots = new Set(msg.manual || []); renderAutoGrid(); if (activeTab === 'fleet-panel') renderGrid(); break;
       case 'feed:entries': feedEntries = msg.entries || []; feedHasMore = msg.hasMore || false; renderFeed(); break;
       case 'feed:new':
         feedEntries.push(msg.entry); if (feedEntries.length > 200) feedEntries.shift();
@@ -9643,6 +9648,18 @@
       const num = s.num;
       chip.addEventListener('click', () => toggleAutoLocal(num));
       if (isAuto) autoChips.appendChild(chip); else manualChips.appendChild(chip);
+    }
+    // Slots still marked Manual with no session behind them. The loop above
+    // cannot reach these — it draws one chip per LIVE session — yet they go on
+    // blocking auto-create, so without this they are withheld invisibly and
+    // forever. Drawn dimmed, and clicking one releases it.
+    const liveNums = new Set(fleetData.map(s => s.num));
+    for (const num of Array.from(manualSlots).filter(n => !liveNums.has(n)).sort((a, b) => a - b)) {
+      const chip = document.createElement('button');
+      chip.className = 'mode-chip closed'; chip.textContent = num;
+      chip.title = `Slot ${num} has no session but is still reserved Manual, so auto-create skips it. Tap to release it.`;
+      chip.addEventListener('click', () => toggleAutoLocal(num));
+      manualChips.appendChild(chip);
     }
     if (!autoChips.children.length) autoChips.innerHTML = '<span style="color:var(--dim);font-size:12px;padding:4px">Tap a session to move here</span>';
     if (!manualChips.children.length) manualChips.innerHTML = '<span style="color:var(--dim);font-size:12px;padding:4px">Tap a session to move here</span>';
