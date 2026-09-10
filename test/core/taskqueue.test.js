@@ -181,6 +181,28 @@ describe('TaskQueue', () => {
     });
   });
 
+  describe('createTask persistence', () => {
+    // A task that only exists in memory is lost on any restart, and hive
+    // restarts often (crash, reclaim, deploy). Nothing else in the create path
+    // writes state: _tryAutoDispatch only saves if it actually dispatches, so a
+    // task queued behind a busy fleet could sit unpersisted indefinitely.
+    const savedTaskTexts = () => fs.writeFileSync.mock.calls
+      .filter(([file]) => String(file).includes('.hive-state.json'))
+      .flatMap(([, contents]) => {
+        try { return (JSON.parse(contents).tasks || []).map(t => t.text); } catch { return []; }
+      });
+
+    it('persists a queued task at creation time', () => {
+      tq.createTask('must survive a restart', 'auto', null, null);
+      expect(savedTaskTexts()).toContain('must survive a restart');
+    });
+
+    it('persists a manual task with no target session', () => {
+      tq.createTask('manual, untriaged', 'manual', null, null);
+      expect(savedTaskTexts()).toContain('manual, untriaged');
+    });
+  });
+
   describe('requeueTask', () => {
     it('moves dispatched task back to queued', () => {
       const task = tq.createTask('Test', 'auto', null, null);
@@ -531,6 +553,11 @@ describe('TaskQueue', () => {
       // Set up a PM with strict matching
       tq._pmManager = {
         pms: new Map([['1', { name: 'StrictPM', designationMatch: 'strict' }]]),
+        // Complete enough to survive both paths this test now walks:
+        // _saveState (createTask persists) and _dispatchTask (enriches text).
+        // Without these the stub throws and the task lands in 'failed'.
+        serialize: () => ({ pms: [], knowledgeBase: [] }),
+        enrichTaskText: (task) => task.text,
       };
       tq.createTask('Review PR', 'auto', null, 'reviewer', { source: 'pm:StrictPM' });
 
@@ -548,6 +575,11 @@ describe('TaskQueue', () => {
 
       tq._pmManager = {
         pms: new Map([['1', { name: 'StrictPM', designationMatch: 'strict' }]]),
+        // Complete enough to survive both paths this test now walks:
+        // _saveState (createTask persists) and _dispatchTask (enriches text).
+        // Without these the stub throws and the task lands in 'failed'.
+        serialize: () => ({ pms: [], knowledgeBase: [] }),
+        enrichTaskText: (task) => task.text,
       };
       tq.createTask('Review PR', 'auto', null, 'reviewer', { source: 'pm:StrictPM' });
 
@@ -566,6 +598,8 @@ describe('TaskQueue', () => {
 
       tq._pmManager = {
         pms: new Map([['1', { name: 'FlexPM', designationMatch: 'flexible' }]]),
+        serialize: () => ({ pms: [], knowledgeBase: [] }),
+        enrichTaskText: (task) => task.text,
       };
       tq.createTask('Review PR', 'auto', null, 'reviewer', { source: 'pm:FlexPM' });
 

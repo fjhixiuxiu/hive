@@ -206,6 +206,12 @@ class TaskQueue extends EventEmitter {
     this.emit('task:created', task);
     const byWho = task.createdBy ? ` by ${task.createdBy}` : '';
     this.pushFeed('task', null, `Task created${byWho}: "${text}" (${mode})`);
+    // Persist BEFORE dispatching. Nothing else in this path is guaranteed to
+    // write: _tryAutoDispatch only saves when it actually dispatches, so a task
+    // queued behind a busy fleet would live in memory alone until some
+    // unrelated state change happened to flush it — and a restart in that
+    // window loses it outright.
+    this._saveState();
 
     if (mode === 'manual' && targetSession) {
       this._dispatchTask(task, targetSession).catch(err =>
