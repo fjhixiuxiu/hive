@@ -152,6 +152,7 @@
   let taskQueueMode = 'back';
   let vimMode = false;
   let taskAutoComplete = true;
+  let requireHumanCloseAll = false;
   let autoCreateForManualTasks = false;
   let manualTarget = null;
   let activeTaskTab = 'inprogress';
@@ -1433,6 +1434,12 @@
         taskAutoComplete = msg.enabled;
         const btn = document.getElementById('toggle-task-autocomplete');
         if (btn) btn.classList.toggle('on', taskAutoComplete);
+        break;
+      }
+      case 'requireHumanCloseAll:status': {
+        requireHumanCloseAll = msg.enabled;
+        const btn = document.getElementById('toggle-require-human-close-all');
+        if (btn) btn.classList.toggle('on', requireHumanCloseAll);
         break;
       }
       case 'autoCreateForManualTasks:status': {
@@ -4221,6 +4228,9 @@
   });
   document.getElementById('toggle-task-autocomplete').addEventListener('click', function() {
     if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'taskAutoComplete:toggle' }));
+  });
+  document.getElementById('toggle-require-human-close-all').addEventListener('click', function() {
+    if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'requireHumanCloseAll:toggle' }));
   });
   document.getElementById('toggle-auto-create-manual').addEventListener('click', function() {
     if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'autoCreateForManualTasks:toggle' }));

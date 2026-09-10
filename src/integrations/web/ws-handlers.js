@@ -1031,6 +1031,15 @@ function createMessageHandler(deps) {
         break;
       }
 
+      case 'requireHumanCloseAll:toggle': {
+        if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'dispatch')) break;
+        taskQueue.requireHumanCloseAll = !taskQueue.requireHumanCloseAll;
+        taskQueue._saveState();
+        broadcast({ type: 'requireHumanCloseAll:status', enabled: taskQueue.requireHumanCloseAll });
+        break;
+      }
+
       case 'autoCreateForManualTasks:toggle': {
         if (!taskQueue) break;
         if (!checkPermission(ws, user, 'dispatch')) break;

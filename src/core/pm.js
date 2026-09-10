@@ -530,6 +530,12 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
         boardStates: Array.isArray(data.boardStates) ? data.boardStates : null,
         actions: Array.isArray(data.actions) ? data.actions : null,
         autoCreate: data.autoCreate || false,
+        // serialize() spreads ...pm, so this reaches disk correctly. Rebuilding
+        // the PM field by field here is what dropped it: it was the one field
+        // of thirty this list forgot, so every boot silently reset it to
+        // undefined and PMs configured to hold their tasks for a human closed
+        // them automatically instead.
+        requireHumanClose: !!data.requireHumanClose,
         primaryAction: data.primaryAction || { enabled: false },
         designationMatch: data.designationMatch || 'flexible',
         autoArchivePlanOnTaskComplete: !!data.autoArchivePlanOnTaskComplete,

@@ -525,8 +525,16 @@
         <div class="more-section">
           <div class="more-section-title">Task Settings</div>
           <div class="rule-row">
-            <span class="rule-name">Auto-complete tasks when session goes idle</span>
+            <span class="rule-name">Auto-complete tasks when session goes idle
+              <span class="rule-hint">— only the idle path. A session that calls hive_complete_task still closes its own task; use the switch below to gate that too</span>
+            </span>
             <button class="rule-toggle" id="toggle-task-autocomplete"></button>
+          </div>
+          <div class="rule-row">
+            <span class="rule-name">Require human close on ALL completions
+              <span class="rule-hint">— every task waits for your approval before it closes, however it was completed, as if each one had requireHumanClose set. Sessions stay attached until you close them, so the fleet does not rotate on its own</span>
+            </span>
+            <button class="rule-toggle" id="toggle-require-human-close-all"></button>
           </div>
           <div class="rule-row">
             <span class="rule-name">Auto-create sessions for manually-queued tasks

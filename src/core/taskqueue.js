@@ -44,6 +44,13 @@ class TaskQueue extends EventEmitter {
     this.spawnSlotMax = 32;
     this.vimMode = false;
     this.taskAutoComplete = true; // when false, tasks require manual completion
+    // The switch above only guards _handleSessionIdle. A session calling
+    // hive_complete_task walks straight past it, because that is a deliberate
+    // act rather than a timeout — which is why a fleet with auto-complete off
+    // still watched tasks close themselves and rotate. This is the gate for
+    // wanting neither: it applies requireHumanClose to every completion,
+    // whatever its source, so nothing closes without a person saying so.
+    this.requireHumanCloseAll = false;
     this.autoCreateForManualTasks = false; // when true, _tryAutoDispatch spawns a session for any queued auto-mode task that has no source PM
     this.repoSessionCaps = new Map(); // repoBaseName -> max session count
     this._snoozeTimers = new Map(); // taskId → setTimeout handle
@@ -500,15 +507,19 @@ class TaskQueue extends EventEmitter {
    * @param {string} result - summary text
    * @param {string} [snapshot] - terminal snapshot
    * @param {number} [snapshotCols]
-   * @param {object} [opts] - { force: true } to bypass requireHumanClose
+   * @param {object} [opts] - { force: true } to bypass requireHumanClose and
+   *   the hive-wide requireHumanCloseAll switch. This is what a person clicking
+   *   Done or Park passes: their click IS the approval.
    * @returns {object|null|'pending'} task, null if not found, or 'pending' if awaiting human approval
    */
   completeTask(taskId, result, snapshot, snapshotCols, opts) {
     const task = this.tasks.get(taskId);
     if (!task || task.status !== 'dispatched') return null;
 
-    // Gate: requireHumanClose blocks MCP-initiated completions
-    if (task.requireHumanClose && !(opts && opts.force)) {
+    // Gate: requireHumanClose blocks MCP-initiated completions. The hive-wide
+    // switch is the same gate with a wider net — it turns every task into a
+    // requireHumanClose task without needing each PM to be configured for it.
+    if ((task.requireHumanClose || this.requireHumanCloseAll) && !(opts && opts.force)) {
       task.pendingResult = result || 'Completed via MCP';
       task.pendingCompleteAt = Date.now();
       this.emit('task:pending-complete', task);
@@ -1387,6 +1398,7 @@ class TaskQueue extends EventEmitter {
       }
       if (data.vimMode !== undefined) this.vimMode = data.vimMode;
       if (data.taskAutoComplete !== undefined) this.taskAutoComplete = data.taskAutoComplete;
+      if (typeof data.requireHumanCloseAll === 'boolean') this.requireHumanCloseAll = data.requireHumanCloseAll;
       if (typeof data.autoCreateForManualTasks === 'boolean') this.autoCreateForManualTasks = data.autoCreateForManualTasks;
       if (data.spawnSlotMin !== undefined) this.spawnSlotMin = data.spawnSlotMin;
       if (data.spawnSlotMax !== undefined) this.spawnSlotMax = data.spawnSlotMax;
@@ -1490,6 +1502,7 @@ class TaskQueue extends EventEmitter {
       feed: this.feed,
       vimMode: this.vimMode,
       taskAutoComplete: this.taskAutoComplete,
+      requireHumanCloseAll: this.requireHumanCloseAll,
       autoCreateForManualTasks: this.autoCreateForManualTasks,
       spawnSlotMin: this.spawnSlotMin,
       spawnSlotMax: this.spawnSlotMax,
