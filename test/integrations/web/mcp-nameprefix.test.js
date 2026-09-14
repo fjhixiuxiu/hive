@@ -69,15 +69,28 @@ function makeDeps(overrides = {}) {
 
   const pmManager = {
     knowledge: [],
-    addKnowledge: vi.fn(function (entry) { this.knowledge.push(entry); }),
+    addKnowledge: vi.fn(function (entry) {
+      this.knowledge.push(entry);
+    }),
     queryKnowledge: vi.fn(() => []),
     getAll: vi.fn(() => []),
     addLearnings: vi.fn(() => 0),
   };
 
   return {
-    config, node, router, ws, sent, broadcasts, taskQueue, pmManager,
-    tasks, activeTaskBySession, lastCompletedAt, sessionContext, feedEntries,
+    config,
+    node,
+    router,
+    ws,
+    sent,
+    broadcasts,
+    taskQueue,
+    pmManager,
+    tasks,
+    activeTaskBySession,
+    lastCompletedAt,
+    sessionContext,
+    feedEntries,
     deps: {
       config,
       taskQueue,
@@ -171,9 +184,16 @@ describe('MCP namePrefix session resolution', () => {
       seedActiveTask(ctx, 1, {});
       const handler = createMessageHandler(ctx.deps);
 
-      await handler(ctx.ws, {
-        type: 'mcp:complete_task', _reqId: 1, session: 'VIV-1', summary: 'done',
-      }, {});
+      await handler(
+        ctx.ws,
+        {
+          type: 'mcp:complete_task',
+          _reqId: 1,
+          session: 'VIV-1',
+          summary: 'done',
+        },
+        {},
+      );
 
       expect(ctx.sent[0]).toMatchObject({ ok: true });
       expect(ctx.tasks.get('t-1').status).toBe('done');
@@ -184,15 +204,27 @@ describe('MCP namePrefix session resolution', () => {
       const ctx = makeDeps({ namePrefix: 'VIV-' });
       // simulate watcher already auto-completed the task
       const task = {
-        id: 't-1', text: 'x', status: 'done', assignedTo: 1, summary: null, checklist: [],
+        id: 't-1',
+        text: 'x',
+        status: 'done',
+        assignedTo: 1,
+        summary: null,
+        checklist: [],
       };
       ctx.tasks.set('t-1', task);
       ctx.lastCompletedAt.set(1, Date.now() - 5000); // 5s ago
       const handler = createMessageHandler(ctx.deps);
 
-      await handler(ctx.ws, {
-        type: 'mcp:complete_task', _reqId: 1, session: 'VIV-1', summary: 'late',
-      }, {});
+      await handler(
+        ctx.ws,
+        {
+          type: 'mcp:complete_task',
+          _reqId: 1,
+          session: 'VIV-1',
+          summary: 'late',
+        },
+        {},
+      );
 
       expect(ctx.sent[0]).toMatchObject({ ok: true });
       expect(task.summary).toBe('late');
@@ -202,11 +234,21 @@ describe('MCP namePrefix session resolution', () => {
       const ctx = makeDeps({ namePrefix: 'VIV-' });
       const handler = createMessageHandler(ctx.deps);
 
-      await handler(ctx.ws, {
-        type: 'mcp:complete_task', _reqId: 1, session: 'VIV-9', summary: '',
-      }, {});
+      await handler(
+        ctx.ws,
+        {
+          type: 'mcp:complete_task',
+          _reqId: 1,
+          session: 'VIV-9',
+          summary: '',
+        },
+        {},
+      );
 
-      expect(ctx.sent[0]).toMatchObject({ ok: false, error: expect.stringContaining('No active task') });
+      expect(ctx.sent[0]).toMatchObject({
+        ok: false,
+        error: expect.stringContaining('No active task'),
+      });
     });
   });
 
@@ -215,9 +257,16 @@ describe('MCP namePrefix session resolution', () => {
       const ctx = makeDeps({ namePrefix: 'VIV-' });
       const handler = createMessageHandler(ctx.deps);
 
-      await handler(ctx.ws, {
-        type: 'mcp:post_update', _reqId: 1, session: 'VIV-2', message: 'progress',
-      }, {});
+      await handler(
+        ctx.ws,
+        {
+          type: 'mcp:post_update',
+          _reqId: 1,
+          session: 'VIV-2',
+          message: 'progress',
+        },
+        {},
+      );
 
       expect(ctx.sent[0]).toMatchObject({ ok: true });
       expect(ctx.feedEntries[0]).toMatchObject({ type: 'mcp', session: 2 });
@@ -230,9 +279,16 @@ describe('MCP namePrefix session resolution', () => {
       const ctx = makeDeps({ namePrefix: '' });
       const handler = createMessageHandler(ctx.deps);
 
-      await handler(ctx.ws, {
-        type: 'mcp:post_update', _reqId: 1, session: 'hive-pm-3', message: 'pm note',
-      }, {});
+      await handler(
+        ctx.ws,
+        {
+          type: 'mcp:post_update',
+          _reqId: 1,
+          session: 'hive-pm-3',
+          message: 'pm note',
+        },
+        {},
+      );
 
       expect(ctx.sent[0]).toMatchObject({ ok: true });
       expect(ctx.feedEntries[0].detail).toContain('hive-pm-3');
@@ -244,10 +300,18 @@ describe('MCP namePrefix session resolution', () => {
       const ctx = makeDeps({ namePrefix: 'VIV-' });
       const handler = createMessageHandler(ctx.deps);
 
-      await handler(ctx.ws, {
-        type: 'mcp:share_knowledge', _reqId: 1, session: 'VIV-4',
-        insight: 'always strip the prefix', domain: 'mcp', insightType: 'gotcha',
-      }, {});
+      await handler(
+        ctx.ws,
+        {
+          type: 'mcp:share_knowledge',
+          _reqId: 1,
+          session: 'VIV-4',
+          insight: 'always strip the prefix',
+          domain: 'mcp',
+          insightType: 'gotcha',
+        },
+        {},
+      );
 
       expect(ctx.sent[0]).toMatchObject({ ok: true });
       expect(ctx.pmManager.knowledge[0]).toMatchObject({
@@ -262,15 +326,23 @@ describe('MCP namePrefix session resolution', () => {
       const ctx = makeDeps({ namePrefix: 'VIV-' });
       const handler = createMessageHandler(ctx.deps);
 
-      await handler(ctx.ws, {
-        type: 'mcp:set_working_dir', _reqId: 1, session: 'VIV-5',
-        dir: '/tmp/wt5',
-      }, {});
+      await handler(
+        ctx.ws,
+        {
+          type: 'mcp:set_working_dir',
+          _reqId: 1,
+          session: 'VIV-5',
+          dir: '/tmp/wt5',
+        },
+        {},
+      );
 
       expect(ctx.sent[0]).toMatchObject({ ok: true, dir: '/tmp/wt5' });
       // The broadcast must use the integer session so dashboards can match it
       expect(ctx.broadcasts[0]).toMatchObject({
-        type: 'working_dir:updated', session: 5, dir: '/tmp/wt5',
+        type: 'working_dir:updated',
+        session: 5,
+        dir: '/tmp/wt5',
       });
     });
   });
@@ -280,10 +352,16 @@ describe('MCP namePrefix session resolution', () => {
       const ctx = makeDeps({ namePrefix: 'VIV-' });
       const handler = createMessageHandler(ctx.deps);
 
-      await handler(ctx.ws, {
-        type: 'mcp:set_context', _reqId: 1, session: 'VIV-6',
-        updates: { pr: 'https://github.com/o/r/pull/1' },
-      }, {});
+      await handler(
+        ctx.ws,
+        {
+          type: 'mcp:set_context',
+          _reqId: 1,
+          session: 'VIV-6',
+          updates: { pr: 'https://github.com/o/r/pull/1' },
+        },
+        {},
+      );
 
       expect(ctx.sent[0]).toMatchObject({ ok: true });
       expect(ctx.sessionContext.get(6)).toMatchObject({ pr: 'https://github.com/o/r/pull/1' });
@@ -296,10 +374,16 @@ describe('MCP namePrefix session resolution', () => {
       const ctx = makeDeps({ namePrefix: '' });
       const handler = createMessageHandler(ctx.deps);
 
-      await handler(ctx.ws, {
-        type: 'mcp:set_context', _reqId: 1, session: 'hive-pm-3',
-        updates: { pr: 'evil' },
-      }, {});
+      await handler(
+        ctx.ws,
+        {
+          type: 'mcp:set_context',
+          _reqId: 1,
+          session: 'hive-pm-3',
+          updates: { pr: 'evil' },
+        },
+        {},
+      );
 
       expect(ctx.sent[0]).toMatchObject({ ok: false });
       expect(ctx.sessionContext.has(0)).toBe(false);
@@ -314,10 +398,16 @@ describe('MCP namePrefix session resolution', () => {
       ctx.pmManager.addLearnings = vi.fn(() => 2);
       const handler = createMessageHandler(ctx.deps);
 
-      await handler(ctx.ws, {
-        type: 'mcp:report_learnings', _reqId: 1, session: 'VIV-1',
-        learnings: ['a', 'b'],
-      }, {});
+      await handler(
+        ctx.ws,
+        {
+          type: 'mcp:report_learnings',
+          _reqId: 1,
+          session: 'VIV-1',
+          learnings: ['a', 'b'],
+        },
+        {},
+      );
 
       expect(ctx.sent[0]).toMatchObject({ ok: true, added: 2 });
       expect(ctx.pmManager.addLearnings).toHaveBeenCalledWith('pm1', ['a', 'b']);

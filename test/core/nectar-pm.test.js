@@ -1,8 +1,15 @@
 import { describe, it, expect, vi } from 'vitest';
-import { _fetchNectar, _claimNectarTask, _httpRequest, _httpMethod } from '../../src/core/pm-sources.js';
+import {
+  _fetchNectar,
+  _claimNectarTask,
+  _httpRequest,
+  _httpMethod,
+} from '../../src/core/pm-sources.js';
 
 // Mock the HTTP layer
-vi.mock('../../src/core/log', () => ({ default: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
+vi.mock('../../src/core/log', () => ({
+  default: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+}));
 
 describe('Nectar PM source', () => {
   describe('_fetchNectar', () => {
@@ -44,7 +51,7 @@ describe('Nectar PM source', () => {
       ];
 
       // Simulate what _fetchNectar does with the response
-      const mapped = mockTasks.map(t => ({
+      const mapped = mockTasks.map((t) => ({
         key: t.id,
         summary: `[${t.type}] ${t.input?.version || 'unknown'} — ${t.input?.tickets?.length || 0} tickets`,
         _nectarTask: t,
@@ -71,7 +78,15 @@ describe('Nectar PM source', () => {
   describe('PM poll integration', () => {
     it('should handle nectar source type in _poll switch', () => {
       // Verify the source type is recognized (doesn't throw "Unsupported")
-      const supportedTypes = ['jira', 'github-issues', 'github-prs', 'jenkins', 'zoho', 'github-re-reviews', 'nectar'];
+      const supportedTypes = [
+        'jira',
+        'github-issues',
+        'github-prs',
+        'jenkins',
+        'zoho',
+        'github-re-reviews',
+        'nectar',
+      ];
       for (const type of supportedTypes) {
         expect(type).toBeTruthy(); // Just verify list includes nectar
       }

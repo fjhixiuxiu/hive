@@ -7,7 +7,8 @@ vi.mock('../../src/core/log.js', () => ({
   error: vi.fn(),
 }));
 
-const ProjectManager = (await import('../../src/core/pm.js')).default || (await import('../../src/core/pm.js'));
+const ProjectManager =
+  (await import('../../src/core/pm.js')).default || (await import('../../src/core/pm.js'));
 
 function createMockTaskQueue() {
   const tq = new EventEmitter();
@@ -44,11 +45,18 @@ function freshManager() {
 describe('PM requireHumanClose survives a restart', () => {
   let pm;
 
-  beforeEach(() => { pm = freshManager(); });
-  afterEach(() => { pm.stopAll(); vi.restoreAllMocks(); });
+  beforeEach(() => {
+    pm = freshManager();
+  });
+  afterEach(() => {
+    pm.stopAll();
+    vi.restoreAllMocks();
+  });
 
   it('restores a PM saved with the flag on', () => {
-    const saved = [{ id: '1', name: 'Gated', source: { type: 'jira', jql: '' }, requireHumanClose: true }];
+    const saved = [
+      { id: '1', name: 'Gated', source: { type: 'jira', jql: '' }, requireHumanClose: true },
+    ];
 
     pm.loadState(saved);
 
@@ -56,7 +64,9 @@ describe('PM requireHumanClose survives a restart', () => {
   });
 
   it('keeps false as false rather than undefined', () => {
-    pm.loadState([{ id: '1', name: 'Ungated', source: { type: 'jira', jql: '' }, requireHumanClose: false }]);
+    pm.loadState([
+      { id: '1', name: 'Ungated', source: { type: 'jira', jql: '' }, requireHumanClose: false },
+    ]);
 
     expect(pm.getAll()[0].requireHumanClose).toBe(false);
   });
@@ -72,17 +82,19 @@ describe('PM requireHumanClose survives a restart', () => {
     pm.update(created.id, { requireHumanClose: true });
 
     const saved = JSON.parse(JSON.stringify(pm.serialize()));
-    expect(saved[0].requireHumanClose).toBe(true);   // serialize was never the problem
+    expect(saved[0].requireHumanClose).toBe(true); // serialize was never the problem
 
     const next = freshManager();
     next.loadState(saved);
 
-    expect(next.getAll()[0].requireHumanClose).toBe(true);   // this is what was lost
+    expect(next.getAll()[0].requireHumanClose).toBe(true); // this is what was lost
     next.stopAll();
   });
 
   it('carries the flag onto the tasks the PM creates', () => {
-    pm.loadState([{ id: '1', name: 'Gated', source: { type: 'jira', jql: '' }, requireHumanClose: true }]);
+    pm.loadState([
+      { id: '1', name: 'Gated', source: { type: 'jira', jql: '' }, requireHumanClose: true },
+    ]);
     const restored = pm.getAll()[0];
 
     // The only consumer that matters: task creation reads it off the PM.

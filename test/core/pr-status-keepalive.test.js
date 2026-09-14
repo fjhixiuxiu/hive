@@ -42,7 +42,9 @@ describe('pr-status keep-alive agent', () => {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end('{"ok":true}');
     });
-    server.on('connection', () => { connections++; });
+    server.on('connection', () => {
+      connections++;
+    });
 
     const { _fetchJSON } = await import('../../src/core/pr-status.js');
     for (let i = 0; i < 5; i++) {
@@ -55,7 +57,9 @@ describe('pr-status keep-alive agent', () => {
 
   // T2 — Error path unchanged: server closes mid-handshake.
   it('rejects when the server closes the socket without responding', async () => {
-    const { server, url } = await startServer((req) => { req.socket.destroy(); });
+    const { server, url } = await startServer((req) => {
+      req.socket.destroy();
+    });
 
     const { _fetchJSON } = await import('../../src/core/pr-status.js');
     await expect(_fetchJSON(`${url}/x`)).rejects.toThrow();
@@ -73,7 +77,7 @@ describe('pr-status keep-alive agent', () => {
       Promise.race([
         _fetchJSON(`${url}/x`),
         new Promise((_, r) => setTimeout(() => r(new Error('test timeout exceeded')), 7000)),
-      ])
+      ]),
     ).rejects.toThrow(/Timeout|test timeout exceeded/);
 
     await closeServer(server);
@@ -87,10 +91,10 @@ describe('pr-status keep-alive agent', () => {
     const { server, url } = await startServer((req, res) => {
       hits++;
       if (req.headers['if-none-match'] === '"abc"') {
-        res.writeHead(304, { 'ETag': '"abc"' });
+        res.writeHead(304, { ETag: '"abc"' });
         return res.end();
       }
-      res.writeHead(200, { 'ETag': '"abc"', 'Content-Type': 'application/json' });
+      res.writeHead(200, { ETag: '"abc"', 'Content-Type': 'application/json' });
       res.end(JSON.stringify(payload));
     });
 
@@ -100,7 +104,7 @@ describe('pr-status keep-alive agent', () => {
 
     expect(hits).toBe(2);
     expect(first.status).toBe(200);
-    expect(second.status).toBe(200);     // 304 normalized to cached 200
+    expect(second.status).toBe(200); // 304 normalized to cached 200
     expect(second.data).toEqual(payload);
 
     await closeServer(server);

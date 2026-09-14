@@ -22,7 +22,12 @@ function createTooltipModule() {
 
   function create() {
     if (tooltipEl) return;
-    tooltipEl = { className: 'hive-tooltip', classes: new Set(['hive-tooltip']), innerHTML: '', role: 'tooltip' };
+    tooltipEl = {
+      className: 'hive-tooltip',
+      classes: new Set(['hive-tooltip']),
+      innerHTML: '',
+      role: 'tooltip',
+    };
   }
 
   function show(target) {
@@ -55,7 +60,10 @@ function createTooltipModule() {
   }
 
   return {
-    show, hide, startShow, startHide,
+    show,
+    hide,
+    startShow,
+    startHide,
     getEl: () => tooltipEl,
     getCurrentTarget: () => currentTarget,
   };
@@ -192,9 +200,13 @@ describe('HTML data-tooltip attributes', () => {
     expect(matches.length).toBeGreaterThan(0);
 
     // Check that each nav-btn line also contains data-tooltip
-    const navBtnLines = html.split('\n').filter(l => l.includes('class="nav-btn') && l.includes('data-tab='));
+    const navBtnLines = html
+      .split('\n')
+      .filter((l) => l.includes('class="nav-btn') && l.includes('data-tab='));
     for (const line of navBtnLines) {
-      expect(line, `Nav button line missing data-tooltip: ${line.trim()}`).toContain('data-tooltip=');
+      expect(line, `Nav button line missing data-tooltip: ${line.trim()}`).toContain(
+        'data-tooltip=',
+      );
     }
   });
 
@@ -206,7 +218,7 @@ describe('HTML data-tooltip attributes', () => {
   });
 
   it('fleet view toggle buttons should have data-tooltip', () => {
-    const viewBtnLines = html.split('\n').filter(l => l.includes('fleet-view-btn'));
+    const viewBtnLines = html.split('\n').filter((l) => l.includes('fleet-view-btn'));
     expect(viewBtnLines.length).toBeGreaterThan(0);
     for (const line of viewBtnLines) {
       expect(line, `View button missing data-tooltip: ${line.trim()}`).toContain('data-tooltip=');
@@ -341,9 +353,12 @@ describe('app.js tooltip integration', () => {
 
   it('should use data-tooltip instead of title for command descriptions', () => {
     // Verify cmd-btn uses data-tooltip, not title
-    const cmdBtnDescLines = js.split('\n').filter(l =>
-      l.includes('cmd.description') && (l.includes('.title') || l.includes('data-tooltip'))
-    );
+    const cmdBtnDescLines = js
+      .split('\n')
+      .filter(
+        (l) =>
+          l.includes('cmd.description') && (l.includes('.title') || l.includes('data-tooltip')),
+      );
     for (const line of cmdBtnDescLines) {
       expect(line, 'cmd-btn should use data-tooltip, not .title').toContain('data-tooltip');
       expect(line).not.toContain('.title =');

@@ -5,8 +5,13 @@ const path = require('path');
 let chromium;
 function getChromium() {
   if (!chromium) {
-    try { chromium = require('playwright').chromium; }
-    catch { throw new Error('playwright is required for voice meetings — install it with: npm i playwright'); }
+    try {
+      chromium = require('playwright').chromium;
+    } catch {
+      throw new Error(
+        'playwright is required for voice meetings — install it with: npm i playwright',
+      );
+    }
   }
   return chromium;
 }
@@ -50,24 +55,25 @@ class MeetingJoiner extends EventEmitter {
     this.context = await getChromium().launchPersistentContext(userDataDir, {
       headless: false,
       args: [
-        '--use-fake-ui-for-media-stream',      // auto-accept mic/camera
+        '--use-fake-ui-for-media-stream', // auto-accept mic/camera
         // Use BlackHole as audio input — TTS plays to BlackHole, Chrome reads it as mic
-        '--disable-web-security',               // for audio context
+        '--disable-web-security', // for audio context
         '--autoplay-policy=no-user-gesture-required',
-        '--auto-select-desktop-capture-source=Zoom',  // auto-select tab for getDisplayMedia
+        '--auto-select-desktop-capture-source=Zoom', // auto-select tab for getDisplayMedia
         '--enable-usermedia-screen-capturing',
         `--disable-extensions-except=${extPath}`,
         `--load-extension=${extPath}`,
       ],
       permissions: ['microphone', 'camera'],
-      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      userAgent:
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     });
     this.browser = this.context.browser();
 
-    this.page = this.context.pages()[0] || await this.context.newPage();
+    this.page = this.context.pages()[0] || (await this.context.newPage());
 
     // Forward browser console to server logs
-    this.page.on('console', msg => {
+    this.page.on('console', (msg) => {
       const text = msg.text();
       if (text.includes('[hive-bridge]')) {
         log.info(`[voice:browser] ${text}`);
@@ -103,16 +109,22 @@ class MeetingJoiner extends EventEmitter {
 
     // Step 1: Accept cookies/terms if present
     try {
-      const acceptBtn = this.page.locator('button:has-text("Accept"), #onetrust-accept-btn-handler');
+      const acceptBtn = this.page.locator(
+        'button:has-text("Accept"), #onetrust-accept-btn-handler',
+      );
       if (await acceptBtn.isVisible({ timeout: 2000 })) {
         await acceptBtn.click();
         log.info('[voice] Accepted cookies/terms');
       }
-    } catch (e) { /* no cookie banner */ }
+    } catch (e) {
+      /* no cookie banner */
+    }
 
     // Step 2: Stop video in preview (before joining)
     try {
-      const videoBtn = this.page.locator('#preview-video-control-button, button[aria-label="Stop Video"]');
+      const videoBtn = this.page.locator(
+        '#preview-video-control-button, button[aria-label="Stop Video"]',
+      );
       if (await videoBtn.isVisible({ timeout: 2000 })) {
         const text = await videoBtn.textContent();
         if (text && text.includes('Stop Video')) {
@@ -120,11 +132,15 @@ class MeetingJoiner extends EventEmitter {
           log.info('[voice] Stopped video in preview');
         }
       }
-    } catch (e) { /* no video button */ }
+    } catch (e) {
+      /* no video button */
+    }
 
     // Step 3: Enter name (Zoom web client uses #input-for-name)
     try {
-      const nameInput = this.page.locator('#input-for-name, #inputname, input[placeholder*="name" i]');
+      const nameInput = this.page.locator(
+        '#input-for-name, #inputname, input[placeholder*="name" i]',
+      );
       await nameInput.waitFor({ state: 'visible', timeout: 10000 });
       await nameInput.clear();
       await nameInput.fill(this.botName);
@@ -136,12 +152,16 @@ class MeetingJoiner extends EventEmitter {
     // Step 4: Enter passcode if needed
     if (passcode) {
       try {
-        const passInput = this.page.locator('#inputpasscode, input[placeholder*="passcode" i], input[type="password"]');
+        const passInput = this.page.locator(
+          '#inputpasscode, input[placeholder*="passcode" i], input[type="password"]',
+        );
         if (await passInput.isVisible({ timeout: 3000 })) {
           await passInput.fill(passcode);
           log.info('[voice] Entered passcode');
         }
-      } catch (e) { /* no passcode needed */ }
+      } catch (e) {
+        /* no passcode needed */
+      }
     }
 
     // Step 5: Click Join
@@ -163,12 +183,16 @@ class MeetingJoiner extends EventEmitter {
 
     // Step 7: Join audio if prompted (separate from preview)
     try {
-      const joinAudioBtn = this.page.locator('button:has-text("Join Audio by Computer"), button:has-text("Join Audio")');
+      const joinAudioBtn = this.page.locator(
+        'button:has-text("Join Audio by Computer"), button:has-text("Join Audio")',
+      );
       if (await joinAudioBtn.isVisible({ timeout: 5000 })) {
         await joinAudioBtn.click();
         log.info('[voice] Joined audio by computer');
       }
-    } catch (e) { /* no audio prompt */ }
+    } catch (e) {
+      /* no audio prompt */
+    }
 
     await this.page.waitForTimeout(2000);
     await this.page.screenshot({ path: '/tmp/zoom-joined.png' });
@@ -205,7 +229,9 @@ class MeetingJoiner extends EventEmitter {
         await muteBtn.click();
         log.info('[voice] Clicked Unmute');
       }
-    } catch (e) { /* already unmuted or button not found */ }
+    } catch (e) {
+      /* already unmuted or button not found */
+    }
   }
 
   /**
@@ -217,7 +243,9 @@ class MeetingJoiner extends EventEmitter {
     try {
       if (this.page) {
         // Try clicking Leave button
-        const leaveBtn = this.page.locator('button:has-text("Leave"), button[aria-label*="leave" i]');
+        const leaveBtn = this.page.locator(
+          'button:has-text("Leave"), button[aria-label*="leave" i]',
+        );
         if (await leaveBtn.isVisible({ timeout: 2000 })) {
           await leaveBtn.click();
           const confirmBtn = this.page.locator('button:has-text("Leave Meeting")');
@@ -226,11 +254,15 @@ class MeetingJoiner extends EventEmitter {
           }
         }
       }
-    } catch (e) { /* best effort */ }
+    } catch (e) {
+      /* best effort */
+    }
 
     try {
       if (this.context) await this.context.close();
-    } catch (e) { /* ignore */ }
+    } catch (e) {
+      /* ignore */
+    }
 
     this.browser = null;
     this.context = null;
@@ -247,16 +279,20 @@ class MeetingJoiner extends EventEmitter {
     const check = async () => {
       if (!this.joined || !this.page) return;
       try {
-        const ended = await this.page.locator(
-          'div:has-text("This meeting has been ended"), div:has-text("The host has ended"), div:has-text("removed from this meeting")'
-        ).isVisible({ timeout: 1000 });
+        const ended = await this.page
+          .locator(
+            'div:has-text("This meeting has been ended"), div:has-text("The host has ended"), div:has-text("removed from this meeting")',
+          )
+          .isVisible({ timeout: 1000 });
         if (ended) {
           log.info('[voice] Meeting has ended');
           this.emit('meeting-ended');
           await this.leave();
           return;
         }
-      } catch (e) { /* page may be closed */ return; }
+      } catch (e) {
+        /* page may be closed */ return;
+      }
       setTimeout(check, 5000);
     };
     setTimeout(check, 10000);
@@ -278,28 +314,33 @@ class MeetingJoiner extends EventEmitter {
 
         // Use getDisplayMedia with preferCurrentTab to capture THIS tab's audio
         // Chrome auto-selects due to --auto-select-desktop-capture-source flag
-        return navigator.mediaDevices.getDisplayMedia({
-          audio: {
-            suppressLocalAudioPlayback: false,  // keep playing audio normally
-          },
-          video: true,  // Chrome requires video for getDisplayMedia, we'll ignore it
-          preferCurrentTab: true,
-          selfBrowserSurface: 'include',
-        }).then(stream => {
-          // Stop video track immediately — we only want audio
-          stream.getVideoTracks().forEach(t => t.stop());
+        return navigator.mediaDevices
+          .getDisplayMedia({
+            audio: {
+              suppressLocalAudioPlayback: false, // keep playing audio normally
+            },
+            video: true, // Chrome requires video for getDisplayMedia, we'll ignore it
+            preferCurrentTab: true,
+            selfBrowserSurface: 'include',
+          })
+          .then((stream) => {
+            // Stop video track immediately — we only want audio
+            stream.getVideoTracks().forEach((t) => t.stop());
 
-          const audioTracks = stream.getAudioTracks();
-          if (audioTracks.length === 0) return 'no audio tracks in tab capture';
+            const audioTracks = stream.getAudioTracks();
+            if (audioTracks.length === 0) return 'no audio tracks in tab capture';
 
-          console.log('[hive-bridge] Tab self-capture audio: ' + audioTracks.length + ' tracks');
-          console.log('[hive-bridge] Audio track settings: ' + JSON.stringify(audioTracks[0].getSettings()));
-          bridge.startCapture(audioTracks[0]);
-          return 'capturing tab audio (' + audioTracks.length + ' tracks)';
-        }).catch(err => {
-          console.log('[hive-bridge] Tab self-capture failed: ' + err.message);
-          return 'tab capture failed: ' + err.message;
-        });
+            console.log('[hive-bridge] Tab self-capture audio: ' + audioTracks.length + ' tracks');
+            console.log(
+              '[hive-bridge] Audio track settings: ' + JSON.stringify(audioTracks[0].getSettings()),
+            );
+            bridge.startCapture(audioTracks[0]);
+            return 'capturing tab audio (' + audioTracks.length + ' tracks)';
+          })
+          .catch((err) => {
+            console.log('[hive-bridge] Tab self-capture failed: ' + err.message);
+            return 'tab capture failed: ' + err.message;
+          });
       });
 
       log.info(`[voice] Audio capture result: ${result}`);
@@ -314,24 +355,34 @@ class MeetingJoiner extends EventEmitter {
    */
   async _waitForMeetingReady(timeoutMs = 60000) {
     const start = Date.now();
-    const meetingSelectors = 'button[aria-label*="Mute"], button[aria-label*="unmute" i], [class*="footer__inner"], [class*="meeting-app"]';
-    const waitingRoomSelectors = 'div:has-text("Please wait"), div:has-text("waiting room"), div:has-text("will let you in")';
+    const meetingSelectors =
+      'button[aria-label*="Mute"], button[aria-label*="unmute" i], [class*="footer__inner"], [class*="meeting-app"]';
+    const waitingRoomSelectors =
+      'div:has-text("Please wait"), div:has-text("waiting room"), div:has-text("will let you in")';
 
     while (Date.now() - start < timeoutMs) {
       try {
         // Check if we're in the actual meeting
-        const inMeeting = await this.page.locator(meetingSelectors).first().isVisible({ timeout: 1000 });
+        const inMeeting = await this.page
+          .locator(meetingSelectors)
+          .first()
+          .isVisible({ timeout: 1000 });
         if (inMeeting) {
           log.info('[voice] Meeting UI loaded — in the meeting');
           return true;
         }
 
         // Check if we're in a waiting room
-        const inWaitingRoom = await this.page.locator(waitingRoomSelectors).first().isVisible({ timeout: 500 });
+        const inWaitingRoom = await this.page
+          .locator(waitingRoomSelectors)
+          .first()
+          .isVisible({ timeout: 500 });
         if (inWaitingRoom) {
           log.info('[voice] In waiting room — waiting for host to admit...');
         }
-      } catch (e) { /* selectors not found, keep waiting */ }
+      } catch (e) {
+        /* selectors not found, keep waiting */
+      }
 
       await this.page.waitForTimeout(3000);
     }

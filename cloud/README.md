@@ -40,93 +40,93 @@ EC2 t3.large (Ubuntu 22.04) ---- port 3000 (Node.js/Express in tmux)
 URL: `https://review-hive.vivtechnologies.com`
 SSH: `ssh hive-review`
 
-| Resource | ID / ARN |
-|---|---|
-| EC2 Instance | `i-047ee18a12869de7e` |
-| Public IP | `44.211.42.149` |
-| Private IP | `10.0.3.236` |
-| VPC | `vpc-02651295c24f8bc7f` (Jenkins) |
-| Subnet | `subnet-0d5dee6be35a20916` (`internal-tools-1a`, us-east-1a) |
-| ALB | `hive-alb-356434589.us-east-1.elb.amazonaws.com` |
-| ALB Subnets | `subnet-0d5dee6be35a20916` (1a), `subnet-094867cafbdcc387d` (1b) |
-| Target Group | `hive-tg` |
-| ALB SG | `sg-03aa7820005e9beae` (`hive-alb-sg`) |
-| EC2 SG | `sg-0b5380be9c0080f90` (`hive-ec2-sg`) |
-| Office SSH SG | `sg-043c84f65239ea620` (`toronto-office-jenkins-ssh`) |
-| Fleet SG | `sg-0eccb5c1f5c931f9c` (`hive-fleet-sg`, Jenkins VPC) |
-| IAM Role | `hive-ec2-role` |
-| IAM Profile | `hive-ec2-profile` |
-| Secret | `hive/env` |
-| TF Workspace | `default` (uses `review.tfvars`) |
-| HIVE_TITLE | `Viv Review Hive` |
+| Resource      | ID / ARN                                                         |
+| ------------- | ---------------------------------------------------------------- |
+| EC2 Instance  | `i-047ee18a12869de7e`                                            |
+| Public IP     | `44.211.42.149`                                                  |
+| Private IP    | `10.0.3.236`                                                     |
+| VPC           | `vpc-02651295c24f8bc7f` (Jenkins)                                |
+| Subnet        | `subnet-0d5dee6be35a20916` (`internal-tools-1a`, us-east-1a)     |
+| ALB           | `hive-alb-356434589.us-east-1.elb.amazonaws.com`                 |
+| ALB Subnets   | `subnet-0d5dee6be35a20916` (1a), `subnet-094867cafbdcc387d` (1b) |
+| Target Group  | `hive-tg`                                                        |
+| ALB SG        | `sg-03aa7820005e9beae` (`hive-alb-sg`)                           |
+| EC2 SG        | `sg-0b5380be9c0080f90` (`hive-ec2-sg`)                           |
+| Office SSH SG | `sg-043c84f65239ea620` (`toronto-office-jenkins-ssh`)            |
+| Fleet SG      | `sg-0eccb5c1f5c931f9c` (`hive-fleet-sg`, Jenkins VPC)            |
+| IAM Role      | `hive-ec2-role`                                                  |
+| IAM Profile   | `hive-ec2-profile`                                               |
+| Secret        | `hive/env`                                                       |
+| TF Workspace  | `default` (uses `review.tfvars`)                                 |
+| HIVE_TITLE    | `Viv Review Hive`                                                |
 
 ### Support Hive (`support` workspace)
 
 URL: `https://support-hive.vivtechnologies.com`
 SSH: `ssh hive-support`
 
-| Resource | ID / ARN |
-|---|---|
-| EC2 Instance | `i-0dfe9e1e464866a15` |
-| Public IP | `54.166.91.211` |
-| Private IP | `10.0.4.7` |
-| VPC | `vpc-02651295c24f8bc7f` (Jenkins) |
-| Subnet | `subnet-094867cafbdcc387d` (`internal-tools-1b`, us-east-1b) |
-| ALB | `support-hive-alb-2018772839.us-east-1.elb.amazonaws.com` |
-| ALB Subnets | `subnet-0d5dee6be35a20916` (1a), `subnet-094867cafbdcc387d` (1b) |
-| Target Group | `support-hive-tg` |
-| ALB SG | `sg-0f04d9e1d63804382` (`support-hive-alb-sg`) |
-| EC2 SG | `sg-0e0a231aff050f9c7` (`support-hive-ec2-sg`) |
-| Office SSH SG | `sg-043c84f65239ea620` (`toronto-office-jenkins-ssh`) |
-| Fleet SG | `sg-0eccb5c1f5c931f9c` (`hive-fleet-sg`, Jenkins VPC) |
-| IAM Role | `support-hive-ec2-role` |
-| IAM Profile | `support-hive-ec2-profile` |
-| Secret | `hive/support-env` |
-| TF Workspace | `support` (uses `support.tfvars`) |
-| HIVE_TITLE | `Viv Support Hive` |
+| Resource      | ID / ARN                                                         |
+| ------------- | ---------------------------------------------------------------- |
+| EC2 Instance  | `i-0dfe9e1e464866a15`                                            |
+| Public IP     | `54.166.91.211`                                                  |
+| Private IP    | `10.0.4.7`                                                       |
+| VPC           | `vpc-02651295c24f8bc7f` (Jenkins)                                |
+| Subnet        | `subnet-094867cafbdcc387d` (`internal-tools-1b`, us-east-1b)     |
+| ALB           | `support-hive-alb-2018772839.us-east-1.elb.amazonaws.com`        |
+| ALB Subnets   | `subnet-0d5dee6be35a20916` (1a), `subnet-094867cafbdcc387d` (1b) |
+| Target Group  | `support-hive-tg`                                                |
+| ALB SG        | `sg-0f04d9e1d63804382` (`support-hive-alb-sg`)                   |
+| EC2 SG        | `sg-0e0a231aff050f9c7` (`support-hive-ec2-sg`)                   |
+| Office SSH SG | `sg-043c84f65239ea620` (`toronto-office-jenkins-ssh`)            |
+| Fleet SG      | `sg-0eccb5c1f5c931f9c` (`hive-fleet-sg`, Jenkins VPC)            |
+| IAM Role      | `support-hive-ec2-role`                                          |
+| IAM Profile   | `support-hive-ec2-profile`                                       |
+| Secret        | `hive/support-env`                                               |
+| TF Workspace  | `support` (uses `support.tfvars`)                                |
+| HIVE_TITLE    | `Viv Support Hive`                                               |
 
 ### QA Hive (`qa` workspace)
 
 URL: `https://qa-hive.vivtechnologies.com`
 SSH: `ssh hive-qa`
 
-| Resource | ID / ARN |
-|---|---|
-| EC2 Instance | `i-01d44045307e968de` |
-| Public IP | `54.88.43.156` |
-| Private IP | `10.0.3.194` |
-| VPC | `vpc-02651295c24f8bc7f` (Jenkins) |
-| Subnet | `subnet-0d5dee6be35a20916` (`internal-tools-1a`, us-east-1a) |
-| ALB | `qa-hive-alb-210948200.us-east-1.elb.amazonaws.com` |
-| ALB Subnets | `subnet-0d5dee6be35a20916` (1a), `subnet-094867cafbdcc387d` (1b) |
-| Target Group | `qa-hive-tg` |
-| ALB SG | `sg-09f6f5f88c9a6a2f2` (`qa-hive-alb-sg`) |
-| EC2 SG | `sg-0968e1989ed5f46e6` (`qa-hive-ec2-sg`) |
-| Office SSH SG | `sg-043c84f65239ea620` (`toronto-office-jenkins-ssh`) |
-| Fleet SG | `sg-0eccb5c1f5c931f9c` (`hive-fleet-sg`, Jenkins VPC) |
-| IAM Role | `qa-hive-ec2-role` |
-| IAM Profile | `qa-hive-ec2-profile` |
-| Secret | `hive/qa-env` |
-| TF Workspace | `qa` (uses `qa.tfvars`) |
-| HIVE_TITLE | `Viv QA Hive` |
+| Resource      | ID / ARN                                                         |
+| ------------- | ---------------------------------------------------------------- |
+| EC2 Instance  | `i-01d44045307e968de`                                            |
+| Public IP     | `54.88.43.156`                                                   |
+| Private IP    | `10.0.3.194`                                                     |
+| VPC           | `vpc-02651295c24f8bc7f` (Jenkins)                                |
+| Subnet        | `subnet-0d5dee6be35a20916` (`internal-tools-1a`, us-east-1a)     |
+| ALB           | `qa-hive-alb-210948200.us-east-1.elb.amazonaws.com`              |
+| ALB Subnets   | `subnet-0d5dee6be35a20916` (1a), `subnet-094867cafbdcc387d` (1b) |
+| Target Group  | `qa-hive-tg`                                                     |
+| ALB SG        | `sg-09f6f5f88c9a6a2f2` (`qa-hive-alb-sg`)                        |
+| EC2 SG        | `sg-0968e1989ed5f46e6` (`qa-hive-ec2-sg`)                        |
+| Office SSH SG | `sg-043c84f65239ea620` (`toronto-office-jenkins-ssh`)            |
+| Fleet SG      | `sg-0eccb5c1f5c931f9c` (`hive-fleet-sg`, Jenkins VPC)            |
+| IAM Role      | `qa-hive-ec2-role`                                               |
+| IAM Profile   | `qa-hive-ec2-profile`                                            |
+| Secret        | `hive/qa-env`                                                    |
+| TF Workspace  | `qa` (uses `qa.tfvars`)                                          |
+| HIVE_TITLE    | `Viv QA Hive`                                                    |
 
 ### Shared Resources (across all hives)
 
-| Resource | ID / ARN | Purpose |
-|---|---|---|
-| ACM Cert | `arn:aws:acm:us-east-1:140947722076:certificate/2bd943c9-7692-430b-b46b-b9a5cee983f3` | `*.vivtechnologies.com` wildcard |
-| SSH Key | `jenkins` | Reused from Jenkins infra |
-| AMI | `ami-04680790a315cd58d` | Ubuntu 22.04 (default for new hives) |
-| TF State Bucket | `s3://viv-infrastructure-backend` | Key: `viv/hive` (workspaces isolate state) |
-| TF State Lock | `viv-infrastructure-state-lock` | DynamoDB |
-| Prefix List | `pl-00a38e5148e01f014` (`viv-internal-tools-ips`) | Jenkins ALB allows 443 from this list. Add new hive IPs here. |
+| Resource        | ID / ARN                                                                              | Purpose                                                       |
+| --------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| ACM Cert        | `arn:aws:acm:us-east-1:140947722076:certificate/2bd943c9-7692-430b-b46b-b9a5cee983f3` | `*.vivtechnologies.com` wildcard                              |
+| SSH Key         | `jenkins`                                                                             | Reused from Jenkins infra                                     |
+| AMI             | `ami-04680790a315cd58d`                                                               | Ubuntu 22.04 (default for new hives)                          |
+| TF State Bucket | `s3://viv-infrastructure-backend`                                                     | Key: `viv/hive` (workspaces isolate state)                    |
+| TF State Lock   | `viv-infrastructure-state-lock`                                                       | DynamoDB                                                      |
+| Prefix List     | `pl-00a38e5148e01f014` (`viv-internal-tools-ips`)                                     | Jenkins ALB allows 443 from this list. Add new hive IPs here. |
 
 ### Jenkins VPC shared subnets (internal dev tooling)
 
 Created outside Terraform state for cross-project use (Nectar, Hive, future services):
 
-| Subnet | CIDR | AZ |
-|---|---|---|
+| Subnet                                           | CIDR        | AZ         |
+| ------------------------------------------------ | ----------- | ---------- |
 | `subnet-0d5dee6be35a20916` (`internal-tools-1a`) | 10.0.3.0/24 | us-east-1a |
 | `subnet-094867cafbdcc387d` (`internal-tools-1b`) | 10.0.4.0/24 | us-east-1b |
 
@@ -175,11 +175,13 @@ tofu apply -var-file=qa.tfvars
 ### Spawning a new hive
 
 1. **Create a new workspace:**
+
    ```bash
    tofu workspace new <hive-name>
    ```
 
 2. **Create a tfvars file** (`<hive-name>.tfvars`) pointing at the Jenkins VPC shared subnets:
+
    ```hcl
    hive_name       = "<hive-name>-hive"
    env_name        = "<hive-name>-hive"
@@ -198,12 +200,14 @@ tofu apply -var-file=qa.tfvars
    ```
 
 3. **Create the Secrets Manager secret** with `.env` contents:
+
    ```bash
    aws secretsmanager create-secret --name "hive/<hive-name>-env" \
      --secret-string '{"WEB_PORT":"3000","WEB_BIND":"0.0.0.0","WEB_TOKEN":"...","GITHUB_CLIENT_ID":"...","GITHUB_CLIENT_SECRET":"...","GITHUB_CALLBACK_URL":"https://<hive-name>-hive.vivtechnologies.com/auth/github/callback","GITHUB_ORG":"mavencare","HIVE_TITLE":"Viv <Name> Hive"}'
    ```
 
 4. **Plan and apply:**
+
    ```bash
    tofu plan -var-file=<hive-name>.tfvars
    tofu apply -var-file=<hive-name>.tfvars
@@ -214,6 +218,7 @@ tofu apply -var-file=qa.tfvars
 6. **Add the GitHub OAuth callback URL** to the existing OAuth App (one app supports multiple callbacks).
 
 7. **Add the new EC2's public IP to the `viv-internal-tools-ips` prefix list** (`pl-00a38e5148e01f014`) so it can reach Jenkins:
+
    ```bash
    VERSION=$(aws ec2 describe-managed-prefix-lists --prefix-list-ids pl-00a38e5148e01f014 --query 'PrefixLists[0].Version' --output text)
    aws ec2 modify-managed-prefix-list --prefix-list-id pl-00a38e5148e01f014 --current-version $VERSION \
@@ -225,18 +230,21 @@ tofu apply -var-file=qa.tfvars
 ## Operations
 
 ### Review Hive
+
 ```bash
 ssh hive-review                          # alias for ubuntu@44.211.42.149
 ssh -i ~/.ssh/jenkins.pem ubuntu@44.211.42.149
 ```
 
 ### Support Hive
+
 ```bash
 ssh hive-support                          # alias for ubuntu@54.166.91.211
 ssh -i ~/.ssh/jenkins.pem ubuntu@54.166.91.211
 ```
 
 ### QA Hive
+
 ```bash
 ssh hive-qa                               # alias for ubuntu@54.88.43.156
 ssh -i ~/.ssh/jenkins.pem ubuntu@54.88.43.156
@@ -245,11 +253,13 @@ ssh -i ~/.ssh/jenkins.pem ubuntu@54.88.43.156
 ### Common Operations
 
 **Restart Hive (picks up new secret values):**
+
 ```bash
 sudo bash ~/hive/cloud/scripts/boot.sh
 ```
 
 **View logs:**
+
 ```bash
 tail -f ~/hive.log
 # or attach to the server tmux session
@@ -257,12 +267,14 @@ tmux attach -t hive-server
 ```
 
 **Update code:**
+
 ```bash
 cd ~/hive && git pull && npm install
 sudo bash ~/hive/cloud/scripts/boot.sh
 ```
 
 **Re-run init (after changes to init.sh):**
+
 ```bash
 sudo bash ~/hive/cloud/scripts/init.sh
 ```
@@ -286,8 +298,8 @@ Note: even though hives live in the Jenkins VPC, SG-to-SG rules don't work for J
 
 DNS is managed in **GoDaddy** (not Route 53). The wildcard ACM cert `*.vivtechnologies.com` covers all hive subdomains.
 
-| Subdomain | Points to |
-|---|---|
-| `review-hive.vivtechnologies.com` | `hive-alb-356434589.us-east-1.elb.amazonaws.com` |
+| Subdomain                          | Points to                                                 |
+| ---------------------------------- | --------------------------------------------------------- |
+| `review-hive.vivtechnologies.com`  | `hive-alb-356434589.us-east-1.elb.amazonaws.com`          |
 | `support-hive.vivtechnologies.com` | `support-hive-alb-2018772839.us-east-1.elb.amazonaws.com` |
-| `qa-hive.vivtechnologies.com` | `qa-hive-alb-210948200.us-east-1.elb.amazonaws.com` |
+| `qa-hive.vivtechnologies.com`      | `qa-hive-alb-210948200.us-east-1.elb.amazonaws.com`       |

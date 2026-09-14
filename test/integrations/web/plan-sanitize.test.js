@@ -57,7 +57,10 @@ describe('stripGlobalScopeLeaks', () => {
       const before = parse(FULL_HTML_PLAN);
       for (const tag of LEAK_TAGS) {
         if (tag === 'script') continue; // this fixture has no <script>; covered separately
-        expect(before.querySelectorAll(tag).length, `input should contain <${tag}>`).toBeGreaterThan(0);
+        expect(
+          before.querySelectorAll(tag).length,
+          `input should contain <${tag}>`,
+        ).toBeGreaterThan(0);
       }
 
       const out = stripGlobalScopeLeaks(FULL_HTML_PLAN);
@@ -79,7 +82,8 @@ describe('stripGlobalScopeLeaks', () => {
       // End-to-end proof against the real failure mechanism: innerHTML into an
       // attached element. Before sanitizing, the plan's <style> and <meta
       // viewport> land in the document; after, they don't.
-      const leakStyle = '<meta name="viewport" content="width=600">' +
+      const leakStyle =
+        '<meta name="viewport" content="width=600">' +
         '<style id="leak">body{max-width:920px}</style>' +
         '<h1>Plan</h1>';
 
@@ -88,11 +92,17 @@ describe('stripGlobalScopeLeaks', () => {
 
       host.innerHTML = leakStyle; // unsanitized — the old behavior
       expect(document.getElementById('leak'), 'control: leak present unsanitized').not.toBeNull();
-      expect(document.querySelector('meta[name="viewport"]'), 'control: viewport leaked').not.toBeNull();
+      expect(
+        document.querySelector('meta[name="viewport"]'),
+        'control: viewport leaked',
+      ).not.toBeNull();
 
       host.innerHTML = stripGlobalScopeLeaks(leakStyle); // the fix
       expect(document.getElementById('leak'), 'fix: <style> stripped').toBeNull();
-      expect(document.querySelector('meta[name="viewport"]'), 'fix: <meta viewport> stripped').toBeNull();
+      expect(
+        document.querySelector('meta[name="viewport"]'),
+        'fix: <meta viewport> stripped',
+      ).toBeNull();
       expect(host.querySelector('h1')?.textContent, 'fix: visible content kept').toBe('Plan');
 
       host.remove();
@@ -101,7 +111,8 @@ describe('stripGlobalScopeLeaks', () => {
 
   describe('normal markdown-rendered HTML (no-op)', () => {
     it('passes ordinary marked output through unchanged in structure', () => {
-      const md = '<h1>Heading</h1>\n<p>some <code>inline</code> text</p>\n' +
+      const md =
+        '<h1>Heading</h1>\n<p>some <code>inline</code> text</p>\n' +
         '<ul><li>a</li><li>b</li></ul>\n<blockquote>quote</blockquote>';
       const after = parse(stripGlobalScopeLeaks(md));
       expect(after.querySelector('h1')?.textContent).toBe('Heading');

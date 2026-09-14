@@ -35,8 +35,11 @@ describe('Watcher', () => {
 
   function makeSession(num, state, pr = null) {
     return {
-      name: `${num}-session`, num, state,
-      branch: `feature-${num}`, ticket: `DEV-${num}`,
+      name: `${num}-session`,
+      num,
+      state,
+      branch: `feature-${num}`,
+      ticket: `DEV-${num}`,
       git: { branch: `feature-${num}`, staged: 0, modified: 0, untracked: 0 },
       pr,
     };
@@ -108,7 +111,7 @@ describe('Watcher', () => {
       await watcher._poll();
 
       expect(spy).toHaveBeenCalledWith(
-        expect.objectContaining({ from: 'SUCCESS', to: 'FAILURE', pr: '42' })
+        expect.objectContaining({ from: 'SUCCESS', to: 'FAILURE', pr: '42' }),
       );
     });
 
@@ -131,7 +134,7 @@ describe('Watcher', () => {
       await watcher._poll();
 
       expect(spy).toHaveBeenCalledWith(
-        expect.objectContaining({ from: 'APPROVED', to: 'CHANGES_REQUESTED' })
+        expect.objectContaining({ from: 'APPROVED', to: 'CHANGES_REQUESTED' }),
       );
     });
   });
@@ -150,7 +153,7 @@ describe('Watcher', () => {
       await watcher._checkApprovals();
 
       expect(spy).toHaveBeenCalledWith(
-        expect.objectContaining({ num: 6, prompt: expect.stringContaining('(y/n)') })
+        expect.objectContaining({ num: 6, prompt: expect.stringContaining('(y/n)') }),
       );
     });
 
@@ -179,7 +182,7 @@ describe('Watcher', () => {
 
       const mockNode = createMockNode();
       mockNode.capturePane.mockResolvedValue(
-        'Reading file.js\n  ⎿  API Error: 500 {"type":"error","error":{"type":"api_error","message":"Internal server error"}}\n\n❯ '
+        'Reading file.js\n  ⎿  API Error: 500 {"type":"error","error":{"type":"api_error","message":"Internal server error"}}\n\n❯ ',
       );
       mockNode.sendKeys.mockResolvedValue(null);
       router.nodeFor.mockReturnValue(mockNode);
@@ -196,12 +199,8 @@ describe('Watcher', () => {
       // 5 idle polls to trigger confirmation
       for (let i = 0; i < 5; i++) await watcher._poll();
 
-      expect(retrySpy).toHaveBeenCalledWith(
-        expect.objectContaining({ num: 6, retryCount: 1 })
-      );
-      expect(mockNode.sendKeys).toHaveBeenCalledWith(
-        expect.stringContaining('6'), 'retry', true
-      );
+      expect(retrySpy).toHaveBeenCalledWith(expect.objectContaining({ num: 6, retryCount: 1 }));
+      expect(mockNode.sendKeys).toHaveBeenCalledWith(expect.stringContaining('6'), 'retry', true);
     });
 
     it('does not retry when no API error present', async () => {
@@ -237,9 +236,7 @@ describe('Watcher', () => {
       watcher.on('session:idle', idleSpy);
 
       const mockNode = createMockNode();
-      mockNode.capturePane.mockResolvedValue(
-        '  ⎿  API Error: 500 {"type":"error"}\n❯ '
-      );
+      mockNode.capturePane.mockResolvedValue('  ⎿  API Error: 500 {"type":"error"}\n❯ ');
       mockNode.sendKeys.mockResolvedValue(null);
       router.nodeFor.mockReturnValue(mockNode);
 
@@ -253,12 +250,8 @@ describe('Watcher', () => {
       for (let i = 0; i < 5; i++) await watcher._poll();
 
       // Should STILL retry (attempt 10) and must NOT give up / confirm idle.
-      expect(retrySpy).toHaveBeenCalledWith(
-        expect.objectContaining({ num: 6, retryCount: 10 })
-      );
-      expect(mockNode.sendKeys).toHaveBeenCalledWith(
-        expect.stringContaining('6'), 'retry', true
-      );
+      expect(retrySpy).toHaveBeenCalledWith(expect.objectContaining({ num: 6, retryCount: 10 }));
+      expect(mockNode.sendKeys).toHaveBeenCalledWith(expect.stringContaining('6'), 'retry', true);
       expect(idleSpy).not.toHaveBeenCalled();
     });
 
@@ -346,7 +339,9 @@ describe('Watcher', () => {
 
       const mockNode = createMockNode();
       // Claude is handling its own retry (spinner with ellipsis) — leave it alone.
-      mockNode.capturePane.mockResolvedValue('  ⎿  API Error: 529 Overloaded\n✻ Retrying… (esc to interrupt)\n');
+      mockNode.capturePane.mockResolvedValue(
+        '  ⎿  API Error: 529 Overloaded\n✻ Retrying… (esc to interrupt)\n',
+      );
       mockNode.sendKeys.mockResolvedValue(null);
       router.nodeFor.mockReturnValue(mockNode);
 
@@ -362,7 +357,9 @@ describe('Watcher', () => {
 
     it('does not retry when watcher.errorRetry.enabled is false', async () => {
       const retrySpy = vi.fn();
-      const disabledConfig = createMockConfig({ watcher: { interval: 1000, errorRetry: { enabled: false } } });
+      const disabledConfig = createMockConfig({
+        watcher: { interval: 1000, errorRetry: { enabled: false } },
+      });
       watcher = new Watcher(disabledConfig, router);
       watcher.on('session:error-retry', retrySpy);
 
@@ -424,10 +421,12 @@ describe('Watcher', () => {
       fleetSpy.mockResolvedValue([makeSession(6, 'idle')]);
       await watcher._poll();
 
-      expect(watcher.detectedWaiting.has(6)).toBe(false);          // flag cleared
+      expect(watcher.detectedWaiting.has(6)).toBe(false); // flag cleared
       expect(mockNode.sendKeys).toHaveBeenCalledWith(expect.stringContaining('6'), 'retry', true);
       expect(retrySpy).toHaveBeenCalledWith(expect.objectContaining({ num: 6, retryCount: 1 }));
-      expect(log.info).toHaveBeenCalledWith(expect.stringContaining('clearing stale detectedWaiting'));
+      expect(log.info).toHaveBeenCalledWith(
+        expect.stringContaining('clearing stale detectedWaiting'),
+      );
     });
 
     it('does not treat Claude prose about a rate-limit as a live error (no retry loop)', async () => {
@@ -438,7 +437,7 @@ describe('Watcher', () => {
       watcher.on('session:error-retry', retrySpy);
       const mockNode = createMockNode();
       mockNode.capturePane.mockResolvedValue(
-        "● Holding. These repeated \"retry\" pings are the stale rate-limit-era queue draining; nothing is pending or over capacity.\n❯ "
+        '● Holding. These repeated "retry" pings are the stale rate-limit-era queue draining; nothing is pending or over capacity.\n❯ ',
       );
       mockNode.sendKeys.mockResolvedValue(null);
       router.nodeFor.mockReturnValue(mockNode);
@@ -464,7 +463,7 @@ describe('Watcher', () => {
       const ampm = futureTime.getHours() >= 12 ? 'PM' : 'AM';
       const timeStr = `${h}:${String(futureTime.getMinutes()).padStart(2, '0')} ${ampm}`;
       mockNode.capturePane.mockResolvedValue(
-        `⚠ Usage limit reached. Resets at ${timeStr} EDT.\n❯ `
+        `⚠ Usage limit reached. Resets at ${timeStr} EDT.\n❯ `,
       );
       mockNode.sendKeys.mockResolvedValue(null);
       router.nodeFor.mockReturnValue(mockNode);
@@ -477,49 +476,83 @@ describe('Watcher', () => {
 
       // Should emit event with retryAfter but NOT send keys (waiting for reset)
       expect(retrySpy).toHaveBeenCalledWith(
-        expect.objectContaining({ num: 6, retryAfter: expect.any(Number), waitMins: expect.any(Number) })
+        expect.objectContaining({
+          num: 6,
+          retryAfter: expect.any(Number),
+          waitMins: expect.any(Number),
+        }),
       );
       expect(mockNode.sendKeys).not.toHaveBeenCalled();
     });
 
     // Regression: expanded pattern coverage (timeouts, network, HTTP 502/503/504)
     const RETRYABLE_FIXTURES = [
-      ['Request timed out', 'API Error (Request timed out.) · Retrying in 1s... (attempt 1/10)\n❯ '],
-      ['Stream idle timeout', '  ⎿  API Error: Stream idle timeout - partial response received\n❯ '],
+      [
+        'Request timed out',
+        'API Error (Request timed out.) · Retrying in 1s... (attempt 1/10)\n❯ ',
+      ],
+      [
+        'Stream idle timeout',
+        '  ⎿  API Error: Stream idle timeout - partial response received\n❯ ',
+      ],
       // Real fixture from S:24 — same streaming abort as the line above, worded
       // differently by Claude Code. No status code, so it used to fall through as
       // non-retryable. Phrase-gated on "API Error", which this real line carries;
       // the narration case is pinned in NON_RETRYABLE_FIXTURES below.
-      ['response stopped arriving', '  ⎿  API Error: The response stopped arriving. The response above may be incomplete.\n\n✻ Cooked for 14m 37s · done 10:13 AM\n\n❯ '],
-      ['Connection error',    '  ⎿  API Error (Connection error.) · Retrying in 1s... (attempt 1/3)\n❯ '],
-      ['ECONNRESET',          '  ⎿  API Error: fetch failed (ECONNRESET)\n❯ '],
-      ['ETIMEDOUT',           '  ⎿  Error: connect ETIMEDOUT 104.18.32.115:443\n❯ '],
-      ['socket hang up',      '  ⎿  API Error: socket hang up\n❯ '],
-      ['fetch failed',        '  ⎿  TypeError: fetch failed\n❯ '],
-      ['HTTP 502',            '  ⎿  API Error: 502 Bad Gateway\n❯ '],
-      ['HTTP 503',            '  ⎿  API Error: 503 Service Unavailable\n❯ '],
-      ['HTTP 504',            '  ⎿  API Error: 504 {"type":"error","error":{"type":"timeout_error"}}\n❯ '],
-      ['HTTP 408',            '  ⎿  API Error: 408 Request Timeout\n❯ '],
-      ['Unable to connect',   '  ⎿  Unable to connect to the API. Check your internet connection.\n❯ '],
+      [
+        'response stopped arriving',
+        '  ⎿  API Error: The response stopped arriving. The response above may be incomplete.\n\n✻ Cooked for 14m 37s · done 10:13 AM\n\n❯ ',
+      ],
+      [
+        'Connection error',
+        '  ⎿  API Error (Connection error.) · Retrying in 1s... (attempt 1/3)\n❯ ',
+      ],
+      ['ECONNRESET', '  ⎿  API Error: fetch failed (ECONNRESET)\n❯ '],
+      ['ETIMEDOUT', '  ⎿  Error: connect ETIMEDOUT 104.18.32.115:443\n❯ '],
+      ['socket hang up', '  ⎿  API Error: socket hang up\n❯ '],
+      ['fetch failed', '  ⎿  TypeError: fetch failed\n❯ '],
+      ['HTTP 502', '  ⎿  API Error: 502 Bad Gateway\n❯ '],
+      ['HTTP 503', '  ⎿  API Error: 503 Service Unavailable\n❯ '],
+      ['HTTP 504', '  ⎿  API Error: 504 {"type":"error","error":{"type":"timeout_error"}}\n❯ '],
+      ['HTTP 408', '  ⎿  API Error: 408 Request Timeout\n❯ '],
+      [
+        'Unable to connect',
+        '  ⎿  Unable to connect to the API. Check your internet connection.\n❯ ',
+      ],
       // Server-side throttle with no numeric code — the message Jeff was seeing a lot of.
-      ['temporarily limiting', '  ⎿  API Error: Server is temporarily limiting requests (not your usage limit) ·\n      Rate limited\n\n❯ '],
+      [
+        'temporarily limiting',
+        '  ⎿  API Error: Server is temporarily limiting requests (not your usage limit) ·\n      Rate limited\n\n❯ ',
+      ],
       // TLS handshake / record errors. Real fixture from session 7:
       // "API Error: [SSL: SSLV3_ALERT_BAD_RECORD_MAC] ssl/tls alert bad record mac (_ssl.c:2548)"
       // The bracketed SSL: <UPPER_SNAKE> shape is the canonical Python ssl
       // module message — unambiguous enough to match anywhere.
-      ['SSL alert bracketed', '  ⎿  API Error: [SSL: SSLV3_ALERT_BAD_RECORD_MAC] ssl/tls alert bad record mac (_ssl.c:2548)\n❯ '],
-      ['SSL alert plain',     '  ⎿  API Error: ssl/tls alert handshake failure\n❯ '],
+      [
+        'SSL alert bracketed',
+        '  ⎿  API Error: [SSL: SSLV3_ALERT_BAD_RECORD_MAC] ssl/tls alert bad record mac (_ssl.c:2548)\n❯ ',
+      ],
+      ['SSL alert plain', '  ⎿  API Error: ssl/tls alert handshake failure\n❯ '],
       // Real fixture from session 22 (different shape from the bracketed-alert variant):
       // "API Error: TLS/SSL connection has been closed (EOF) (_ssl.c:2396)"
-      ['TLS connection closed', '  ⎿  API Error: TLS/SSL connection has been closed (EOF) (_ssl.c:2396)\n❯ '],
+      [
+        'TLS connection closed',
+        '  ⎿  API Error: TLS/SSL connection has been closed (EOF) (_ssl.c:2396)\n❯ ',
+      ],
       // Generic catch-all via the (_ssl.c:NNNN) suffix — covers any future variant.
-      ['ssl.c suffix only',    '  ⎿  API Error: some new ssl error shape (_ssl.c:9999)\n❯ '],
+      ['ssl.c suffix only', '  ⎿  API Error: some new ssl error shape (_ssl.c:9999)\n❯ '],
       // Real fixture from S:20: Anthropic's structured JSON error envelope with an
       // empty message. The `"type":"api_error"` substring is unambiguous.
-      ['JSON api_error empty', '  ⎿  API Error: {"type":"error","error":{"type":"api_error","message":""}}\n❯ '],
+      [
+        'JSON api_error empty',
+        '  ⎿  API Error: {"type":"error","error":{"type":"api_error","message":""}}\n❯ ',
+      ],
       // Real fixture from S:12: Claude Code's auto-mode safety classifier was
       // unavailable. The bash command was blocked; platform message says to retry.
-      ['auto-mode classifier unavailable', '  ⎿  Error: claude-opus-4-7 is temporarily unavailable, so auto mode cannot determine the safety of Bash right now. Wait briefly and then try this action again.\n❯ '],
+      [
+        'auto-mode classifier unavailable',
+        '  ⎿  Error: claude-opus-4-7 is temporarily unavailable, so auto mode cannot determine the safety of Bash right now. Wait briefly and then try this action again.\n❯ ',
+      ],
     ];
 
     for (const [label, paneContent] of RETRYABLE_FIXTURES) {
@@ -539,12 +572,8 @@ describe('Watcher', () => {
         fleetSpy.mockResolvedValue([makeSession(6, 'idle')]);
         for (let i = 0; i < 5; i++) await watcher._poll();
 
-        expect(retrySpy).toHaveBeenCalledWith(
-          expect.objectContaining({ num: 6, retryCount: 1 })
-        );
-        expect(mockNode.sendKeys).toHaveBeenCalledWith(
-          expect.stringContaining('6'), 'retry', true
-        );
+        expect(retrySpy).toHaveBeenCalledWith(expect.objectContaining({ num: 6, retryCount: 1 }));
+        expect(mockNode.sendKeys).toHaveBeenCalledWith(expect.stringContaining('6'), 'retry', true);
       });
     }
 
@@ -557,19 +586,27 @@ describe('Watcher', () => {
       // review raised on "response stopped arriving": unlike `SSL: <UPPER_SNAKE>`
       // or `"type":"api_error"`, it is an ordinary English sentence. Without the
       // "API Error" gate hive reads Claude's own prose as a live error.
-      ['narrating a past streaming abort',
-        '⏺ The earlier failure was that the response stopped arriving partway through,\n  so I re-ran the command and it succeeded.\n\n❯ '],
+      [
+        'narrating a past streaming abort',
+        '⏺ The earlier failure was that the response stopped arriving partway through,\n  so I re-ran the command and it succeeded.\n\n❯ ',
+      ],
       // The same hazard in this repo specifically: the phrase lives in a source
       // comment and a test fixture, so a session working on the watcher puts it
       // on screen just by grepping. Protected while the output does not also
       // carry "API Error" — see the KNOWN GAP test below for when it does.
-      ['grep output showing the pattern line',
-        '⏺ Bash(grep -n "stopped arriving" src/core/watcher.js)\n  ⎿  47:  /response stopped arriving/i,\n\n❯ '],
+      [
+        'grep output showing the pattern line',
+        '⏺ Bash(grep -n "stopped arriving" src/core/watcher.js)\n  ⎿  47:  /response stopped arriving/i,\n\n❯ ',
+      ],
       // Pre-existing gated phrases, pinned the same way.
-      ['narrating a past rate limit',
-        '⏺ That was the stale rate-limit-era queue draining; it has cleared now.\n\n❯ '],
-      ['narrating capacity',
-        '⏺ The provider was at capacity earlier, which is why the first attempt failed.\n\n❯ '],
+      [
+        'narrating a past rate limit',
+        '⏺ That was the stale rate-limit-era queue draining; it has cleared now.\n\n❯ ',
+      ],
+      [
+        'narrating capacity',
+        '⏺ The provider was at capacity earlier, which is why the first attempt failed.\n\n❯ ',
+      ],
     ];
 
     for (const [label, paneContent] of NON_RETRYABLE_FIXTURES) {
@@ -591,7 +628,9 @@ describe('Watcher', () => {
 
         expect(retrySpy).not.toHaveBeenCalled();
         expect(mockNode.sendKeys).not.toHaveBeenCalledWith(
-          expect.anything(), 'retry', expect.anything()
+          expect.anything(),
+          'retry',
+          expect.anything(),
         );
       });
     }
@@ -615,7 +654,7 @@ describe('Watcher', () => {
 
       const mockNode = createMockNode();
       mockNode.capturePane.mockResolvedValue(
-        '⏺ Bash(grep -n "stopped arriving" src/core/watcher.js)\n  ⎿  38:  //   API Error: The response stopped arriving. The response above may be incomplete.\n\n❯ '
+        '⏺ Bash(grep -n "stopped arriving" src/core/watcher.js)\n  ⎿  38:  //   API Error: The response stopped arriving. The response above may be incomplete.\n\n❯ ',
       );
       mockNode.sendKeys.mockResolvedValue(null);
       router.nodeFor.mockReturnValue(mockNode);
@@ -643,8 +682,11 @@ describe('Watcher', () => {
       // (Slice width is 15 in the no-tasks-panel case, 30 when the tasks panel
       // is visible — see the two sibling tests below. Old errors at 40+ lines
       // deep are outside both windows.)
-      const oldError = '  ⎿  API Error: [SSL: SSLV3_ALERT_BAD_RECORD_MAC] ssl/tls alert bad record mac (_ssl.c:2548)';
-      const filler = Array.from({ length: 40 }, (_, i) => `  line ${i} of post-recovery work`).join('\n');
+      const oldError =
+        '  ⎿  API Error: [SSL: SSLV3_ALERT_BAD_RECORD_MAC] ssl/tls alert bad record mac (_ssl.c:2548)';
+      const filler = Array.from({ length: 40 }, (_, i) => `  line ${i} of post-recovery work`).join(
+        '\n',
+      );
       const recentTail = [
         '⏺ Work resumed and completed.',
         '❯ ',
@@ -805,7 +847,7 @@ describe('Watcher', () => {
         '',
         '✻ Cooked for 1m 15s',
         '',
-        '❯ retry',                                     // <- retry already submitted
+        '❯ retry', // <- retry already submitted
         '',
         '⏺ Good news: paste the discovery output.',
         '',
@@ -842,9 +884,9 @@ describe('Watcher', () => {
       // window must NOT mask a fresh error. The submitted-retry guard only
       // skips when the retry line appears BELOW the most recent error.
       const paneContent = [
-        '⏺ API Error: 529 Overloaded',          // <- old error
+        '⏺ API Error: 529 Overloaded', // <- old error
         '',
-        '❯ retry',                              // <- old retry (above the fresh error)
+        '❯ retry', // <- old retry (above the fresh error)
         '',
         '⏺ Recovery prose.',
         '',
@@ -878,9 +920,7 @@ describe('Watcher', () => {
 
       const mockNode = createMockNode();
       // Error without reset time (plain 500)
-      mockNode.capturePane.mockResolvedValue(
-        '  ⎿  API Error: 500 {"type":"error"}\n❯ '
-      );
+      mockNode.capturePane.mockResolvedValue('  ⎿  API Error: 500 {"type":"error"}\n❯ ');
       mockNode.sendKeys.mockResolvedValue(null);
       router.nodeFor.mockReturnValue(mockNode);
 
@@ -892,9 +932,7 @@ describe('Watcher', () => {
       fleetSpy.mockResolvedValue([makeSession(6, 'idle')]);
       for (let i = 0; i < 5; i++) await watcher._poll();
 
-      expect(mockNode.sendKeys).toHaveBeenCalledWith(
-        expect.stringContaining('6'), 'retry', true
-      );
+      expect(mockNode.sendKeys).toHaveBeenCalledWith(expect.stringContaining('6'), 'retry', true);
     });
   });
 

@@ -48,7 +48,9 @@ function resolveSessionAction(name, expectedRoot, existing, force, explicit = fa
 // Get existing tmux sessions and their paths (live)
 function getExistingSessions() {
   try {
-    const out = execSync('tmux list-sessions -F "#{session_name}:#{session_path}" 2>/dev/null', { encoding: 'utf8' });
+    const out = execSync('tmux list-sessions -F "#{session_name}:#{session_path}" 2>/dev/null', {
+      encoding: 'utf8',
+    });
     return parseExistingSessions(out);
   } catch {
     return {};
@@ -83,7 +85,9 @@ if (require.main === module) {
     if (state.spawnedAgents && typeof state.spawnedAgents === 'object') {
       spawnedAgents = state.spawnedAgents;
     }
-  } catch { /* no state yet */ }
+  } catch {
+    /* no state yet */
+  }
   const originalRepoDir = config.sessions.repoDir;
   config.sessions.repoDir = (n) => {
     const spawned = spawnedAgents[String(n)] || spawnedAgents[n];
@@ -94,7 +98,7 @@ if (require.main === module) {
   // Parse flags and session numbers
   const args = process.argv.slice(2);
   const force = args.includes('--force');
-  const explicitNums = args.filter(a => a !== '--force').map(Number);
+  const explicitNums = args.filter((a) => a !== '--force').map(Number);
   // When slot numbers are listed on the CLI, those are "explicit" (legacy behavior).
   // With no slot numbers, iterate the roles map but treat it as non-explicit —
   // we only restart/verify already-running sessions, never auto-spawn missing ones.
@@ -118,7 +122,9 @@ if (require.main === module) {
     }
 
     if (action === 'skip') {
-      console.log(`Session ${n} already running at ${existing[name]} — skipping (use --force to recreate)`);
+      console.log(
+        `Session ${n} already running at ${existing[name]} — skipping (use --force to recreate)`,
+      );
       continue;
     }
 
@@ -127,7 +133,9 @@ if (require.main === module) {
       try {
         // Exact-match target (=) so killing session "3" can't prefix-match "30".
         execSync(`tmux kill-session -t "=${name}"`, { stdio: 'inherit' });
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }
 
     const cmd = `tmuxinator start -p "${templatePath}" N=${n} ROOT="${root}" --no-attach`;

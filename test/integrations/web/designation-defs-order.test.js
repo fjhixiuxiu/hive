@@ -2,7 +2,13 @@ import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import { createRequire } from 'module';
 import EventEmitter from 'events';
 import fs from 'fs';
-import { createFakeWs, sentMessages, createMockNode, createMockConfig, createMockWatcher } from '../../helpers/mocks.js';
+import {
+  createFakeWs,
+  sentMessages,
+  createMockNode,
+  createMockConfig,
+  createMockWatcher,
+} from '../../helpers/mocks.js';
 
 const require = createRequire(import.meta.url);
 const fleet = require('../../../src/core/fleet.js');
@@ -113,7 +119,9 @@ describe('initial state send order', () => {
     vi.useRealTimers();
     vi.restoreAllMocks();
     if (setupFileCreated) {
-      try { fs.unlinkSync(setupPath); } catch {}
+      try {
+        fs.unlinkSync(setupPath);
+      } catch {}
     }
   });
 
@@ -132,7 +140,9 @@ describe('initial state send order', () => {
 
     expect(defsIdx, 'designationDefs:list must be sent').toBeGreaterThanOrEqual(0);
     expect(assignmentsIdx, 'designations:status must be sent').toBeGreaterThanOrEqual(0);
-    expect(defsIdx, 'defs must precede assignments so the client cache is hot when the grid re-renders')
-      .toBeLessThan(assignmentsIdx);
+    expect(
+      defsIdx,
+      'defs must precede assignments so the client cache is hot when the grid re-renders',
+    ).toBeLessThan(assignmentsIdx);
   });
 });

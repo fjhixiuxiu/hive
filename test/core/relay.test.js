@@ -72,7 +72,10 @@ describe('relay', () => {
     it('respects timeout', async () => {
       let first = true;
       tmux.detectState.mockImplementation(() => {
-        if (first) { first = false; return 'idle'; }
+        if (first) {
+          first = false;
+          return 'idle';
+        }
         return 'working';
       });
       node.capturePane.mockResolvedValue('still working hello');
@@ -88,7 +91,10 @@ describe('relay', () => {
     it('with force=true bypasses busy check', async () => {
       let first = true;
       tmux.detectState.mockImplementation(() => {
-        if (first) { first = false; return 'working'; } // initial check: busy
+        if (first) {
+          first = false;
+          return 'working';
+        } // initial check: busy
         return 'working'; // stays working
       });
       node.capturePane.mockResolvedValue('busy: hello');
@@ -111,14 +117,17 @@ describe('relay', () => {
       tmux.detectState.mockReturnValue('off');
       node.capturePane.mockResolvedValue('Nukuls-MacBook-Pro:hive dev$ ');
 
-      const result = await relay.ask(config, node, '6-DEV', 'hello', { force: true, vimMode: true });
+      const result = await relay.ask(config, node, '6-DEV', 'hello', {
+        force: true,
+        vimMode: true,
+      });
 
       expect(result.success).toBe(false);
       expect(result.error).toContain('not running');
       // Critically, no keys were sent — clearInputVim never ran.
       expect(node.sendKeys).not.toHaveBeenCalled();
       const execCalls = node.exec.mock.calls.map(([cmd]) => cmd);
-      expect(execCalls.some(c => c.includes(' g g d G'))).toBe(false);
+      expect(execCalls.some((c) => c.includes(' g g d G'))).toBe(false);
     });
 
     it('with vimMode does gg-dG clear and Escape→i (no readline C-a/C-k)', async () => {
@@ -131,15 +140,15 @@ describe('relay', () => {
 
       const execCalls = node.exec.mock.calls.map(([cmd]) => cmd);
       // Vim-safe clear: Escape, gg dG, i
-      expect(execCalls.some(c => c.includes(' Escape'))).toBe(true);
-      expect(execCalls.some(c => c.includes(' g g d G'))).toBe(true);
-      expect(execCalls.some(c => c.endsWith(' i'))).toBe(true);
+      expect(execCalls.some((c) => c.includes(' Escape'))).toBe(true);
+      expect(execCalls.some((c) => c.includes(' g g d G'))).toBe(true);
+      expect(execCalls.some((c) => c.endsWith(' i'))).toBe(true);
       // Readline keys are unsafe in vim insert mode and must NOT be sent.
-      expect(execCalls.some(c => c.includes(' C-a'))).toBe(false);
-      expect(execCalls.some(c => c.includes(' C-k'))).toBe(false);
+      expect(execCalls.some((c) => c.includes(' C-a'))).toBe(false);
+      expect(execCalls.some((c) => c.includes(' C-k'))).toBe(false);
       // Paste happens with enter=false; Enter is a separate dwelled call.
       expect(node.sendKeys).toHaveBeenCalledWith('=6-DEV:.1', 'hello', false);
-      expect(execCalls.some(c => c.endsWith(' Enter'))).toBe(true);
+      expect(execCalls.some((c) => c.endsWith(' Enter'))).toBe(true);
     });
 
     it('calls onProgress callback', async () => {
@@ -173,7 +182,7 @@ describe('relay', () => {
       expect(node.sendKeys).toHaveBeenCalledTimes(1);
       // Enter is sent regardless of verification result.
       const execCalls = node.exec.mock.calls.map(([cmd]) => cmd);
-      expect(execCalls.some(c => c.endsWith(' Enter'))).toBe(true);
+      expect(execCalls.some((c) => c.endsWith(' Enter'))).toBe(true);
       // ask() still completes successfully — verification is advisory.
       expect(result.success).toBe(true);
     });

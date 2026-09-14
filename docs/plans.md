@@ -58,18 +58,18 @@ A self-contained HTML file with two conventions:
 2. An embedded JSON block holds the comments:
    ```html
    <script type="application/json" id="hive-comments">
-   [
-     {
-       "id": "c1",
-       "sectionId": "approach",
-       "status": "open",
-       "createdAt": "2026-05-24T14:02:00Z",
-       "thread": [
-         { "author": "user", "text": "why X?", "at": "..." },
-         { "author": "claude", "text": "good catch — switching", "at": "..." }
-       ]
-     }
-   ]
+     [
+       {
+         "id": "c1",
+         "sectionId": "approach",
+         "status": "open",
+         "createdAt": "2026-05-24T14:02:00Z",
+         "thread": [
+           { "author": "user", "text": "why X?", "at": "..." },
+           { "author": "claude", "text": "good catch — switching", "at": "..." }
+         ]
+       }
+     ]
    </script>
    ```
 
@@ -77,12 +77,12 @@ Comments live inside the HTML on purpose: one file = one artifact. No split-brai
 
 ### Comment status
 
-| Status | Meaning |
-|---|---|
-| `draft` | Authored in the dashboard, not yet sent to Claude |
-| `open` | Sent to Claude, awaiting / received reply, not resolved |
-| `resolved` | Addressed (auto on patch, or manual) |
-| `moved` | Regeneration migrated this comment to a new section |
+| Status     | Meaning                                                 |
+| ---------- | ------------------------------------------------------- |
+| `draft`    | Authored in the dashboard, not yet sent to Claude       |
+| `open`     | Sent to Claude, awaiting / received reply, not resolved |
+| `resolved` | Addressed (auto on patch, or manual)                    |
+| `moved`    | Regeneration migrated this comment to a new section     |
 
 ### Plan meta (sidecar)
 
@@ -144,6 +144,7 @@ hive_publish_plan({
 ```
 
 Returns `{ planId, version, url }`. Side effects:
+
 - Reads file via `fs.readFileSync`, sends content to hive over the existing WS connection
 - Writes `sessionContext.<num>.planRef` for the calling session
 - Broadcasts `plan:published` and `context:updated` to the dashboard
@@ -153,6 +154,7 @@ Republishing for the same session bumps the version (no new planId).
 ### Server-level instructions
 
 The MCP server returns server-level `instructions` at initialization telling Claude to:
+
 1. Always write a plan to a file first
 2. Use `<section data-id="...">` blocks
 3. Include `<script type="application/json" id="hive-comments">[]</script>`
@@ -162,20 +164,20 @@ This makes plans the default for any "design this", "plan this", or "think throu
 
 ## Web routes
 
-| Method · URL | Purpose |
-|---|---|
-| `GET /plans` | Index page (static `plans-index.html`) — used standalone; in-app uses the Plans nav panel |
-| `GET /plans/:planId` | Editor wrapper (iframe + comments sidebar) — `plan-editor.html` |
-| `GET /plans/:planId/raw` | Raw plan HTML — loaded inside the editor iframe |
-| `GET /plans/:planId/v:n` | Pinned version (read-only diff target) |
-| `GET /api/plans?status=open\|archived\|all&session=<n>` | List plans |
-| `GET /api/plans/:planId` | Meta + currentVersion + openCommentCount |
-| `GET /api/plans/:planId/comments` | Comments for current version |
-| `POST /api/plans/:planId/comments` | Add a draft comment `{ sectionId, text }` |
-| `PATCH /api/plans/:planId/comments/:commentId` | Update comment status |
-| `POST /api/plans/:planId/send` | Send all draft comments to the originating session (`relay.tell`); flips drafts → open |
-| `POST /api/plans/:planId/archive` | Archive (clears `planRef` from any session pointing to this plan) |
-| `POST /api/plans/:planId/unarchive` | Restore to open status |
+| Method · URL                                            | Purpose                                                                                   |
+| ------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `GET /plans`                                            | Index page (static `plans-index.html`) — used standalone; in-app uses the Plans nav panel |
+| `GET /plans/:planId`                                    | Editor wrapper (iframe + comments sidebar) — `plan-editor.html`                           |
+| `GET /plans/:planId/raw`                                | Raw plan HTML — loaded inside the editor iframe                                           |
+| `GET /plans/:planId/v:n`                                | Pinned version (read-only diff target)                                                    |
+| `GET /api/plans?status=open\|archived\|all&session=<n>` | List plans                                                                                |
+| `GET /api/plans/:planId`                                | Meta + currentVersion + openCommentCount                                                  |
+| `GET /api/plans/:planId/comments`                       | Comments for current version                                                              |
+| `POST /api/plans/:planId/comments`                      | Add a draft comment `{ sectionId, text }`                                                 |
+| `PATCH /api/plans/:planId/comments/:commentId`          | Update comment status                                                                     |
+| `POST /api/plans/:planId/send`                          | Send all draft comments to the originating session (`relay.tell`); flips drafts → open    |
+| `POST /api/plans/:planId/archive`                       | Archive (clears `planRef` from any session pointing to this plan)                         |
+| `POST /api/plans/:planId/unarchive`                     | Restore to open status                                                                    |
 
 ## Dashboard UI
 
@@ -217,10 +219,11 @@ The session's context sidebar shows a `Plan: <title> · N open` link. Click → 
 Plans live as `open` until manually archived. Manual-only (no auto-archive on task complete) because a plan is a per-feature/per-investigation artifact, not per-task — auto would guess wrong half the time.
 
 On archive (`POST /api/plans/:id/archive`):
+
 - `meta.status = 'archived'`
 - Every session whose `planRef.planId` matches is cleared (`taskQueue.setSessionContext(num, { planRef: null })`)
 - Broadcasts `context:updated` for each affected session + `plan:archived`
-- Editor flips to read-only — Send hidden, Restore shown, banner: *"This plan is archived — read-only."*
+- Editor flips to read-only — Send hidden, Restore shown, banner: _"This plan is archived — read-only."_
 - Plan files (HTML + comments + meta) stay on disk forever as a record
 
 Unarchive flips status back to `open`. Does **not** auto-restore `planRef` to any session — user must re-pin manually.
@@ -246,10 +249,10 @@ Resolves the originating session via the existing `fleet`/`router`, calls `relay
 
 Once drafts land in tmux, Claude replies via two new MCP tools that target the session's currently pinned plan (`sessionContext.planRef.planId`):
 
-| Tool | Behavior |
-|---|---|
+| Tool                                                 | Behavior                                                                                                                                                                                                                                                                      |
+| ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `hive_reply_to_comment({ commentId, text, patch? })` | Appends `{ author: 'claude', text, at, patch? }` to the comment's `thread`. If `patch: { sectionId, html }` is provided, the section's inner HTML is replaced inline (no version bump) **and** the comment is auto-resolved. Without a patch, the comment status stays as-is. |
-| `hive_resolve_comment({ commentId, reason? })` | Sets status to `resolved`. Optional `reason` is recorded as a `claude` message in the thread. |
+| `hive_resolve_comment({ commentId, reason? })`       | Sets status to `resolved`. Optional `reason` is recorded as a `claude` message in the thread.                                                                                                                                                                                 |
 
 Server broadcasts `plan:comments-changed` with `{ planId, openCount, hasPatch }`. The dashboard:
 

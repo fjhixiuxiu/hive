@@ -28,7 +28,8 @@ function ensureWebToken() {
   let envContent = '';
   if (fs.existsSync(envPath)) {
     envContent = fs.readFileSync(envPath, 'utf8');
-    if (envContent.split('\n').some(l => !l.trim().startsWith('#') && l.includes('WEB_TOKEN='))) return;
+    if (envContent.split('\n').some((l) => !l.trim().startsWith('#') && l.includes('WEB_TOKEN=')))
+      return;
   }
 
   const token = require('crypto').randomBytes(16).toString('hex');
@@ -106,7 +107,9 @@ async function cmdStart(args) {
     // Create sessions
     log.info('Creating fleet sessions...');
     const results = await sessionManager.createAllSessions(config);
-    log.info(`Sessions: ${results.created.length} created, ${results.skipped.length} skipped, ${results.failed.length} failed`);
+    log.info(
+      `Sessions: ${results.created.length} created, ${results.skipped.length} skipped, ${results.failed.length} failed`,
+    );
 
     if (results.created.length > 0) {
       log.info(`Created: ${results.created.join(', ')}`);
@@ -131,7 +134,9 @@ async function cmdStart(args) {
       }
     }
   } else if (!noSessions && !setupExists) {
-    log.info('No .hive-setup.json found — skipping session creation (complete setup wizard in browser)');
+    log.info(
+      'No .hive-setup.json found — skipping session creation (complete setup wizard in browser)',
+    );
   }
 
   // Start dashboard
@@ -180,10 +185,10 @@ async function cmdStatus() {
   const prefix = config.sessions?.namePrefix || '';
   const pattern = prefix
     ? new RegExp('^' + prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\d+')
-    : (config.sessions?.pattern || /^\d+/);
+    : config.sessions?.pattern || /^\d+/;
 
   const sessions = await tmux.listSessions();
-  const fleetSessions = sessions.filter(s => pattern.test(s.name));
+  const fleetSessions = sessions.filter((s) => pattern.test(s.name));
   const hasServer = await tmux.hasSession('hive-server');
 
   console.log(`Fleet sessions: ${fleetSessions.length}`);
@@ -216,19 +221,19 @@ const [command, ...args] = process.argv.slice(2);
 
 switch (command) {
   case 'start':
-    cmdStart(args).catch(err => {
+    cmdStart(args).catch((err) => {
       log.error(`start failed: ${err.message}`);
       process.exit(1);
     });
     break;
   case 'stop':
-    cmdStop().catch(err => {
+    cmdStop().catch((err) => {
       log.error(`stop failed: ${err.message}`);
       process.exit(1);
     });
     break;
   case 'status':
-    cmdStatus().catch(err => {
+    cmdStatus().catch((err) => {
       log.error(`status failed: ${err.message}`);
       process.exit(1);
     });

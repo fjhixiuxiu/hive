@@ -36,7 +36,13 @@ function makeDeps(overrides = {}) {
     activeTaskBySession: new Map(),
   };
   return {
-    config, node, router, ws, sent, broadcasts, taskQueue,
+    config,
+    node,
+    router,
+    ws,
+    sent,
+    broadcasts,
+    taskQueue,
     deps: {
       config,
       taskQueue,
@@ -75,12 +81,16 @@ describe('working directory override', () => {
   });
 
   it('mcp:set_working_dir stores the override and responds ok', async () => {
-    await handleMessage(ctx.ws, {
-      type: 'mcp:set_working_dir',
-      _reqId: 1,
-      session: 3,
-      dir: '/Users/me/webplatform-worktree/DEV-123',
-    }, {});
+    await handleMessage(
+      ctx.ws,
+      {
+        type: 'mcp:set_working_dir',
+        _reqId: 1,
+        session: 3,
+        dir: '/Users/me/webplatform-worktree/DEV-123',
+      },
+      {},
+    );
 
     expect(ctx.sent).toHaveLength(1);
     expect(ctx.sent[0]).toMatchObject({
@@ -98,12 +108,16 @@ describe('working directory override', () => {
   });
 
   it('mcp:set_working_dir expands ~ in paths', async () => {
-    await handleMessage(ctx.ws, {
-      type: 'mcp:set_working_dir',
-      _reqId: 2,
-      session: 1,
-      dir: '~/projects/my-repo',
-    }, {});
+    await handleMessage(
+      ctx.ws,
+      {
+        type: 'mcp:set_working_dir',
+        _reqId: 2,
+        session: 1,
+        dir: '~/projects/my-repo',
+      },
+      {},
+    );
 
     expect(ctx.sent[0].ok).toBe(true);
     expect(ctx.sent[0].dir).not.toContain('~');
@@ -111,12 +125,16 @@ describe('working directory override', () => {
   });
 
   it('mcp:set_working_dir rejects empty dir', async () => {
-    await handleMessage(ctx.ws, {
-      type: 'mcp:set_working_dir',
-      _reqId: 3,
-      session: 1,
-      dir: '',
-    }, {});
+    await handleMessage(
+      ctx.ws,
+      {
+        type: 'mcp:set_working_dir',
+        _reqId: 3,
+        session: 1,
+        dir: '',
+      },
+      {},
+    );
 
     expect(ctx.sent[0]).toMatchObject({ _reqId: 3, ok: false });
   });
@@ -129,21 +147,29 @@ describe('working directory override', () => {
     const handler = createMessageHandler(c.deps);
 
     // Set working dir for session 3
-    await handler(c.ws, {
-      type: 'mcp:set_working_dir',
-      _reqId: 1,
-      session: 3,
-      dir: '/custom/worktree/path',
-    }, {});
+    await handler(
+      c.ws,
+      {
+        type: 'mcp:set_working_dir',
+        _reqId: 1,
+        session: 3,
+        dir: '/custom/worktree/path',
+      },
+      {},
+    );
 
     // Mock git commands to return something
     c.node.exec.mockResolvedValue('');
 
     // Now request git:info — fleet will find session '3-test' and extract num=3
-    await handler(c.ws, {
-      type: 'git:info',
-      session: '3-test',
-    }, {});
+    await handler(
+      c.ws,
+      {
+        type: 'git:info',
+        session: '3-test',
+      },
+      {},
+    );
 
     // All git commands should have been called with the override path
     const gitCalls = c.node.exec.mock.calls;
@@ -155,7 +181,7 @@ describe('working directory override', () => {
     }
 
     // Response should include workingDir
-    const gitInfoResp = c.sent.find(m => m.type === 'git:info');
+    const gitInfoResp = c.sent.find((m) => m.type === 'git:info');
     expect(gitInfoResp.workingDir).toBe('/custom/worktree/path');
   });
 
@@ -167,10 +193,14 @@ describe('working directory override', () => {
 
     c.node.exec.mockResolvedValue('');
 
-    await handler(c.ws, {
-      type: 'git:info',
-      session: '2-test',
-    }, {});
+    await handler(
+      c.ws,
+      {
+        type: 'git:info',
+        session: '2-test',
+      },
+      {},
+    );
 
     // Git commands should use the default repoDir (session-2)
     const gitCalls = c.node.exec.mock.calls.filter(([cmd]) => cmd.includes('git -C'));
@@ -180,7 +210,7 @@ describe('working directory override', () => {
     }
 
     // Response should not have workingDir
-    const gitInfoResp = c.sent.find(m => m.type === 'git:info');
+    const gitInfoResp = c.sent.find((m) => m.type === 'git:info');
     expect(gitInfoResp.workingDir).toBeNull();
   });
 });

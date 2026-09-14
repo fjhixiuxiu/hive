@@ -74,7 +74,9 @@ async function getSession(config, node, sessionName, nodeId) {
   }
 
   // Git info
-  const git = isRepo ? await node.gitInfo(repoDir) : { branch: '', staged: 0, modified: 0, untracked: 0 };
+  const git = isRepo
+    ? await node.gitInfo(repoDir)
+    : { branch: '', staged: 0, modified: 0, untracked: 0 };
   const ticket = ticketFromBranch(git.branch);
 
   return {
@@ -116,15 +118,19 @@ async function getFleetStatus(config, router) {
       const nc = getNodeConfig(config, nodeId);
       if (nc.sessions.repoBase && path) {
         // Path must match AND session name must yield a valid number
-        return path.startsWith(nc.sessions.repoBase) && sessionNum(name, nc.sessions.namePrefix) !== null;
+        return (
+          path.startsWith(nc.sessions.repoBase) && sessionNum(name, nc.sessions.namePrefix) !== null
+        );
       }
       return nc.sessions.pattern.test(name);
     });
-    const all_sessions = await Promise.all(matching.map(async ({ name, nodeId, lastActivity }) => {
-      const node = router.getNode(nodeId);
-      const session = await getSession(config, node, name, nodeId);
-      return { ...session, nodeId, lastActivity };
-    }));
+    const all_sessions = await Promise.all(
+      matching.map(async ({ name, nodeId, lastActivity }) => {
+        const node = router.getNode(nodeId);
+        const session = await getSession(config, node, name, nodeId);
+        return { ...session, nodeId, lastActivity };
+      }),
+    );
     // Deduplicate by session num — keep the most recently active session
     // (stale renamed tmux sessions like "5-old-branch" can linger alongside "5")
     const byNum = new Map();
@@ -140,9 +146,15 @@ async function getFleetStatus(config, router) {
     // real fleet, serve the last-known one instead of letting consumers act on "no
     // sessions". Don't refresh lastGood from the empty result, so the fallback window
     // is measured from the last GOOD poll.
-    if (result.length === 0 && _fleetCache.lastGood && _fleetCache.lastGood.length &&
-        (Date.now() - _fleetCache.lastGoodTs) < FLEET_EMPTY_FALLBACK_MS) {
-      log.warn(`[fleet] empty session list (likely a transient tmux timeout) — serving last-known fleet of ${_fleetCache.lastGood.length}`);
+    if (
+      result.length === 0 &&
+      _fleetCache.lastGood &&
+      _fleetCache.lastGood.length &&
+      Date.now() - _fleetCache.lastGoodTs < FLEET_EMPTY_FALLBACK_MS
+    ) {
+      log.warn(
+        `[fleet] empty session list (likely a transient tmux timeout) — serving last-known fleet of ${_fleetCache.lastGood.length}`,
+      );
       _fleetCache.result = _fleetCache.lastGood;
       _fleetCache.ts = Date.now();
       _fleetCache.pending = null;
@@ -189,7 +201,10 @@ async function findSession(config, router, query) {
   const all = await router.listAllSessions();
   const sessions = all.filter(({ name, path }) => {
     if (config.sessions.repoBase && path) {
-      return path.startsWith(config.sessions.repoBase) && sessionNum(name, config.sessions.namePrefix) !== null;
+      return (
+        path.startsWith(config.sessions.repoBase) &&
+        sessionNum(name, config.sessions.namePrefix) !== null
+      );
     }
     return config.sessions.pattern.test(name);
   });
@@ -197,12 +212,14 @@ async function findSession(config, router, query) {
   // Exact number match
   const num = parseInt(query);
   if (!isNaN(num)) {
-    return sessions.find(({ name }) => sessionNum(name, config.sessions.namePrefix) === num) || null;
+    return (
+      sessions.find(({ name }) => sessionNum(name, config.sessions.namePrefix) === num) || null
+    );
   }
   // Substring match
-  return sessions.find(({ name }) =>
-    name.toLowerCase().includes(String(query).toLowerCase())
-  ) || null;
+  return (
+    sessions.find(({ name }) => name.toLowerCase().includes(String(query).toLowerCase())) || null
+  );
 }
 
 module.exports = {

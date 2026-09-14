@@ -14,8 +14,13 @@ const prStatus = require('../../core/pr-status');
 const plansStore = require('../../core/plans-store');
 const sessionLinks = require('../../core/session-links');
 const {
-  HIVE_CONSOLE_SESSION, ghExecEnv, setupPath, isSetupComplete,
-  decorateTaskActions, executeTaskAction, capturePaneAnsi,
+  HIVE_CONSOLE_SESSION,
+  ghExecEnv,
+  setupPath,
+  isSetupComplete,
+  decorateTaskActions,
+  executeTaskAction,
+  capturePaneAnsi,
   resolveMcpSessionNum,
 } = require('./ws-helpers');
 
@@ -29,12 +34,30 @@ const slackKeepAlive = new https.Agent({ keepAlive: true, maxSockets: 2 });
  */
 function createMessageHandler(deps) {
   const {
-    config, taskQueue, pmManager, router,
-    broadcast, checkPermission, resolveSession,
-    clearTermSub, clearConsoleSub, termSubs, consoleSubs,
-    clearCardSub, clearAllCardSubs, cardTermSubs,
-    sendFleetStatus, broadcastFleetStatus, sendInitialState, _previewCache,
-    commands, clients, wsUser, workers, mcpClients, voiceAgent,
+    config,
+    taskQueue,
+    pmManager,
+    router,
+    broadcast,
+    checkPermission,
+    resolveSession,
+    clearTermSub,
+    clearConsoleSub,
+    termSubs,
+    consoleSubs,
+    clearCardSub,
+    clearAllCardSubs,
+    cardTermSubs,
+    sendFleetStatus,
+    broadcastFleetStatus,
+    sendInitialState,
+    _previewCache,
+    commands,
+    clients,
+    wsUser,
+    workers,
+    mcpClients,
+    voiceAgent,
   } = deps;
 
   // Per-session working directory overrides (session num → absolute path).
@@ -84,43 +107,46 @@ function createMessageHandler(deps) {
             const repoName = msg.repo.slice(slash + 1);
             try {
               const result = await prStatus.fetchReviewByPR(owner, repoName, msg.prNumber);
-              ws.send(JSON.stringify({
-                type: 'pr:review-result',
-                repo: msg.repo,
-                prNumber: String(msg.prNumber),
-                rollup: result ? result.rollup : '',
-                reviewers: result ? result.reviewers : [],
-                state: result ? result.state || '' : '',
-                merged: result ? !!result.merged : false,
-                draft: result ? !!result.draft : false,
-                mergedAt: result ? result.mergedAt || null : null,
-                ciState: result ? result.ciState || null : null,
-                // Rich detail fields for hover tooltips
-                title: result ? result.title || '' : '',
-                author: result ? result.author || '' : '',
-                authorAvatar: result ? result.authorAvatar || '' : '',
-                baseBranch: result ? result.baseBranch || '' : '',
-                headBranch: result ? result.headBranch || '' : '',
-                additions: result ? result.additions || 0 : 0,
-                deletions: result ? result.deletions || 0 : 0,
-                changedFiles: result ? result.changedFiles || 0 : 0,
-                mergedBy: result ? result.mergedBy || '' : '',
-                mergedByAvatar: result ? result.mergedByAvatar || '' : '',
-                updatedAt: result ? result.updatedAt || null : null,
-                createdAt: result ? result.createdAt || null : null,
-                mergeable: result ? result.mergeable : null,
-                mergeableState: result ? result.mergeableState || '' : '',
-                checks: result ? result.checks || [] : [],
-              }));
+              ws.send(
+                JSON.stringify({
+                  type: 'pr:review-result',
+                  repo: msg.repo,
+                  prNumber: String(msg.prNumber),
+                  rollup: result ? result.rollup : '',
+                  reviewers: result ? result.reviewers : [],
+                  state: result ? result.state || '' : '',
+                  merged: result ? !!result.merged : false,
+                  draft: result ? !!result.draft : false,
+                  mergedAt: result ? result.mergedAt || null : null,
+                  ciState: result ? result.ciState || null : null,
+                  // Rich detail fields for hover tooltips
+                  title: result ? result.title || '' : '',
+                  author: result ? result.author || '' : '',
+                  authorAvatar: result ? result.authorAvatar || '' : '',
+                  baseBranch: result ? result.baseBranch || '' : '',
+                  headBranch: result ? result.headBranch || '' : '',
+                  additions: result ? result.additions || 0 : 0,
+                  deletions: result ? result.deletions || 0 : 0,
+                  changedFiles: result ? result.changedFiles || 0 : 0,
+                  mergedBy: result ? result.mergedBy || '' : '',
+                  mergedByAvatar: result ? result.mergedByAvatar || '' : '',
+                  updatedAt: result ? result.updatedAt || null : null,
+                  createdAt: result ? result.createdAt || null : null,
+                  mergeable: result ? result.mergeable : null,
+                  mergeableState: result ? result.mergeableState || '' : '',
+                  checks: result ? result.checks || [] : [],
+                }),
+              );
             } catch (e) {
               log.error('pr:refresh by PR failed:', e.message);
             }
           }
         } else if (msg.session != null) {
           const sessions = await fleet.getFleetStatus(config, router);
-          const target = sessions.find(s => String(s.num) === String(msg.session));
+          const target = sessions.find((s) => String(s.num) === String(msg.session));
           if (target && target.branch) {
-            prStatus.fetch(target.branch, config)
+            prStatus
+              .fetch(target.branch, config)
               .then(() => broadcastFleetStatus())
               .catch(() => {});
           }
@@ -131,40 +157,61 @@ function createMessageHandler(deps) {
       case 'peek': {
         const found = await resolveSession(msg);
         if (!found) {
-          ws.send(JSON.stringify({ type: 'error', message: `No session matching "${msg.session}"` }));
+          ws.send(
+            JSON.stringify({ type: 'error', message: `No session matching "${msg.session}"` }),
+          );
           return;
         }
         const { name, nodeId } = found;
         const node = router.getNode(nodeId);
         const paneTarget = tmux.paneTarget(name, config.sessions.claudePane);
         const { content: peekContent, cols: peekCols } = await capturePaneAnsi(node, paneTarget);
-        ws.send(JSON.stringify({ type: 'terminal:data', session: msg.session, content: peekContent, cols: peekCols }));
+        ws.send(
+          JSON.stringify({
+            type: 'terminal:data',
+            session: msg.session,
+            content: peekContent,
+            cols: peekCols,
+          }),
+        );
         break;
       }
 
       case 'fleet:search': {
         const query = (msg.query || '').trim();
-        if (!query) { ws.send(JSON.stringify({ type: 'fleet:search:result', results: [] })); break; }
+        if (!query) {
+          ws.send(JSON.stringify({ type: 'fleet:search:result', results: [] }));
+          break;
+        }
         const sessions = await fleet.getFleetStatus(config, router);
         const results = [];
         const queryLower = query.toLowerCase();
-        await Promise.all(sessions.map(async (s) => {
-          const node = router.nodeFor(s.name);
-          if (!node) return;
-          const paneTarget = tmux.paneTarget(s.name, config.sessions.claudePane);
-          try {
-            const { content: searchContent } = await capturePaneAnsi(node, paneTarget);
-            const plain = searchContent.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
-            if (plain.toLowerCase().includes(queryLower)) {
-              // Extract matching lines for context
-              const matchLines = plain.split('\n')
-                .filter(l => l.toLowerCase().includes(queryLower))
-                .slice(0, 3)
-                .map(l => l.trim());
-              results.push({ num: s.num, name: s.name, branch: s.branch, state: s.state, matchLines });
-            }
-          } catch {}
-        }));
+        await Promise.all(
+          sessions.map(async (s) => {
+            const node = router.nodeFor(s.name);
+            if (!node) return;
+            const paneTarget = tmux.paneTarget(s.name, config.sessions.claudePane);
+            try {
+              const { content: searchContent } = await capturePaneAnsi(node, paneTarget);
+              const plain = searchContent.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
+              if (plain.toLowerCase().includes(queryLower)) {
+                // Extract matching lines for context
+                const matchLines = plain
+                  .split('\n')
+                  .filter((l) => l.toLowerCase().includes(queryLower))
+                  .slice(0, 3)
+                  .map((l) => l.trim());
+                results.push({
+                  num: s.num,
+                  name: s.name,
+                  branch: s.branch,
+                  state: s.state,
+                  matchLines,
+                });
+              }
+            } catch {}
+          }),
+        );
         ws.send(JSON.stringify({ type: 'fleet:search:result', query, results }));
         break;
       }
@@ -172,23 +219,47 @@ function createMessageHandler(deps) {
       case 'terminal:panes': {
         const found = await resolveSession(msg);
         if (!found) {
-          ws.send(JSON.stringify({ type: 'error', message: `No session matching "${msg.session}"` }));
+          ws.send(
+            JSON.stringify({ type: 'error', message: `No session matching "${msg.session}"` }),
+          );
           return;
         }
         const { name, nodeId } = found;
         const node = router.getNode(nodeId);
         try {
-          const raw = await node.exec(`tmux list-panes -t "${tmux.sessionTarget(name)}" -F '#{pane_index}|#{pane_current_command}' 2>/dev/null`);
-          const panes = (raw || '').trim().split('\n').filter(Boolean).map(line => {
-            const [idx, cmd] = line.split('|');
-            return { index: parseInt(idx, 10), command: cmd || 'unknown' };
-          });
+          const raw = await node.exec(
+            `tmux list-panes -t "${tmux.sessionTarget(name)}" -F '#{pane_index}|#{pane_current_command}' 2>/dev/null`,
+          );
+          const panes = (raw || '')
+            .trim()
+            .split('\n')
+            .filter(Boolean)
+            .map((line) => {
+              const [idx, cmd] = line.split('|');
+              return { index: parseInt(idx, 10), command: cmd || 'unknown' };
+            });
           // Mark the claudePane as the active/primary one
           const claudeIdx = config.sessions.claudePane;
-          panes.forEach(p => { p.active = (p.index === claudeIdx); });
-          ws.send(JSON.stringify({ type: 'terminal:panes', session: msg.session, panes, claudePane: claudeIdx }));
+          panes.forEach((p) => {
+            p.active = p.index === claudeIdx;
+          });
+          ws.send(
+            JSON.stringify({
+              type: 'terminal:panes',
+              session: msg.session,
+              panes,
+              claudePane: claudeIdx,
+            }),
+          );
         } catch (err) {
-          ws.send(JSON.stringify({ type: 'terminal:panes', session: msg.session, panes: [], claudePane: config.sessions.claudePane }));
+          ws.send(
+            JSON.stringify({
+              type: 'terminal:panes',
+              session: msg.session,
+              panes: [],
+              claudePane: config.sessions.claudePane,
+            }),
+          );
         }
         break;
       }
@@ -205,20 +276,42 @@ function createMessageHandler(deps) {
         }
         const found = await resolveSession(msg);
         if (!found) {
-          ws.send(JSON.stringify({ type: 'error', message: `No session matching "${msg.session}"` }));
+          ws.send(
+            JSON.stringify({ type: 'error', message: `No session matching "${msg.session}"` }),
+          );
           return;
         }
         const { name, nodeId } = found;
         const node = router.getNode(nodeId);
-        const subPaneIdx = isConsole ? 1 : ((typeof msg.pane === 'number') ? msg.pane : config.sessions.claudePane);
+        const subPaneIdx = isConsole
+          ? 1
+          : typeof msg.pane === 'number'
+            ? msg.pane
+            : config.sessions.claudePane;
         const paneTarget = tmux.paneTarget(name, subPaneIdx);
         // Send immediately
         const { content: subContent, cols: subCols } = await capturePaneAnsi(node, paneTarget);
-        ws.send(JSON.stringify({ type: 'terminal:data', session: msg.session, pane: subPaneIdx, content: subContent, cols: subCols, card: isCard }));
+        ws.send(
+          JSON.stringify({
+            type: 'terminal:data',
+            session: msg.session,
+            pane: subPaneIdx,
+            content: subContent,
+            cols: subCols,
+            card: isCard,
+          }),
+        );
         // Poll every 2s — only send when content actually changed
         let lastSentContent = subContent;
         let lastSentCols = subCols;
-        const sub = { interval: null, session: msg.session, name, node, pane: subPaneIdx, cancelled: false };
+        const sub = {
+          interval: null,
+          session: msg.session,
+          name,
+          node,
+          pane: subPaneIdx,
+          cancelled: false,
+        };
         const subKey = `${msg.session}:${subPaneIdx}`;
         sub.interval = setInterval(async () => {
           if (sub.cancelled || ws.readyState !== 1) {
@@ -228,12 +321,24 @@ function createMessageHandler(deps) {
             return;
           }
           try {
-            const { content: pollContent, cols: pollCols } = await capturePaneAnsi(node, paneTarget);
+            const { content: pollContent, cols: pollCols } = await capturePaneAnsi(
+              node,
+              paneTarget,
+            );
             if (sub.cancelled) return;
             if (pollContent === lastSentContent && pollCols === lastSentCols) return;
             lastSentContent = pollContent;
             lastSentCols = pollCols;
-            ws.send(JSON.stringify({ type: 'terminal:data', session: msg.session, pane: subPaneIdx, content: pollContent, cols: pollCols, card: isCard }));
+            ws.send(
+              JSON.stringify({
+                type: 'terminal:data',
+                session: msg.session,
+                pane: subPaneIdx,
+                content: pollContent,
+                cols: pollCols,
+                card: isCard,
+              }),
+            );
           } catch {
             // Node may have disconnected
           }
@@ -265,10 +370,14 @@ function createMessageHandler(deps) {
           // tmux resize-pane is a no-op here (pane snaps back to client/default
           // window size). resize-window sets the window size directly, which
           // sizes the single pane to match.
-          await sub.node.exec(`tmux resize-window -t "${tmux.sessionTarget(sub.name)}" -x ${msg.cols} -y ${msg.rows} 2>/dev/null`);
+          await sub.node.exec(
+            `tmux resize-window -t "${tmux.sessionTarget(sub.name)}" -x ${msg.cols} -y ${msg.rows} 2>/dev/null`,
+          );
         } else {
           const resizeTarget = tmux.paneTarget(sub.name, config.sessions.claudePane);
-          await sub.node.exec(`tmux resize-pane -t "${resizeTarget}" -x ${msg.cols} -y ${msg.rows} 2>/dev/null`);
+          await sub.node.exec(
+            `tmux resize-pane -t "${resizeTarget}" -x ${msg.cols} -y ${msg.rows} 2>/dev/null`,
+          );
         }
         break;
       }
@@ -282,34 +391,55 @@ function createMessageHandler(deps) {
         if (!checkPermission(ws, user, 'send-messages')) break;
         const found = await resolveSession(msg);
         if (!found) {
-          ws.send(JSON.stringify({ type: 'error', message: `No session matching "${msg.session}"` }));
+          ws.send(
+            JSON.stringify({ type: 'error', message: `No session matching "${msg.session}"` }),
+          );
           return;
         }
         const { name, nodeId } = found;
         const node = router.getNode(nodeId);
-        relay.ask(config, node, name, msg.message, {
-          force: true, // manual user input — always send, even if Claude is working
-          onStream: (content, isFinal) => {
+        relay
+          .ask(config, node, name, msg.message, {
+            force: true, // manual user input — always send, even if Claude is working
+            onStream: (content, isFinal) => {
+              if (ws.readyState !== 1) return;
+              ws.send(
+                JSON.stringify({
+                  type: 'ask:stream',
+                  session: msg.session,
+                  content,
+                  final: isFinal,
+                }),
+              );
+            },
+            vimMode: taskQueue ? taskQueue.vimMode : false,
+          })
+          .then((result) => {
             if (ws.readyState !== 1) return;
-            ws.send(JSON.stringify({ type: 'ask:stream', session: msg.session, content, final: isFinal }));
-          },
-          vimMode: taskQueue ? taskQueue.vimMode : false,
-        }).then((result) => {
-          if (ws.readyState !== 1) return;
-          ws.send(JSON.stringify({
-            type: 'ask:done',
-            session: msg.session,
-            success: result.success,
-            response: result.response,
-            error: result.error,
-            duration: result.duration,
-          }));
-        }).catch((err) => {
-          log.error('ask error:', err);
-          if (ws.readyState === 1) {
-            ws.send(JSON.stringify({ type: 'ask:done', session: msg.session, success: false, error: err.message }));
-          }
-        });
+            ws.send(
+              JSON.stringify({
+                type: 'ask:done',
+                session: msg.session,
+                success: result.success,
+                response: result.response,
+                error: result.error,
+                duration: result.duration,
+              }),
+            );
+          })
+          .catch((err) => {
+            log.error('ask error:', err);
+            if (ws.readyState === 1) {
+              ws.send(
+                JSON.stringify({
+                  type: 'ask:done',
+                  session: msg.session,
+                  success: false,
+                  error: err.message,
+                }),
+              );
+            }
+          });
         break;
       }
 
@@ -317,7 +447,9 @@ function createMessageHandler(deps) {
         if (!checkPermission(ws, user, 'send-messages')) break;
         const found = await resolveSession(msg);
         if (!found) {
-          ws.send(JSON.stringify({ type: 'error', message: `No session matching "${msg.session}"` }));
+          ws.send(
+            JSON.stringify({ type: 'error', message: `No session matching "${msg.session}"` }),
+          );
           return;
         }
         const { name, nodeId } = found;
@@ -327,27 +459,48 @@ function createMessageHandler(deps) {
           const shellTarget = tmux.paneTarget(name, msg.pane);
           try {
             await node.sendKeys(shellTarget, msg.message, true);
-            if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'tell:done', session: msg.session, success: true }));
+            if (ws.readyState === 1)
+              ws.send(JSON.stringify({ type: 'tell:done', session: msg.session, success: true }));
           } catch (err) {
             log.error('tell (shell pane) error:', err);
-            if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'tell:done', session: msg.session, success: false, error: err.message }));
+            if (ws.readyState === 1)
+              ws.send(
+                JSON.stringify({
+                  type: 'tell:done',
+                  session: msg.session,
+                  success: false,
+                  error: err.message,
+                }),
+              );
           }
           break;
         }
-        relay.tell(config, node, name, msg.message, { vimMode: taskQueue ? taskQueue.vimMode : false }).then((result) => {
-          if (ws.readyState !== 1) return;
-          ws.send(JSON.stringify({
-            type: 'tell:done',
-            session: msg.session,
-            success: result.success,
-            error: result.error,
-          }));
-        }).catch((err) => {
-          log.error('tell error:', err);
-          if (ws.readyState === 1) {
-            ws.send(JSON.stringify({ type: 'tell:done', session: msg.session, success: false, error: err.message }));
-          }
-        });
+        relay
+          .tell(config, node, name, msg.message, { vimMode: taskQueue ? taskQueue.vimMode : false })
+          .then((result) => {
+            if (ws.readyState !== 1) return;
+            ws.send(
+              JSON.stringify({
+                type: 'tell:done',
+                session: msg.session,
+                success: result.success,
+                error: result.error,
+              }),
+            );
+          })
+          .catch((err) => {
+            log.error('tell error:', err);
+            if (ws.readyState === 1) {
+              ws.send(
+                JSON.stringify({
+                  type: 'tell:done',
+                  session: msg.session,
+                  success: false,
+                  error: err.message,
+                }),
+              );
+            }
+          });
         break;
       }
 
@@ -356,16 +509,18 @@ function createMessageHandler(deps) {
         // Send raw tmux keys (Enter, Up, Down, Escape, Tab, etc.)
         const found = await resolveSession(msg);
         if (!found) {
-          ws.send(JSON.stringify({ type: 'error', message: `No session matching "${msg.session}"` }));
+          ws.send(
+            JSON.stringify({ type: 'error', message: `No session matching "${msg.session}"` }),
+          );
           return;
         }
         const { name, nodeId } = found;
         const node = router.getNode(nodeId);
-        const keysPaneIdx = (typeof msg.pane === 'number') ? msg.pane : config.sessions.claudePane;
+        const keysPaneIdx = typeof msg.pane === 'number' ? msg.pane : config.sessions.claudePane;
         const paneTarget = tmux.paneTarget(name, keysPaneIdx);
         // msg.keys is an array of tmux key names, e.g. ["Enter"], ["Up"], ["Escape"]
         // Keys bar buttons always send raw — vim preamble only applies to typed text (ask/tell)
-        for (const key of (msg.keys || [])) {
+        for (const key of msg.keys || []) {
           await node.exec(`tmux send-keys -t "${paneTarget}" ${key}`);
         }
         ws.send(JSON.stringify({ type: 'keys:done', session: msg.session }));
@@ -389,7 +544,9 @@ function createMessageHandler(deps) {
               ws.send(JSON.stringify({ type: 'restart:done', session: msg.session }));
             }
           } catch (err) {
-            ws.send(JSON.stringify({ type: 'error', message: `No session matching "${msg.session}"` }));
+            ws.send(
+              JSON.stringify({ type: 'error', message: `No session matching "${msg.session}"` }),
+            );
           }
           break;
         }
@@ -434,7 +591,10 @@ function createMessageHandler(deps) {
         for (const sess of sessions) {
           try {
             const found = await fleet.findSession(config, router, sess.num);
-            if (!found) { failed++; continue; }
+            if (!found) {
+              failed++;
+              continue;
+            }
             const { name, nodeId } = found;
             const node = router.getNode(nodeId);
             const paneTarget = tmux.paneTarget(name, config.sessions.claudePane);
@@ -444,11 +604,11 @@ function createMessageHandler(deps) {
               try {
                 // Cancel any pending input, then /exit
                 await node.exec(`tmux send-keys -t "${paneTarget}" C-c`);
-                await new Promise(r => setTimeout(r, 500));
+                await new Promise((r) => setTimeout(r, 500));
                 await node.exec(`tmux send-keys -t "${paneTarget}" -l '/exit'`);
                 await node.exec(`tmux send-keys -t "${paneTarget}" Enter`);
                 // Wait for Claude to exit, then restart
-                await new Promise(r => setTimeout(r, 3000));
+                await new Promise((r) => setTimeout(r, 3000));
                 await node.exec(`tmux send-keys -t "${paneTarget}" -l 'claude --continue'`);
                 await node.exec(`tmux send-keys -t "${paneTarget}" Enter`);
               } catch (err) {
@@ -464,7 +624,11 @@ function createMessageHandler(deps) {
         if (ws.readyState === 1) {
           ws.send(JSON.stringify({ type: 'restart:all:done', restarted, failed }));
         }
-        taskQueue.pushFeed('system', null, `Restarting all ${restarted} session(s) — /exit + claude --continue`);
+        taskQueue.pushFeed(
+          'system',
+          null,
+          `Restarting all ${restarted} session(s) — /exit + claude --continue`,
+        );
         break;
       }
 
@@ -472,7 +636,9 @@ function createMessageHandler(deps) {
       case 'git:info': {
         const found = await fleet.findSession(config, router, msg.session);
         if (!found) {
-          ws.send(JSON.stringify({ type: 'error', message: `No session matching "${msg.session}"` }));
+          ws.send(
+            JSON.stringify({ type: 'error', message: `No session matching "${msg.session}"` }),
+          );
           return;
         }
         const { name, nodeId } = found;
@@ -481,7 +647,17 @@ function createMessageHandler(deps) {
         const num = fleet.sessionNum(name, nc.sessions.namePrefix);
         const repoDir = resolveRepoDir(num, nc);
         if (!repoDir) {
-          ws.send(JSON.stringify({ type: 'git:info', session: msg.session, log: [], diffStat: [], stagedStat: [], changedFiles: [], branchDiff: null }));
+          ws.send(
+            JSON.stringify({
+              type: 'git:info',
+              session: msg.session,
+              log: [],
+              diffStat: [],
+              stagedStat: [],
+              changedFiles: [],
+              branchDiff: null,
+            }),
+          );
           return;
         }
         const [log, diffStat, stagedStat, changedFiles, branchDiff] = await Promise.all([
@@ -491,15 +667,29 @@ function createMessageHandler(deps) {
           git.getChangedFiles(node, repoDir),
           git.getBranchDiff(node, repoDir),
         ]);
-        const workingDir = num && workingDirOverrides.has(num) ? workingDirOverrides.get(num) : null;
-        ws.send(JSON.stringify({ type: 'git:info', session: msg.session, log, diffStat, stagedStat, changedFiles, branchDiff, workingDir }));
+        const workingDir =
+          num && workingDirOverrides.has(num) ? workingDirOverrides.get(num) : null;
+        ws.send(
+          JSON.stringify({
+            type: 'git:info',
+            session: msg.session,
+            log,
+            diffStat,
+            stagedStat,
+            changedFiles,
+            branchDiff,
+            workingDir,
+          }),
+        );
         break;
       }
 
       case 'git:diff': {
         const found = await fleet.findSession(config, router, msg.session);
         if (!found) {
-          ws.send(JSON.stringify({ type: 'error', message: `No session matching "${msg.session}"` }));
+          ws.send(
+            JSON.stringify({ type: 'error', message: `No session matching "${msg.session}"` }),
+          );
           return;
         }
         const { name, nodeId } = found;
@@ -522,7 +712,9 @@ function createMessageHandler(deps) {
       case 'git:commit': {
         const found = await fleet.findSession(config, router, msg.session);
         if (!found) {
-          ws.send(JSON.stringify({ type: 'error', message: `No session matching "${msg.session}"` }));
+          ws.send(
+            JSON.stringify({ type: 'error', message: `No session matching "${msg.session}"` }),
+          );
           return;
         }
         const { name, nodeId } = found;
@@ -531,7 +723,9 @@ function createMessageHandler(deps) {
         const num = fleet.sessionNum(name, nc.sessions.namePrefix);
         const repoDir = resolveRepoDir(num, nc);
         const files = repoDir ? await git.getCommitFiles(node, repoDir, msg.hash) : [];
-        ws.send(JSON.stringify({ type: 'git:commit', session: msg.session, hash: msg.hash, files }));
+        ws.send(
+          JSON.stringify({ type: 'git:commit', session: msg.session, hash: msg.hash, files }),
+        );
         break;
       }
 
@@ -540,7 +734,8 @@ function createMessageHandler(deps) {
         if (!taskQueue) break;
         if (!checkPermission(ws, user, 'create-tasks')) break;
         // Manual tasks default to requireHumanClose: true unless explicitly unchecked
-        const requireHumanClose = msg.requireHumanClose !== undefined ? msg.requireHumanClose : (msg.mode === 'manual');
+        const requireHumanClose =
+          msg.requireHumanClose !== undefined ? msg.requireHumanClose : msg.mode === 'manual';
         const task = taskQueue.createTask(msg.text, msg.mode, msg.targetSession, msg.designation, {
           createdBy: user?.login || null,
           requireHumanClose,
@@ -592,7 +787,14 @@ function createMessageHandler(deps) {
         if (!taskQueue) break;
         const snapTask = taskQueue.tasks.get(msg.taskId);
         if (snapTask && snapTask.snapshot) {
-          ws.send(JSON.stringify({ type: 'task:snapshot', taskId: msg.taskId, content: snapTask.snapshot, cols: snapTask.snapshotCols || 0 }));
+          ws.send(
+            JSON.stringify({
+              type: 'task:snapshot',
+              taskId: msg.taskId,
+              content: snapTask.snapshot,
+              cols: snapTask.snapshotCols || 0,
+            }),
+          );
         }
         break;
       }
@@ -600,12 +802,22 @@ function createMessageHandler(deps) {
       case 'task:dispatch': {
         if (!taskQueue) break;
         if (!checkPermission(ws, user, 'dispatch')) break;
-        taskQueue.dispatchTaskTo(msg.taskId, msg.session).then((task) => {
-          if (task) broadcast({ type: 'task:dispatched', task });
-          else if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'error', message: 'Could not dispatch task — not queued or session unavailable' }));
-        }).catch((err) => {
-          if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'error', message: err.message }));
-        });
+        taskQueue
+          .dispatchTaskTo(msg.taskId, msg.session)
+          .then((task) => {
+            if (task) broadcast({ type: 'task:dispatched', task });
+            else if (ws.readyState === 1)
+              ws.send(
+                JSON.stringify({
+                  type: 'error',
+                  message: 'Could not dispatch task — not queued or session unavailable',
+                }),
+              );
+          })
+          .catch((err) => {
+            if (ws.readyState === 1)
+              ws.send(JSON.stringify({ type: 'error', message: err.message }));
+          });
         break;
       }
 
@@ -613,7 +825,8 @@ function createMessageHandler(deps) {
         if (!taskQueue) break;
         if (!checkPermission(ws, user, 'dispatch')) break;
         const requeuedTask = taskQueue.requeueTask(msg.taskId);
-        if (requeuedTask) broadcast({ type: 'task:requeued', task: decorateTaskActions(requeuedTask, pmManager) });
+        if (requeuedTask)
+          broadcast({ type: 'task:requeued', task: decorateTaskActions(requeuedTask, pmManager) });
         break;
       }
 
@@ -621,7 +834,8 @@ function createMessageHandler(deps) {
         if (!taskQueue) break;
         if (!checkPermission(ws, user, 'dispatch')) break;
         const deferredTask = taskQueue.deferTask(msg.taskId);
-        if (deferredTask) broadcast({ type: 'task:deferred', task: decorateTaskActions(deferredTask, pmManager) });
+        if (deferredTask)
+          broadcast({ type: 'task:deferred', task: decorateTaskActions(deferredTask, pmManager) });
         break;
       }
 
@@ -637,7 +851,8 @@ function createMessageHandler(deps) {
         if (!taskQueue) break;
         if (!checkPermission(ws, user, 'dispatch')) break;
         const snoozedTask = taskQueue.snoozeTask(msg.taskId, msg.durationMs);
-        if (snoozedTask) broadcast({ type: 'task:snoozed', task: decorateTaskActions(snoozedTask, pmManager) });
+        if (snoozedTask)
+          broadcast({ type: 'task:snoozed', task: decorateTaskActions(snoozedTask, pmManager) });
         break;
       }
 
@@ -645,7 +860,11 @@ function createMessageHandler(deps) {
         if (!taskQueue) break;
         if (!checkPermission(ws, user, 'dispatch')) break;
         const unsnoozedTask = taskQueue.unsnoozeTask(msg.taskId);
-        if (unsnoozedTask) broadcast({ type: 'task:unsnoozed', task: decorateTaskActions(unsnoozedTask, pmManager) });
+        if (unsnoozedTask)
+          broadcast({
+            type: 'task:unsnoozed',
+            task: decorateTaskActions(unsnoozedTask, pmManager),
+          });
         break;
       }
 
@@ -658,7 +877,13 @@ function createMessageHandler(deps) {
         // users gave up and refreshed before the broadcast fired. Snapshot
         // here is a "what did the pane look like at close" nicety, so capture
         // it after completion and update the task asynchronously.
-        const task = taskQueue.completeTask(msg.taskId, msg.result || 'Manually completed', null, 0, { force: true });
+        const task = taskQueue.completeTask(
+          msg.taskId,
+          msg.result || 'Manually completed',
+          null,
+          0,
+          { force: true },
+        );
         if (task && task !== 'pending') broadcast({ type: 'task:completed', task });
         if (task && task !== 'pending' && task.assignedTo) {
           (async () => {
@@ -667,14 +892,22 @@ function createMessageHandler(deps) {
               if (!found) return;
               const node = router.getNode(found.nodeId);
               const paneTarget = tmux.paneTarget(found.name, config.sessions.claudePane);
-              const snap = await node.exec(`tmux capture-pane -e -p -S -500 -t "${paneTarget}" 2>/dev/null`) || null;
-              const colsStr = await node.exec(`tmux display-message -p -t "${paneTarget}" "#{pane_width}" 2>/dev/null`);
+              const snap =
+                (await node.exec(
+                  `tmux capture-pane -e -p -S -500 -t "${paneTarget}" 2>/dev/null`,
+                )) || null;
+              const colsStr = await node.exec(
+                `tmux display-message -p -t "${paneTarget}" "#{pane_width}" 2>/dev/null`,
+              );
               const snapCols = parseInt(colsStr) || 0;
               if (snap) {
                 task.snapshot = snap;
                 task.snapshotCols = snapCols;
                 taskQueue._saveState();
-                broadcast({ type: 'task:updated', task: decorateTaskActions(task, taskQueue._pmManager) });
+                broadcast({
+                  type: 'task:updated',
+                  task: decorateTaskActions(task, taskQueue._pmManager),
+                });
               }
             } catch {}
           })();
@@ -686,29 +919,56 @@ function createMessageHandler(deps) {
         if (!taskQueue) break;
         if (!checkPermission(ws, user, 'cancel')) break;
         const ghToken = process.env.GITHUB_TOKEN;
-        if (!ghToken) { ws.send(JSON.stringify({ type: 'task:cleanup-scan:result', error: 'GITHUB_TOKEN not configured', items: [] })); break; }
-        const ghHeaders = { 'Authorization': `Bearer ${ghToken}`, 'Accept': 'application/vnd.github+json', 'User-Agent': 'hive-cleanup' };
-        const ghFetch = (urlStr) => new Promise((resolve, reject) => {
-          const mod = urlStr.startsWith('https') ? https : http;
-          const req = mod.request(urlStr, { headers: ghHeaders, timeout: 10000 }, (res) => {
-            let d = ''; res.on('data', c => d += c);
-            res.on('end', () => {
-              if (res.statusCode >= 200 && res.statusCode < 300) {
-                try { resolve(JSON.parse(d)); } catch { reject(new Error('Invalid JSON')); }
-              } else { resolve(null); } // treat errors as "unknown" not crash
+        if (!ghToken) {
+          ws.send(
+            JSON.stringify({
+              type: 'task:cleanup-scan:result',
+              error: 'GITHUB_TOKEN not configured',
+              items: [],
+            }),
+          );
+          break;
+        }
+        const ghHeaders = {
+          Authorization: `Bearer ${ghToken}`,
+          Accept: 'application/vnd.github+json',
+          'User-Agent': 'hive-cleanup',
+        };
+        const ghFetch = (urlStr) =>
+          new Promise((resolve, reject) => {
+            const mod = urlStr.startsWith('https') ? https : http;
+            const req = mod.request(urlStr, { headers: ghHeaders, timeout: 10000 }, (res) => {
+              let d = '';
+              res.on('data', (c) => (d += c));
+              res.on('end', () => {
+                if (res.statusCode >= 200 && res.statusCode < 300) {
+                  try {
+                    resolve(JSON.parse(d));
+                  } catch {
+                    reject(new Error('Invalid JSON'));
+                  }
+                } else {
+                  resolve(null);
+                } // treat errors as "unknown" not crash
+              });
             });
+            req.on('error', () => resolve(null));
+            req.on('timeout', () => {
+              req.destroy();
+              resolve(null);
+            });
+            req.end();
           });
-          req.on('error', () => resolve(null));
-          req.on('timeout', () => { req.destroy(); resolve(null); });
-          req.end();
-        });
 
         // Extract PR references from a task
         const extractPRs = (t) => {
           const prs = new Map(); // "owner/repo#number" -> { repo, number }
-          const add = (repo, num) => { if (repo && num) prs.set(`${repo}#${num}`, { repo, number: Number(num) }); };
+          const add = (repo, num) => {
+            if (repo && num) prs.set(`${repo}#${num}`, { repo, number: Number(num) });
+          };
           // actionContext
-          if (t.actionContext && t.actionContext.type === 'github-pr') add(t.actionContext.repo, t.actionContext.prNumber);
+          if (t.actionContext && t.actionContext.type === 'github-pr')
+            add(t.actionContext.repo, t.actionContext.prNumber);
           // sourceKey
           const skMatch = (t.sourceKey || '').match(/^(.+)#(\d+)$/);
           if (skMatch) add(skMatch[1], skMatch[2]);
@@ -720,7 +980,9 @@ function createMessageHandler(deps) {
             }
           }
           // task text — owner/repo#N or just #N with known repo
-          const textMatches = (t.text || '').matchAll(/(?:([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+))?#(\d{4,})/g);
+          const textMatches = (t.text || '').matchAll(
+            /(?:([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+))?#(\d{4,})/g,
+          );
           for (const m of textMatches) {
             const repo = m[1] || (config.github && config.github.repo) || '';
             if (repo) add(repo, m[2]);
@@ -732,8 +994,9 @@ function createMessageHandler(deps) {
           try {
             const TWO_DAYS = 2 * 24 * 60 * 60 * 1000;
             const now = Date.now();
-            const openTasks = [...taskQueue.tasks.values()].filter(t =>
-              t.status === 'queued' || t.status === 'dispatched' || t.status === 'snoozed');
+            const openTasks = [...taskQueue.tasks.values()].filter(
+              (t) => t.status === 'queued' || t.status === 'dispatched' || t.status === 'snoozed',
+            );
             const sessions = await fleet.getFleetStatus(config, router);
 
             // Collect unique PRs to check
@@ -745,28 +1008,45 @@ function createMessageHandler(deps) {
               for (const pr of prs) prCache.set(`${pr.repo}#${pr.number}`, null);
             }
             // Batch fetch PR states (deduplicated)
-            await Promise.all([...prCache.keys()].map(async (key) => {
-              const [repo, num] = key.split('#');
-              const data = await ghFetch(`https://api.github.com/repos/${repo}/pulls/${num}`);
-              if (data) prCache.set(key, { state: data.state, merged: !!data.merged, merged_at: data.merged_at, closed_at: data.closed_at });
-            }));
+            await Promise.all(
+              [...prCache.keys()].map(async (key) => {
+                const [repo, num] = key.split('#');
+                const data = await ghFetch(`https://api.github.com/repos/${repo}/pulls/${num}`);
+                if (data)
+                  prCache.set(key, {
+                    state: data.state,
+                    merged: !!data.merged,
+                    merged_at: data.merged_at,
+                    closed_at: data.closed_at,
+                  });
+              }),
+            );
 
             const items = [];
             const seen = new Set(); // track taskIds already added
 
             // 1. Tasks with merged/closed PRs
             for (const { task: t, prs } of taskPRs) {
-              const prResults = prs.map(pr => {
+              const prResults = prs.map((pr) => {
                 const cached = prCache.get(`${pr.repo}#${pr.number}`);
-                return { repo: pr.repo, number: pr.number, ...(cached || { state: 'unknown', merged: false }) };
+                return {
+                  repo: pr.repo,
+                  number: pr.number,
+                  ...(cached || { state: 'unknown', merged: false }),
+                };
               });
-              const allDone = prResults.length > 0 && prResults.every(p => p.state === 'closed' || p.merged);
+              const allDone =
+                prResults.length > 0 && prResults.every((p) => p.state === 'closed' || p.merged);
               if (allDone) {
-                const s = sessions.find(x => x.num === t.assignedTo);
+                const s = sessions.find((x) => x.num === t.assignedTo);
                 items.push({
-                  taskId: t.id, taskText: t.text, status: t.status,
-                  assignedTo: t.assignedTo, isWorking: s ? s.state === 'working' : false,
-                  reason: 'pr', prs: prResults,
+                  taskId: t.id,
+                  taskText: t.text,
+                  status: t.status,
+                  assignedTo: t.assignedTo,
+                  isWorking: s ? s.state === 'working' : false,
+                  reason: 'pr',
+                  prs: prResults,
                 });
                 seen.add(t.id);
               }
@@ -779,12 +1059,17 @@ function createMessageHandler(deps) {
               if (!isSlack) continue;
               const lastActive = t.lastActivityAt || t.dispatchedAt || t.createdAt;
               if (now - lastActive < TWO_DAYS) continue;
-              const s = sessions.find(x => x.num === t.assignedTo);
+              const s = sessions.find((x) => x.num === t.assignedTo);
               const inactiveFor = Math.round((now - lastActive) / (24 * 60 * 60 * 1000));
               items.push({
-                taskId: t.id, taskText: t.text, status: t.status,
-                assignedTo: t.assignedTo, isWorking: s ? s.state === 'working' : false,
-                reason: 'slack-inactive', inactiveDays: inactiveFor, prs: [],
+                taskId: t.id,
+                taskText: t.text,
+                status: t.status,
+                assignedTo: t.assignedTo,
+                isWorking: s ? s.state === 'working' : false,
+                reason: 'slack-inactive',
+                inactiveDays: inactiveFor,
+                prs: [],
               });
               seen.add(t.id);
             }
@@ -795,19 +1080,26 @@ function createMessageHandler(deps) {
               if (t.status !== 'dispatched') continue;
               const lastActive = t.lastActivityAt || t.dispatchedAt || t.createdAt;
               if (now - lastActive < TWO_DAYS) continue;
-              const s = sessions.find(x => x.num === t.assignedTo);
+              const s = sessions.find((x) => x.num === t.assignedTo);
               const inactiveFor = Math.round((now - lastActive) / (24 * 60 * 60 * 1000));
               items.push({
-                taskId: t.id, taskText: t.text, status: t.status,
-                assignedTo: t.assignedTo, isWorking: s ? s.state === 'working' : false,
-                reason: 'inactive', inactiveDays: inactiveFor, prs: [],
+                taskId: t.id,
+                taskText: t.text,
+                status: t.status,
+                assignedTo: t.assignedTo,
+                isWorking: s ? s.state === 'working' : false,
+                reason: 'inactive',
+                inactiveDays: inactiveFor,
+                prs: [],
               });
               seen.add(t.id);
             }
 
             ws.send(JSON.stringify({ type: 'task:cleanup-scan:result', items }));
           } catch (err) {
-            ws.send(JSON.stringify({ type: 'task:cleanup-scan:result', error: err.message, items: [] }));
+            ws.send(
+              JSON.stringify({ type: 'task:cleanup-scan:result', error: err.message, items: [] }),
+            );
           }
         })();
         break;
@@ -839,11 +1131,18 @@ function createMessageHandler(deps) {
             const found = await fleet.findSession(config, router, task.assignedTo);
             if (found) {
               const node = router.getNode(found.nodeId);
-              relay.tell(config, node, found.name, '/resume', { vimMode: taskQueue.vimMode }).catch(() => {});
+              relay
+                .tell(config, node, found.name, '/resume', { vimMode: taskQueue.vimMode })
+                .catch(() => {});
             }
           }
         } else {
-          ws.send(JSON.stringify({ type: 'error', message: 'Cannot resume task — session may be busy or task not resumable' }));
+          ws.send(
+            JSON.stringify({
+              type: 'error',
+              message: 'Cannot resume task — session may be busy or task not resumable',
+            }),
+          );
         }
         break;
       }
@@ -853,26 +1152,55 @@ function createMessageHandler(deps) {
         if (!checkPermission(ws, user, 'cancel')) break;
         const actionTask = taskQueue.tasks.get(msg.taskId);
         if (!actionTask || !actionTask.actionContext) {
-          ws.send(JSON.stringify({ type: 'task:action:result', taskId: msg.taskId, actionId: msg.actionId, ok: false, error: 'Task not found or has no actions' }));
+          ws.send(
+            JSON.stringify({
+              type: 'task:action:result',
+              taskId: msg.taskId,
+              actionId: msg.actionId,
+              ok: false,
+              error: 'Task not found or has no actions',
+            }),
+          );
           break;
         }
         try {
           const pmManager = taskQueue._pmManager;
-          log.info(`[action] ${msg.actionId} on task ${msg.taskId}, comment: ${msg.comment ? JSON.stringify(msg.comment) : '(none)'}`);
+          log.info(
+            `[action] ${msg.actionId} on task ${msg.taskId}, comment: ${msg.comment ? JSON.stringify(msg.comment) : '(none)'}`,
+          );
           const result = await executeTaskAction(actionTask, msg.actionId, pmManager, msg.comment);
-          broadcast({ type: 'task:action:result', taskId: msg.taskId, actionId: msg.actionId, ok: true, message: result.message });
+          broadcast({
+            type: 'task:action:result',
+            taskId: msg.taskId,
+            actionId: msg.actionId,
+            ok: true,
+            message: result.message,
+          });
           if (result.closeTask || msg.closeTask) {
             // Force-complete: bypass requireHumanClose (the human just acted via
             // the menu — that IS the human approval) and skip the tmux snapshot
             // capture (was blocking the response 10–30s on busy tmux servers and
             // isn't useful for action-triggered close anyway).
-            const completed = taskQueue.completeTask(msg.taskId, result.message, null, 0, { force: true });
+            const completed = taskQueue.completeTask(msg.taskId, result.message, null, 0, {
+              force: true,
+            });
             if (completed && completed !== 'pending') {
-              broadcast({ type: 'task:completed', task: decorateTaskActions(completed, pmManager) });
+              broadcast({
+                type: 'task:completed',
+                task: decorateTaskActions(completed, pmManager),
+              });
             }
           }
         } catch (err) {
-          ws.send(JSON.stringify({ type: 'task:action:result', taskId: msg.taskId, actionId: msg.actionId, ok: false, error: err.message }));
+          ws.send(
+            JSON.stringify({
+              type: 'task:action:result',
+              taskId: msg.taskId,
+              actionId: msg.actionId,
+              ok: false,
+              error: err.message,
+            }),
+          );
         }
         break;
       }
@@ -896,7 +1224,9 @@ function createMessageHandler(deps) {
         if (!checkPermission(ws, user, 'send-messages')) break;
         taskQueue.broadcast(msg.message, msg.target, msg.sessions).then((result) => {
           if (ws.readyState === 1) {
-            ws.send(JSON.stringify({ type: 'broadcast:done', sent: result.sent, failed: result.failed }));
+            ws.send(
+              JSON.stringify({ type: 'broadcast:done', sent: result.sent, failed: result.failed }),
+            );
           }
         });
         break;
@@ -909,25 +1239,31 @@ function createMessageHandler(deps) {
         const sessions = await fleet.getFleetStatus(config, router);
         let targets;
         if (msg.sessions && msg.sessions.length) {
-          targets = sessions.filter(s => msg.sessions.includes(s.num));
+          targets = sessions.filter((s) => msg.sessions.includes(s.num));
         } else if (msg.target === 'idle') {
-          targets = sessions.filter(s => s.state === 'idle');
+          targets = sessions.filter((s) => s.state === 'idle');
         } else if (msg.target === 'working') {
-          targets = sessions.filter(s => s.state === 'working');
+          targets = sessions.filter((s) => s.state === 'working');
         } else {
-          targets = sessions.filter(s => s.state !== 'off');
+          targets = sessions.filter((s) => s.state !== 'off');
         }
-        let sent = 0, failed = 0;
+        let sent = 0,
+          failed = 0;
         for (const s of targets) {
           try {
             const node = router.getNode(s.nodeId || 'local');
-            if (!node) { failed++; continue; }
+            if (!node) {
+              failed++;
+              continue;
+            }
             const paneTarget = tmux.paneTarget(s.name, config.sessions.claudePane);
             for (const key of keys) {
               await node.exec(`tmux send-keys -t "${paneTarget}" ${key}`);
             }
             sent++;
-          } catch { failed++; }
+          } catch {
+            failed++;
+          }
         }
         if (ws.readyState === 1) {
           ws.send(JSON.stringify({ type: 'broadcast:done', sent, failed, keys: true }));
@@ -946,7 +1282,13 @@ function createMessageHandler(deps) {
       case 'feed:get': {
         if (!taskQueue) break;
         const feedData = taskQueue.getFeed(msg.before, msg.limit);
-        ws.send(JSON.stringify({ type: 'feed:entries', entries: feedData.entries, hasMore: feedData.hasMore }));
+        ws.send(
+          JSON.stringify({
+            type: 'feed:entries',
+            entries: feedData.entries,
+            hasMore: feedData.hasMore,
+          }),
+        );
         break;
       }
 
@@ -968,7 +1310,11 @@ function createMessageHandler(deps) {
       case 'designationDef:set': {
         if (!taskQueue) break;
         if (!checkPermission(ws, user, 'admin')) break;
-        taskQueue.setDesignationDef(msg.name, { agentFiles: msg.agentFiles, description: msg.description, color: msg.color });
+        taskQueue.setDesignationDef(msg.name, {
+          agentFiles: msg.agentFiles,
+          description: msg.description,
+          color: msg.color,
+        });
         break;
       }
 
@@ -978,11 +1324,20 @@ function createMessageHandler(deps) {
         if (msg.oldName && msg.oldName !== msg.name) {
           const renamed = taskQueue.renameDesignationDef(msg.oldName, msg.name);
           if (!renamed) {
-            ws.send(JSON.stringify({ type: 'error', message: `Failed to rename designation "${msg.oldName}" to "${msg.name}"` }));
+            ws.send(
+              JSON.stringify({
+                type: 'error',
+                message: `Failed to rename designation "${msg.oldName}" to "${msg.name}"`,
+              }),
+            );
             break;
           }
         }
-        taskQueue.setDesignationDef(msg.name, { agentFiles: msg.agentFiles, description: msg.description, color: msg.color });
+        taskQueue.setDesignationDef(msg.name, {
+          agentFiles: msg.agentFiles,
+          description: msg.description,
+          color: msg.color,
+        });
         break;
       }
 
@@ -995,7 +1350,9 @@ function createMessageHandler(deps) {
 
       case 'designationDefs:get': {
         if (!taskQueue) break;
-        ws.send(JSON.stringify({ type: 'designationDefs:list', defs: taskQueue.getDesignationDefs() }));
+        ws.send(
+          JSON.stringify({ type: 'designationDefs:list', defs: taskQueue.getDesignationDefs() }),
+        );
         break;
       }
 
@@ -1047,8 +1404,11 @@ function createMessageHandler(deps) {
         else if (msg.button === 'defer') taskQueue.showDeferBtn = !taskQueue.showDeferBtn;
         else break;
         taskQueue._saveState();
-        broadcast({ type: 'taskButtons:status',
-          requeue: taskQueue.showRequeueBtn, defer: taskQueue.showDeferBtn });
+        broadcast({
+          type: 'taskButtons:status',
+          requeue: taskQueue.showRequeueBtn,
+          defer: taskQueue.showDeferBtn,
+        });
         break;
       }
 
@@ -1066,7 +1426,10 @@ function createMessageHandler(deps) {
         if (!checkPermission(ws, user, 'dispatch')) break;
         taskQueue.autoCreateForManualTasks = !taskQueue.autoCreateForManualTasks;
         taskQueue._saveState();
-        broadcast({ type: 'autoCreateForManualTasks:status', enabled: taskQueue.autoCreateForManualTasks });
+        broadcast({
+          type: 'autoCreateForManualTasks:status',
+          enabled: taskQueue.autoCreateForManualTasks,
+        });
         // Kick the dispatcher in case turning it on should immediately spawn for the existing backlog.
         if (taskQueue.autoCreateForManualTasks) {
           taskQueue._tryAutoDispatch().catch(() => {});
@@ -1078,7 +1441,9 @@ function createMessageHandler(deps) {
         if (!checkPermission(ws, user, 'restart')) break;
         const found = await fleet.findSession(config, router, msg.session);
         if (!found) {
-          ws.send(JSON.stringify({ type: 'error', message: `No session matching "${msg.session}"` }));
+          ws.send(
+            JSON.stringify({ type: 'error', message: `No session matching "${msg.session}"` }),
+          );
           return;
         }
         const { name, nodeId } = found;
@@ -1115,7 +1480,13 @@ function createMessageHandler(deps) {
           _previewCache.ts = 0;
           broadcastFleetStatus().catch(() => {});
           if (ws.readyState === 1) {
-            ws.send(JSON.stringify({ type: 'shutdown:all:done', killed: results.killed.length, failed: results.failed.length }));
+            ws.send(
+              JSON.stringify({
+                type: 'shutdown:all:done',
+                killed: results.killed.length,
+                failed: results.failed.length,
+              }),
+            );
           }
         } catch (err) {
           log.error('Shutdown all error:', err.message);
@@ -1131,7 +1502,15 @@ function createMessageHandler(deps) {
         if (!taskQueue) break;
         const slots = await taskQueue.getAvailableSlots();
         const repoBase = config.sessions.repoBase || '';
-        ws.send(JSON.stringify({ type: 'spawn:slots', slots, slotMin: taskQueue.spawnSlotMin, slotMax: taskQueue.spawnSlotMax, repoBase }));
+        ws.send(
+          JSON.stringify({
+            type: 'spawn:slots',
+            slots,
+            slotMin: taskQueue.spawnSlotMin,
+            slotMax: taskQueue.spawnSlotMax,
+            repoBase,
+          }),
+        );
         break;
       }
 
@@ -1141,7 +1520,13 @@ function createMessageHandler(deps) {
         if (msg.min !== undefined && msg.max !== undefined) {
           taskQueue.setSpawnSlotRange(msg.min, msg.max);
         }
-        ws.send(JSON.stringify({ type: 'spawn:config', min: taskQueue.spawnSlotMin, max: taskQueue.spawnSlotMax }));
+        ws.send(
+          JSON.stringify({
+            type: 'spawn:config',
+            min: taskQueue.spawnSlotMin,
+            max: taskQueue.spawnSlotMax,
+          }),
+        );
         break;
       }
 
@@ -1156,51 +1541,71 @@ function createMessageHandler(deps) {
       case 'spawn': {
         if (!taskQueue) break;
         if (!checkPermission(ws, user, 'admin')) break;
-        taskQueue.spawnSession({
-          num: msg.num,
-          baseDir: msg.baseDir,
-          name: msg.name,
-          gitUrl: msg.gitUrl,
-        }).then((result) => {
-          if (ws.readyState === 1) {
-            ws.send(JSON.stringify({ type: 'spawn:done', success: true, num: result.num, repoDir: result.repoDir }));
-          }
-          // Refresh fleet for all clients after a delay
-          setTimeout(() => {
-            fleet.invalidateCache();
-            _previewCache.result = null;
-            _previewCache.ts = 0;
-            broadcastFleetStatus().catch(() => {});
-          }, 500);
-        }).catch((err) => {
-          if (ws.readyState === 1) {
-            ws.send(JSON.stringify({ type: 'spawn:done', success: false, error: err.message }));
-          }
-        });
+        taskQueue
+          .spawnSession({
+            num: msg.num,
+            baseDir: msg.baseDir,
+            name: msg.name,
+            gitUrl: msg.gitUrl,
+          })
+          .then((result) => {
+            if (ws.readyState === 1) {
+              ws.send(
+                JSON.stringify({
+                  type: 'spawn:done',
+                  success: true,
+                  num: result.num,
+                  repoDir: result.repoDir,
+                }),
+              );
+            }
+            // Refresh fleet for all clients after a delay
+            setTimeout(() => {
+              fleet.invalidateCache();
+              _previewCache.result = null;
+              _previewCache.ts = 0;
+              broadcastFleetStatus().catch(() => {});
+            }, 500);
+          })
+          .catch((err) => {
+            if (ws.readyState === 1) {
+              ws.send(JSON.stringify({ type: 'spawn:done', success: false, error: err.message }));
+            }
+          });
         break;
       }
 
       case 'respawn:all': {
         if (!taskQueue) break;
         if (!checkPermission(ws, user, 'admin')) break;
-        taskQueue.respawnAll().then((results) => {
-          if (ws.readyState === 1) {
-            ws.send(JSON.stringify({ type: 'respawn:done', ...results }));
-          }
-          // Broadcast updated spawned agents list
-          broadcast({ type: 'spawnedAgents:list', agents: taskQueue.getSpawnedAgentsList() });
-          // Refresh fleet for all clients after a delay
-          setTimeout(() => {
-            fleet.invalidateCache();
-            _previewCache.result = null;
-            _previewCache.ts = 0;
-            broadcastFleetStatus().catch(() => {});
-          }, 500);
-        }).catch((err) => {
-          if (ws.readyState === 1) {
-            ws.send(JSON.stringify({ type: 'respawn:done', respawned: [], skipped: [], failed: [{ num: 0, error: err.message }] }));
-          }
-        });
+        taskQueue
+          .respawnAll()
+          .then((results) => {
+            if (ws.readyState === 1) {
+              ws.send(JSON.stringify({ type: 'respawn:done', ...results }));
+            }
+            // Broadcast updated spawned agents list
+            broadcast({ type: 'spawnedAgents:list', agents: taskQueue.getSpawnedAgentsList() });
+            // Refresh fleet for all clients after a delay
+            setTimeout(() => {
+              fleet.invalidateCache();
+              _previewCache.result = null;
+              _previewCache.ts = 0;
+              broadcastFleetStatus().catch(() => {});
+            }, 500);
+          })
+          .catch((err) => {
+            if (ws.readyState === 1) {
+              ws.send(
+                JSON.stringify({
+                  type: 'respawn:done',
+                  respawned: [],
+                  skipped: [],
+                  failed: [{ num: 0, error: err.message }],
+                }),
+              );
+            }
+          });
         break;
       }
 
@@ -1212,7 +1617,9 @@ function createMessageHandler(deps) {
         if (cronExpr) {
           const nodeCron = require('node-cron');
           if (!nodeCron.validate(cronExpr)) {
-            ws.send(JSON.stringify({ type: 'error', message: `Invalid cron expression: ${cronExpr}` }));
+            ws.send(
+              JSON.stringify({ type: 'error', message: `Invalid cron expression: ${cronExpr}` }),
+            );
             break;
           }
         }
@@ -1229,7 +1636,9 @@ function createMessageHandler(deps) {
         if (updateCron) {
           const nodeCron = require('node-cron');
           if (!nodeCron.validate(updateCron)) {
-            ws.send(JSON.stringify({ type: 'error', message: `Invalid cron expression: ${updateCron}` }));
+            ws.send(
+              JSON.stringify({ type: 'error', message: `Invalid cron expression: ${updateCron}` }),
+            );
             break;
           }
         }
@@ -1258,9 +1667,14 @@ function createMessageHandler(deps) {
         if (!pmManager) break;
         const ensurePm = pmManager.get(msg.id);
         if (!ensurePm || ensurePm.source.type !== 'slack-channel-monitor') break;
-        pmManager.ensureMonitorSession(ensurePm, config).catch(err => {
+        pmManager.ensureMonitorSession(ensurePm, config).catch((err) => {
           console.error(`[pm] ensure-session failed for PM "${ensurePm.name}": ${err.message}`);
-          ws.send(JSON.stringify({ type: 'error', message: `Failed to start PM session: ${err.message}` }));
+          ws.send(
+            JSON.stringify({
+              type: 'error',
+              message: `Failed to start PM session: ${err.message}`,
+            }),
+          );
         });
         break;
       }
@@ -1379,7 +1793,7 @@ function createMessageHandler(deps) {
         if (!checkPermission(ws, user, 'create-tasks')) break;
         const tpl = taskQueue.checklistTemplates.get(msg.templateName);
         if (tpl) {
-          const checklist = tpl.items.map(text => ({ text, checked: false }));
+          const checklist = tpl.items.map((text) => ({ text, checked: false }));
           taskQueue.setTaskChecklist(msg.taskId, checklist);
         }
         break;
@@ -1398,7 +1812,9 @@ function createMessageHandler(deps) {
         if (!checkPermission(ws, user, 'admin')) break;
         // Self-demotion prevention: can't remove own admin
         if (msg.login === user?.login && !(msg.permissions || []).includes('admin')) {
-          ws.send(JSON.stringify({ type: 'error', message: 'Cannot remove your own admin permission' }));
+          ws.send(
+            JSON.stringify({ type: 'error', message: 'Cannot remove your own admin permission' }),
+          );
           break;
         }
         const updated = taskQueue.setUserPermissions(msg.login, msg.permissions || []);
@@ -1409,7 +1825,9 @@ function createMessageHandler(deps) {
           for (const client of clients) {
             const clientUser = wsUser.get(client);
             if (clientUser && clientUser.login === msg.login && client.readyState === 1) {
-              client.send(JSON.stringify({ type: 'user:permissions', permissions: updated.permissions }));
+              client.send(
+                JSON.stringify({ type: 'user:permissions', permissions: updated.permissions }),
+              );
             }
           }
         }
@@ -1446,20 +1864,44 @@ function createMessageHandler(deps) {
       case 'plan:read': {
         // Read a file from the session's node (used by plan pane to poll plan file)
         if (!msg.session || !msg.path) {
-          ws.send(JSON.stringify({ type: 'plan:file', session: msg.session, content: null, error: 'Missing session or path' }));
+          ws.send(
+            JSON.stringify({
+              type: 'plan:file',
+              session: msg.session,
+              content: null,
+              error: 'Missing session or path',
+            }),
+          );
           break;
         }
         const planFound = await fleet.findSession(config, router, msg.session);
         if (!planFound) {
-          ws.send(JSON.stringify({ type: 'plan:file', session: msg.session, content: null, error: 'Session not found' }));
+          ws.send(
+            JSON.stringify({
+              type: 'plan:file',
+              session: msg.session,
+              content: null,
+              error: 'Session not found',
+            }),
+          );
           break;
         }
         const planNode = router.getNode(planFound.nodeId);
         try {
           const content = await planNode.readFile(msg.path);
-          ws.send(JSON.stringify({ type: 'plan:file', session: msg.session, path: msg.path, content }));
+          ws.send(
+            JSON.stringify({ type: 'plan:file', session: msg.session, path: msg.path, content }),
+          );
         } catch (err) {
-          ws.send(JSON.stringify({ type: 'plan:file', session: msg.session, path: msg.path, content: null, error: err.message }));
+          ws.send(
+            JSON.stringify({
+              type: 'plan:file',
+              session: msg.session,
+              path: msg.path,
+              content: null,
+              error: err.message,
+            }),
+          );
         }
         break;
       }
@@ -1467,10 +1909,13 @@ function createMessageHandler(deps) {
       // -- Session Context ---------------------------------------------------
       case 'context:get': {
         if (!taskQueue) break;
-        const ctx = msg.session != null
-          ? taskQueue.getSessionContext(msg.session)
-          : taskQueue.getAllSessionContexts();
-        ws.send(JSON.stringify({ type: 'context:data', session: msg.session ?? null, context: ctx }));
+        const ctx =
+          msg.session != null
+            ? taskQueue.getSessionContext(msg.session)
+            : taskQueue.getAllSessionContexts();
+        ws.send(
+          JSON.stringify({ type: 'context:data', session: msg.session ?? null, context: ctx }),
+        );
         break;
       }
 
@@ -1478,7 +1923,9 @@ function createMessageHandler(deps) {
         if (!taskQueue) break;
         if (!checkPermission(ws, user, 'send-messages')) break;
         if (msg.session == null || !msg.updates || typeof msg.updates !== 'object') {
-          ws.send(JSON.stringify({ type: 'error', message: 'context:set requires session and updates' }));
+          ws.send(
+            JSON.stringify({ type: 'error', message: 'context:set requires session and updates' }),
+          );
           break;
         }
         const updated = taskQueue.setSessionContext(msg.session, msg.updates);
@@ -1502,8 +1949,19 @@ function createMessageHandler(deps) {
           ws.send(JSON.stringify({ type: 'idea:error', error: 'Title is required' }));
           break;
         }
-        const args = ['issue', 'create', '--repo', 'nukulb/hive', '--title', title, '--label', 'idea'];
-        if (msg.body) { args.push('--body', msg.body); }
+        const args = [
+          'issue',
+          'create',
+          '--repo',
+          'nukulb/hive',
+          '--title',
+          title,
+          '--label',
+          'idea',
+        ];
+        if (msg.body) {
+          args.push('--body', msg.body);
+        }
         execFile('gh', args, { timeout: 15000, env: ghExecEnv }, (err, stdout) => {
           if (err) {
             ws.send(JSON.stringify({ type: 'idea:error', error: err.message }));
@@ -1518,18 +1976,36 @@ function createMessageHandler(deps) {
       }
 
       case 'idea:list': {
-        execFile('gh', ['issue', 'list', '--repo', 'nukulb/hive', '--label', 'idea', '--state', 'all', '--json', 'number,title,state,url', '--limit', '50'], { timeout: 15000, env: ghExecEnv }, (err, stdout) => {
-          if (err) {
-            ws.send(JSON.stringify({ type: 'idea:error', error: err.message }));
-            return;
-          }
-          try {
-            const ideas = JSON.parse(stdout);
-            ws.send(JSON.stringify({ type: 'idea:list', ideas }));
-          } catch (e) {
-            ws.send(JSON.stringify({ type: 'idea:list', ideas: [] }));
-          }
-        });
+        execFile(
+          'gh',
+          [
+            'issue',
+            'list',
+            '--repo',
+            'nukulb/hive',
+            '--label',
+            'idea',
+            '--state',
+            'all',
+            '--json',
+            'number,title,state,url',
+            '--limit',
+            '50',
+          ],
+          { timeout: 15000, env: ghExecEnv },
+          (err, stdout) => {
+            if (err) {
+              ws.send(JSON.stringify({ type: 'idea:error', error: err.message }));
+              return;
+            }
+            try {
+              const ideas = JSON.parse(stdout);
+              ws.send(JSON.stringify({ type: 'idea:list', ideas }));
+            } catch (e) {
+              ws.send(JSON.stringify({ type: 'idea:list', ideas: [] }));
+            }
+          },
+        );
         break;
       }
 
@@ -1537,14 +2013,33 @@ function createMessageHandler(deps) {
         if (!checkPermission(ws, user, 'admin')) break;
         const hiveRoot = path.join(__dirname, '..', '..', '..');
         try {
-          const branch = execSync('git branch --show-current', { cwd: hiveRoot, encoding: 'utf8' }).trim();
-          const commitRaw = execSync('git log -1 --format="%h|%s|%ar"', { cwd: hiveRoot, encoding: 'utf8' }).trim();
+          const branch = execSync('git branch --show-current', {
+            cwd: hiveRoot,
+            encoding: 'utf8',
+          }).trim();
+          const commitRaw = execSync('git log -1 --format="%h|%s|%ar"', {
+            cwd: hiveRoot,
+            encoding: 'utf8',
+          }).trim();
           const [hash, subject, timeAgo] = commitRaw.split('|');
-          const branchesRaw = execSync('git branch -r --format="%(refname:short)"', { cwd: hiveRoot, encoding: 'utf8' }).trim();
-          const remoteBranches = branchesRaw.split('\n')
-            .map(b => b.replace(/^origin\//, ''))
-            .filter(b => b && b !== 'HEAD');
-          ws.send(JSON.stringify({ type: 'update:status', branch, hash, subject, timeAgo, remoteBranches }));
+          const branchesRaw = execSync('git branch -r --format="%(refname:short)"', {
+            cwd: hiveRoot,
+            encoding: 'utf8',
+          }).trim();
+          const remoteBranches = branchesRaw
+            .split('\n')
+            .map((b) => b.replace(/^origin\//, ''))
+            .filter((b) => b && b !== 'HEAD');
+          ws.send(
+            JSON.stringify({
+              type: 'update:status',
+              branch,
+              hash,
+              subject,
+              timeAgo,
+              remoteBranches,
+            }),
+          );
         } catch (err) {
           ws.send(JSON.stringify({ type: 'update:error', error: err.message }));
         }
@@ -1559,9 +2054,19 @@ function createMessageHandler(deps) {
           jenkins: ['JENKINS_URL', 'JENKINS_USER', 'JENKINS_API_TOKEN'],
           slack: ['SLACK_BOT_TOKEN', 'SLACK_APP_TOKEN'],
           jira: ['JIRA_BASE_URL', 'JIRA_EMAIL', 'JIRA_API_TOKEN'],
-          zoho: ['ZOHO_DESK_ORG_ID', 'ZOHO_DESK_CLIENT_ID', 'ZOHO_DESK_CLIENT_SECRET', 'ZOHO_DESK_REFRESH_TOKEN'],
+          zoho: [
+            'ZOHO_DESK_ORG_ID',
+            'ZOHO_DESK_CLIENT_ID',
+            'ZOHO_DESK_CLIENT_SECRET',
+            'ZOHO_DESK_REFRESH_TOKEN',
+          ],
           nectar: ['NECTAR_URL', 'NECTAR_API_KEY'],
-          's3-release-artifacts': ['RELEASE_ARTIFACTS_BUCKET', 'RELEASE_ARTIFACTS_REGION', 'RELEASE_ARTIFACTS_AWS_ACCESS_KEY_ID', 'RELEASE_ARTIFACTS_AWS_SECRET_ACCESS_KEY'],
+          's3-release-artifacts': [
+            'RELEASE_ARTIFACTS_BUCKET',
+            'RELEASE_ARTIFACTS_REGION',
+            'RELEASE_ARTIFACTS_AWS_ACCESS_KEY_ID',
+            'RELEASE_ARTIFACTS_AWS_SECRET_ACCESS_KEY',
+          ],
         };
         const allowed = ALLOWED_KEYS[intName];
         if (!allowed || !msg.values || typeof msg.values !== 'object') {
@@ -1580,12 +2085,18 @@ function createMessageHandler(deps) {
             lines = fs.readFileSync(envFile, 'utf8').split('\n');
           }
           for (const [key, val] of Object.entries(safeValues)) {
-            const idx = lines.findIndex(l => l.trim().startsWith(key + '='));
+            const idx = lines.findIndex((l) => l.trim().startsWith(key + '='));
             const line = `${key}=${val}`;
-            if (idx >= 0) { lines[idx] = line; } else { lines.push(line); }
+            if (idx >= 0) {
+              lines[idx] = line;
+            } else {
+              lines.push(line);
+            }
           }
           fs.writeFileSync(envFile, lines.join('\n'));
-          ws.send(JSON.stringify({ type: 'integration:saved', integration: intName, restart: true }));
+          ws.send(
+            JSON.stringify({ type: 'integration:saved', integration: intName, restart: true }),
+          );
         } catch (err) {
           ws.send(JSON.stringify({ type: 'error', message: 'Failed to save: ' + err.message }));
         }
@@ -1597,7 +2108,15 @@ function createMessageHandler(deps) {
         const vals = msg.values || {};
         const sendResult = (ok, detail, error) => {
           try {
-            ws.send(JSON.stringify({ type: 'integration:test:result', integration: intTestName, ok, detail, error }));
+            ws.send(
+              JSON.stringify({
+                type: 'integration:test:result',
+                integration: intTestName,
+                ok,
+                detail,
+                error,
+              }),
+            );
           } catch (_) {}
         };
 
@@ -1605,20 +2124,31 @@ function createMessageHandler(deps) {
           return new Promise((resolve, reject) => {
             const url = new URL(urlStr);
             const mod = url.protocol === 'https:' ? https : http;
-            const options = { method: postBody ? 'POST' : 'GET', headers: { ...headers }, timeout: 15000 };
+            const options = {
+              method: postBody ? 'POST' : 'GET',
+              headers: { ...headers },
+              timeout: 15000,
+            };
             const req = mod.request(urlStr, options, (res) => {
               let data = '';
-              res.on('data', (chunk) => data += chunk);
+              res.on('data', (chunk) => (data += chunk));
               res.on('end', () => {
                 if (res.statusCode >= 200 && res.statusCode < 300) {
-                  try { resolve(JSON.parse(data)); } catch (e) { reject(new Error('Invalid JSON')); }
+                  try {
+                    resolve(JSON.parse(data));
+                  } catch (e) {
+                    reject(new Error('Invalid JSON'));
+                  }
                 } else {
                   reject(new Error(`HTTP ${res.statusCode}: ${data.slice(0, 200)}`));
                 }
               });
             });
             req.on('error', (err) => reject(new Error(err.message)));
-            req.on('timeout', () => { req.destroy(); reject(new Error('Timed out')); });
+            req.on('timeout', () => {
+              req.destroy();
+              reject(new Error('Timed out'));
+            });
             if (postBody) req.write(postBody);
             req.end();
           });
@@ -1628,10 +2158,13 @@ function createMessageHandler(deps) {
           switch (intTestName) {
             case 'github': {
               const token = vals.GITHUB_TOKEN;
-              if (!token) { sendResult(false, null, 'Token required'); break; }
+              if (!token) {
+                sendResult(false, null, 'Token required');
+                break;
+              }
               const data = await httpRequest('https://api.github.com/user', {
-                'Authorization': `Bearer ${token}`,
-                'Accept': 'application/json',
+                Authorization: `Bearer ${token}`,
+                Accept: 'application/json',
                 'User-Agent': 'hive-dashboard',
               });
               sendResult(true, `Authenticated as ${data.login}`);
@@ -1641,20 +2174,26 @@ function createMessageHandler(deps) {
               const jUrl = (vals.JENKINS_URL || '').replace(/\/+$/, '');
               const jUser = vals.JENKINS_USER;
               const jToken = vals.JENKINS_API_TOKEN;
-              if (!jUrl || !jUser || !jToken) { sendResult(false, null, 'All fields required'); break; }
+              if (!jUrl || !jUser || !jToken) {
+                sendResult(false, null, 'All fields required');
+                break;
+              }
               const auth = Buffer.from(`${jUser}:${jToken}`).toString('base64');
               const data = await httpRequest(`${jUrl}/api/json`, {
-                'Authorization': `Basic ${auth}`,
-                'Accept': 'application/json',
+                Authorization: `Basic ${auth}`,
+                Accept: 'application/json',
               });
               sendResult(true, data.nodeDescription || 'Connected');
               break;
             }
             case 'slack': {
               const botToken = vals.SLACK_BOT_TOKEN;
-              if (!botToken) { sendResult(false, null, 'Bot token required'); break; }
+              if (!botToken) {
+                sendResult(false, null, 'Bot token required');
+                break;
+              }
               const data = await httpRequest('https://slack.com/api/auth.test', {
-                'Authorization': `Bearer ${botToken}`,
+                Authorization: `Bearer ${botToken}`,
                 'Content-Type': 'application/json',
               });
               if (data.ok) {
@@ -1668,11 +2207,14 @@ function createMessageHandler(deps) {
               const jiraUrl = (vals.JIRA_BASE_URL || '').replace(/\/+$/, '');
               const jiraEmail = vals.JIRA_EMAIL;
               const jiraToken = vals.JIRA_API_TOKEN;
-              if (!jiraUrl || !jiraEmail || !jiraToken) { sendResult(false, null, 'All fields required'); break; }
+              if (!jiraUrl || !jiraEmail || !jiraToken) {
+                sendResult(false, null, 'All fields required');
+                break;
+              }
               const jiraAuth = Buffer.from(`${jiraEmail}:${jiraToken}`).toString('base64');
               const data = await httpRequest(`${jiraUrl}/rest/api/3/myself`, {
-                'Authorization': `Basic ${jiraAuth}`,
-                'Accept': 'application/json',
+                Authorization: `Basic ${jiraAuth}`,
+                Accept: 'application/json',
               });
               sendResult(true, data.displayName || 'Connected');
               break;
@@ -1682,28 +2224,47 @@ function createMessageHandler(deps) {
               const zClientId = vals.ZOHO_DESK_CLIENT_ID;
               const zClientSecret = vals.ZOHO_DESK_CLIENT_SECRET;
               const zRefreshToken = vals.ZOHO_DESK_REFRESH_TOKEN;
-              if (!zOrgId || !zClientId || !zClientSecret || !zRefreshToken) { sendResult(false, null, 'All fields required'); break; }
-              const tokenData = await httpRequest('https://accounts.zoho.com/oauth/v2/token', {
-                'Content-Type': 'application/x-www-form-urlencoded',
-              }, `grant_type=refresh_token&client_id=${zClientId}&client_secret=${zClientSecret}&refresh_token=${zRefreshToken}`);
-              if (!tokenData.access_token) { sendResult(false, null, tokenData.error || 'Failed to get access token'); break; }
-              const ticketsData = await httpRequest(`https://desk.zoho.com/api/v1/tickets?limit=1`, {
-                'Authorization': `Zoho-oauthtoken ${tokenData.access_token}`,
-                'orgId': zOrgId,
-                'Accept': 'application/json',
-              });
+              if (!zOrgId || !zClientId || !zClientSecret || !zRefreshToken) {
+                sendResult(false, null, 'All fields required');
+                break;
+              }
+              const tokenData = await httpRequest(
+                'https://accounts.zoho.com/oauth/v2/token',
+                {
+                  'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                `grant_type=refresh_token&client_id=${zClientId}&client_secret=${zClientSecret}&refresh_token=${zRefreshToken}`,
+              );
+              if (!tokenData.access_token) {
+                sendResult(false, null, tokenData.error || 'Failed to get access token');
+                break;
+              }
+              const ticketsData = await httpRequest(
+                `https://desk.zoho.com/api/v1/tickets?limit=1`,
+                {
+                  Authorization: `Zoho-oauthtoken ${tokenData.access_token}`,
+                  orgId: zOrgId,
+                  Accept: 'application/json',
+                },
+              );
               sendResult(true, `Connected — org ${zOrgId}`);
               break;
             }
             case 'nectar': {
               const nectarUrl = (vals.NECTAR_URL || '').replace(/\/+$/, '');
               const nectarKey = vals.NECTAR_API_KEY;
-              if (!nectarUrl || !nectarKey) { sendResult(false, null, 'URL and API key required'); break; }
+              if (!nectarUrl || !nectarKey) {
+                sendResult(false, null, 'URL and API key required');
+                break;
+              }
               const data = await httpRequest(`${nectarUrl}/health`, {
-                'Authorization': `Bearer ${nectarKey}`,
-                'Accept': 'application/json',
+                Authorization: `Bearer ${nectarKey}`,
+                Accept: 'application/json',
               });
-              sendResult(true, `Connected — ${data.releases || 0} releases, ${data.environments || 0} environments`);
+              sendResult(
+                true,
+                `Connected — ${data.releases || 0} releases, ${data.environments || 0} environments`,
+              );
               break;
             }
             case 's3-release-artifacts': {
@@ -1711,13 +2272,24 @@ function createMessageHandler(deps) {
               const region = vals.RELEASE_ARTIFACTS_REGION || 'us-east-1';
               const accessKey = vals.RELEASE_ARTIFACTS_AWS_ACCESS_KEY_ID;
               const secretKey = vals.RELEASE_ARTIFACTS_AWS_SECRET_ACCESS_KEY;
-              if (!bucket || !accessKey || !secretKey) { sendResult(false, null, 'Bucket, Access Key ID, and Secret Access Key are required'); break; }
+              if (!bucket || !accessKey || !secretKey) {
+                sendResult(
+                  false,
+                  null,
+                  'Bucket, Access Key ID, and Secret Access Key are required',
+                );
+                break;
+              }
               // Test by listing the bucket (HeadBucket via S3 REST API)
               const { exec } = require('child_process');
               const testCmd = `AWS_ACCESS_KEY_ID=${accessKey} AWS_SECRET_ACCESS_KEY=${secretKey} aws s3 ls s3://${bucket}/ --region ${region} --max-items 1 2>&1`;
               exec(testCmd, { timeout: 15000 }, (err, stdout, stderr) => {
                 if (err) {
-                  sendResult(false, null, `Cannot access bucket: ${(stderr || err.message).slice(0, 200)}`);
+                  sendResult(
+                    false,
+                    null,
+                    `Cannot access bucket: ${(stderr || err.message).slice(0, 200)}`,
+                  );
                 } else {
                   sendResult(true, `Connected to s3://${bucket} (${region})`);
                 }
@@ -1737,21 +2309,28 @@ function createMessageHandler(deps) {
         if (!checkPermission(ws, user, 'admin')) break;
         const backupCfg = taskQueue.backupConfig || {};
         // Count backup files (state + knowledge + config)
-        let localStateCount = 0, localKnowledgeCount = 0, localConfigCount = 0;
-        let icloudCount = 0, localLatest = null, icloudLatest = null;
+        let localStateCount = 0,
+          localKnowledgeCount = 0,
+          localConfigCount = 0;
+        let icloudCount = 0,
+          localLatest = null,
+          icloudLatest = null;
         try {
           const allLocal = fs.readdirSync(backupCfg.localDir || '');
-          localStateCount = allLocal.filter(f => f.startsWith('hive-state-')).length;
-          localKnowledgeCount = allLocal.filter(f => f.startsWith('hive-knowledge-')).length;
-          localConfigCount = allLocal.filter(f => f.startsWith('hive-config-')).length;
-          const sorted = allLocal.filter(f => f.startsWith('hive-')).sort();
+          localStateCount = allLocal.filter((f) => f.startsWith('hive-state-')).length;
+          localKnowledgeCount = allLocal.filter((f) => f.startsWith('hive-knowledge-')).length;
+          localConfigCount = allLocal.filter((f) => f.startsWith('hive-config-')).length;
+          const sorted = allLocal.filter((f) => f.startsWith('hive-')).sort();
           if (sorted.length) {
             const lastFile = path.join(backupCfg.localDir, sorted[sorted.length - 1]);
             localLatest = fs.statSync(lastFile).mtime.toISOString();
           }
         } catch {}
         try {
-          const icloudFiles = fs.readdirSync(backupCfg.icloudDir || '').filter(f => f.startsWith('hive-')).sort();
+          const icloudFiles = fs
+            .readdirSync(backupCfg.icloudDir || '')
+            .filter((f) => f.startsWith('hive-'))
+            .sort();
           icloudCount = icloudFiles.length;
           if (icloudFiles.length) {
             const lastFile = path.join(backupCfg.icloudDir, icloudFiles[icloudFiles.length - 1]);
@@ -1759,18 +2338,29 @@ function createMessageHandler(deps) {
           }
         } catch {}
         // State file size
-        let stateSize = 0, knowledgeSize = 0;
-        try { stateSize = fs.statSync(path.join(process.cwd(), '.hive-state.json')).size; } catch {}
-        try { knowledgeSize = fs.statSync(path.join(process.cwd(), '.hive-knowledge.json')).size; } catch {}
-        ws.send(JSON.stringify({
-          type: 'backup:status',
-          config: backupCfg,
-          localCount: localStateCount + localKnowledgeCount + localConfigCount,
-          localStateCount, localKnowledgeCount, localConfigCount,
-          localLatest,
-          icloudCount, icloudLatest,
-          stateSize, knowledgeSize,
-        }));
+        let stateSize = 0,
+          knowledgeSize = 0;
+        try {
+          stateSize = fs.statSync(path.join(process.cwd(), '.hive-state.json')).size;
+        } catch {}
+        try {
+          knowledgeSize = fs.statSync(path.join(process.cwd(), '.hive-knowledge.json')).size;
+        } catch {}
+        ws.send(
+          JSON.stringify({
+            type: 'backup:status',
+            config: backupCfg,
+            localCount: localStateCount + localKnowledgeCount + localConfigCount,
+            localStateCount,
+            localKnowledgeCount,
+            localConfigCount,
+            localLatest,
+            icloudCount,
+            icloudLatest,
+            stateSize,
+            knowledgeSize,
+          }),
+        );
         break;
       }
 
@@ -1780,8 +2370,10 @@ function createMessageHandler(deps) {
         const cfg = taskQueue.backupConfig || {};
         if (updates.localDir !== undefined) cfg.localDir = updates.localDir;
         if (updates.icloudDir !== undefined) cfg.icloudDir = updates.icloudDir;
-        if (updates.retentionDays !== undefined) cfg.retentionDays = Number(updates.retentionDays) || 14;
-        if (updates.icloudRetentionDays !== undefined) cfg.icloudRetentionDays = Number(updates.icloudRetentionDays) || 30;
+        if (updates.retentionDays !== undefined)
+          cfg.retentionDays = Number(updates.retentionDays) || 14;
+        if (updates.icloudRetentionDays !== undefined)
+          cfg.icloudRetentionDays = Number(updates.icloudRetentionDays) || 30;
         if (updates.cronSchedule !== undefined) cfg.cronSchedule = updates.cronSchedule;
         taskQueue.backupConfig = cfg;
         taskQueue._saveState();
@@ -1806,7 +2398,9 @@ function createMessageHandler(deps) {
         const hiveDir = path.join(__dirname, '..', '..', '..');
         const targetBranch = msg.branch;
         const sendLog = (step, output) => {
-          try { ws.send(JSON.stringify({ type: 'update:log', step, output })); } catch (_) {}
+          try {
+            ws.send(JSON.stringify({ type: 'update:log', step, output }));
+          } catch (_) {}
         };
 
         // Build env that injects HIVE_REPO_TOKEN for git auth, bypassing
@@ -1814,23 +2408,32 @@ function createMessageHandler(deps) {
         // used for mavencare API calls).
         const hiveRepoToken = process.env.HIVE_REPO_TOKEN;
         const gitEnv = hiveRepoToken
-          ? { ...process.env,
+          ? {
+              ...process.env,
               GIT_TERMINAL_PROMPT: '0',
               GIT_CONFIG_COUNT: '1',
               GIT_CONFIG_KEY_0: `url.https://${hiveRepoToken}@github.com/.insteadOf`,
-              GIT_CONFIG_VALUE_0: 'https://github.com/' }
+              GIT_CONFIG_VALUE_0: 'https://github.com/',
+            }
           : process.env;
         const gitOpts = (timeout) => ({ cwd: hiveDir, encoding: 'utf8', timeout, env: gitEnv });
         // Scrub token from git error output (git can include the rewritten URL with embedded token)
-        const scrub = (s) => hiveRepoToken ? s.replace(new RegExp(hiveRepoToken, 'g'), '***') : s;
+        const scrub = (s) => (hiveRepoToken ? s.replace(new RegExp(hiveRepoToken, 'g'), '***') : s);
 
         try {
           // Step 0: stash local changes so pull doesn't conflict
-          const dirtyCheck = execSync('git status --porcelain', { cwd: hiveDir, encoding: 'utf8' }).trim();
+          const dirtyCheck = execSync('git status --porcelain', {
+            cwd: hiveDir,
+            encoding: 'utf8',
+          }).trim();
           let didStash = false;
           if (dirtyCheck) {
             sendLog('stash', 'Stashing local changes...');
-            execSync('git stash --include-untracked 2>&1', { cwd: hiveDir, encoding: 'utf8', timeout: 10000 });
+            execSync('git stash --include-untracked 2>&1', {
+              cwd: hiveDir,
+              encoding: 'utf8',
+              timeout: 10000,
+            });
             didStash = true;
             sendLog('stash', 'Done.');
           }
@@ -1841,7 +2444,10 @@ function createMessageHandler(deps) {
           sendLog('fetch', scrub(fetchOut) || 'Done.');
 
           // Step 2: checkout if different branch
-          const currentBranch = execSync('git branch --show-current', { cwd: hiveDir, encoding: 'utf8' }).trim();
+          const currentBranch = execSync('git branch --show-current', {
+            cwd: hiveDir,
+            encoding: 'utf8',
+          }).trim();
           if (targetBranch && targetBranch !== currentBranch) {
             sendLog('checkout', `Switching to ${targetBranch}...`);
             const checkoutOut = execSync(`git checkout ${targetBranch} 2>&1`, gitOpts(15000));
@@ -1870,22 +2476,37 @@ function createMessageHandler(deps) {
           // with "Cannot find package 'X'" the moment a pulled commit adds a dep.
           sendLog('install', 'Running npm install...');
           try {
-            const installOut = execSync('npm install --no-audit --no-fund 2>&1', { cwd: hiveDir, encoding: 'utf8', timeout: 300000 });
+            const installOut = execSync('npm install --no-audit --no-fund 2>&1', {
+              cwd: hiveDir,
+              encoding: 'utf8',
+              timeout: 300000,
+            });
             sendLog('install', installOut || 'Done.');
           } catch (installErr) {
             sendLog('install', installErr.stdout || installErr.message);
-            ws.send(JSON.stringify({ type: 'update:error', error: 'npm install failed — aborting restart.' }));
+            ws.send(
+              JSON.stringify({
+                type: 'update:error',
+                error: 'npm install failed — aborting restart.',
+              }),
+            );
             break;
           }
 
           // Step 4: npm test
           sendLog('test', 'Running npm test...');
           try {
-            const testOut = execSync('npm test 2>&1', { cwd: hiveDir, encoding: 'utf8', timeout: 120000 });
+            const testOut = execSync('npm test 2>&1', {
+              cwd: hiveDir,
+              encoding: 'utf8',
+              timeout: 120000,
+            });
             sendLog('test', testOut || 'All tests passed.');
           } catch (testErr) {
             sendLog('test', testErr.stdout || testErr.message);
-            ws.send(JSON.stringify({ type: 'update:error', error: 'Tests failed — aborting restart.' }));
+            ws.send(
+              JSON.stringify({ type: 'update:error', error: 'Tests failed — aborting restart.' }),
+            );
             break;
           }
 
@@ -1923,13 +2544,21 @@ function createMessageHandler(deps) {
       case 'setup:validate-path': {
         const rawPath = (msg.path || '').trim();
         if (!rawPath) {
-          ws.send(JSON.stringify({ type: 'setup:validate-path:result', valid: false, error: 'Path is required' }));
+          ws.send(
+            JSON.stringify({
+              type: 'setup:validate-path:result',
+              valid: false,
+              error: 'Path is required',
+            }),
+          );
           break;
         }
         const resolved = rawPath.replace(/^~/, os.homedir());
         const exists = fs.existsSync(resolved);
         const hasGit = exists && fs.existsSync(path.join(resolved, '.git'));
-        ws.send(JSON.stringify({ type: 'setup:validate-path:result', valid: exists, hasGit, resolved }));
+        ws.send(
+          JSON.stringify({ type: 'setup:validate-path:result', valid: exists, hasGit, resolved }),
+        );
         break;
       }
 
@@ -1972,12 +2601,12 @@ function createMessageHandler(deps) {
           sendInitialState(ws);
 
           // Background: clone (if git) + create sessions + start Claude
-          const hasGitUrls = Object.values(setupData.perAgentGitUrls).some(u => u);
+          const hasGitUrls = Object.values(setupData.perAgentGitUrls).some((u) => u);
           const sessionManager = require('../../core/session-manager');
 
           (async () => {
             try {
-              if (!await sessionManager.isTmuxAvailable()) return;
+              if (!(await sessionManager.isTmuxAvailable())) return;
               await sessionManager.applyGlobalOptions(config.tmux || {});
               const claudePane = config.sessions?.claudePane || 1;
               const prefix = config.sessions?.namePrefix || '';
@@ -1988,7 +2617,7 @@ function createMessageHandler(deps) {
 
                 if (setupData.sharedRepo) {
                   // Shared: clone once, then create all sessions
-                  const gitUrl = Object.values(setupData.perAgentGitUrls).find(u => u);
+                  const gitUrl = Object.values(setupData.perAgentGitUrls).find((u) => u);
                   try {
                     await cloneOrReuse(gitUrl, baseDir);
                   } catch (err) {
@@ -2015,12 +2644,21 @@ function createMessageHandler(deps) {
                         log.error(`[setup] agent ${i} clone failed: ${err.message}`);
                       }
                     } else {
-                      try { fs.mkdirSync(agentDir, { recursive: true }); } catch (_) {}
+                      try {
+                        fs.mkdirSync(agentDir, { recursive: true });
+                      } catch (_) {}
                     }
                     const name = `${prefix}${i}`;
-                    const repoDir = config.sessions?.repoDir ? config.sessions.repoDir(i) : agentDir;
+                    const repoDir = config.sessions?.repoDir
+                      ? config.sessions.repoDir(i)
+                      : agentDir;
                     try {
-                      await sessionManager.createSession(name, repoDir, {}, config.tmux?.defaultSize || {});
+                      await sessionManager.createSession(
+                        name,
+                        repoDir,
+                        {},
+                        config.tmux?.defaultSize || {},
+                      );
                       await sessionManager.startClaude(name, claudePane, 'claude');
                     } catch (err) {
                       log.error(`[setup] agent ${i} session failed: ${err.message}`);
@@ -2044,7 +2682,6 @@ function createMessageHandler(deps) {
               log.error('[setup] background session creation failed:', err.message);
             }
           })();
-
         } catch (err) {
           log.error('Setup launch error:', err.message);
           ws.send(JSON.stringify({ type: 'setup:error', error: err.message }));
@@ -2062,26 +2699,52 @@ function createMessageHandler(deps) {
 
       // ── MCP tool handlers (called by mcp-server/index.mjs via WS) ──
       case 'mcp:get_task': {
-        if (!taskQueue) { ws.send(JSON.stringify({ _reqId: msg._reqId, task: null })); break; }
+        if (!taskQueue) {
+          ws.send(JSON.stringify({ _reqId: msg._reqId, task: null }));
+          break;
+        }
         const sessionNum = resolveSessionNum(msg.session);
         const task = activeTaskFor(sessionNum);
-        console.log(`[mcp] get_task S:${sessionNum ?? msg.session} → ${task ? `task ${task.id} ("${(task.text || '').slice(0, 60)}")` : 'no task'}`);
-        ws.send(JSON.stringify({ _reqId: msg._reqId, task: task ? { id: task.id, text: task.text, title: task.title || null, status: task.status, designation: task.designation, checklist: task.checklist || [] } : null }));
+        console.log(
+          `[mcp] get_task S:${sessionNum ?? msg.session} → ${task ? `task ${task.id} ("${(task.text || '').slice(0, 60)}")` : 'no task'}`,
+        );
+        ws.send(
+          JSON.stringify({
+            _reqId: msg._reqId,
+            task: task
+              ? {
+                  id: task.id,
+                  text: task.text,
+                  title: task.title || null,
+                  status: task.status,
+                  designation: task.designation,
+                  checklist: task.checklist || [],
+                }
+              : null,
+          }),
+        );
         break;
       }
 
       case 'mcp:complete_task': {
-        if (!taskQueue) { ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'No task queue' })); break; }
+        if (!taskQueue) {
+          ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'No task queue' }));
+          break;
+        }
         const sessionNum = resolveSessionNum(msg.session);
         const activeTask = activeTaskFor(sessionNum);
         const taskId = activeTask?.id;
-        console.log(`[mcp] complete_task S:${sessionNum ?? msg.session} → ${taskId ? `task ${taskId}` : 'NO TASK'} summary="${(msg.summary || '').slice(0, 80)}"`);
+        console.log(
+          `[mcp] complete_task S:${sessionNum ?? msg.session} → ${taskId ? `task ${taskId}` : 'NO TASK'} summary="${(msg.summary || '').slice(0, 80)}"`,
+        );
         if (!taskId) {
           // Race condition: idle watcher may have auto-completed the task before MCP call arrived.
           // If a task was recently completed for this session, treat it as success.
           const lastCompleted = taskQueue.lastCompletedAt.get(sessionNum);
           if (lastCompleted && Date.now() - lastCompleted < 30000) {
-            console.log(`[mcp] complete_task S:${sessionNum} — no active task but recently auto-completed (${Math.round((Date.now() - lastCompleted) / 1000)}s ago), returning ok`);
+            console.log(
+              `[mcp] complete_task S:${sessionNum} — no active task but recently auto-completed (${Math.round((Date.now() - lastCompleted) / 1000)}s ago), returning ok`,
+            );
             // Retroactively attach the MCP summary to the completed task
             if (msg.summary) {
               for (const [, task] of taskQueue.tasks) {
@@ -2095,25 +2758,43 @@ function createMessageHandler(deps) {
             ws.send(JSON.stringify({ _reqId: msg._reqId, ok: true }));
             break;
           }
-          ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'No active task for this session' }));
+          ws.send(
+            JSON.stringify({
+              _reqId: msg._reqId,
+              ok: false,
+              error: 'No active task for this session',
+            }),
+          );
           break;
         }
         const result = taskQueue.completeTask(taskId, msg.summary || 'Completed via MCP');
         if (result === 'pending') {
           const pendingTask = taskQueue.tasks.get(taskId);
           broadcast({ type: 'task:pending-complete', task: pendingTask });
-          ws.send(JSON.stringify({ _reqId: msg._reqId, ok: true, pending: true, message: 'Task completion pending human approval' }));
+          ws.send(
+            JSON.stringify({
+              _reqId: msg._reqId,
+              ok: true,
+              pending: true,
+              message: 'Task completion pending human approval',
+            }),
+          );
         } else if (result) {
           broadcast({ type: 'task:completed', task: result });
           ws.send(JSON.stringify({ _reqId: msg._reqId, ok: true }));
         } else {
-          ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'Could not complete task' }));
+          ws.send(
+            JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'Could not complete task' }),
+          );
         }
         break;
       }
 
       case 'mcp:post_update': {
-        if (!taskQueue) { ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'No task queue' })); break; }
+        if (!taskQueue) {
+          ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'No task queue' }));
+          break;
+        }
         const sessionNum = resolveSessionNum(msg.session);
         const label = sessionNum ?? msg.session;
         taskQueue.pushFeed('mcp', label, `[Session ${label}] ${msg.message || ''}`);
@@ -2122,30 +2803,50 @@ function createMessageHandler(deps) {
       }
 
       case 'mcp:report_learnings': {
-        if (!taskQueue || !pmManager) { ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'No task queue or PM manager' })); break; }
+        if (!taskQueue || !pmManager) {
+          ws.send(
+            JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'No task queue or PM manager' }),
+          );
+          break;
+        }
         const sessionNum = resolveSessionNum(msg.session);
         const task = activeTaskFor(sessionNum);
         const source = task && task.source;
         if (!source || !source.startsWith('pm:')) {
-          ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'No PM-sourced task for this session' }));
+          ws.send(
+            JSON.stringify({
+              _reqId: msg._reqId,
+              ok: false,
+              error: 'No PM-sourced task for this session',
+            }),
+          );
           break;
         }
         const pmName = source.slice(3); // strip 'pm:' prefix
-        const pm = pmManager.getAll().find(p => p.name === pmName);
+        const pm = pmManager.getAll().find((p) => p.name === pmName);
         if (!pm) {
-          ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: `PM "${pmName}" not found` }));
+          ws.send(
+            JSON.stringify({ _reqId: msg._reqId, ok: false, error: `PM "${pmName}" not found` }),
+          );
           break;
         }
         const added = pmManager.addLearnings(pm.id, msg.learnings || []);
         if (added > 0) {
-          taskQueue.pushFeed('task', null, `PM "${pm.name}" learned ${added} new insight${added > 1 ? 's' : ''}`);
+          taskQueue.pushFeed(
+            'task',
+            null,
+            `PM "${pm.name}" learned ${added} new insight${added > 1 ? 's' : ''}`,
+          );
         }
         ws.send(JSON.stringify({ _reqId: msg._reqId, ok: true, added }));
         break;
       }
 
       case 'mcp:share_knowledge': {
-        if (!pmManager) { ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'No PM manager' })); break; }
+        if (!pmManager) {
+          ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'No PM manager' }));
+          break;
+        }
         const sessionNum = resolveSessionNum(msg.session);
         const task = activeTaskFor(sessionNum);
         const sourcePm = task && task.source ? task.source.replace(/^pm:/, '') : 'unknown';
@@ -2163,13 +2864,21 @@ function createMessageHandler(deps) {
           break;
         }
         pmManager.addKnowledge(entry);
-        if (taskQueue) taskQueue.pushFeed('task', null, `Knowledge shared: "${entry.insight.slice(0, 80)}..." [${entry.domain || 'general'}]`);
+        if (taskQueue)
+          taskQueue.pushFeed(
+            'task',
+            null,
+            `Knowledge shared: "${entry.insight.slice(0, 80)}..." [${entry.domain || 'general'}]`,
+          );
         ws.send(JSON.stringify({ _reqId: msg._reqId, ok: true }));
         break;
       }
 
       case 'mcp:get_knowledge': {
-        if (!pmManager) { ws.send(JSON.stringify({ _reqId: msg._reqId, entries: [], pmLearnings: [] })); break; }
+        if (!pmManager) {
+          ws.send(JSON.stringify({ _reqId: msg._reqId, entries: [], pmLearnings: [] }));
+          break;
+        }
         // Fleet knowledge base
         const entries = pmManager.queryKnowledge(msg.query || '', {
           files: msg.files,
@@ -2181,17 +2890,28 @@ function createMessageHandler(deps) {
           const task = activeTaskFor(resolveSessionNum(msg.session));
           if (task && task.source && task.source.startsWith('pm:')) {
             const pmName = task.source.slice(3);
-            const pm = pmManager.getAll().find(p => p.name === pmName);
+            const pm = pmManager.getAll().find((p) => p.name === pmName);
             if (pm && pm.memory && pm.memory.length) {
               // Filter PM learnings by query relevance
               const q = (msg.query || '').toLowerCase();
-              const qWords = q ? new Set(q.replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter(w => w.length > 3)) : null;
-              pmLearnings = pm.memory.filter(m => {
-                if (!qWords || !qWords.size) return true; // no query = return all
-                const mLower = m.toLowerCase();
-                for (const w of qWords) { if (mLower.includes(w)) return true; }
-                return false;
-              }).slice(0, 20);
+              const qWords = q
+                ? new Set(
+                    q
+                      .replace(/[^a-z0-9\s]/g, '')
+                      .split(/\s+/)
+                      .filter((w) => w.length > 3),
+                  )
+                : null;
+              pmLearnings = pm.memory
+                .filter((m) => {
+                  if (!qWords || !qWords.size) return true; // no query = return all
+                  const mLower = m.toLowerCase();
+                  for (const w of qWords) {
+                    if (mLower.includes(w)) return true;
+                  }
+                  return false;
+                })
+                .slice(0, 20);
             }
           }
         }
@@ -2200,7 +2920,10 @@ function createMessageHandler(deps) {
       }
 
       case 'mcp:get_context': {
-        if (!taskQueue) { ws.send(JSON.stringify({ _reqId: msg._reqId, context: {} })); break; }
+        if (!taskQueue) {
+          ws.send(JSON.stringify({ _reqId: msg._reqId, context: {} }));
+          break;
+        }
         const sessionNum = resolveSessionNum(msg.session);
         // sessionContext is keyed by integer fleet num. Non-fleet IDs (PM, console)
         // get an empty context — they don't participate in the session-context surface.
@@ -2210,17 +2933,28 @@ function createMessageHandler(deps) {
       }
 
       case 'mcp:set_context': {
-        if (!taskQueue) { ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'No task queue' })); break; }
+        if (!taskQueue) {
+          ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'No task queue' }));
+          break;
+        }
         const updates = msg.updates;
         if (!updates || typeof updates !== 'object') {
-          ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'updates must be an object' }));
+          ws.send(
+            JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'updates must be an object' }),
+          );
           break;
         }
         const sessionNum = resolveSessionNum(msg.session);
         if (sessionNum == null) {
           // Without a fleet integer, setSessionContext would coerce null→0 and
           // overwrite session 0's context. Reject explicitly.
-          ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: `Cannot resolve session "${msg.session}" to a fleet number` }));
+          ws.send(
+            JSON.stringify({
+              _reqId: msg._reqId,
+              ok: false,
+              error: `Cannot resolve session "${msg.session}" to a fleet number`,
+            }),
+          );
           break;
         }
         const updated = taskQueue.setSessionContext(sessionNum, updates);
@@ -2231,27 +2965,48 @@ function createMessageHandler(deps) {
 
       case 'mcp:reply_to_comment':
       case 'mcp:resolve_comment': {
-        if (!taskQueue) { ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'No task queue' })); break; }
+        if (!taskQueue) {
+          ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'No task queue' }));
+          break;
+        }
         const sessionNum = resolveSessionNum(msg.session);
         if (sessionNum == null) {
-          ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: `Cannot resolve session "${msg.session}" to a fleet number` }));
+          ws.send(
+            JSON.stringify({
+              _reqId: msg._reqId,
+              ok: false,
+              error: `Cannot resolve session "${msg.session}" to a fleet number`,
+            }),
+          );
           break;
         }
         const ctx = taskQueue.getSessionContext(sessionNum);
         const planId = ctx?.planRef?.planId;
         if (!planId) {
-          ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'This session has no active plan. Publish or pin a plan via hive_publish_plan first.' }));
+          ws.send(
+            JSON.stringify({
+              _reqId: msg._reqId,
+              ok: false,
+              error:
+                'This session has no active plan. Publish or pin a plan via hive_publish_plan first.',
+            }),
+          );
           break;
         }
         if (!msg.commentId || typeof msg.commentId !== 'string') {
-          ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'commentId is required' }));
+          ws.send(
+            JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'commentId is required' }),
+          );
           break;
         }
         try {
           let updated;
           let hasPatch = false;
           if (msg.type === 'mcp:reply_to_comment') {
-            updated = plansStore.replyToComment(planId, msg.commentId, { text: msg.text, patch: msg.patch });
+            updated = plansStore.replyToComment(planId, msg.commentId, {
+              text: msg.text,
+              patch: msg.patch,
+            });
             hasPatch = !!(msg.patch && msg.patch.sectionId && typeof msg.patch.html === 'string');
           } else {
             updated = plansStore.resolveComment(planId, msg.commentId, msg.reason);
@@ -2272,7 +3027,10 @@ function createMessageHandler(deps) {
       }
 
       case 'mcp:publish_plan': {
-        if (!taskQueue) { ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'No task queue' })); break; }
+        if (!taskQueue) {
+          ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'No task queue' }));
+          break;
+        }
         const html = msg.html;
         if (!html || typeof html !== 'string') {
           ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'html is required' }));
@@ -2280,7 +3038,13 @@ function createMessageHandler(deps) {
         }
         const sessionNum = resolveSessionNum(msg.session);
         if (sessionNum == null) {
-          ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: `Cannot resolve session "${msg.session}" to a fleet number` }));
+          ws.send(
+            JSON.stringify({
+              _reqId: msg._reqId,
+              ok: false,
+              error: `Cannot resolve session "${msg.session}" to a fleet number`,
+            }),
+          );
           break;
         }
         try {
@@ -2310,13 +3074,15 @@ function createMessageHandler(deps) {
           const updated = taskQueue.setSessionContext(sessionNum, { planRef });
           broadcast({ type: 'context:updated', session: sessionNum, context: updated });
           broadcast({ type: 'plan:published', session: sessionNum, planRef });
-          ws.send(JSON.stringify({
-            _reqId: msg._reqId,
-            ok: true,
-            planId: result.planId,
-            version: result.version,
-            url: `/plans/${result.planId}`,
-          }));
+          ws.send(
+            JSON.stringify({
+              _reqId: msg._reqId,
+              ok: true,
+              planId: result.planId,
+              version: result.version,
+              url: `/plans/${result.planId}`,
+            }),
+          );
         } catch (err) {
           ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: err.message }));
         }
@@ -2327,11 +3093,23 @@ function createMessageHandler(deps) {
         const num = resolveSessionNum(msg.session);
         const dir = msg.dir;
         if (!dir || typeof dir !== 'string') {
-          ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'dir must be a non-empty string' }));
+          ws.send(
+            JSON.stringify({
+              _reqId: msg._reqId,
+              ok: false,
+              error: 'dir must be a non-empty string',
+            }),
+          );
           break;
         }
         if (num == null) {
-          ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: `Cannot resolve session "${msg.session}" to a fleet number` }));
+          ws.send(
+            JSON.stringify({
+              _reqId: msg._reqId,
+              ok: false,
+              error: `Cannot resolve session "${msg.session}" to a fleet number`,
+            }),
+          );
           break;
         }
         const resolved = dir.replace(/^~/, os.homedir());
@@ -2344,13 +3122,21 @@ function createMessageHandler(deps) {
 
       case 'mcp:get_sessions': {
         const sessions = await fleet.getFleetStatus(config, router);
-        const summary = sessions.map(s => ({ num: s.num, state: s.state, branch: s.branch || null, designation: s.designation || null }));
+        const summary = sessions.map((s) => ({
+          num: s.num,
+          state: s.state,
+          branch: s.branch || null,
+          designation: s.designation || null,
+        }));
         ws.send(JSON.stringify({ _reqId: msg._reqId, sessions: summary }));
         break;
       }
 
       case 'mcp:create_task': {
-        if (!taskQueue) { ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'No task queue' })); break; }
+        if (!taskQueue) {
+          ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'No task queue' }));
+          break;
+        }
         const text = msg.text;
         if (!text || typeof text !== 'string') {
           ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'text is required' }));
@@ -2396,25 +3182,38 @@ function createMessageHandler(deps) {
         if (msg.slackChannel) task.slackChannel = msg.slackChannel;
         if (msg.slackThreadTs) task.slackThreadTs = msg.slackThreadTs;
         // Auto-attach Slack context for PM-created tasks if not explicitly provided
-        if (!task.slackChannel && !task.slackThreadTs && pmMatch && taskQueue.lastRelayedSlackContext) {
+        if (
+          !task.slackChannel &&
+          !task.slackThreadTs &&
+          pmMatch &&
+          taskQueue.lastRelayedSlackContext
+        ) {
           const pmSessionName = `hive-pm-${pmMatch[1]}`;
           const ctx = taskQueue.lastRelayedSlackContext.get(pmSessionName);
-          if (ctx && (Date.now() - ctx.at) < 5 * 60 * 1000) { // within 5 min
+          if (ctx && Date.now() - ctx.at < 5 * 60 * 1000) {
+            // within 5 min
             task.slackChannel = ctx.channel;
             task.slackThreadTs = ctx.threadTs;
             taskQueue.lastRelayedSlackContext.delete(pmSessionName);
-            console.log(`[mcp] Auto-attached Slack context to task ${task.id} from ${pmSessionName}`);
+            console.log(
+              `[mcp] Auto-attached Slack context to task ${task.id} from ${pmSessionName}`,
+            );
           }
         }
         if (task.slackChannel || task.slackThreadTs) taskQueue._saveState();
-        console.log(`[mcp] create_task from S:${sessionLabel} → task ${task.id} ("${text.slice(0, 60)}")`);
+        console.log(
+          `[mcp] create_task from S:${sessionLabel} → task ${task.id} ("${text.slice(0, 60)}")`,
+        );
         broadcast({ type: 'task:created', task });
         ws.send(JSON.stringify({ _reqId: msg._reqId, ok: true, taskId: task.id }));
         break;
       }
 
       case 'mcp:reply_thread': {
-        if (!taskQueue) { ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'No task queue' })); break; }
+        if (!taskQueue) {
+          ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'No task queue' }));
+          break;
+        }
         const message = msg.message;
         if (!message || typeof message !== 'string') {
           ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'message is required' }));
@@ -2422,17 +3221,29 @@ function createMessageHandler(deps) {
         }
         // Find the active task for this session
         const sessionNum = resolveSessionNum(msg.session);
-        const activeTask = [...taskQueue.tasks.values()].find(t =>
-          t.status === 'dispatched' && t.assignedTo === sessionNum
+        const activeTask = [...taskQueue.tasks.values()].find(
+          (t) => t.status === 'dispatched' && t.assignedTo === sessionNum,
         );
         if (!activeTask || !activeTask.slackChannel || !activeTask.slackThreadTs) {
-          ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'No active Slack task for this session' }));
+          ws.send(
+            JSON.stringify({
+              _reqId: msg._reqId,
+              ok: false,
+              error: 'No active Slack task for this session',
+            }),
+          );
           break;
         }
         try {
           const slackToken = process.env.SLACK_BOT_TOKEN;
           if (!slackToken) {
-            ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'SLACK_BOT_TOKEN not configured' }));
+            ws.send(
+              JSON.stringify({
+                _reqId: msg._reqId,
+                ok: false,
+                error: 'SLACK_BOT_TOKEN not configured',
+              }),
+            );
             break;
           }
           const body = JSON.stringify({
@@ -2441,24 +3252,45 @@ function createMessageHandler(deps) {
             text: message,
           });
           const resp = await new Promise((resolve, reject) => {
-            const req = https.request('https://slack.com/api/chat.postMessage', {
-              method: 'POST',
-              headers: { 'Authorization': `Bearer ${slackToken}`, 'Content-Type': 'application/json' },
-              agent: slackKeepAlive,
-            }, (res) => {
-              let data = '';
-              res.on('data', chunk => data += chunk);
-              res.on('end', () => { try { resolve(JSON.parse(data)); } catch { resolve({ ok: false }); } });
-            });
+            const req = https.request(
+              'https://slack.com/api/chat.postMessage',
+              {
+                method: 'POST',
+                headers: {
+                  Authorization: `Bearer ${slackToken}`,
+                  'Content-Type': 'application/json',
+                },
+                agent: slackKeepAlive,
+              },
+              (res) => {
+                let data = '';
+                res.on('data', (chunk) => (data += chunk));
+                res.on('end', () => {
+                  try {
+                    resolve(JSON.parse(data));
+                  } catch {
+                    resolve({ ok: false });
+                  }
+                });
+              },
+            );
             req.on('error', reject);
             req.write(body);
             req.end();
           });
           if (resp.ok) {
-            console.log(`[mcp] reply_thread from S:${msg.session} → ${activeTask.slackChannel}:${activeTask.slackThreadTs}`);
+            console.log(
+              `[mcp] reply_thread from S:${msg.session} → ${activeTask.slackChannel}:${activeTask.slackThreadTs}`,
+            );
             ws.send(JSON.stringify({ _reqId: msg._reqId, ok: true }));
           } else {
-            ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: resp.error || 'Slack API error' }));
+            ws.send(
+              JSON.stringify({
+                _reqId: msg._reqId,
+                ok: false,
+                error: resp.error || 'Slack API error',
+              }),
+            );
           }
         } catch (err) {
           ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: err.message }));
@@ -2513,27 +3345,42 @@ function createMessageHandler(deps) {
       // ── Voice agent ─────────────────────────────────────
       case 'voice:join': {
         if (!checkPermission(ws, user, 'admin')) break;
-        if (!voiceAgent) { ws.send(JSON.stringify({ type: 'error', message: 'Voice agent not available' })); break; }
-        if (voiceAgent.active) { ws.send(JSON.stringify({ type: 'error', message: 'Already in a meeting' })); break; }
+        if (!voiceAgent) {
+          ws.send(JSON.stringify({ type: 'error', message: 'Voice agent not available' }));
+          break;
+        }
+        if (voiceAgent.active) {
+          ws.send(JSON.stringify({ type: 'error', message: 'Already in a meeting' }));
+          break;
+        }
         const meetingUrl = msg.url;
-        if (!meetingUrl) { ws.send(JSON.stringify({ type: 'error', message: 'Meeting URL required' })); break; }
-        voiceAgent.joinMeeting(meetingUrl, {
-          passcode: msg.passcode,
-          botName: msg.botName || 'Hive',
-          name: msg.name || undefined,
-          reportOnJoin: msg.reportOnJoin !== false,
-        }).then(() => {
-          broadcast({ type: 'voice:status', status: voiceAgent.getStatus() });
-        }).catch((err) => {
-          ws.send(JSON.stringify({ type: 'voice:error', error: err.message }));
-        });
+        if (!meetingUrl) {
+          ws.send(JSON.stringify({ type: 'error', message: 'Meeting URL required' }));
+          break;
+        }
+        voiceAgent
+          .joinMeeting(meetingUrl, {
+            passcode: msg.passcode,
+            botName: msg.botName || 'Hive',
+            name: msg.name || undefined,
+            reportOnJoin: msg.reportOnJoin !== false,
+          })
+          .then(() => {
+            broadcast({ type: 'voice:status', status: voiceAgent.getStatus() });
+          })
+          .catch((err) => {
+            ws.send(JSON.stringify({ type: 'voice:error', error: err.message }));
+          });
         ws.send(JSON.stringify({ type: 'voice:joining', url: meetingUrl }));
         break;
       }
 
       case 'voice:leave': {
         if (!checkPermission(ws, user, 'admin')) break;
-        if (!voiceAgent || !voiceAgent.active) { ws.send(JSON.stringify({ type: 'error', message: 'Not in a meeting' })); break; }
+        if (!voiceAgent || !voiceAgent.active) {
+          ws.send(JSON.stringify({ type: 'error', message: 'Not in a meeting' }));
+          break;
+        }
         voiceAgent.leaveMeeting().then(() => {
           broadcast({ type: 'voice:status', status: voiceAgent.getStatus() });
         });
@@ -2548,9 +3395,12 @@ function createMessageHandler(deps) {
 
       case 'voice:speak': {
         if (!checkPermission(ws, user, 'admin')) break;
-        if (!voiceAgent || !voiceAgent.active) { ws.send(JSON.stringify({ type: 'error', message: 'Not in a meeting' })); break; }
+        if (!voiceAgent || !voiceAgent.active) {
+          ws.send(JSON.stringify({ type: 'error', message: 'Not in a meeting' }));
+          break;
+        }
         if (!msg.text) break;
-        voiceAgent._speak(msg.text).catch(err => {
+        voiceAgent._speak(msg.text).catch((err) => {
           ws.send(JSON.stringify({ type: 'voice:error', error: err.message }));
         });
         break;
@@ -2561,7 +3411,12 @@ function createMessageHandler(deps) {
           ws.send(JSON.stringify({ type: 'voice:transcript', transcript: [] }));
           break;
         }
-        ws.send(JSON.stringify({ type: 'voice:transcript', transcript: voiceAgent.transcriber.transcript }));
+        ws.send(
+          JSON.stringify({
+            type: 'voice:transcript',
+            transcript: voiceAgent.transcriber.transcript,
+          }),
+        );
         break;
       }
 
@@ -2573,7 +3428,10 @@ function createMessageHandler(deps) {
       }
 
       case 'voice:meeting:detail': {
-        if (!voiceAgent || !msg.id) { ws.send(JSON.stringify({ type: 'voice:meeting:detail', meeting: null })); break; }
+        if (!voiceAgent || !msg.id) {
+          ws.send(JSON.stringify({ type: 'voice:meeting:detail', meeting: null }));
+          break;
+        }
         const meeting = voiceAgent.getMeeting(msg.id);
         ws.send(JSON.stringify({ type: 'voice:meeting:detail', meeting }));
         break;
@@ -2583,26 +3441,52 @@ function createMessageHandler(deps) {
         if (!checkPermission(ws, user, 'admin')) break;
         if (!voiceAgent || !msg.id || !msg.name) break;
         voiceAgent.renameMeeting(msg.id, msg.name);
-        ws.send(JSON.stringify({ type: 'voice:meetings', meetings: voiceAgent.getMeetings(), status: voiceAgent.getStatus() }));
+        ws.send(
+          JSON.stringify({
+            type: 'voice:meetings',
+            meetings: voiceAgent.getMeetings(),
+            status: voiceAgent.getStatus(),
+          }),
+        );
         break;
       }
 
       case 'voice:debug': {
-        if (!voiceAgent) { ws.send(JSON.stringify({ type: 'voice:debug', debug: { active: false } })); break; }
-        voiceAgent.getDebug().then(debug => {
-          ws.send(JSON.stringify({ type: 'voice:debug', debug }));
-        }).catch(err => {
-          ws.send(JSON.stringify({ type: 'voice:debug', debug: { error: err.message } }));
-        });
+        if (!voiceAgent) {
+          ws.send(JSON.stringify({ type: 'voice:debug', debug: { active: false } }));
+          break;
+        }
+        voiceAgent
+          .getDebug()
+          .then((debug) => {
+            ws.send(JSON.stringify({ type: 'voice:debug', debug }));
+          })
+          .catch((err) => {
+            ws.send(JSON.stringify({ type: 'voice:debug', debug: { error: err.message } }));
+          });
         break;
       }
       case 'voice:ensure-session': {
-        if (!voiceAgent) { ws.send(JSON.stringify({ type: 'voice:ensure-session', ok: false, error: 'Voice agent not available' })); break; }
-        voiceAgent.ensureSession().then(() => {
-          ws.send(JSON.stringify({ type: 'voice:ensure-session', ok: true }));
-        }).catch(err => {
-          ws.send(JSON.stringify({ type: 'voice:ensure-session', ok: false, error: err.message }));
-        });
+        if (!voiceAgent) {
+          ws.send(
+            JSON.stringify({
+              type: 'voice:ensure-session',
+              ok: false,
+              error: 'Voice agent not available',
+            }),
+          );
+          break;
+        }
+        voiceAgent
+          .ensureSession()
+          .then(() => {
+            ws.send(JSON.stringify({ type: 'voice:ensure-session', ok: true }));
+          })
+          .catch((err) => {
+            ws.send(
+              JSON.stringify({ type: 'voice:ensure-session', ok: false, error: err.message }),
+            );
+          });
         break;
       }
     }

@@ -12,12 +12,24 @@ describe('git', () => {
   describe('getLog', () => {
     it('parses git log output into structured objects', async () => {
       node.exec.mockResolvedValue(
-        'abc123|abc|Fix bug|John|2 hours ago\ndef456|def|Add feature|Jane|1 day ago'
+        'abc123|abc|Fix bug|John|2 hours ago\ndef456|def|Add feature|Jane|1 day ago',
       );
       const log = await git.getLog(node, '/repo');
       expect(log).toEqual([
-        { hash: 'abc123', short: 'abc', message: 'Fix bug', author: 'John', relative: '2 hours ago' },
-        { hash: 'def456', short: 'def', message: 'Add feature', author: 'Jane', relative: '1 day ago' },
+        {
+          hash: 'abc123',
+          short: 'abc',
+          message: 'Fix bug',
+          author: 'John',
+          relative: '2 hours ago',
+        },
+        {
+          hash: 'def456',
+          short: 'def',
+          message: 'Add feature',
+          author: 'Jane',
+          relative: '1 day ago',
+        },
       ]);
     });
 
@@ -87,9 +99,7 @@ describe('git', () => {
     });
 
     it('handles base branch comparison', async () => {
-      node.exec
-        .mockResolvedValueOnce('abc123')
-        .mockResolvedValueOnce('diff content');
+      node.exec.mockResolvedValueOnce('abc123').mockResolvedValueOnce('diff content');
       const diff = await git.getFileDiff(node, '/repo', 'file.js', 'main');
       expect(diff).toBe('diff content');
     });
@@ -104,9 +114,9 @@ describe('git', () => {
   describe('getBranchDiff', () => {
     it('returns branch comparison data', async () => {
       node.exec
-        .mockResolvedValueOnce('abc')       // rev-parse --verify main
-        .mockResolvedValueOnce('def')       // merge-base
-        .mockResolvedValueOnce('3')         // rev-list --count
+        .mockResolvedValueOnce('abc') // rev-parse --verify main
+        .mockResolvedValueOnce('def') // merge-base
+        .mockResolvedValueOnce('3') // rev-list --count
         .mockResolvedValueOnce('5\t2\tsrc/app.js\n1\t0\tREADME.md');
       const result = await git.getBranchDiff(node, '/repo');
       expect(result.base).toBe('main');

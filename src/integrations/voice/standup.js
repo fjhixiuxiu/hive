@@ -18,14 +18,14 @@ class StandupReport {
     const tasks = [...taskQueue.tasks.values()];
 
     const completed = tasks
-      .filter(t => t.status === 'completed' && t.completedAt >= since)
-      .map(t => this._summarize(t.title || t.text));
+      .filter((t) => t.status === 'completed' && t.completedAt >= since)
+      .map((t) => this._summarize(t.title || t.text));
 
     const active = tasks
-      .filter(t => t.status === 'dispatched')
-      .map(t => this._summarize(t.title || t.text));
+      .filter((t) => t.status === 'dispatched')
+      .map((t) => this._summarize(t.title || t.text));
 
-    const queued = tasks.filter(t => t.status === 'queued');
+    const queued = tasks.filter((t) => t.status === 'queued');
 
     // Get blocked sessions
     let blocked = [];
@@ -38,7 +38,9 @@ class StandupReport {
       }
     }
 
-    log.info(`[standup] Fleet: ${completed.length} completed, ${active.length} active, ${queued.length} queued, ${blocked.length} blocked`);
+    log.info(
+      `[standup] Fleet: ${completed.length} completed, ${active.length} active, ${queued.length} queued, ${blocked.length} blocked`,
+    );
 
     const parts = [];
 
@@ -64,7 +66,9 @@ class StandupReport {
 
     // Blocked
     if (blocked.length > 0) {
-      parts.push(`${blocked.length} sessions are blocked and waiting for input: sessions ${blocked.join(', ')}.`);
+      parts.push(
+        `${blocked.length} sessions are blocked and waiting for input: sessions ${blocked.join(', ')}.`,
+      );
     }
 
     // Queued

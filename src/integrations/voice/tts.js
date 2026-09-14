@@ -22,14 +22,17 @@ class TTS {
     if (!this.apiKey) throw new Error('DEEPGRAM_API_KEY required for TTS');
     log.info(`[tts] Generating speech (${text.length} chars, voice: ${this.voice})`);
 
-    const resp = await fetch(`https://api.deepgram.com/v1/speak?model=${this.voice}&encoding=linear16&sample_rate=24000`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Token ${this.apiKey}`,
-        'Content-Type': 'application/json',
+    const resp = await fetch(
+      `https://api.deepgram.com/v1/speak?model=${this.voice}&encoding=linear16&sample_rate=24000`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Token ${this.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ text }),
       },
-      body: JSON.stringify({ text }),
-    });
+    );
 
     if (!resp.ok) {
       const err = await resp.text();

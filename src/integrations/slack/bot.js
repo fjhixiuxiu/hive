@@ -125,7 +125,9 @@ function createSlackBot(taskQueue, config, router, pmManager) {
     try {
       const result = await app.client.users.info({ user: userId });
       return result.user.real_name || result.user.name || userId;
-    } catch { return userId; }
+    } catch {
+      return userId;
+    }
   }
 
   // Fetch thread messages (up to 100), formatted with author names
@@ -145,7 +147,9 @@ function createSlackBot(taskQueue, config, router, pmManager) {
         if (text) lines.push(`${name}: ${text}`);
       }
       return lines.join('\n');
-    } catch { return ''; }
+    } catch {
+      return '';
+    }
   }
 
   // Fetch recent channel messages (last N), formatted
@@ -164,7 +168,9 @@ function createSlackBot(taskQueue, config, router, pmManager) {
         if (text) lines.push(`${name}: ${text}`);
       }
       return lines.join('\n');
-    } catch { return ''; }
+    } catch {
+      return '';
+    }
   }
 
   // Get permalink for a message
@@ -172,7 +178,9 @@ function createSlackBot(taskQueue, config, router, pmManager) {
     try {
       const result = await app.client.chat.getPermalink({ channel, message_ts: ts });
       return result.permalink || '';
-    } catch { return ''; }
+    } catch {
+      return '';
+    }
   }
 
   // Find an active (queued/dispatched) task linked to a Slack thread.
@@ -188,7 +196,9 @@ function createSlackBot(taskQueue, config, router, pmManager) {
   // See: ~/dev/agents/hive/context-consolidation-plan.md
   function findActiveTaskForThread(threadTs, channel) {
     if (!taskQueue || !threadTs) {
-      log.info(`[slack:rcv] findActiveTaskForThread: no taskQueue or threadTs (threadTs=${threadTs})`);
+      log.info(
+        `[slack:rcv] findActiveTaskForThread: no taskQueue or threadTs (threadTs=${threadTs})`,
+      );
       return null;
     }
     // Iterate the live Map (not getTasksList(), which returns shallow copies via
@@ -197,12 +207,13 @@ function createSlackBot(taskQueue, config, router, pmManager) {
     // no-op and slack-poll re-relays every auto-relayed message 2.5 min later.
     const tasks = Array.from(taskQueue.tasks.values());
     // Direct match on task.slackThreadTs (existing behavior)
-    const directMatch = tasks.find(t =>
-      (t.status === 'queued' || t.status === 'dispatched') &&
-      t.slackThreadTs === threadTs
+    const directMatch = tasks.find(
+      (t) => (t.status === 'queued' || t.status === 'dispatched') && t.slackThreadTs === threadTs,
     );
     if (directMatch) {
-      log.info(`[slack:rcv] findActiveTaskForThread: directMatch task=${directMatch.id} status=${directMatch.status} assignedTo=${directMatch.assignedTo} thread=${threadTs}`);
+      log.info(
+        `[slack:rcv] findActiveTaskForThread: directMatch task=${directMatch.id} status=${directMatch.status} assignedTo=${directMatch.assignedTo} thread=${threadTs}`,
+      );
       return directMatch;
     }
 
@@ -212,24 +223,27 @@ function createSlackBot(taskQueue, config, router, pmManager) {
       log.info(`[slack:rcv] findActiveTaskForThread: no channel for threadKey lookup`);
       return null;
     }
-    const ctxMatch = tasks.find(t => {
-      if (t.status !== 'dispatched' || !t.assignedTo) return false;
-      const ctx = taskQueue.getSessionContext(t.assignedTo);
-      return ctx.slackThread === threadKey;
-    }) || null;
-    log.info(`[slack:rcv] findActiveTaskForThread: directMatch=null ctxMatch=${ctxMatch ? ctxMatch.id : 'null'} threadKey=${threadKey}`);
+    const ctxMatch =
+      tasks.find((t) => {
+        if (t.status !== 'dispatched' || !t.assignedTo) return false;
+        const ctx = taskQueue.getSessionContext(t.assignedTo);
+        return ctx.slackThread === threadKey;
+      }) || null;
+    log.info(
+      `[slack:rcv] findActiveTaskForThread: directMatch=null ctxMatch=${ctxMatch ? ctxMatch.id : 'null'} threadKey=${threadKey}`,
+    );
     return ctxMatch;
   }
 
   // Find a PM with source.type === 'slack' matching the channel
   function findSlackPM(channel) {
     if (!pmManager) return null;
-    const pms = pmManager.getAll().filter(pm => pm.enabled && pm.source.type === 'slack');
+    const pms = pmManager.getAll().filter((pm) => pm.enabled && pm.source.type === 'slack');
     // Exact channel match first
-    const exact = pms.find(pm => pm.source.channel && pm.source.channel === channel);
+    const exact = pms.find((pm) => pm.source.channel && pm.source.channel === channel);
     if (exact) return exact;
     // Fallback: catch-all (no channel set)
-    return pms.find(pm => !pm.source.channel) || null;
+    return pms.find((pm) => !pm.source.channel) || null;
   }
 
   // ── Channel Monitor PM helpers ──────────────────────
@@ -247,12 +261,15 @@ function createSlackBot(taskQueue, config, router, pmManager) {
    */
   function findChannelMonitorPM(channel) {
     if (!pmManager) return null;
-    const pms = pmManager.getAll().filter(pm =>
-      pm.enabled &&
-      pm.source.type === 'slack-channel-monitor' &&
-      pm.source.channels &&
-      pm.source.channels.includes(channel)
-    );
+    const pms = pmManager
+      .getAll()
+      .filter(
+        (pm) =>
+          pm.enabled &&
+          pm.source.type === 'slack-channel-monitor' &&
+          pm.source.channels &&
+          pm.source.channels.includes(channel),
+      );
     return pms[0] || null;
   }
 
@@ -294,7 +311,7 @@ function createSlackBot(taskQueue, config, router, pmManager) {
     }
 
     // Format the batch into a single message
-    const parts = messages.map(m => `${m.author}: ${m.text}`).join('\n');
+    const parts = messages.map((m) => `${m.author}: ${m.text}`).join('\n');
     const channel = messages[0]?.channel || '';
     const threadTs = messages[0]?.threadTs || messages[0]?.ts || '';
     const isThread = !!messages[0]?.threadTs;
@@ -332,7 +349,9 @@ function createSlackBot(taskQueue, config, router, pmManager) {
     try {
       const result = await relay.tell(config, node, sessionName, formatted, {});
       if (result.success) {
-        console.log(`[slack-monitor] Relayed ${messages.length} message(s) to PM "${pm.name}" session`);
+        console.log(
+          `[slack-monitor] Relayed ${messages.length} message(s) to PM "${pm.name}" session`,
+        );
         // Store context so ws-handlers can auto-attach to PM-created tasks
         if (taskQueue && taskQueue.lastRelayedSlackContext && channel && threadTs) {
           taskQueue.lastRelayedSlackContext.set(sessionName, { channel, threadTs, at: Date.now() });
@@ -352,17 +371,27 @@ function createSlackBot(taskQueue, config, router, pmManager) {
     } catch (err) {
       console.error(`[slack] Unhandled error in handleMessage: ${err.message}`, err.stack);
       try {
-        await say({ text: `:x: Something went wrong processing your message. Error logged.`, thread_ts: event.thread_ts || event.ts });
-      } catch { /* can't even reply */ }
+        await say({
+          text: `:x: Something went wrong processing your message. Error logged.`,
+          thread_ts: event.thread_ts || event.ts,
+        });
+      } catch {
+        /* can't even reply */
+      }
     }
   }
 
   async function _handleMessage(event, say) {
-    log.info(`[slack:rcv] _handleMessage entry ts=${event.ts} thread_ts=${event.thread_ts || ''} ch=${event.channel} type=${event.type || 'message'}`);
+    log.info(
+      `[slack:rcv] _handleMessage entry ts=${event.ts} thread_ts=${event.thread_ts || ''} ch=${event.channel} type=${event.type || 'message'}`,
+    );
     const text = stripMention(event.text);
     if (!text) {
       log.info(`[slack:rcv] _handleMessage exit: empty text after stripMention`);
-      await say({ text: 'What do you need? Try: `@hive <task>` or `@hive status`', thread_ts: event.ts });
+      await say({
+        text: 'What do you need? Try: `@hive <task>` or `@hive status`',
+        thread_ts: event.ts,
+      });
       return;
     }
 
@@ -375,9 +404,9 @@ function createSlackBot(taskQueue, config, router, pmManager) {
         return;
       }
       const tasks = taskQueue.getTasksList();
-      const queued = tasks.filter(t => t.status === 'queued').length;
-      const inProgress = tasks.filter(t => t.status === 'dispatched').length;
-      const completed = tasks.filter(t => t.status === 'completed').length;
+      const queued = tasks.filter((t) => t.status === 'queued').length;
+      const inProgress = tasks.filter((t) => t.status === 'dispatched').length;
+      const completed = tasks.filter((t) => t.status === 'completed').length;
       await say({
         text: `:bee: *Hive Status*\n• Queued: ${queued}\n• In Progress: ${inProgress}\n• Completed today: ${completed}`,
         thread_ts: event.thread_ts || event.ts,
@@ -426,7 +455,9 @@ function createSlackBot(taskQueue, config, router, pmManager) {
     // ── Follow-up: active task in this thread? Relay or append ──
     if (threadTs) {
       const activeTask = findActiveTaskForThread(threadTs, event.channel);
-      log.info(`[slack:rcv] _handleMessage follow-up check: threadTs=${threadTs} activeTask=${activeTask ? `${activeTask.id}/${activeTask.status}` : 'null'}`);
+      log.info(
+        `[slack:rcv] _handleMessage follow-up check: threadTs=${threadTs} activeTask=${activeTask ? `${activeTask.id}/${activeTask.status}` : 'null'}`,
+      );
       if (activeTask) {
         if (activeTask.status === 'dispatched' && activeTask.assignedTo) {
           // Running on a session — relay directly
@@ -434,12 +465,22 @@ function createSlackBot(taskQueue, config, router, pmManager) {
             const found = await fleet.findSession(config, router, activeTask.assignedTo);
             if (found) {
               const node = router.getNode(found.nodeId);
-              const result = await relay.tell(config, node, found.name, text + '\n\nReply back on the thread when done.', { vimMode: taskQueue.vimMode });
+              const result = await relay.tell(
+                config,
+                node,
+                found.name,
+                text + '\n\nReply back on the thread when done.',
+                { vimMode: taskQueue.vimMode },
+              );
               if (result.success) {
                 // React instead of echoing the message back
-                await app.client.reactions.add({
-                  channel: event.channel, name: 'bee', timestamp: event.ts,
-                }).catch(() => {});
+                await app.client.reactions
+                  .add({
+                    channel: event.channel,
+                    name: 'bee',
+                    timestamp: event.ts,
+                  })
+                  .catch(() => {});
                 return;
               }
               // Relay failed — fall through to create new task
@@ -452,9 +493,13 @@ function createSlackBot(taskQueue, config, router, pmManager) {
           // Still queued — append follow-up to the task text
           activeTask.text += `\n\nFollow-up:\n${text}`;
           taskQueue._saveState();
-          await app.client.reactions.add({
-            channel: event.channel, name: 'bee', timestamp: event.ts,
-          }).catch(() => {});
+          await app.client.reactions
+            .add({
+              channel: event.channel,
+              name: 'bee',
+              timestamp: event.ts,
+            })
+            .catch(() => {});
           return;
         }
       }
@@ -466,13 +511,18 @@ function createSlackBot(taskQueue, config, router, pmManager) {
     // should spawn a fresh task with the full thread context (revival isn't
     // possible, so we just start a new one).
     const dedupTs = threadTs || event.ts;
-    const existingTask = taskQueue.getTasksList().find(t =>
-      (t.status === 'queued' || t.status === 'dispatched') &&
-      t.slackChannel === event.channel &&
-      t.slackThreadTs === dedupTs
-    );
+    const existingTask = taskQueue
+      .getTasksList()
+      .find(
+        (t) =>
+          (t.status === 'queued' || t.status === 'dispatched') &&
+          t.slackChannel === event.channel &&
+          t.slackThreadTs === dedupTs,
+      );
     if (existingTask) {
-      log.info(`[slack:rcv] dedup: task ${existingTask.id} already exists for ch=${event.channel} ts=${dedupTs} (status=${existingTask.status}) — skipping`);
+      log.info(
+        `[slack:rcv] dedup: task ${existingTask.id} already exists for ch=${event.channel} ts=${dedupTs} (status=${existingTask.status}) — skipping`,
+      );
       return;
     }
 
@@ -497,7 +547,9 @@ function createSlackBot(taskQueue, config, router, pmManager) {
       fullText += `Context (Slack ${threadTs ? 'thread' : 'channel'}):\n${context}\n\n---\n\n`;
     }
     if (slackPm && slackPm.taskFormat) {
-      fullText += slackPm.taskFormat.replace('{key}', `slack-${Date.now()}`).replace('{summary}', text);
+      fullText += slackPm.taskFormat
+        .replace('{key}', `slack-${Date.now()}`)
+        .replace('{summary}', text);
     } else {
       fullText += `Instructions:\n${text}`;
     }
@@ -514,7 +566,9 @@ function createSlackBot(taskQueue, config, router, pmManager) {
 
     let task;
     try {
-      log.info(`[slack:rcv] _handleMessage createTask path: ts=${event.ts} thread_ts=${threadTs || ''} ch=${event.channel} mode=${mode} target=${targetSession}`);
+      log.info(
+        `[slack:rcv] _handleMessage createTask path: ts=${event.ts} thread_ts=${threadTs || ''} ch=${event.channel} mode=${mode} target=${targetSession}`,
+      );
       task = taskQueue.createTask(fullText, mode, targetSession, designation, {
         source: `slack:${authorName}`,
         createdBy: authorName,
@@ -531,7 +585,9 @@ function createSlackBot(taskQueue, config, router, pmManager) {
       task._lastSeenSlackTs = event.ts; // seed high-water mark so poller doesn't replay
       if (permalink) task.slackPermalink = permalink;
       taskQueue._saveState();
-      console.log(`[slack] Task ${task.id} created (${mode}) for thread ${task.slackThreadTs} in ${event.channel}`);
+      console.log(
+        `[slack] Task ${task.id} created (${mode}) for thread ${task.slackThreadTs} in ${event.channel}`,
+      );
     } catch (err) {
       console.error(`[slack] Task creation failed: ${err.message}`, err.stack);
       await say({ text: `:x: Failed to create task: ${err.message}`, thread_ts: replyTs });
@@ -552,7 +608,9 @@ function createSlackBot(taskQueue, config, router, pmManager) {
         pmManager.emit('pm:changed');
       }
     } catch (err) {
-      console.error(`[slack] PM stats/checklist error (task ${task.id} still created): ${err.message}`);
+      console.error(
+        `[slack] PM stats/checklist error (task ${task.id} still created): ${err.message}`,
+      );
     }
 
     // React with :bee: instead of echoing the message back
@@ -583,7 +641,7 @@ function createSlackBot(taskQueue, config, router, pmManager) {
   // first question is "did the bot even receive it?". This line answers that.
   let lastEventAt = Date.now();
   const lastEventByChannel = new Map(); // channel -> timestamp of last received event
-  const lastSeenByThread = new Map();   // "channel:threadTs" -> last seen Slack ts (string)
+  const lastSeenByThread = new Map(); // "channel:threadTs" -> last seen Slack ts (string)
   app.use(async ({ body, next }) => {
     lastEventAt = Date.now();
     try {
@@ -596,7 +654,9 @@ function createSlackBot(taskQueue, config, router, pmManager) {
       const user = ev.user || '';
       const sub = ev.subtype || '';
       const textPreview = (ev.text || '').slice(0, 100).replace(/\n/g, ' ');
-      log.info(`[slack:rcv] type=${type} ch=${ch} ts=${ts} thread_ts=${threadTs} user=${user} sub=${sub} text="${textPreview}"`);
+      log.info(
+        `[slack:rcv] type=${type} ch=${ch} ts=${ts} thread_ts=${threadTs} user=${user} sub=${sub} text="${textPreview}"`,
+      );
     } catch (err) {
       log.warn(`[slack:rcv] middleware log failed: ${err.message}`);
     }
@@ -620,9 +680,8 @@ function createSlackBot(taskQueue, config, router, pmManager) {
   // window). On bot restart (zombie probe, redeploy) Slack replays unacked
   // events, so the map is persisted via taskQueue.slackDedup → .hive-state.json.
   // Older entries are GC'd lazily on every set.
-  const _recentlyHandledMentions = taskQueue && taskQueue.slackDedup
-    ? taskQueue.slackDedup
-    : new Map();
+  const _recentlyHandledMentions =
+    taskQueue && taskQueue.slackDedup ? taskQueue.slackDedup : new Map();
   const MENTION_DEDUPE_TTL_MS = 24 * 60 * 60 * 1000;
   function markMentionHandled(ts) {
     if (!ts) return;
@@ -651,7 +710,9 @@ function createSlackBot(taskQueue, config, router, pmManager) {
   // ── Channel @mentions ──
   app.event('app_mention', async ({ event, say }) => {
     if (isMentionAlreadyHandled(event.ts)) {
-      log.info(`[slack:rcv] app_mention ts=${event.ts} deduped (already handled via message event)`);
+      log.info(
+        `[slack:rcv] app_mention ts=${event.ts} deduped (already handled via message event)`,
+      );
       return;
     }
     markMentionHandled(event.ts);
@@ -688,7 +749,9 @@ function createSlackBot(taskQueue, config, router, pmManager) {
     // twice when both events fire. See _recentlyHandledMentions comment block.
     if (botUserId && text.includes(`<@${botUserId}>`)) {
       if (isMentionAlreadyHandled(event.ts)) {
-        log.info(`[slack:rcv] thread-reply @mention ts=${event.ts} deduped (already handled via app_mention)`);
+        log.info(
+          `[slack:rcv] thread-reply @mention ts=${event.ts} deduped (already handled via app_mention)`,
+        );
         return;
       }
       markMentionHandled(event.ts);
@@ -725,11 +788,17 @@ function createSlackBot(taskQueue, config, router, pmManager) {
       const found = await fleet.findSession(config, router, activeTask.assignedTo);
       if (!found) return;
       const node = router.getNode(found.nodeId);
-      const result = await relay.tell(config, node, found.name,
+      const result = await relay.tell(
+        config,
+        node,
+        found.name,
         `Slack thread update from ${authorName}:\n${text}\n\nReply back on the thread when done.`,
-        { vimMode: taskQueue.vimMode });
+        { vimMode: taskQueue.vimMode },
+      );
       if (result.success) {
-        console.log(`[slack] Auto-relayed thread message to S:${activeTask.assignedTo} from ${authorName}`);
+        console.log(
+          `[slack] Auto-relayed thread message to S:${activeTask.assignedTo} from ${authorName}`,
+        );
       }
     } catch (err) {
       console.error(`[slack] Auto-relay error: ${err.message}`);
@@ -774,7 +843,7 @@ function createSlackBot(taskQueue, config, router, pmManager) {
     // Note any file attachments so the PM session has context for screenshots/uploads
     if (Array.isArray(event.files) && event.files.length > 0) {
       const fileList = event.files
-        .map(f => `- ${f.name || f.title || f.id}${f.permalink ? ` (${f.permalink})` : ''}`)
+        .map((f) => `- ${f.name || f.title || f.id}${f.permalink ? ` (${f.permalink})` : ''}`)
         .join('\n');
       text = text
         ? `${text}\n\n[${event.files.length} file attachment(s)]\n${fileList}`
@@ -797,7 +866,7 @@ function createSlackBot(taskQueue, config, router, pmManager) {
       // text in the relay) and don't reset the timer (would starve the
       // debounce flush, leaving thread replies stuck forever under retry
       // pressure on a 60s debounce).
-      if (bucket.messages.some(m => m.ts === entry.ts)) return;
+      if (bucket.messages.some((m) => m.ts === entry.ts)) return;
       bucket.messages.push(entry);
       clearTimeout(bucket.timer);
     } else {
@@ -806,13 +875,16 @@ function createSlackBot(taskQueue, config, router, pmManager) {
     }
 
     // Set timer to flush the batch
-    bucket.timer = setTimeout(async () => {
-      const batch = _monitorDebounce.get(threadKey);
-      _monitorDebounce.delete(threadKey);
-      if (batch && batch.messages.length > 0) {
-        await relayToMonitorSession(pm, threadKey, batch.messages);
-      }
-    }, threadTs ? debounceMs : 5000); // Top-level messages: short delay (5s). Thread replies: full debounce.
+    bucket.timer = setTimeout(
+      async () => {
+        const batch = _monitorDebounce.get(threadKey);
+        _monitorDebounce.delete(threadKey);
+        if (batch && batch.messages.length > 0) {
+          await relayToMonitorSession(pm, threadKey, batch.messages);
+        }
+      },
+      threadTs ? debounceMs : 5000,
+    ); // Top-level messages: short delay (5s). Thread replies: full debounce.
   });
 
   // ── Reply back to Slack when task completes ──────────
@@ -834,7 +906,9 @@ function createSlackBot(taskQueue, config, router, pmManager) {
       if (!task.slackChannel || !task.slackThreadTs) return;
       try {
         await app.client.reactions.add({
-          channel: task.slackChannel, name: 'hourglass_flowing_sand', timestamp: task.slackThreadTs,
+          channel: task.slackChannel,
+          name: 'hourglass_flowing_sand',
+          timestamp: task.slackThreadTs,
         });
       } catch (err) {
         if (!err.data || err.data.error !== 'already_reacted') {
@@ -847,12 +921,20 @@ function createSlackBot(taskQueue, config, router, pmManager) {
       if (!task.slackChannel || !task.slackThreadTs) return;
       try {
         // Remove hourglass, add checkmark
-        await app.client.reactions.remove({
-          channel: task.slackChannel, name: 'hourglass_flowing_sand', timestamp: task.slackThreadTs,
-        }).catch(() => {});
-        await app.client.reactions.add({
-          channel: task.slackChannel, name: 'white_check_mark', timestamp: task.slackThreadTs,
-        }).catch(() => {});
+        await app.client.reactions
+          .remove({
+            channel: task.slackChannel,
+            name: 'hourglass_flowing_sand',
+            timestamp: task.slackThreadTs,
+          })
+          .catch(() => {});
+        await app.client.reactions
+          .add({
+            channel: task.slackChannel,
+            name: 'white_check_mark',
+            timestamp: task.slackThreadTs,
+          })
+          .catch(() => {});
         // Post rich completion message with context
         const duration = task.dispatchedAt
           ? Math.round((task.completedAt - task.dispatchedAt) / 60000)
@@ -860,16 +942,16 @@ function createSlackBot(taskQueue, config, router, pmManager) {
         const parts = [`:white_check_mark: *Task completed* (${duration}m)`];
         // Add JIRA/PR context from actionContext, task fields, or sessionContext
         const ctx = task.actionContext;
-        const sCtx = task.assignedTo != null && taskQueue ? taskQueue.getSessionContext(task.assignedTo) : {};
-        const pr = (ctx && ctx.type === 'github-pr' && ctx.repo && ctx.prNumber)
-          ? `https://github.com/${ctx.repo}/pull/${ctx.prNumber}`
-          : sCtx.pr || null;
+        const sCtx =
+          task.assignedTo != null && taskQueue ? taskQueue.getSessionContext(task.assignedTo) : {};
+        const pr =
+          ctx && ctx.type === 'github-pr' && ctx.repo && ctx.prNumber
+            ? `https://github.com/${ctx.repo}/pull/${ctx.prNumber}`
+            : sCtx.pr || null;
         const jira = task.jira || sCtx.jira || null;
         if (pr) parts.push(`PR: ${pr}`);
         if (jira) parts.push(`JIRA: ${jira}`);
-        const resultSnippet = task.result
-          ? task.result.substring(0, 300)
-          : '';
+        const resultSnippet = task.result ? task.result.substring(0, 300) : '';
         if (resultSnippet) parts.push(resultSnippet);
         await app.client.chat.postMessage({
           channel: task.slackChannel,
@@ -884,9 +966,13 @@ function createSlackBot(taskQueue, config, router, pmManager) {
     taskQueue.on('task:failed', async (task) => {
       if (!task.slackChannel || !task.slackThreadTs) return;
       try {
-        await app.client.reactions.remove({
-          channel: task.slackChannel, name: 'hourglass_flowing_sand', timestamp: task.slackThreadTs,
-        }).catch(() => {});
+        await app.client.reactions
+          .remove({
+            channel: task.slackChannel,
+            name: 'hourglass_flowing_sand',
+            timestamp: task.slackThreadTs,
+          })
+          .catch(() => {});
         await app.client.chat.postMessage({
           channel: task.slackChannel,
           thread_ts: task.slackThreadTs,
@@ -961,82 +1047,91 @@ function createSlackBot(taskQueue, config, router, pmManager) {
   // Socket Mode can deliver events from busy channels while silently dropping
   // others ("partial zombie"). Gating on global silence means a single chatty
   // channel masks the failure on every other channel.
-  const HEALTH_INTERVAL = 5 * 60 * 1000;      // 5 min
-  const PROBE_WINDOW_MS = 15 * 60 * 1000;     // only consider messages from the last 15 min
-  setInterval(nonOverlapping(async () => {
-    // Step 1: Web API liveness — via healthClient, which has its own queue and
-    // a hard timeout, so a saturated app.client can't mute the watchdog.
-    try {
-      await healthClient.auth.test();
-    } catch (err) {
-      return restartBot(`auth.test failed: ${err.message}`);
-    }
-
-    // Step 2: per-channel zombie detection (runs every tick, no global guard)
-    if (!pmManager) return;
-
-    // Collect channels to probe: channel-monitor PMs + channels with active Slack tasks
-    const probeChannels = new Set();
-    const monitorPms = pmManager.getAll().filter(pm =>
-      pm.enabled &&
-      pm.source &&
-      pm.source.type === 'slack-channel-monitor' &&
-      Array.isArray(pm.source.channels)
-    );
-    for (const pm of monitorPms) pm.source.channels.forEach(ch => probeChannels.add(ch));
-
-    // Add channels from active Slack-sourced tasks (dispatched or queued)
-    if (taskQueue) {
-      for (const t of taskQueue.tasks.values()) {
-        if (t.status !== 'dispatched' && t.status !== 'queued') continue;
-        if (t.slackChannel) probeChannels.add(t.slackChannel);
-        // Also check sessionContext for slack threads
-        const ctx = taskQueue.sessionContext.get(t.assignedTo);
-        if (ctx && ctx.slackThread) {
-          const ch = ctx.slackThread.split(':')[0];
-          if (ch) probeChannels.add(ch);
-        }
-      }
-    }
-
-    if (probeChannels.size === 0) return;
-
-    // Probe each channel for messages we should have received but didn't.
-    // Skip channels with no baseline (chLastSeen === 0) — could be the bot's
-    // first run or a brand-new monitored channel that hasn't fired yet, and
-    // we'd false-positive every existing message as "missed".
-    const probeOldestSec = Math.floor((Date.now() - PROBE_WINDOW_MS) / 1000);
-    for (const channel of probeChannels) {
-      const chLastSeen = lastEventByChannel.get(channel) || 0;
-      if (chLastSeen === 0) continue;
+  const HEALTH_INTERVAL = 5 * 60 * 1000; // 5 min
+  const PROBE_WINDOW_MS = 15 * 60 * 1000; // only consider messages from the last 15 min
+  setInterval(
+    nonOverlapping(async () => {
+      // Step 1: Web API liveness — via healthClient, which has its own queue and
+      // a hard timeout, so a saturated app.client can't mute the watchdog.
       try {
-        const resp = await app.client.conversations.history({
-          channel,
-          limit: 5,
-          oldest: String(probeOldestSec),
-        });
-        // Look for a real (non-subtype) message in this channel that we
-        // should have received but didn't (newer than our per-channel
-        // last-seen, beyond a 1-min grace window for clock skew).
-        const missed = (resp.messages || []).find(m => {
-          if (m.subtype) return false;
-          const msgTs = parseFloat(m.ts) * 1000;
-          return msgTs > chLastSeen + 60000;
-        });
-        if (missed) {
-          const missedIso = new Date(parseFloat(missed.ts) * 1000).toISOString();
-          const chLastIso = lastEventByChannel.has(channel) ? new Date(lastEventByChannel.get(channel)).toISOString() : 'never';
-          console.warn(`[slack] Partial zombie detected: message in ${channel} at ${missedIso} but last event from channel at ${chLastIso}`);
-          return restartBot(`partial zombie — missed message in ${channel}`);
-        }
+        await healthClient.auth.test();
       } catch (err) {
-        // not_in_channel is expected for channels the bot can't read
-        if (err.data && err.data.error === 'not_in_channel') continue;
-        console.warn(`[slack] Zombie probe error for ${channel}: ${err.message}`);
+        return restartBot(`auth.test failed: ${err.message}`);
       }
-    }
 
-  }), HEALTH_INTERVAL);
+      // Step 2: per-channel zombie detection (runs every tick, no global guard)
+      if (!pmManager) return;
+
+      // Collect channels to probe: channel-monitor PMs + channels with active Slack tasks
+      const probeChannels = new Set();
+      const monitorPms = pmManager
+        .getAll()
+        .filter(
+          (pm) =>
+            pm.enabled &&
+            pm.source &&
+            pm.source.type === 'slack-channel-monitor' &&
+            Array.isArray(pm.source.channels),
+        );
+      for (const pm of monitorPms) pm.source.channels.forEach((ch) => probeChannels.add(ch));
+
+      // Add channels from active Slack-sourced tasks (dispatched or queued)
+      if (taskQueue) {
+        for (const t of taskQueue.tasks.values()) {
+          if (t.status !== 'dispatched' && t.status !== 'queued') continue;
+          if (t.slackChannel) probeChannels.add(t.slackChannel);
+          // Also check sessionContext for slack threads
+          const ctx = taskQueue.sessionContext.get(t.assignedTo);
+          if (ctx && ctx.slackThread) {
+            const ch = ctx.slackThread.split(':')[0];
+            if (ch) probeChannels.add(ch);
+          }
+        }
+      }
+
+      if (probeChannels.size === 0) return;
+
+      // Probe each channel for messages we should have received but didn't.
+      // Skip channels with no baseline (chLastSeen === 0) — could be the bot's
+      // first run or a brand-new monitored channel that hasn't fired yet, and
+      // we'd false-positive every existing message as "missed".
+      const probeOldestSec = Math.floor((Date.now() - PROBE_WINDOW_MS) / 1000);
+      for (const channel of probeChannels) {
+        const chLastSeen = lastEventByChannel.get(channel) || 0;
+        if (chLastSeen === 0) continue;
+        try {
+          const resp = await app.client.conversations.history({
+            channel,
+            limit: 5,
+            oldest: String(probeOldestSec),
+          });
+          // Look for a real (non-subtype) message in this channel that we
+          // should have received but didn't (newer than our per-channel
+          // last-seen, beyond a 1-min grace window for clock skew).
+          const missed = (resp.messages || []).find((m) => {
+            if (m.subtype) return false;
+            const msgTs = parseFloat(m.ts) * 1000;
+            return msgTs > chLastSeen + 60000;
+          });
+          if (missed) {
+            const missedIso = new Date(parseFloat(missed.ts) * 1000).toISOString();
+            const chLastIso = lastEventByChannel.has(channel)
+              ? new Date(lastEventByChannel.get(channel)).toISOString()
+              : 'never';
+            console.warn(
+              `[slack] Partial zombie detected: message in ${channel} at ${missedIso} but last event from channel at ${chLastIso}`,
+            );
+            return restartBot(`partial zombie — missed message in ${channel}`);
+          }
+        } catch (err) {
+          // not_in_channel is expected for channels the bot can't read
+          if (err.data && err.data.error === 'not_in_channel') continue;
+          console.warn(`[slack] Zombie probe error for ${channel}: ${err.message}`);
+        }
+      }
+    }),
+    HEALTH_INTERVAL,
+  );
 
   // ── Thread polling fallback ──────────────────────────
   // Socket Mode silently drops thread reply events. Every THREAD_POLL_INTERVAL,
@@ -1044,74 +1139,89 @@ function createSlackBot(taskQueue, config, router, pmManager) {
   // the bot missed. This replaces the old Step 3 zombie detection which could
   // only detect and restart — this detects and relays directly.
   const THREAD_POLL_INTERVAL = 150_000; // 2.5 min
-  setInterval(nonOverlapping(async () => {
-    if (!taskQueue) return;
-    let relayed = 0;
-    for (const t of taskQueue.tasks.values()) {
-      if (t.status !== 'dispatched' || !t.slackChannel || !t.slackThreadTs || !t.assignedTo) continue;
-      const threadKey = `${t.slackChannel}:${t.slackThreadTs}`;
-      // Use persisted high-water mark (survives restarts), then in-memory, then thread parent
-      const oldest = t._lastSeenSlackTs || lastSeenByThread.get(threadKey) || t.slackThreadTs;
-      try {
-        const resp = await app.client.conversations.replies({
-          channel: t.slackChannel,
-          ts: t.slackThreadTs,
-          oldest,
-          limit: 20,
-        });
-        const messages = (resp.messages || []).filter(m => {
-          if (m.subtype) return false;
-          if (botUserId && m.user === botUserId) return false;
-          // Only messages strictly newer than our high-water mark
-          return parseFloat(m.ts) > parseFloat(oldest);
-        });
-        if (messages.length === 0) continue;
+  setInterval(
+    nonOverlapping(async () => {
+      if (!taskQueue) return;
+      let relayed = 0;
+      for (const t of taskQueue.tasks.values()) {
+        if (t.status !== 'dispatched' || !t.slackChannel || !t.slackThreadTs || !t.assignedTo)
+          continue;
+        const threadKey = `${t.slackChannel}:${t.slackThreadTs}`;
+        // Use persisted high-water mark (survives restarts), then in-memory, then thread parent
+        const oldest = t._lastSeenSlackTs || lastSeenByThread.get(threadKey) || t.slackThreadTs;
+        try {
+          const resp = await app.client.conversations.replies({
+            channel: t.slackChannel,
+            ts: t.slackThreadTs,
+            oldest,
+            limit: 20,
+          });
+          const messages = (resp.messages || []).filter((m) => {
+            if (m.subtype) return false;
+            if (botUserId && m.user === botUserId) return false;
+            // Only messages strictly newer than our high-water mark
+            return parseFloat(m.ts) > parseFloat(oldest);
+          });
+          if (messages.length === 0) continue;
 
-        // Update high-water mark to newest message (in-memory + persisted on task)
-        const newestTs = messages[messages.length - 1].ts;
-        lastSeenByThread.set(threadKey, newestTs);
-        t._lastSeenSlackTs = newestTs;
-        taskQueue._saveState();
+          // Update high-water mark to newest message (in-memory + persisted on task)
+          const newestTs = messages[messages.length - 1].ts;
+          lastSeenByThread.set(threadKey, newestTs);
+          t._lastSeenSlackTs = newestTs;
+          taskQueue._saveState();
 
-        // Relay missed messages to the session
-        const found = await fleet.findSession(config, router, t.assignedTo);
-        if (!found) continue;
-        const node = router.getNode(found.nodeId);
-        if (!node) continue;
+          // Relay missed messages to the session
+          const found = await fleet.findSession(config, router, t.assignedTo);
+          if (!found) continue;
+          const node = router.getNode(found.nodeId);
+          if (!node) continue;
 
-        const parts = [];
-        for (const m of messages) {
-          const name = await userName(m.user);
-          parts.push(`${name}: ${m.text || '[attachment]'}`);
+          const parts = [];
+          for (const m of messages) {
+            const name = await userName(m.user);
+            parts.push(`${name}: ${m.text || '[attachment]'}`);
+          }
+          const text = `Slack thread update (${messages.length} missed message${messages.length > 1 ? 's' : ''}):\n${parts.join('\n')}\n\nReply back on the thread when done.`;
+          const result = await relay.tell(config, node, found.name, text, {
+            vimMode: taskQueue.vimMode,
+          });
+          if (result.success) {
+            relayed += messages.length;
+            console.log(
+              `[slack-poll] Relayed ${messages.length} missed message(s) to S:${t.assignedTo} for thread ${threadKey}`,
+            );
+          }
+        } catch (err) {
+          if (
+            err.data &&
+            (err.data.error === 'not_in_channel' || err.data.error === 'thread_not_found')
+          )
+            continue;
+          console.warn(`[slack-poll] Thread poll error for task ${t.id}: ${err.message}`);
         }
-        const text = `Slack thread update (${messages.length} missed message${messages.length > 1 ? 's' : ''}):\n${parts.join('\n')}\n\nReply back on the thread when done.`;
-        const result = await relay.tell(config, node, found.name, text, { vimMode: taskQueue.vimMode });
-        if (result.success) {
-          relayed += messages.length;
-          console.log(`[slack-poll] Relayed ${messages.length} missed message(s) to S:${t.assignedTo} for thread ${threadKey}`);
-        }
-      } catch (err) {
-        if (err.data && (err.data.error === 'not_in_channel' || err.data.error === 'thread_not_found')) continue;
-        console.warn(`[slack-poll] Thread poll error for task ${t.id}: ${err.message}`);
       }
-    }
-    if (relayed > 0) console.log(`[slack-poll] Cycle complete: ${relayed} message(s) relayed`);
-  }), THREAD_POLL_INTERVAL);
+      if (relayed > 0) console.log(`[slack-poll] Cycle complete: ${relayed} message(s) relayed`);
+    }),
+    THREAD_POLL_INTERVAL,
+  );
 
   // Start the bot and resolve bot user ID for @mention filtering
   let botUserId = null;
-  app.start().then(async () => {
-    console.log('Slack bot started (Socket Mode)');
-    try {
-      const authResult = await app.client.auth.test();
-      botUserId = authResult.user_id;
-      console.log(`[slack] Bot user ID: ${botUserId}`);
-    } catch (err) {
-      console.error(`[slack] Could not resolve bot user ID: ${err.message}`);
-    }
-  }).catch(err => {
-    console.error('Slack bot failed to start:', err.message);
-  });
+  app
+    .start()
+    .then(async () => {
+      console.log('Slack bot started (Socket Mode)');
+      try {
+        const authResult = await app.client.auth.test();
+        botUserId = authResult.user_id;
+        console.log(`[slack] Bot user ID: ${botUserId}`);
+      } catch (err) {
+        console.error(`[slack] Could not resolve bot user ID: ${err.message}`);
+      }
+    })
+    .catch((err) => {
+      console.error('Slack bot failed to start:', err.message);
+    });
 
   return app;
 }

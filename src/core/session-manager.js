@@ -85,7 +85,7 @@ async function createSession(name, repoDir, layout = {}, size = {}) {
     // Back off instead — callers log and retry on the next cycle.
     throw new Error(
       `tmux server is not responding — refusing to create session "${sessionName}" ` +
-      `because starting a server now would replace the socket and strand the running fleet`
+        `because starting a server now would replace the socket and strand the running fleet`,
     );
   }
 
@@ -98,8 +98,8 @@ async function createSession(name, repoDir, layout = {}, size = {}) {
 
     if (servers.length > 1) {
       throw new Error(
-        `found ${servers.length} tmux servers (pids ${servers.map(s => s.pid).join(', ')}) ` +
-        `— socket was already replaced; refusing to create session "${sessionName}" until this is resolved`
+        `found ${servers.length} tmux servers (pids ${servers.map((s) => s.pid).join(', ')}) ` +
+          `— socket was already replaced; refusing to create session "${sessionName}" until this is resolved`,
       );
     }
 
@@ -109,27 +109,33 @@ async function createSession(name, repoDir, layout = {}, size = {}) {
       // replaces the socket and strands the fleet.
       throw new Error(
         `tmux server ${servers[0].pid} is alive but not accepting connections ` +
-        `— refusing to create session "${sessionName}" because starting a server now ` +
-        `would replace the socket and strand the running fleet`
+          `— refusing to create session "${sessionName}" because starting a server now ` +
+          `would replace the socket and strand the running fleet`,
       );
     }
 
     if (revived) {
-      log.warn(`[session-manager] tmux socket was missing; sent SIGUSR1 to stranded server ${servers[0].pid} to recreate it`);
+      log.warn(
+        `[session-manager] tmux socket was missing; sent SIGUSR1 to stranded server ${servers[0].pid} to recreate it`,
+      );
       const after = await tmux.probeSession(sessionName);
       if (after === tmux.SESSION_PROBE.EXISTS) {
         log.info(`[session-manager] session "${sessionName}" recovered with the socket, skipping`);
         return { created: false, skipped: true };
       }
       if (after !== tmux.SESSION_PROBE.ABSENT) {
-        throw new Error(`tmux socket recovery did not restore a reachable server (probe: ${after})`);
+        throw new Error(
+          `tmux socket recovery did not restore a reachable server (probe: ${after})`,
+        );
       }
     }
     // servers.length === 0 → genuinely no server; creating one is correct.
   }
 
   // Ensure repo directory exists so tmux doesn't fall back to $HOME
-  try { fs.mkdirSync(repoDir, { recursive: true }); } catch {}
+  try {
+    fs.mkdirSync(repoDir, { recursive: true });
+  } catch {}
 
   // 1. Create session at explicit size
   await tmux.exec(`tmux new-session -d -s "${sessionName}" -x ${cols} -y ${rows} -c "${repoDir}"`);
@@ -212,7 +218,7 @@ async function createAllSessions(config) {
   } else {
     // Legacy: derive from sessions.roles
     const roles = config.sessions?.roles || {};
-    sessions = Object.keys(roles).map(k => ({
+    sessions = Object.keys(roles).map((k) => ({
       num: parseInt(k, 10),
       repoDir: config.sessions.repoDir(parseInt(k, 10)),
       layout: defaultLayout,
@@ -285,9 +291,12 @@ function writeMcpConfig(repoDir, hiveUrl, token, session, tools) {
   const mcpPath = path.join(repoDir, '.mcp.json');
   const mcpArgs = [
     path.join(__dirname, '..', 'mcp-server', 'index.mjs'),
-    '--hive-url', hiveUrl,
-    '--session', String(session),
-    '--token', token,
+    '--hive-url',
+    hiveUrl,
+    '--session',
+    String(session),
+    '--token',
+    token,
   ];
   if (tools && tools.length > 0) {
     mcpArgs.push('--tools', tools.join(','));

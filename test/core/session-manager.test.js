@@ -65,7 +65,7 @@ describe('isTmuxAvailable', () => {
 describe('applyGlobalOptions', () => {
   it('sets all required options with defaults', async () => {
     await sessionManager.applyGlobalOptions();
-    const calls = execSpy.mock.calls.map(c => c[0]);
+    const calls = execSpy.mock.calls.map((c) => c[0]);
     expect(calls).toContain('tmux set-option -g default-command "env -u CLAUDECODE bash --login"');
     expect(calls).toContain('tmux set-option -g pane-base-index 1');
     expect(calls).toContain('tmux set-option -g base-index 1');
@@ -75,7 +75,7 @@ describe('applyGlobalOptions', () => {
 
   it('uses custom defaultCommand from tmuxConfig', async () => {
     await sessionManager.applyGlobalOptions({ defaultCommand: 'zsh --login' });
-    const calls = execSpy.mock.calls.map(c => c[0]);
+    const calls = execSpy.mock.calls.map((c) => c[0]);
     expect(calls).toContain('tmux set-option -g default-command "zsh --login"');
   });
 });
@@ -86,14 +86,14 @@ describe('createSession', () => {
   it('creates session with correct new-session -x -y flags', async () => {
     await sessionManager.createSession('1', '/repo/dir', { panes: 3 }, { cols: 200, rows: 50 });
 
-    const calls = execSpy.mock.calls.map(c => c[0]);
+    const calls = execSpy.mock.calls.map((c) => c[0]);
     expect(calls[0]).toBe('tmux new-session -d -s "1" -x 200 -y 50 -c "/repo/dir"');
   });
 
   it('splits into 3 panes for default layout', async () => {
     await sessionManager.createSession('2', '/repo', { panes: 3 }, { cols: 200, rows: 50 });
 
-    const calls = execSpy.mock.calls.map(c => c[0]);
+    const calls = execSpy.mock.calls.map((c) => c[0]);
     expect(calls).toContainEqual('tmux split-window -h -t "=2" -c "/repo"');
     expect(calls).toContainEqual('tmux split-window -v -t "=2:.2" -c "/repo"');
   });
@@ -101,14 +101,19 @@ describe('createSession', () => {
   it('applies main-vertical layout', async () => {
     await sessionManager.createSession('3', '/repo', { panes: 3 }, { cols: 200, rows: 50 });
 
-    const calls = execSpy.mock.calls.map(c => c[0]);
+    const calls = execSpy.mock.calls.map((c) => c[0]);
     expect(calls).toContainEqual('tmux select-layout -t "=3" main-vertical');
   });
 
   it('resizes Claude pane to 50% of cols', async () => {
-    await sessionManager.createSession('4', '/repo', { panes: 3, claudePaneWidth: '50%' }, { cols: 200, rows: 50 });
+    await sessionManager.createSession(
+      '4',
+      '/repo',
+      { panes: 3, claudePaneWidth: '50%' },
+      { cols: 200, rows: 50 },
+    );
 
-    const calls = execSpy.mock.calls.map(c => c[0]);
+    const calls = execSpy.mock.calls.map((c) => c[0]);
     expect(calls).toContainEqual('tmux resize-pane -t "=4:.1" -x 100');
   });
 
@@ -130,7 +135,7 @@ describe('createSession', () => {
   it('creates 2-pane layout without vertical split', async () => {
     await sessionManager.createSession('7', '/repo', { panes: 2 }, { cols: 200, rows: 50 });
 
-    const calls = execSpy.mock.calls.map(c => c[0]);
+    const calls = execSpy.mock.calls.map((c) => c[0]);
     expect(calls).toContainEqual('tmux split-window -h -t "=7" -c "/repo"');
     // No vertical split
     expect(calls).not.toContainEqual(expect.stringContaining('split-window -v'));
@@ -140,7 +145,7 @@ describe('createSession', () => {
   it('creates 1-pane layout without any splits', async () => {
     await sessionManager.createSession('8', '/repo', { panes: 1 }, { cols: 200, rows: 50 });
 
-    const calls = execSpy.mock.calls.map(c => c[0]);
+    const calls = execSpy.mock.calls.map((c) => c[0]);
     expect(calls).not.toContainEqual(expect.stringContaining('split-window'));
     // No layout or resize needed for single pane
     expect(calls).not.toContainEqual(expect.stringContaining('select-layout'));
@@ -150,7 +155,7 @@ describe('createSession', () => {
   it('uses default size when not specified', async () => {
     await sessionManager.createSession('9', '/repo', {}, {});
 
-    const calls = execSpy.mock.calls.map(c => c[0]);
+    const calls = execSpy.mock.calls.map((c) => c[0]);
     expect(calls[0]).toBe('tmux new-session -d -s "9" -x 200 -y 50 -c "/repo"');
   });
 });
@@ -160,19 +165,19 @@ describe('createSession', () => {
 describe('startClaude', () => {
   it('sends claude command to the correct pane', async () => {
     await sessionManager.startClaude('1', 1);
-    const calls = execSpy.mock.calls.map(c => c[0]);
+    const calls = execSpy.mock.calls.map((c) => c[0]);
     expect(calls).toContainEqual('tmux send-keys -t "=1:.1" "claude --continue" Enter');
   });
 
   it('uses custom claude command', async () => {
     await sessionManager.startClaude('2', 1, 'claude --resume');
-    const calls = execSpy.mock.calls.map(c => c[0]);
+    const calls = execSpy.mock.calls.map((c) => c[0]);
     expect(calls).toContainEqual('tmux send-keys -t "=2:.1" "claude --resume" Enter');
   });
 
   it('uses custom pane index', async () => {
     await sessionManager.startClaude('3', 2);
-    const calls = execSpy.mock.calls.map(c => c[0]);
+    const calls = execSpy.mock.calls.map((c) => c[0]);
     expect(calls).toContainEqual('tmux send-keys -t "=3:.2" "claude --continue" Enter');
   });
 });
@@ -194,14 +199,15 @@ describe('createAllSessions', () => {
     expect(results.failed).toEqual([]);
 
     // Verify new-session calls for each session
-    const calls = execSpy.mock.calls.map(c => c[0]);
+    const calls = execSpy.mock.calls.map((c) => c[0]);
     expect(calls).toContainEqual(expect.stringContaining('-s "1"'));
     expect(calls).toContainEqual(expect.stringContaining('-s "2"'));
   });
 
   it('skips existing sessions in legacy config', async () => {
     probeSessionSpy.mockImplementation(async (name) =>
-      name === '1' ? tmux.SESSION_PROBE.EXISTS : tmux.SESSION_PROBE.ABSENT);
+      name === '1' ? tmux.SESSION_PROBE.EXISTS : tmux.SESSION_PROBE.ABSENT,
+    );
 
     const config = {
       sessions: {
@@ -234,8 +240,8 @@ describe('createAllSessions', () => {
     expect(results.created).toEqual([1, 2, 5]);
 
     // Verify correct repo dirs
-    const calls = execSpy.mock.calls.map(c => c[0]);
-    const newSessionCalls = calls.filter(c => c.includes('new-session'));
+    const calls = execSpy.mock.calls.map((c) => c[0]);
+    const newSessionCalls = calls.filter((c) => c.includes('new-session'));
     expect(newSessionCalls[0]).toContain('-c "/repo/a"');
     expect(newSessionCalls[1]).toContain('-c "/repo/a"');
     expect(newSessionCalls[2]).toContain('-c "/repo/b"');
@@ -252,7 +258,7 @@ describe('createAllSessions', () => {
     };
 
     await sessionManager.createAllSessions(config);
-    const calls = execSpy.mock.calls.map(c => c[0]);
+    const calls = execSpy.mock.calls.map((c) => c[0]);
     expect(calls[0]).toContain('-x 200 -y 50');
   });
 
@@ -298,10 +304,7 @@ describe('destroyAllSessions', () => {
   });
 
   it('skips non-matching sessions', async () => {
-    listSessionsSpy.mockResolvedValueOnce([
-      { name: 'dev-session' },
-      { name: 'my-project' },
-    ]);
+    listSessionsSpy.mockResolvedValueOnce([{ name: 'dev-session' }, { name: 'my-project' }]);
 
     const config = { sessions: { pattern: /^\d+/ } };
     const results = await sessionManager.destroyAllSessions(config);
@@ -311,10 +314,7 @@ describe('destroyAllSessions', () => {
   });
 
   it('records failed kills', async () => {
-    listSessionsSpy.mockResolvedValueOnce([
-      { name: '1-Reviews' },
-      { name: '2-Ideas' },
-    ]);
+    listSessionsSpy.mockResolvedValueOnce([{ name: '1-Reviews' }, { name: '2-Ideas' }]);
     killSessionSpy.mockImplementation(async (name) => {
       if (name === '2-Ideas') return false;
       return true;

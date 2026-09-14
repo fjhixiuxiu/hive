@@ -21,7 +21,8 @@ class MeetingListener extends EventEmitter {
     const H = '(?:hive|hyve|hi|high|ty|five|fi|hy|how|hype|hyde)';
     this._triggerRegex = new RegExp(`(?:hey\\s+)?${H}\\b`, 'i');
     // Also trigger on direct command patterns (user may skip "hey hive")
-    this._directCommandRegex = /\b(?:give|show|provide|tell)\s+(?:me|us)?\s*(?:a\s+)?(?:the\s+)?(?:status|update|report)\b/i;
+    this._directCommandRegex =
+      /\b(?:give|show|provide|tell)\s+(?:me|us)?\s*(?:a\s+)?(?:the\s+)?(?:status|update|report)\b/i;
     this.learningInterval = opts.learningInterval || 120000; // 2 min
     this.transcriptBuffer = [];
     this.lastLearningExtract = Date.now();
@@ -30,14 +31,20 @@ class MeetingListener extends EventEmitter {
 
     // Task keywords — phrases that indicate someone is requesting work
     this._taskPatterns = [
-      new RegExp(`${HEY_H}[,:]?\\s*(?:can you|could you|please|go ahead and)?\\s*(work on|start|create|build|fix|implement|add|update|write|deploy|ship|set up|configure)\\s+(.+)`, 'i'),
+      new RegExp(
+        `${HEY_H}[,:]?\\s*(?:can you|could you|please|go ahead and)?\\s*(work on|start|create|build|fix|implement|add|update|write|deploy|ship|set up|configure)\\s+(.+)`,
+        'i',
+      ),
       new RegExp(`${HEY_H}[,:]?\\s*(?:new task|task)[:\\s]+(.+)`, 'i'),
       /(?:let's have|have)\s+(?:hive|hi|high|five)\s+(work on|start|create|build|fix|implement|add|update|write)\s+(.+)/i,
     ];
 
     // Question keywords — phrases that indicate someone is asking for info
     this._questionPatterns = [
-      new RegExp(`${HEY_H}[,:]?\\s*(?:what(?:'s| is)|how(?:'s| is| are)|where|when|which|can you tell|do we have|are there|is there|status|update)\\s+(.+)`, 'i'),
+      new RegExp(
+        `${HEY_H}[,:]?\\s*(?:what(?:'s| is)|how(?:'s| is| are)|where|when|which|can you tell|do we have|are there|is there|status|update)\\s+(.+)`,
+        'i',
+      ),
       new RegExp(`${HEY_H}[,:]?\\s*(?:give me|show me|tell me|provide me|report)\\s+(.+)`, 'i'),
       // Match common questions even without "hive" prefix (trigger already detected)
       /what(?:'s| is)\s+(?:your |the )?\s*status/i,
@@ -60,14 +67,18 @@ class MeetingListener extends EventEmitter {
 
     // Check for trigger phrases — normalize punctuation first because
     // Deepgram transcribes "hey hive" as "Hey. Hi." or "Hey, High." or "Five."
-    const lower = entry.text.toLowerCase().replace(/[.,!?;:]/g, '').replace(/\s+/g, ' ').trim();
+    const lower = entry.text
+      .toLowerCase()
+      .replace(/[.,!?;:]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
     log.info(`[listener] Processing: "${entry.text}" → normalized: "${lower}"`);
     const triggered = this._triggerRegex.test(lower) || this._directCommandRegex.test(lower);
 
     if (triggered) {
       log.info(`[listener] Trigger detected: "${entry.text}"`);
       // Wait briefly for follow-up context (transcript may be split across entries)
-      await new Promise(r => setTimeout(r, 2000));
+      await new Promise((r) => setTimeout(r, 2000));
       const recentText = transcriber.getRecentTranscript(10); // last 10 seconds
       log.info(`[listener] Context for trigger: "${recentText}"`);
       this._handleTrigger(recentText);
@@ -89,8 +100,12 @@ class MeetingListener extends EventEmitter {
    */
   _handleTrigger(text) {
     // Strip speaker labels and normalize punctuation from combined transcript context
-    text = text.replace(/\[Speaker \d+\]\s*/g, '').replace(/\[Unknown\]\s*/g, '')
-      .replace(/[.,!?;:]+/g, ' ').replace(/\s+/g, ' ').trim();
+    text = text
+      .replace(/\[Speaker \d+\]\s*/g, '')
+      .replace(/\[Unknown\]\s*/g, '')
+      .replace(/[.,!?;:]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
     // Check for task patterns
     for (const pattern of this._taskPatterns) {
       const match = text.match(pattern);
@@ -134,7 +149,7 @@ class MeetingListener extends EventEmitter {
    * Uses keyword pattern matching (no LLM needed).
    */
   _extractLearnings(transcriptWindow) {
-    const lines = transcriptWindow.split('\n').filter(l => l.trim());
+    const lines = transcriptWindow.split('\n').filter((l) => l.trim());
     const learnings = [];
 
     for (const line of lines) {
@@ -164,8 +179,10 @@ class MeetingListener extends EventEmitter {
    */
   _detectPriority(text) {
     const lower = text.toLowerCase();
-    if (/\b(urgent|asap|immediately|critical|blocker|right now|drop everything)\b/.test(lower)) return 'high';
-    if (/\b(when you get a chance|low priority|eventually|backlog|nice to have)\b/.test(lower)) return 'low';
+    if (/\b(urgent|asap|immediately|critical|blocker|right now|drop everything)\b/.test(lower))
+      return 'high';
+    if (/\b(when you get a chance|low priority|eventually|backlog|nice to have)\b/.test(lower))
+      return 'low';
     return 'normal';
   }
 
@@ -174,9 +191,11 @@ class MeetingListener extends EventEmitter {
    */
   _detectDomain(text) {
     const lower = text.toLowerCase();
-    if (/\b(api|backend|server|database|endpoint|migration|deploy|ci|cd|pipeline)\b/.test(lower)) return 'engineering';
+    if (/\b(api|backend|server|database|endpoint|migration|deploy|ci|cd|pipeline)\b/.test(lower))
+      return 'engineering';
     if (/\b(ui|ux|frontend|design|component|page|screen|layout)\b/.test(lower)) return 'frontend';
-    if (/\b(product|feature|roadmap|user|customer|requirement|spec)\b/.test(lower)) return 'product';
+    if (/\b(product|feature|roadmap|user|customer|requirement|spec)\b/.test(lower))
+      return 'product';
     if (/\b(process|workflow|standup|review|sprint|meeting|team)\b/.test(lower)) return 'process';
     if (/\b(security|auth|permission|access|token|credential)\b/.test(lower)) return 'security';
     return 'general';

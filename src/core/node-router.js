@@ -4,7 +4,7 @@
  */
 class NodeRouter {
   constructor() {
-    this.nodes = new Map();        // nodeId -> Node
+    this.nodes = new Map(); // nodeId -> Node
     this._sessionCache = new Map(); // sessionName -> nodeId
   }
 
@@ -42,14 +42,14 @@ class NodeRouter {
       Array.from(this.nodes.entries()).map(async ([nodeId, node]) => {
         try {
           const sessions = await node.listSessions();
-          for (const {name, lastActivity, path} of sessions) {
+          for (const { name, lastActivity, path } of sessions) {
             this._sessionCache.set(name, nodeId);
             all.push({ name, nodeId, lastActivity, path });
           }
         } catch {
           // Node unreachable — skip
         }
-      })
+      }),
     );
     return all;
   }

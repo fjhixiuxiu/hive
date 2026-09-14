@@ -76,9 +76,9 @@ windows:
   - work:
       layout: main-vertical
       panes:
-        - claude --resume   # Pane 1 (left, 50%) — Claude Code
-        -                    # Pane 2 (top-right) — your dev server
-        -                    # Pane 3 (bottom-right) — tests, git, etc.
+        - claude --resume # Pane 1 (left, 50%) — Claude Code
+        -  # Pane 2 (top-right) — your dev server
+        -  # Pane 3 (bottom-right) — tests, git, etc.
 ```
 
 This creates a 3-pane layout:
@@ -329,15 +329,9 @@ module.exports = {
 
   // These patterns detect Claude's state from terminal output.
   // The defaults work with Claude Code's standard prompts.
-  idlePatterns: [
-    /bypass permissions/,
-    /shift\+tab/,
-    /ctrl-g to edit/,
-  ],
+  idlePatterns: [/bypass permissions/, /shift\+tab/, /ctrl-g to edit/],
 
-  offPatterns: [
-    /conversation\./,
-  ],
+  offPatterns: [/conversation\./],
 
   cache: {
     statusPrefix: '/tmp/tmux-status-',
@@ -358,7 +352,7 @@ module.exports = {
   // Set to null to disable
   links: {
     pr: 'https://github.com/your-org/your-repo/pull/${prNum}',
-    ci: null,  // Set to your CI URL template if you have one
+    ci: null, // Set to your CI URL template if you have one
   },
 };
 ```
@@ -425,25 +419,32 @@ hive auto-discovers all numbered tmux sessions — no config change needed.
 ## Troubleshooting
 
 ### "No session matching X"
+
 The tmux session isn't running. Check with `tmux list-sessions`.
 
 ### Terminal view shows nothing
+
 Make sure `claudePane` in config matches the pane where Claude Code runs. Check with:
+
 ```bash
 tmux list-panes -t 1  # lists panes in session 1
 ```
 
 ### Ask/Tell messages don't reach Claude
+
 Claude Code has vim-like modes. hive sends `Escape` then `i` to ensure INSERT mode before typing. If Claude is in a special state (e.g., permission prompt), you may need to send a key press (Enter, y, Escape) first.
 
 ### Cache files not updating
+
 Make sure the cache-warmer and idle-watcher scripts are running:
+
 ```bash
 ps aux | grep cache-warmer
 ps aux | grep idle-watcher
 ```
 
 ### Port already in use
+
 ```bash
 lsof -ti :3000 | xargs kill
 npm start

@@ -16,7 +16,9 @@ const log = require('./log');
  */
 async function cloneOrReuse(gitUrl, repoDir, opts = {}) {
   const { onProgress } = opts;
-  const notify = (status, message) => { if (onProgress) onProgress(status, message); };
+  const notify = (status, message) => {
+    if (onProgress) onProgress(status, message);
+  };
 
   if (gitUrl) {
     if (fs.existsSync(require('path').join(repoDir, '.git'))) {

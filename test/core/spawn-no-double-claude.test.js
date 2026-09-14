@@ -21,7 +21,9 @@ describe('never start a second Claude in a live pane', () => {
   let tq, config, router;
 
   beforeEach(() => {
-    vi.spyOn(fs, 'readFileSync').mockImplementation(() => { throw new Error('ENOENT'); });
+    vi.spyOn(fs, 'readFileSync').mockImplementation(() => {
+      throw new Error('ENOENT');
+    });
     vi.spyOn(fs, 'writeFileSync').mockImplementation(() => {});
     vi.spyOn(fs, 'renameSync').mockImplementation(() => {});
     vi.spyOn(fs, 'readdirSync').mockReturnValue([]);
@@ -43,7 +45,10 @@ describe('never start a second Claude in a live pane', () => {
 
   describe('spawnSession', () => {
     it('does not start Claude when the slot was already live', async () => {
-      vi.spyOn(sessionManager, 'createSession').mockResolvedValue({ created: false, skipped: true });
+      vi.spyOn(sessionManager, 'createSession').mockResolvedValue({
+        created: false,
+        skipped: true,
+      });
 
       await tq.spawnSession({ num: 4, name: 'webplatform', baseDir: '/tmp/x' });
 
@@ -51,7 +56,10 @@ describe('never start a second Claude in a live pane', () => {
     });
 
     it('still starts Claude for a genuinely new session', async () => {
-      vi.spyOn(sessionManager, 'createSession').mockResolvedValue({ created: true, skipped: false });
+      vi.spyOn(sessionManager, 'createSession').mockResolvedValue({
+        created: true,
+        skipped: false,
+      });
 
       await tq.spawnSession({ num: 5, name: 'webplatform', baseDir: '/tmp/x' });
 
@@ -60,7 +68,10 @@ describe('never start a second Claude in a live pane', () => {
     });
 
     it('registers the agent either way — the slot is claimed regardless', async () => {
-      vi.spyOn(sessionManager, 'createSession').mockResolvedValue({ created: false, skipped: true });
+      vi.spyOn(sessionManager, 'createSession').mockResolvedValue({
+        created: false,
+        skipped: true,
+      });
 
       const result = await tq.spawnSession({ num: 4, name: 'webplatform', baseDir: '/tmp/x' });
 
@@ -75,39 +86,50 @@ describe('never start a second Claude in a live pane', () => {
     // a strict-designation task with no matching session.
     const strictSetup = () => {
       fleetModule.getFleetStatus.mockResolvedValue([{ name: '1', num: 1, state: 'idle' }]);
-      tq.autoSessions.add(1);                    // idle, undesignated
+      tq.autoSessions.add(1); // idle, undesignated
       tq._pmManager = {
         pms: new Map([['1', { name: 'StrictPM', designationMatch: 'strict', autoCreate: true }]]),
         serialize: () => ({ pms: [], knowledgeBase: [] }),
         enrichTaskText: (task) => task.text,
       };
-      tq.createTask('needs its own session', 'auto', null, 'Code Review', { source: 'pm:StrictPM' });
+      tq.createTask('needs its own session', 'auto', null, 'Code Review', {
+        source: 'pm:StrictPM',
+      });
     };
 
     it('does not start Claude when the slot filled up between the fleet read and the create', async () => {
-      vi.spyOn(sessionManager, 'createSession').mockResolvedValue({ created: false, skipped: true });
+      vi.spyOn(sessionManager, 'createSession').mockResolvedValue({
+        created: false,
+        skipped: true,
+      });
       strictSetup();
 
-      await new Promise(r => setTimeout(r, 50));
+      await new Promise((r) => setTimeout(r, 50));
 
       expect(sessionManager.createSession).toHaveBeenCalled();
       expect(sessionManager.startClaude).not.toHaveBeenCalled();
     });
 
     it('starts Claude for a slot it really did create', async () => {
-      vi.spyOn(sessionManager, 'createSession').mockResolvedValue({ created: true, skipped: false });
+      vi.spyOn(sessionManager, 'createSession').mockResolvedValue({
+        created: true,
+        skipped: false,
+      });
       strictSetup();
 
-      await new Promise(r => setTimeout(r, 50));
+      await new Promise((r) => setTimeout(r, 50));
 
       expect(sessionManager.startClaude).toHaveBeenCalledTimes(1);
     });
 
     it('claims the slot as an auto session either way', async () => {
-      vi.spyOn(sessionManager, 'createSession').mockResolvedValue({ created: false, skipped: true });
+      vi.spyOn(sessionManager, 'createSession').mockResolvedValue({
+        created: false,
+        skipped: true,
+      });
       strictSetup();
 
-      await new Promise(r => setTimeout(r, 50));
+      await new Promise((r) => setTimeout(r, 50));
 
       // 1 was already auto; the newly claimed slot joins it.
       expect(tq.autoSessions.size).toBeGreaterThan(1);

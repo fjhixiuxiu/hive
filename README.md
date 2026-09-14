@@ -13,6 +13,7 @@ If you run multiple Claude Code sessions in parallel (code reviews, feature work
 ## Features
 
 ### Dashboard
+
 - **Fleet grid** — See all sessions at a glance with state (idle/working/off), branch, PR number, CI status, review badges, and terminal previews
 - **Live terminal** — Tap a session to view its terminal output with full ANSI colors via xterm.js, refreshing every 2 seconds
 - **Ask/Tell** — Send messages to any Claude session. Ask waits for a response; Tell is fire-and-forget
@@ -23,6 +24,7 @@ If you run multiple Claude Code sessions in parallel (code reviews, feature work
 - **Fleet search** — Search across all session terminal contents
 
 ### Task Queue
+
 - **Auto/Manual dispatch** — Create tasks that auto-assign to idle sessions or target a specific one
 - **Designations** — Tag sessions (frontend, backend, tests, reviews, etc.) and route tasks to matching sessions
 - **Auto-pilot rules** — Auto-fix CI failures, address review feedback, pick next task on idle
@@ -30,26 +32,31 @@ If you run multiple Claude Code sessions in parallel (code reviews, feature work
 - **Broadcast** — Send a message to all, idle, or working sessions at once
 
 ### Approvals
+
 - **Permission detection** — Automatically detects when Claude is asking for permission (tool approvals, file edits, etc.)
 - **One-tap approve/deny** — Resolve permission prompts from the dashboard without switching terminals
 
 ### Activity Feed
+
 - **Real-time event log** — Session state changes, task dispatch/completion, CI results, approvals
 - **Session previews** — Click a feed entry to preview what that session is showing
 - **Quick actions** — Approve, send messages, or open sessions directly from feed entries
 
 ### VIM Mode
+
 - **Global toggle** — Persisted setting that controls whether relay sends `Escape + i` before text input
 - **ON:** Relay prepends Escape+i to ensure INSERT mode before typing messages via ask/tell
 - **OFF (default):** Messages sent directly — no preamble. Keys bar always sends raw keys regardless.
 
 ### Project Managers
+
 - **Automated workflows** — Define JIRA-driven or manual project managers that poll for work and create tasks
 - **Configurable instructions** — Each PM has a name, poll interval, and instructions template
 - **Enable/disable** — Toggle PMs on and off from the dashboard
 - **Always-auto dispatch** — Optional per-PM override that skips story-point / issue-type triage so every discovered item auto-dispatches
 
 ### Voice Agent
+
 - **Join meetings** — Hive joins Zoom or Google Meet via Playwright, listens to the conversation, and responds when addressed
 - **Meeting history** — Past meetings saved with full transcripts; browse and review from the Meetings tab
 - **Live transcript** — Real-time speaker-diarized transcript powered by Deepgram Nova-2
@@ -59,16 +66,19 @@ If you run multiple Claude Code sessions in parallel (code reviews, feature work
 - **Interactive terminal** — Full terminal access to the voice Claude session from the meeting detail panel (Ask/Tell, keys bar, message history, image drag-drop)
 
 ### Multi-Computer Fleet
+
 - **Remote workers** — Run `hive-worker` on additional machines to extend your fleet across computers
 - **WebSocket RPC** — Workers connect to the hive server and execute tmux/file commands on their local sessions
 - **Node router** — Commands are transparently routed to the correct machine
 
 ### Notifications
+
 - **Toast notifications** — In-app popups for task completion, CI changes, errors
 - **Browser notifications** — Native OS notifications when sessions go idle or CI finishes
 - **Telegram bot** — Full fleet control via Telegram for when you're away from the dashboard
 
 ### Other
+
 - **PWA** — Installable as a home screen app on iOS/Android
 - **Configurable links** — PR and CI badge URLs are templates in config, not hardcoded
 - **Spawn agents** — Dynamically create new tmux sessions (slots 17-32) with optional git clone
@@ -123,12 +133,14 @@ Each tmux session runs Claude Code in a pane. hive reads terminal content via `t
 ### Installing tmux and tmuxinator
 
 **macOS:**
+
 ```bash
 brew install tmux
 gem install tmuxinator --user-install
 ```
 
 **Ubuntu/Debian:**
+
 ```bash
 sudo apt install tmux
 gem install tmuxinator --user-install
@@ -137,7 +149,6 @@ gem install tmuxinator --user-install
 After installing tmuxinator via `--user-install`, you may need to add the gem bin directory to your PATH. Check `gem environment gemdir` for the location and add its `bin/` subdirectory to your shell profile.
 
 > **New to this?** See the **[full setup guide](docs/setup-guide.md)** for step-by-step instructions covering tmux configuration, session templates, background daemons, and phone access.
-
 
 ## Quick start
 
@@ -215,16 +226,10 @@ module.exports = {
   },
 
   // Patterns in terminal output that mean Claude is waiting for input
-  idlePatterns: [
-    /bypass permissions/,
-    /shift\+tab/,
-    /ctrl-g to edit/,
-  ],
+  idlePatterns: [/bypass permissions/, /shift\+tab/, /ctrl-g to edit/],
 
   // Patterns that mean Claude isn't running
-  offPatterns: [
-    /conversation\./,
-  ],
+  offPatterns: [/conversation\./],
 
   // PR/CI cache files (if you use external cache-warming scripts)
   cache: {
@@ -233,13 +238,13 @@ module.exports = {
   },
 
   relay: {
-    pollInterval: 2000,    // How often to check for response
-    cooldown: 5000,        // Wait after idle before declaring done
+    pollInterval: 2000, // How often to check for response
+    cooldown: 5000, // Wait after idle before declaring done
     timeout: 5 * 60 * 1000, // Max wait time
   },
 
   watcher: {
-    interval: 10000,       // How often to poll fleet status
+    interval: 10000, // How often to poll fleet status
   },
 
   // URL templates for PR and CI links (use ${prNum} and ${ciBuild})
@@ -292,10 +297,12 @@ The setting persists across server restarts (stored in `.hive-state.json`).
 To extend your fleet across multiple computers:
 
 **On the hive server machine:**
+
 1. Set `HIVE_WORKER_SECRET=your-secret` in `.env`
 2. Start normally: `npm start`
 
 **On each worker machine:**
+
 1. Clone hive and install dependencies
 2. Run: `npx hive-worker --server ws://hive-host:3000 --secret your-secret --node-id worker1`
 
@@ -556,12 +563,12 @@ The voice agent lets Hive join video calls, listen to the conversation via real-
 
 ### Prerequisites
 
-| Dependency | Purpose | Install |
-|---|---|---|
-| **Deepgram API key** | Speech-to-text (Nova-2) and text-to-speech (Aura) | Sign up at [deepgram.com](https://deepgram.com), create an API key |
-| **sox** | Plays TTS audio to the virtual audio device | `brew install sox` |
-| **BlackHole 2ch** | Virtual audio device — routes Hive's voice into the meeting | Download from [existential.audio/blackhole](https://existential.audio/blackhole/) |
-| **Playwright** | Browser automation for joining Zoom/Meet | Auto-installed via `npm install` |
+| Dependency           | Purpose                                                     | Install                                                                           |
+| -------------------- | ----------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| **Deepgram API key** | Speech-to-text (Nova-2) and text-to-speech (Aura)           | Sign up at [deepgram.com](https://deepgram.com), create an API key                |
+| **sox**              | Plays TTS audio to the virtual audio device                 | `brew install sox`                                                                |
+| **BlackHole 2ch**    | Virtual audio device — routes Hive's voice into the meeting | Download from [existential.audio/blackhole](https://existential.audio/blackhole/) |
+| **Playwright**       | Browser automation for joining Zoom/Meet                    | Auto-installed via `npm install`                                                  |
 
 ### Step 1: Install system dependencies
 
@@ -593,6 +600,7 @@ DEEPGRAM_API_KEY=your-deepgram-api-key
 The same key is used for both speech-to-text (transcription) and text-to-speech (Hive's voice). Deepgram offers a free tier with enough credits to test.
 
 **Models used:**
+
 - **STT:** `nova-2` — real-time WebSocket streaming, speaker diarization, smart formatting
 - **TTS:** `aura-orion-en` — deep, professional voice (configurable)
 
@@ -650,6 +658,7 @@ Playwright launches a visible Chromium browser to join meetings. The `--use-fake
 ```
 
 **Audio flow:**
+
 1. Playwright browser joins the meeting and intercepts audio via `AudioContext` / `RTCPeerConnection`
 2. Browser-side script downsamples to 16kHz mono PCM and streams to `/voice/audio` WebSocket
 3. Server pipes audio to Deepgram Nova-2 for real-time transcription with speaker diarization
@@ -664,6 +673,7 @@ Playwright launches a visible Chromium browser to join meetings. The `--use-fake
 ### Meeting history
 
 Meetings are persisted to `.hive-meetings.json` (gitignored). Each meeting stores:
+
 - Meeting name, URL, start/end timestamps
 - Full transcript with speaker labels and timestamps
 - Hive's responses with timestamps
@@ -675,22 +685,22 @@ Browse past meetings from the Meetings tab. Click any meeting to view its transc
 
 The voice agent is configured via constructor options in `src/integrations/web/server.js`:
 
-| Option | Default | Description |
-|---|---|---|
-| `voice` | `aura-orion-en` | Deepgram TTS voice name ([available voices](https://developers.deepgram.com/docs/tts-models)) |
-| `reportOnJoin` | `true` | Auto-deliver a fleet standup report when joining a meeting |
-| `maxDuration` | `3600000` (1 hour) | Auto-leave after this duration (ms) |
+| Option         | Default            | Description                                                                                   |
+| -------------- | ------------------ | --------------------------------------------------------------------------------------------- |
+| `voice`        | `aura-orion-en`    | Deepgram TTS voice name ([available voices](https://developers.deepgram.com/docs/tts-models)) |
+| `reportOnJoin` | `true`             | Auto-deliver a fleet standup report when joining a meeting                                    |
+| `maxDuration`  | `3600000` (1 hour) | Auto-leave after this duration (ms)                                                           |
 
 ### Troubleshooting
 
-| Problem | Cause | Fix |
-|---|---|---|
-| No audio captured | Audio bridge WebSocket didn't connect | Check browser console for `[hive-bridge]` logs. Ensure `/voice/audio` endpoint is reachable |
-| Transcript empty | Deepgram not receiving audio | Verify `DEEPGRAM_API_KEY` is set. Check server logs for `[voice] Audio chunks received` |
-| Hive doesn't speak | BlackHole not installed or sox missing | Install both; check `sox` is in PATH. Hive falls back to system speakers if BlackHole is absent |
-| Claude not responding | `hive-voice` session didn't start | Check `tmux ls` for `hive-voice`. Ensure Claude Code is installed and authenticated |
-| "Could not start video source" | Tab self-capture not supported | Normal — the AudioContext fallback handles this. Check for `Strategy 3 active` in browser console |
-| Meeting join fails | Zoom UI changed or passcode required | Check Playwright browser window. If Zoom requires a passcode, pass it via the join dialog |
+| Problem                        | Cause                                  | Fix                                                                                               |
+| ------------------------------ | -------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| No audio captured              | Audio bridge WebSocket didn't connect  | Check browser console for `[hive-bridge]` logs. Ensure `/voice/audio` endpoint is reachable       |
+| Transcript empty               | Deepgram not receiving audio           | Verify `DEEPGRAM_API_KEY` is set. Check server logs for `[voice] Audio chunks received`           |
+| Hive doesn't speak             | BlackHole not installed or sox missing | Install both; check `sox` is in PATH. Hive falls back to system speakers if BlackHole is absent   |
+| Claude not responding          | `hive-voice` session didn't start      | Check `tmux ls` for `hive-voice`. Ensure Claude Code is installed and authenticated               |
+| "Could not start video source" | Tab self-capture not supported         | Normal — the AudioContext fallback handles this. Check for `Strategy 3 active` in browser console |
+| Meeting join fails             | Zoom UI changed or passcode required   | Check Playwright browser window. If Zoom requires a passcode, pass it via the join dialog         |
 
 ## Authentication
 
@@ -716,6 +726,7 @@ For multi-user access with identity tracking:
 3. Restart hive — the dashboard now redirects to GitHub login
 
 When OAuth is enabled:
+
 - Users see their GitHub avatar and name in the sidebar
 - Tasks and feed entries are attributed to the user who created them
 - `WEB_TOKEN` still works as a fallback for WebSocket-only clients
@@ -726,35 +737,35 @@ GitHub allows `localhost` / `127.0.0.1` callback URLs for development. Update th
 
 The dashboard communicates with the server via WebSocket messages (JSON). Key message types:
 
-| Client → Server | Description |
-|---|---|
-| `auth` | Authenticate with token or JWT cookie |
-| `fleet:get` | Request fleet status |
-| `fleet:search` | Search terminal contents across all sessions |
-| `peek` | Get terminal snapshot for a session |
-| `terminal:subscribe` / `unsubscribe` | Live terminal polling (2s) |
-| `ask` / `tell` | Send message to Claude |
-| `keys` | Send raw tmux keys (Enter, Escape, Up, Down, etc.) |
-| `restart` | Restart Claude in a session |
-| `task:create` / `task:cancel` / `task:complete` | Task lifecycle |
-| `auto:toggle` / `auto:set` | Auto-mode session management |
-| `designation:set` | Set session designation |
-| `vim:toggle` | Toggle VIM mode |
-| `broadcast` | Send message to multiple sessions |
-| `approval:respond` | Approve or deny a permission prompt |
-| `git:info` / `git:diff` / `git:commit` | Git operations |
-| `spawn` | Create a new agent session |
+| Client → Server                                 | Description                                        |
+| ----------------------------------------------- | -------------------------------------------------- |
+| `auth`                                          | Authenticate with token or JWT cookie              |
+| `fleet:get`                                     | Request fleet status                               |
+| `fleet:search`                                  | Search terminal contents across all sessions       |
+| `peek`                                          | Get terminal snapshot for a session                |
+| `terminal:subscribe` / `unsubscribe`            | Live terminal polling (2s)                         |
+| `ask` / `tell`                                  | Send message to Claude                             |
+| `keys`                                          | Send raw tmux keys (Enter, Escape, Up, Down, etc.) |
+| `restart`                                       | Restart Claude in a session                        |
+| `task:create` / `task:cancel` / `task:complete` | Task lifecycle                                     |
+| `auto:toggle` / `auto:set`                      | Auto-mode session management                       |
+| `designation:set`                               | Set session designation                            |
+| `vim:toggle`                                    | Toggle VIM mode                                    |
+| `broadcast`                                     | Send message to multiple sessions                  |
+| `approval:respond`                              | Approve or deny a permission prompt                |
+| `git:info` / `git:diff` / `git:commit`          | Git operations                                     |
+| `spawn`                                         | Create a new agent session                         |
 
-| Server → Client | Description |
-|---|---|
-| `fleet:status` | Full fleet state (broadcast every 10s) |
-| `terminal:data` | Terminal content update |
-| `ask:stream` / `ask:done` | Ask response streaming |
-| `task:created` / `task:dispatched` / `task:completed` | Task events |
-| `feed:new` | New feed entry |
-| `approval:new` / `approval:resolved` | Approval events |
-| `vim:status` | VIM mode state sync |
-| `notify` | Session state change notifications |
+| Server → Client                                       | Description                            |
+| ----------------------------------------------------- | -------------------------------------- |
+| `fleet:status`                                        | Full fleet state (broadcast every 10s) |
+| `terminal:data`                                       | Terminal content update                |
+| `ask:stream` / `ask:done`                             | Ask response streaming                 |
+| `task:created` / `task:dispatched` / `task:completed` | Task events                            |
+| `feed:new`                                            | New feed entry                         |
+| `approval:new` / `approval:resolved`                  | Approval events                        |
+| `vim:status`                                          | VIM mode state sync                    |
+| `notify`                                              | Session state change notifications     |
 
 ## License
 

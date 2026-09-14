@@ -22,23 +22,22 @@ const pane = (...lines) => lines.join('\n');
 const SEP = '\u2500'.repeat(80);
 
 describe('detectState — production config', () => {
-
   // -- Config sanity checks -------------------------------------------
 
   it('production config has prompt pattern', () => {
-    const hasPrompt = config.idlePatterns.some(p => p.test('\u276f '));
+    const hasPrompt = config.idlePatterns.some((p) => p.test('\u276f '));
     expect(hasPrompt).toBe(true);
-    const hasTyped = config.idlePatterns.some(p => p.test('\u276f /resume'));
+    const hasTyped = config.idlePatterns.some((p) => p.test('\u276f /resume'));
     expect(hasTyped).toBe(true);
   });
 
   it('production config has Try " welcome pattern', () => {
-    const hasTry = config.idlePatterns.some(p => p.test('Try "fix typecheck errors"'));
+    const hasTry = config.idlePatterns.some((p) => p.test('Try "fix typecheck errors"'));
     expect(hasTry).toBe(true);
   });
 
   it('production config has conversation. off pattern', () => {
-    const hasOff = config.offPatterns.some(p => p.test('Your conversation.'));
+    const hasOff = config.offPatterns.some((p) => p.test('Your conversation.'));
     expect(hasOff).toBe(true);
   });
 
@@ -108,39 +107,24 @@ describe('detectState — production config', () => {
   });
 
   it('detects idle: ctrl-g to edit prompt', () => {
-    const content = pane(
-      SEP,
-      '  ctrl-g to edit',
-      SEP,
-      '  Model: Opus 4.6 | Ctx: 55.0%',
-    );
+    const content = pane(SEP, '  ctrl-g to edit', SEP, '  Model: Opus 4.6 | Ctx: 55.0%');
     expect(detectState(content, config)).toBe('idle');
   });
 
   it('detects idle: shift+tab vim mode prompt', () => {
-    const content = pane(
-      SEP,
-      '  shift+tab for vim mode',
-      SEP,
-      '  Model: Opus 4.6 | Ctx: 0.0%',
-    );
+    const content = pane(SEP, '  shift+tab for vim mode', SEP, '  Model: Opus 4.6 | Ctx: 0.0%');
     expect(detectState(content, config)).toBe('idle');
   });
 
   // -- Idle: no separator (fallback) ----------------------------------
 
   it('detects idle: prompt without status bar (fallback)', () => {
-    const content = pane(
-      'Some previous output',
-      '\u276f ',
-    );
+    const content = pane('Some previous output', '\u276f ');
     expect(detectState(content, config)).toBe('idle');
   });
 
   it('detects idle: ? for shortcuts without separator (fallback)', () => {
-    const content = pane(
-      '  ? for shortcuts',
-    );
+    const content = pane('  ? for shortcuts');
     expect(detectState(content, config)).toBe('idle');
   });
 
@@ -295,10 +279,7 @@ describe('detectState — production config', () => {
   // -- Off ------------------------------------------------------------
 
   it('detects off: conversation ended', () => {
-    const content = pane(
-      '  Your conversation.',
-      '',
-    );
+    const content = pane('  Your conversation.', '');
     expect(detectState(content, config)).toBe('off');
   });
 
@@ -311,11 +292,7 @@ describe('detectState — production config', () => {
   });
 
   it('detects off: shell prompt only (no Claude)', () => {
-    const content = pane(
-      '',
-      '',
-      '',
-    );
+    const content = pane('', '', '');
     expect(detectState(content, config)).toBe('off');
   });
 
@@ -336,19 +313,12 @@ describe('detectState — production config', () => {
   });
 
   it('treats short Unicode sequences without separator as off', () => {
-    const content = pane(
-      '\u2500\u2500\u2500',
-      '  Some working output',
-    );
+    const content = pane('\u2500\u2500\u2500', '  Some working output');
     expect(detectState(content, config)).toBe('off');
   });
 
   it('does not false-positive on prompt mid-line in content', () => {
-    const content = pane(
-      'The arrow \u276f points right',
-      SEP,
-      '  Model: Opus 4.6',
-    );
+    const content = pane('The arrow \u276f points right', SEP, '  Model: Opus 4.6');
     expect(detectState(content, config)).toBe('working');
   });
 
@@ -384,12 +354,7 @@ describe('detectState — production config', () => {
 
   it('detects idle with thick separator variant', () => {
     const thickSep = '\u2501'.repeat(80);
-    const content = pane(
-      thickSep,
-      '\u276f ',
-      thickSep,
-      '  Model: Opus 4.6',
-    );
+    const content = pane(thickSep, '\u276f ', thickSep, '  Model: Opus 4.6');
     expect(detectState(content, config)).toBe('idle');
   });
 

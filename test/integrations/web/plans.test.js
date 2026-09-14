@@ -35,7 +35,8 @@ function makeDeps() {
       const existing = contexts.get(Number(num)) || {};
       const merged = { ...existing };
       for (const [k, v] of Object.entries(updates)) {
-        if (v == null) delete merged[k]; else merged[k] = v;
+        if (v == null) delete merged[k];
+        else merged[k] = v;
       }
       contexts.set(Number(num), merged);
       return merged;
@@ -44,22 +45,38 @@ function makeDeps() {
     activeTaskBySession: new Map(),
   };
   return {
-    config, node, router, ws, sent, broadcasts, taskQueue, contexts,
+    config,
+    node,
+    router,
+    ws,
+    sent,
+    broadcasts,
+    taskQueue,
+    contexts,
     deps: {
-      config, taskQueue, pmManager: null, router,
+      config,
+      taskQueue,
+      pmManager: null,
+      router,
       broadcast: vi.fn((msg) => broadcasts.push(msg)),
       checkPermission: vi.fn().mockReturnValue(true),
       resolveSession: vi.fn(),
-      clearTermSub: vi.fn(), clearConsoleSub: vi.fn(),
-      termSubs: new Map(), consoleSubs: new Map(),
-      clearCardSub: vi.fn(), clearAllCardSubs: vi.fn(),
+      clearTermSub: vi.fn(),
+      clearConsoleSub: vi.fn(),
+      termSubs: new Map(),
+      consoleSubs: new Map(),
+      clearCardSub: vi.fn(),
+      clearAllCardSubs: vi.fn(),
       cardTermSubs: new Map(),
-      sendFleetStatus: vi.fn(), broadcastFleetStatus: vi.fn(),
+      sendFleetStatus: vi.fn(),
+      broadcastFleetStatus: vi.fn(),
       sendInitialState: vi.fn(),
       _previewCache: new Map(),
       commands: new Map(),
-      clients: new Set(), wsUser: new Map(),
-      workers: new Map(), mcpClients: new Map(),
+      clients: new Set(),
+      wsUser: new Map(),
+      workers: new Map(),
+      mcpClients: new Map(),
     },
   };
 }
@@ -81,15 +98,19 @@ describe('mcp:publish_plan handler', () => {
     const ctx = makeDeps();
     const handler = createMessageHandler(ctx.deps);
 
-    await handler(ctx.ws, {
-      type: 'mcp:publish_plan',
-      _reqId: 1,
-      session: 3,
-      html: SAMPLE_HTML,
-      title: 'Plans feature',
-    }, {});
+    await handler(
+      ctx.ws,
+      {
+        type: 'mcp:publish_plan',
+        _reqId: 1,
+        session: 3,
+        html: SAMPLE_HTML,
+        title: 'Plans feature',
+      },
+      {},
+    );
 
-    const resp = ctx.sent.find(m => m._reqId === 1);
+    const resp = ctx.sent.find((m) => m._reqId === 1);
     expect(resp).toBeDefined();
     expect(resp.ok).toBe(true);
     expect(resp.version).toBe(1);
@@ -106,13 +127,13 @@ describe('mcp:publish_plan handler', () => {
     });
 
     // Broadcasts: context:updated and plan:published
-    const planPublished = ctx.broadcasts.find(b => b.type === 'plan:published');
+    const planPublished = ctx.broadcasts.find((b) => b.type === 'plan:published');
     expect(planPublished).toMatchObject({
       type: 'plan:published',
       session: 3,
       planRef: { planId: resp.planId, version: 1 },
     });
-    expect(ctx.broadcasts.find(b => b.type === 'context:updated')).toBeDefined();
+    expect(ctx.broadcasts.find((b) => b.type === 'context:updated')).toBeDefined();
 
     // Plan file exists on disk
     expect(plansStore.getPlanHtml(resp.planId)).toContain('section data-id="overview"');
@@ -122,17 +143,30 @@ describe('mcp:publish_plan handler', () => {
     const ctx = makeDeps();
     const handler = createMessageHandler(ctx.deps);
 
-    await handler(ctx.ws, {
-      type: 'mcp:publish_plan', _reqId: 1, session: 5,
-      html: SAMPLE_HTML, title: 'v1',
-    }, {});
-    const firstResp = ctx.sent.find(m => m._reqId === 1);
+    await handler(
+      ctx.ws,
+      {
+        type: 'mcp:publish_plan',
+        _reqId: 1,
+        session: 5,
+        html: SAMPLE_HTML,
+        title: 'v1',
+      },
+      {},
+    );
+    const firstResp = ctx.sent.find((m) => m._reqId === 1);
 
-    await handler(ctx.ws, {
-      type: 'mcp:publish_plan', _reqId: 2, session: 5,
-      html: '<p>v2 content</p>',
-    }, {});
-    const secondResp = ctx.sent.find(m => m._reqId === 2);
+    await handler(
+      ctx.ws,
+      {
+        type: 'mcp:publish_plan',
+        _reqId: 2,
+        session: 5,
+        html: '<p>v2 content</p>',
+      },
+      {},
+    );
+    const secondResp = ctx.sent.find((m) => m._reqId === 2);
 
     expect(secondResp.planId).toBe(firstResp.planId);
     expect(secondResp.version).toBe(2);
@@ -145,11 +179,18 @@ describe('mcp:publish_plan handler', () => {
     const ctx = makeDeps();
     const handler = createMessageHandler(ctx.deps);
 
-    await handler(ctx.ws, {
-      type: 'mcp:publish_plan', _reqId: 1, session: 3, html: '',
-    }, {});
+    await handler(
+      ctx.ws,
+      {
+        type: 'mcp:publish_plan',
+        _reqId: 1,
+        session: 3,
+        html: '',
+      },
+      {},
+    );
 
-    const resp = ctx.sent.find(m => m._reqId === 1);
+    const resp = ctx.sent.find((m) => m._reqId === 1);
     expect(resp.ok).toBe(false);
     expect(resp.error).toMatch(/html is required/);
   });
@@ -158,12 +199,18 @@ describe('mcp:publish_plan handler', () => {
     const ctx = makeDeps();
     const handler = createMessageHandler(ctx.deps);
 
-    await handler(ctx.ws, {
-      type: 'mcp:publish_plan', _reqId: 1, session: 'hive-console',
-      html: SAMPLE_HTML,
-    }, {});
+    await handler(
+      ctx.ws,
+      {
+        type: 'mcp:publish_plan',
+        _reqId: 1,
+        session: 'hive-console',
+        html: SAMPLE_HTML,
+      },
+      {},
+    );
 
-    const resp = ctx.sent.find(m => m._reqId === 1);
+    const resp = ctx.sent.find((m) => m._reqId === 1);
     expect(resp.ok).toBe(false);
     expect(resp.error).toMatch(/Cannot resolve session/);
   });
@@ -187,8 +234,12 @@ describe('mcp:reply_to_comment + mcp:resolve_comment handlers', () => {
     const handler = createMessageHandler(ctx.deps);
 
     // Publish a plan for session 7 first
-    await handler(ctx.ws, { type: 'mcp:publish_plan', _reqId: 1, session: 7, html: SAMPLE_HTML, title: 'P' }, {});
-    const pub = ctx.sent.find(m => m._reqId === 1);
+    await handler(
+      ctx.ws,
+      { type: 'mcp:publish_plan', _reqId: 1, session: 7, html: SAMPLE_HTML, title: 'P' },
+      {},
+    );
+    const pub = ctx.sent.find((m) => m._reqId === 1);
     expect(pub.ok).toBe(true);
     const planId = pub.planId;
 
@@ -196,17 +247,24 @@ describe('mcp:reply_to_comment + mcp:resolve_comment handlers', () => {
     const c = plansStore.addComment(planId, { sectionId: 'overview', text: 'why?' });
 
     // Claude replies
-    await handler(ctx.ws, {
-      type: 'mcp:reply_to_comment', _reqId: 2, session: 7,
-      commentId: c.id, text: 'because Postgres',
-    }, {});
-    const resp = ctx.sent.find(m => m._reqId === 2);
+    await handler(
+      ctx.ws,
+      {
+        type: 'mcp:reply_to_comment',
+        _reqId: 2,
+        session: 7,
+        commentId: c.id,
+        text: 'because Postgres',
+      },
+      {},
+    );
+    const resp = ctx.sent.find((m) => m._reqId === 2);
     expect(resp.ok).toBe(true);
     expect(resp.comment.thread).toHaveLength(2);
     expect(resp.comment.thread[1].author).toBe('claude');
 
     // Broadcasts plan:comments-changed
-    const changed = ctx.broadcasts.find(b => b.type === 'plan:comments-changed');
+    const changed = ctx.broadcasts.find((b) => b.type === 'plan:comments-changed');
     expect(changed).toMatchObject({ type: 'plan:comments-changed', planId, hasPatch: false });
   });
 
@@ -214,20 +272,31 @@ describe('mcp:reply_to_comment + mcp:resolve_comment handlers', () => {
     const ctx = makeDeps();
     const handler = createMessageHandler(ctx.deps);
 
-    await handler(ctx.ws, { type: 'mcp:publish_plan', _reqId: 1, session: 7, html: SAMPLE_HTML, title: 'P' }, {});
-    const planId = ctx.sent.find(m => m._reqId === 1).planId;
+    await handler(
+      ctx.ws,
+      { type: 'mcp:publish_plan', _reqId: 1, session: 7, html: SAMPLE_HTML, title: 'P' },
+      {},
+    );
+    const planId = ctx.sent.find((m) => m._reqId === 1).planId;
     const c = plansStore.addComment(planId, { sectionId: 'overview', text: 'use redis?' });
 
-    await handler(ctx.ws, {
-      type: 'mcp:reply_to_comment', _reqId: 2, session: 7,
-      commentId: c.id, text: 'switching',
-      patch: { sectionId: 'overview', html: '<p>uses redis now</p>' },
-    }, {});
-    const resp = ctx.sent.find(m => m._reqId === 2);
+    await handler(
+      ctx.ws,
+      {
+        type: 'mcp:reply_to_comment',
+        _reqId: 2,
+        session: 7,
+        commentId: c.id,
+        text: 'switching',
+        patch: { sectionId: 'overview', html: '<p>uses redis now</p>' },
+      },
+      {},
+    );
+    const resp = ctx.sent.find((m) => m._reqId === 2);
     expect(resp.ok).toBe(true);
     expect(resp.comment.status).toBe('resolved');
 
-    const changed = ctx.broadcasts.find(b => b.type === 'plan:comments-changed');
+    const changed = ctx.broadcasts.find((b) => b.type === 'plan:comments-changed');
     expect(changed.hasPatch).toBe(true);
     // HTML was patched
     expect(plansStore.getPlanHtml(planId)).toContain('uses redis now');
@@ -237,11 +306,18 @@ describe('mcp:reply_to_comment + mcp:resolve_comment handlers', () => {
     const ctx = makeDeps();
     const handler = createMessageHandler(ctx.deps);
 
-    await handler(ctx.ws, {
-      type: 'mcp:reply_to_comment', _reqId: 1, session: 9,
-      commentId: 'cabc', text: 'reply',
-    }, {});
-    const resp = ctx.sent.find(m => m._reqId === 1);
+    await handler(
+      ctx.ws,
+      {
+        type: 'mcp:reply_to_comment',
+        _reqId: 1,
+        session: 9,
+        commentId: 'cabc',
+        text: 'reply',
+      },
+      {},
+    );
+    const resp = ctx.sent.find((m) => m._reqId === 1);
     expect(resp.ok).toBe(false);
     expect(resp.error).toMatch(/no active plan/i);
   });
@@ -250,17 +326,28 @@ describe('mcp:reply_to_comment + mcp:resolve_comment handlers', () => {
     const ctx = makeDeps();
     const handler = createMessageHandler(ctx.deps);
 
-    await handler(ctx.ws, { type: 'mcp:publish_plan', _reqId: 1, session: 7, html: SAMPLE_HTML, title: 'P' }, {});
-    const planId = ctx.sent.find(m => m._reqId === 1).planId;
+    await handler(
+      ctx.ws,
+      { type: 'mcp:publish_plan', _reqId: 1, session: 7, html: SAMPLE_HTML, title: 'P' },
+      {},
+    );
+    const planId = ctx.sent.find((m) => m._reqId === 1).planId;
     const c = plansStore.addComment(planId, { sectionId: 'overview', text: 'q' });
     // Flip to open so we can verify resolve transitions it
     plansStore.updateCommentStatus(planId, c.id, 'open');
 
-    await handler(ctx.ws, {
-      type: 'mcp:resolve_comment', _reqId: 2, session: 7,
-      commentId: c.id, reason: 'agreed',
-    }, {});
-    const resp = ctx.sent.find(m => m._reqId === 2);
+    await handler(
+      ctx.ws,
+      {
+        type: 'mcp:resolve_comment',
+        _reqId: 2,
+        session: 7,
+        commentId: c.id,
+        reason: 'agreed',
+      },
+      {},
+    );
+    const resp = ctx.sent.find((m) => m._reqId === 2);
     expect(resp.ok).toBe(true);
     expect(resp.comment.status).toBe('resolved');
     expect(resp.comment.thread.at(-1)).toMatchObject({ author: 'claude', text: 'agreed' });
@@ -270,13 +357,24 @@ describe('mcp:reply_to_comment + mcp:resolve_comment handlers', () => {
     const ctx = makeDeps();
     const handler = createMessageHandler(ctx.deps);
 
-    await handler(ctx.ws, { type: 'mcp:publish_plan', _reqId: 1, session: 7, html: SAMPLE_HTML, title: 'P' }, {});
+    await handler(
+      ctx.ws,
+      { type: 'mcp:publish_plan', _reqId: 1, session: 7, html: SAMPLE_HTML, title: 'P' },
+      {},
+    );
 
-    await handler(ctx.ws, {
-      type: 'mcp:reply_to_comment', _reqId: 2, session: 7,
-      commentId: 'cdoesnotexist', text: 'reply',
-    }, {});
-    const resp = ctx.sent.find(m => m._reqId === 2);
+    await handler(
+      ctx.ws,
+      {
+        type: 'mcp:reply_to_comment',
+        _reqId: 2,
+        session: 7,
+        commentId: 'cdoesnotexist',
+        text: 'reply',
+      },
+      {},
+    );
+    const resp = ctx.sent.find((m) => m._reqId === 2);
     expect(resp.ok).toBe(false);
     expect(resp.error).toMatch(/not found/);
   });

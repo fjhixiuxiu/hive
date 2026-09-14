@@ -11,24 +11,43 @@ function createLocalStorageMock() {
   const store = {};
   return {
     getItem: vi.fn((key) => store[key] ?? null),
-    setItem: vi.fn((key, value) => { store[key] = String(value); }),
-    removeItem: vi.fn((key) => { delete store[key]; }),
+    setItem: vi.fn((key, value) => {
+      store[key] = String(value);
+    }),
+    removeItem: vi.fn((key) => {
+      delete store[key];
+    }),
     _store: store,
   };
 }
 
 function createDraftModule(storage) {
   function saveDraft(key, value) {
-    try { if (value) storage.setItem(key, value); else storage.removeItem(key); } catch (e) { /* quota exceeded */ }
+    try {
+      if (value) storage.setItem(key, value);
+      else storage.removeItem(key);
+    } catch (e) {
+      /* quota exceeded */
+    }
   }
   function loadDraft(key) {
-    try { return storage.getItem(key) || ''; } catch (e) { return ''; }
+    try {
+      return storage.getItem(key) || '';
+    } catch (e) {
+      return '';
+    }
   }
   function clearDraft(key) {
-    try { storage.removeItem(key); } catch (e) { /* ignore */ }
+    try {
+      storage.removeItem(key);
+    } catch (e) {
+      /* ignore */
+    }
   }
   // One draft per session, deliberately shared across panels.
-  function sessionDraftKey(_panel, sessionNum) { return `hive-draft:session:${sessionNum}`; }
+  function sessionDraftKey(_panel, sessionNum) {
+    return `hive-draft:session:${sessionNum}`;
+  }
   const TASK_DRAFT_KEY = 'hive-draft:task-dialog';
 
   return { saveDraft, loadDraft, clearDraft, sessionDraftKey, TASK_DRAFT_KEY };
@@ -185,7 +204,12 @@ function createInputSimulator(draftModule) {
     };
   }
 
-  return { simulateFleetSession, simulateTasksSession, simulateTaskDetailSession, simulateTaskDialog };
+  return {
+    simulateFleetSession,
+    simulateTasksSession,
+    simulateTaskDetailSession,
+    simulateTaskDialog,
+  };
 }
 
 // ===========================================================================
@@ -218,7 +242,9 @@ describe('Draft persistence helpers', () => {
     });
 
     it('does not throw on quota exceeded', () => {
-      storage.setItem.mockImplementation(() => { throw new Error('QuotaExceededError'); });
+      storage.setItem.mockImplementation(() => {
+        throw new Error('QuotaExceededError');
+      });
       expect(() => draft.saveDraft('key', 'val')).not.toThrow();
     });
   });
@@ -234,7 +260,9 @@ describe('Draft persistence helpers', () => {
     });
 
     it('returns empty string on error', () => {
-      storage.getItem.mockImplementation(() => { throw new Error('SecurityError'); });
+      storage.getItem.mockImplementation(() => {
+        throw new Error('SecurityError');
+      });
       expect(draft.loadDraft('key1')).toBe('');
     });
   });
@@ -246,7 +274,9 @@ describe('Draft persistence helpers', () => {
     });
 
     it('does not throw on error', () => {
-      storage.removeItem.mockImplementation(() => { throw new Error('fail'); });
+      storage.removeItem.mockImplementation(() => {
+        throw new Error('fail');
+      });
       expect(() => draft.clearDraft('key1')).not.toThrow();
     });
   });
@@ -656,7 +686,9 @@ describe('drafts stick to the session they were typed for', () => {
     expect(fleet.input.value).toBe('');
     expect(storage.getItem('hive-draft:session:21')).toBeNull();
     // ...and S:20 keeps it, because that is whose text it is.
-    expect(storage.getItem('hive-draft:session:20')).toBe('But I think with BookingAudit logs we CAN autopsy');
+    expect(storage.getItem('hive-draft:session:20')).toBe(
+      'But I think with BookingAudit logs we CAN autopsy',
+    );
   });
 
   it('gives the text back when you return to the session that owns it', () => {
@@ -736,7 +768,17 @@ describe('drafts stick to the session they were typed for', () => {
 
 describe('app.js actually routes drafts through the ownership helpers', () => {
   const appJs = readFileSync(
-    join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'src', 'integrations', 'web', 'public', 'app.js'),
+    join(
+      dirname(fileURLToPath(import.meta.url)),
+      '..',
+      '..',
+      '..',
+      'src',
+      'integrations',
+      'web',
+      'public',
+      'app.js',
+    ),
     'utf8',
   );
 
@@ -751,7 +793,9 @@ describe('app.js actually routes drafts through the ownership helpers', () => {
     // The helper itself is the one legitimate place; the task-DIALOG draft is
     // not session-scoped and is deliberately untouched.
     const helperStart = appJs.indexOf('function restoreDraftOnOpen(');
-    const withoutHelper = appJs.slice(0, helperStart) + appJs.slice(appJs.indexOf('}', appJs.indexOf('markDraftOwner(inputEl', helperStart)) + 1);
+    const withoutHelper =
+      appJs.slice(0, helperStart) +
+      appJs.slice(appJs.indexOf('}', appJs.indexOf('markDraftOwner(inputEl', helperStart)) + 1);
     const bypasses = withoutHelper.match(/\.value = loadDraft\(sessionDraftKey\(/g) || [];
     expect(bypasses).toEqual([]);
   });
@@ -760,7 +804,7 @@ describe('app.js actually routes drafts through the ownership helpers', () => {
     // Every saveDraft(sessionDraftKey(...)) that runs on typing must be paired
     // with a markDraftOwner in the same handler.
     const handlers = appJs.match(/addEventListener\('input',[\s\S]{0,320}?\}\);/g) || [];
-    const sessionSavers = handlers.filter(h => h.includes('sessionDraftKey'));
+    const sessionSavers = handlers.filter((h) => h.includes('sessionDraftKey'));
     expect(sessionSavers.length).toBeGreaterThan(0);
     for (const h of sessionSavers) expect(h).toMatch(/markDraftOwner\(/);
   });

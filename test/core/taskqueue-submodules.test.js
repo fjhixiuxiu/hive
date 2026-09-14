@@ -13,7 +13,9 @@ const NodeRouter = require('../../src/core/node-router');
 
 function setup() {
   vi.useFakeTimers({ shouldAdvanceTime: false });
-  vi.spyOn(fs, 'readFileSync').mockImplementation(() => { throw new Error('ENOENT'); });
+  vi.spyOn(fs, 'readFileSync').mockImplementation(() => {
+    throw new Error('ENOENT');
+  });
   vi.spyOn(fs, 'writeFileSync').mockImplementation(() => {});
   vi.spyOn(fs, 'readdirSync').mockReturnValue([]);
   vi.spyOn(fleetModule, 'getFleetStatus').mockResolvedValue([]);
@@ -202,7 +204,10 @@ describe('TaskQueue: Session Context', () => {
     // config.github.repo). Dedicated canonicalize coverage lives in
     // set-context-canonicalize.test.js.
     const result = tq.setSessionContext(5, { plan: '/path/to/plan.md', pr: '123' });
-    expect(result).toEqual({ plan: '/path/to/plan.md', pr: 'https://github.com/owner/repo/pull/123' });
+    expect(result).toEqual({
+      plan: '/path/to/plan.md',
+      pr: 'https://github.com/owner/repo/pull/123',
+    });
   });
 
   it('setSessionContext merges with existing context', () => {
@@ -669,7 +674,7 @@ describe('TaskQueue: autoCreateForManualTasks', () => {
     vi.restoreAllMocks();
   });
 
-  it('defaults to false (existing behavior preserved for forks who don\'t opt in)', () => {
+  it("defaults to false (existing behavior preserved for forks who don't opt in)", () => {
     expect(tq.autoCreateForManualTasks).toBe(false);
   });
 

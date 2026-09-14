@@ -40,8 +40,9 @@ describe('Socket Mode handshake client', () => {
     // Guards the values themselves. 100-wide concurrency against a Tier-1
     // endpoint is what produced the 1.18GB leak.
     expect(HANDSHAKE_CLIENT_OPTIONS.maxRequestConcurrency).toBeLessThanOrEqual(10);
-    expect(HANDSHAKE_CLIENT_OPTIONS.retryConfig.retries)
-      .toBeLessThanOrEqual(retryPolicies.fiveRetriesInFiveMinutes.retries);
+    expect(HANDSHAKE_CLIENT_OPTIONS.retryConfig.retries).toBeLessThanOrEqual(
+      retryPolicies.fiveRetriesInFiveMinutes.retries,
+    );
   });
 
   it('applies bounded concurrency to the client that calls apps.connections.open', () => {
@@ -61,8 +62,9 @@ describe('Socket Mode handshake client', () => {
       installerOptions: { clientOptions: HANDSHAKE_CLIENT_OPTIONS },
     });
 
-    expect(receiver.client.webClient.retryConfig.retries)
-      .toBe(retryPolicies.fiveRetriesInFiveMinutes.retries);
+    expect(receiver.client.webClient.retryConfig.retries).toBe(
+      retryPolicies.fiveRetriesInFiveMinutes.retries,
+    );
   });
 
   it('leaves the SDK defaults dangerously wide when unconfigured', () => {
@@ -105,7 +107,9 @@ describe('nonOverlapping', () => {
 
   const defer = () => {
     let resolve;
-    const promise = new Promise((r) => { resolve = r; });
+    const promise = new Promise((r) => {
+      resolve = r;
+    });
     return { promise, resolve };
   };
 
@@ -118,14 +122,14 @@ describe('nonOverlapping', () => {
     });
 
     const first = wrapped();
-    await wrapped();           // must be skipped, not queued
+    await wrapped(); // must be skipped, not queued
     await wrapped();
     expect(starts).toBe(1);
 
     gate.resolve();
     await first;
 
-    await wrapped();           // runs again once the first finished
+    await wrapped(); // runs again once the first finished
     expect(starts).toBe(2);
   });
 

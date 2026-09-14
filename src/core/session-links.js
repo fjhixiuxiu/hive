@@ -91,7 +91,7 @@
   //               the first commit of this PR, when arrays were schema-valid)
   //   - other   → hand back unchanged
   function canonicalizePrField(field, defaultRepo) {
-    if (Array.isArray(field)) field = field.filter(v => typeof v === 'string').join(', ');
+    if (Array.isArray(field)) field = field.filter((v) => typeof v === 'string').join(', ');
     if (typeof field !== 'string') return field;
     var toks = splitTokens(field);
     if (!toks.length) return field;
@@ -164,7 +164,10 @@
     for (var i = 0; i < segs.length; i++) {
       var seg = segs[i];
       var urlMatch = JIRA_URL_RE.exec(seg);
-      if (urlMatch) { pushKey(urlMatch[1]); continue; }
+      if (urlMatch) {
+        pushKey(urlMatch[1]);
+        continue;
+      }
       if (JIRA_KEY_ONE.test(seg) && (!strict || /^[A-Z]{3,}-\d+$/.test(seg))) {
         pushKey(seg);
         continue;
@@ -193,7 +196,15 @@
       var it = items[i];
       var label = escape(it.label);
       if (isSafeUrl(it.url)) {
-        out.push('<a' + classAttr + ' href="' + escape(it.url) + '" target="_blank" rel="noopener">' + label + '</a>');
+        out.push(
+          '<a' +
+            classAttr +
+            ' href="' +
+            escape(it.url) +
+            '" target="_blank" rel="noopener">' +
+            label +
+            '</a>',
+        );
       } else {
         out.push('<span' + classAttr + '>' + label + '</span>');
       }

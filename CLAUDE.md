@@ -68,23 +68,24 @@ src/
 
 Sessions have access to these tools via the hive MCP server:
 
-| Tool | Purpose |
-|------|---------|
-| `hive_get_task` | Get current task assignment |
-| `hive_complete_task` | Mark task complete with summary |
-| `hive_post_update` | Post status to activity feed |
-| `hive_get_sessions` | List all fleet sessions |
-| `hive_report_learnings` | Report learnings to PM |
-| `hive_share_knowledge` | Share insight to knowledge base |
-| `hive_get_knowledge` | Query knowledge base |
-| `hive_get_context` | Get shared context (plan, PR, JIRA) |
-| `hive_set_context` | Update shared context |
-| `hive_set_working_dir` | Override repo directory (for worktrees) |
-| `hive_reply_thread` | Reply to the Slack thread for current task |
+| Tool                    | Purpose                                    |
+| ----------------------- | ------------------------------------------ |
+| `hive_get_task`         | Get current task assignment                |
+| `hive_complete_task`    | Mark task complete with summary            |
+| `hive_post_update`      | Post status to activity feed               |
+| `hive_get_sessions`     | List all fleet sessions                    |
+| `hive_report_learnings` | Report learnings to PM                     |
+| `hive_share_knowledge`  | Share insight to knowledge base            |
+| `hive_get_knowledge`    | Query knowledge base                       |
+| `hive_get_context`      | Get shared context (plan, PR, JIRA)        |
+| `hive_set_context`      | Update shared context                      |
+| `hive_set_working_dir`  | Override repo directory (for worktrees)    |
+| `hive_reply_thread`     | Reply to the Slack thread for current task |
 
 ### State Persistence
 
 All state lives in `.hive-state.json`:
+
 - Tasks (queued, active, completed), active task → session mapping
 - PM configs, seen keys, created tasks, learnings
 - Activity feed (ring buffer, max 200)

@@ -37,22 +37,27 @@ describe('classifyProbe (tmux 3.6a has-session outcomes)', () => {
   });
 
   it('a missing socket file means there is no server', () => {
-    expect(tmux.classifyProbe({
-      code: 1,
-      stderr: 'error connecting to /private/tmp/tmux-502/default (No such file or directory)',
-    })).toBe(P.NO_SERVER);
+    expect(
+      tmux.classifyProbe({
+        code: 1,
+        stderr: 'error connecting to /private/tmp/tmux-502/default (No such file or directory)',
+      }),
+    ).toBe(P.NO_SERVER);
   });
 
   it('"no server running" also means there is no server', () => {
-    expect(tmux.classifyProbe({ code: 1, stderr: 'no server running on /tmp/tmux-502/default' }))
-      .toBe(P.NO_SERVER);
+    expect(
+      tmux.classifyProbe({ code: 1, stderr: 'no server running on /tmp/tmux-502/default' }),
+    ).toBe(P.NO_SERVER);
   });
 
   it('connection refused means the server is alive but unreachable', () => {
-    expect(tmux.classifyProbe({
-      code: 1,
-      stderr: 'error connecting to /private/tmp/tmux-502/default (Connection refused)',
-    })).toBe(P.UNREACHABLE);
+    expect(
+      tmux.classifyProbe({
+        code: 1,
+        stderr: 'error connecting to /private/tmp/tmux-502/default (Connection refused)',
+      }),
+    ).toBe(P.UNREACHABLE);
   });
 
   it('MEASURED: a backlog-saturated live server is indistinguishable from no server', () => {
@@ -61,10 +66,12 @@ describe('classifyProbe (tmux 3.6a has-session outcomes)', () => {
     // emits when no server has ever run. This is why the NO_SERVER branch of
     // createSession must consult the process table and the socket file rather
     // than trusting the message.
-    expect(tmux.classifyProbe({
-      code: 1,
-      stderr: 'no server running on /private/tmp/tmux-502/hiveverify60217',
-    })).toBe(P.NO_SERVER);
+    expect(
+      tmux.classifyProbe({
+        code: 1,
+        stderr: 'no server running on /private/tmp/tmux-502/hiveverify60217',
+      }),
+    ).toBe(P.NO_SERVER);
   });
 
   it('a hung client (timeout) is unreachable, not absent', () => {
@@ -73,8 +80,9 @@ describe('classifyProbe (tmux 3.6a has-session outcomes)', () => {
 
   it('fails safe: an unrecognised error is unreachable, never absent', () => {
     // Guessing ABSENT here is what strands the fleet, so unknown must not spawn.
-    expect(tmux.classifyProbe({ code: 1, stderr: 'something nobody has seen before' }))
-      .toBe(P.UNREACHABLE);
+    expect(tmux.classifyProbe({ code: 1, stderr: 'something nobody has seen before' })).toBe(
+      P.UNREACHABLE,
+    );
     expect(tmux.classifyProbe({})).toBe(P.UNREACHABLE);
   });
 });
@@ -92,11 +100,11 @@ describe('parseServerList', () => {
 
   it('finds both servers when a socket replacement has happened', () => {
     const servers = tmux.parseServerList(PS);
-    expect(servers.map(s => s.pid)).toEqual([27258, 77665]);
+    expect(servers.map((s) => s.pid)).toEqual([27258, 77665]);
   });
 
   it('ignores tmux clients that still have a live parent', () => {
-    expect(tmux.parseServerList(PS).find(s => s.pid === 2178)).toBeUndefined();
+    expect(tmux.parseServerList(PS).find((s) => s.pid === 2178)).toBeUndefined();
   });
 
   it('ignores ORPHANED tmux clients — ppid 1 alone is not a server', () => {
@@ -104,11 +112,11 @@ describe('parseServerList', () => {
     // when their shell exited, and an earlier ppid-only filter counted all of
     // them as servers ("found 130 tmux servers"). They keep the shell's process
     // group, so pgid !== pid tells them apart.
-    expect(tmux.parseServerList(PS).find(s => s.pid === 86213)).toBeUndefined();
+    expect(tmux.parseServerList(PS).find((s) => s.pid === 86213)).toBeUndefined();
   });
 
   it('ignores non-tmux processes', () => {
-    expect(tmux.parseServerList(PS).find(s => s.pid === 501)).toBeUndefined();
+    expect(tmux.parseServerList(PS).find((s) => s.pid === 501)).toBeUndefined();
   });
 
   it('ignores servers on an explicit -L/-S socket (different socket path)', () => {
@@ -117,7 +125,7 @@ describe('parseServerList', () => {
       '222 222     1 tmux -S /tmp/other new-session -d -s t2',
       '333 333     1 tmux new-session -d -s 1',
     ].join('\n');
-    expect(tmux.parseServerList(out).map(s => s.pid)).toEqual([333]);
+    expect(tmux.parseServerList(out).map((s) => s.pid)).toEqual([333]);
   });
 
   it('returns empty when ps produced nothing', () => {
@@ -143,14 +151,15 @@ describe('createSession spawn guard', () => {
   beforeEach(() => {
     execSpy = vi.spyOn(tmux, 'exec').mockResolvedValue('');
     probeSpy = vi.spyOn(tmux, 'probeSession').mockResolvedValue(P.ABSENT);
-    reviveSpy = vi.spyOn(tmux, 'reviveStrandedServer')
+    reviveSpy = vi
+      .spyOn(tmux, 'reviveStrandedServer')
       .mockResolvedValue({ revived: false, servers: [], socketPresent: false });
   });
 
   afterEach(() => vi.restoreAllMocks());
 
   const newSessionCalls = () =>
-    execSpy.mock.calls.map(c => c[0]).filter(c => c.includes('new-session'));
+    execSpy.mock.calls.map((c) => c[0]).filter((c) => c.includes('new-session'));
 
   it('spawns normally when the server is up and the session is absent', async () => {
     const result = await sessionManager.createSession('7', '/repo', { panes: 1 }, {});
@@ -162,8 +171,9 @@ describe('createSession spawn guard', () => {
     // The core regression: this is the state that used to look like "absent".
     probeSpy.mockResolvedValue(P.UNREACHABLE);
 
-    await expect(sessionManager.createSession('7', '/repo', { panes: 1 }, {}))
-      .rejects.toThrow(/not responding/);
+    await expect(sessionManager.createSession('7', '/repo', { panes: 1 }, {})).rejects.toThrow(
+      /not responding/,
+    );
     expect(newSessionCalls()).toHaveLength(0);
   });
 
@@ -172,7 +182,7 @@ describe('createSession spawn guard', () => {
     // startClaude; a soft return would have it type into a session that is not
     // there. Their existing try/catch turns this into a logged retry.
     probeSpy.mockResolvedValue(P.UNREACHABLE);
-    const err = await sessionManager.createSession('7', '/repo', {}, {}).catch(e => e);
+    const err = await sessionManager.createSession('7', '/repo', {}, {}).catch((e) => e);
     expect(err).toBeInstanceOf(Error);
   });
 
@@ -203,8 +213,9 @@ describe('createSession spawn guard', () => {
       socketPresent: true,
     });
 
-    await expect(sessionManager.createSession('7', '/repo', {}, {}))
-      .rejects.toThrow(/alive but not accepting/);
+    await expect(sessionManager.createSession('7', '/repo', {}, {})).rejects.toThrow(
+      /alive but not accepting/,
+    );
     expect(newSessionCalls()).toHaveLength(0);
   });
 
@@ -243,11 +254,15 @@ describe('createSession spawn guard', () => {
     reviveSpy.mockResolvedValue({
       revived: false,
       socketPresent: true,
-      servers: [{ pid: 27258, args: 'tmux new-session' }, { pid: 77665, args: 'tmux new-session' }],
+      servers: [
+        { pid: 27258, args: 'tmux new-session' },
+        { pid: 77665, args: 'tmux new-session' },
+      ],
     });
 
-    await expect(sessionManager.createSession('7', '/repo', {}, {}))
-      .rejects.toThrow(/2 tmux servers/);
+    await expect(sessionManager.createSession('7', '/repo', {}, {})).rejects.toThrow(
+      /2 tmux servers/,
+    );
     expect(newSessionCalls()).toHaveLength(0);
   });
 
@@ -259,8 +274,9 @@ describe('createSession spawn guard', () => {
       socketPresent: false,
     });
 
-    await expect(sessionManager.createSession('7', '/repo', {}, {}))
-      .rejects.toThrow(/did not restore a reachable server/);
+    await expect(sessionManager.createSession('7', '/repo', {}, {})).rejects.toThrow(
+      /did not restore a reachable server/,
+    );
     expect(newSessionCalls()).toHaveLength(0);
   });
 });

@@ -7,7 +7,8 @@ vi.mock('../../src/core/log.js', () => ({
   error: vi.fn(),
 }));
 
-const ProjectManager = (await import('../../src/core/pm.js')).default || (await import('../../src/core/pm.js'));
+const ProjectManager =
+  (await import('../../src/core/pm.js')).default || (await import('../../src/core/pm.js'));
 
 function createMockTaskQueue() {
   const tq = new EventEmitter();
@@ -50,15 +51,13 @@ describe('PM source: _fetchJira', () => {
   });
 
   it('throws when JIRA credentials are missing', async () => {
-    await expect(pm._fetchJira({ jql: '' }))
-      .rejects.toThrow('JIRA credentials not configured');
+    await expect(pm._fetchJira({ jql: '' })).rejects.toThrow('JIRA credentials not configured');
   });
 
   it('throws when only some JIRA credentials are set', async () => {
     process.env.JIRA_BASE_URL = 'https://jira.example.com';
     // missing JIRA_EMAIL and JIRA_API_TOKEN
-    await expect(pm._fetchJira({ jql: '' }))
-      .rejects.toThrow('JIRA credentials not configured');
+    await expect(pm._fetchJira({ jql: '' })).rejects.toThrow('JIRA credentials not configured');
   });
 
   it('calls _httpRequest with correct URL, auth, and JQL body', async () => {
@@ -149,8 +148,7 @@ describe('PM source: _fetchGithubIssues', () => {
   });
 
   it('throws when repo is missing', async () => {
-    await expect(pm._fetchGithubIssues({}))
-      .rejects.toThrow('GitHub repo not configured');
+    await expect(pm._fetchGithubIssues({})).rejects.toThrow('GitHub repo not configured');
   });
 
   it('builds correct URL with labels and state', async () => {
@@ -198,9 +196,9 @@ describe('PM source: _fetchGithubIssues', () => {
   });
 
   it('maps issues to { key, summary, issueType, storyPoints }', async () => {
-    pm._httpRequest = vi.fn().mockResolvedValue([
-      { number: 42, title: 'My Issue', user: { login: 'dev' }, labels: [] },
-    ]);
+    pm._httpRequest = vi
+      .fn()
+      .mockResolvedValue([{ number: 42, title: 'My Issue', user: { login: 'dev' }, labels: [] }]);
 
     const result = await pm._fetchGithubIssues({ repo: 'org/repo' });
     expect(result).toEqual([
@@ -228,14 +226,15 @@ describe('PM source: _fetchGithubPrs', () => {
   });
 
   it('throws when repo is missing', async () => {
-    await expect(pm._fetchGithubPrs({}))
-      .rejects.toThrow('GitHub repo not configured');
+    await expect(pm._fetchGithubPrs({})).rejects.toThrow('GitHub repo not configured');
   });
 
   it('uses Pulls API when no labels filter', async () => {
-    pm._httpRequest = vi.fn().mockResolvedValue([
-      { number: 10, title: 'PR 10', base: { ref: 'main' }, user: { login: 'dev' }, draft: false },
-    ]);
+    pm._httpRequest = vi
+      .fn()
+      .mockResolvedValue([
+        { number: 10, title: 'PR 10', base: { ref: 'main' }, user: { login: 'dev' }, draft: false },
+      ]);
 
     const result = await pm._fetchGithubPrs({ repo: 'org/repo' });
 
@@ -270,12 +269,25 @@ describe('PM source: _fetchGithubPrs', () => {
   });
 
   it('filters by custom base branches', async () => {
-    pm._httpRequest = vi.fn()
+    pm._httpRequest = vi
+      .fn()
       .mockResolvedValueOnce([
-        { number: 1, title: 'To develop', base: { ref: 'develop' }, user: { login: 'dev' }, draft: false },
+        {
+          number: 1,
+          title: 'To develop',
+          base: { ref: 'develop' },
+          user: { login: 'dev' },
+          draft: false,
+        },
       ])
       .mockResolvedValueOnce([
-        { number: 2, title: 'To release', base: { ref: 'release' }, user: { login: 'dev' }, draft: false },
+        {
+          number: 2,
+          title: 'To release',
+          base: { ref: 'release' },
+          user: { login: 'dev' },
+          draft: false,
+        },
       ]);
 
     const result = await pm._fetchGithubPrs({ repo: 'org/repo', base: 'develop,release' });
@@ -285,7 +297,13 @@ describe('PM source: _fetchGithubPrs', () => {
 
   it('applies author filter (case-insensitive)', async () => {
     pm._httpRequest = vi.fn().mockResolvedValue([
-      { number: 1, title: 'By alice', base: { ref: 'main' }, user: { login: 'Alice' }, draft: false },
+      {
+        number: 1,
+        title: 'By alice',
+        base: { ref: 'main' },
+        user: { login: 'Alice' },
+        draft: false,
+      },
       { number: 2, title: 'By bob', base: { ref: 'main' }, user: { login: 'Bob' }, draft: false },
     ]);
 
@@ -295,9 +313,11 @@ describe('PM source: _fetchGithubPrs', () => {
   });
 
   it('maps PRs to { key, summary, issueType: "pr", storyPoints: null }', async () => {
-    pm._httpRequest = vi.fn().mockResolvedValue([
-      { number: 55, title: 'My PR', base: { ref: 'main' }, user: { login: 'dev' }, draft: false },
-    ]);
+    pm._httpRequest = vi
+      .fn()
+      .mockResolvedValue([
+        { number: 55, title: 'My PR', base: { ref: 'main' }, user: { login: 'dev' }, draft: false },
+      ]);
 
     const result = await pm._fetchGithubPrs({ repo: 'org/repo', base: 'main' });
     expect(result).toEqual([
@@ -307,9 +327,27 @@ describe('PM source: _fetchGithubPrs', () => {
 
   it('matches PRs using regex base patterns', async () => {
     pm._httpRequest = vi.fn().mockResolvedValue([
-      { number: 1, title: 'Release PR', base: { ref: 'releases/4.1.0' }, user: { login: 'dev' }, draft: false },
-      { number: 2, title: 'Hotfix PR', base: { ref: 'hotfix/urgent' }, user: { login: 'dev' }, draft: false },
-      { number: 3, title: 'Feature PR', base: { ref: 'feature/new' }, user: { login: 'dev' }, draft: false },
+      {
+        number: 1,
+        title: 'Release PR',
+        base: { ref: 'releases/4.1.0' },
+        user: { login: 'dev' },
+        draft: false,
+      },
+      {
+        number: 2,
+        title: 'Hotfix PR',
+        base: { ref: 'hotfix/urgent' },
+        user: { login: 'dev' },
+        draft: false,
+      },
+      {
+        number: 3,
+        title: 'Feature PR',
+        base: { ref: 'feature/new' },
+        user: { login: 'dev' },
+        draft: false,
+      },
     ]);
 
     const result = await pm._fetchGithubPrs({ repo: 'org/repo', base: 'releases/.*' });
@@ -318,35 +356,73 @@ describe('PM source: _fetchGithubPrs', () => {
   });
 
   it('supports mix of literal and regex base entries', async () => {
-    pm._httpRequest = vi.fn()
+    pm._httpRequest = vi
+      .fn()
       .mockResolvedValueOnce([
         // All PRs fetched for regex path
-        { number: 1, title: 'Release PR', base: { ref: 'releases/4.1.0' }, user: { login: 'dev' }, draft: false },
-        { number: 2, title: 'Main PR', base: { ref: 'main' }, user: { login: 'dev' }, draft: false },
-        { number: 3, title: 'Feature PR', base: { ref: 'feature/x' }, user: { login: 'dev' }, draft: false },
+        {
+          number: 1,
+          title: 'Release PR',
+          base: { ref: 'releases/4.1.0' },
+          user: { login: 'dev' },
+          draft: false,
+        },
+        {
+          number: 2,
+          title: 'Main PR',
+          base: { ref: 'main' },
+          user: { login: 'dev' },
+          draft: false,
+        },
+        {
+          number: 3,
+          title: 'Feature PR',
+          base: { ref: 'feature/x' },
+          user: { login: 'dev' },
+          draft: false,
+        },
       ])
       .mockResolvedValueOnce([
         // Literal 'main' fetch
-        { number: 2, title: 'Main PR', base: { ref: 'main' }, user: { login: 'dev' }, draft: false },
+        {
+          number: 2,
+          title: 'Main PR',
+          base: { ref: 'main' },
+          user: { login: 'dev' },
+          draft: false,
+        },
       ]);
 
     const result = await pm._fetchGithubPrs({ repo: 'org/repo', base: 'main, releases/.*' });
     // Should include main (literal) and releases/4.1.0 (regex), deduplicated
     expect(result).toHaveLength(2);
-    const keys = result.map(r => r.key);
+    const keys = result.map((r) => r.key);
     expect(keys).toContain('org/repo#1');
     expect(keys).toContain('org/repo#2');
   });
 
   it('deduplicates PRs fetched from both literal and regex paths', async () => {
-    pm._httpRequest = vi.fn()
+    pm._httpRequest = vi
+      .fn()
       .mockResolvedValueOnce([
         // All PRs (regex path)
-        { number: 5, title: 'PR 5', base: { ref: 'develop' }, user: { login: 'dev' }, draft: false },
+        {
+          number: 5,
+          title: 'PR 5',
+          base: { ref: 'develop' },
+          user: { login: 'dev' },
+          draft: false,
+        },
       ])
       .mockResolvedValueOnce([
         // Literal 'develop' fetch — same PR
-        { number: 5, title: 'PR 5', base: { ref: 'develop' }, user: { login: 'dev' }, draft: false },
+        {
+          number: 5,
+          title: 'PR 5',
+          base: { ref: 'develop' },
+          user: { login: 'dev' },
+          draft: false,
+        },
       ]);
 
     const result = await pm._fetchGithubPrs({ repo: 'org/repo', base: 'develop, dev.*' });
@@ -355,9 +431,11 @@ describe('PM source: _fetchGithubPrs', () => {
   });
 
   it('regex with no matches returns empty', async () => {
-    pm._httpRequest = vi.fn().mockResolvedValue([
-      { number: 1, title: 'PR 1', base: { ref: 'main' }, user: { login: 'dev' }, draft: false },
-    ]);
+    pm._httpRequest = vi
+      .fn()
+      .mockResolvedValue([
+        { number: 1, title: 'PR 1', base: { ref: 'main' }, user: { login: 'dev' }, draft: false },
+      ]);
 
     const result = await pm._fetchGithubPrs({ repo: 'org/repo', base: 'releases/.*' });
     expect(result).toHaveLength(0);
@@ -365,7 +443,13 @@ describe('PM source: _fetchGithubPrs', () => {
 
   it('falls back to literal if regex is invalid', async () => {
     pm._httpRequest = vi.fn().mockResolvedValue([
-      { number: 1, title: 'PR 1', base: { ref: 'bad[regex' }, user: { login: 'dev' }, draft: false },
+      {
+        number: 1,
+        title: 'PR 1',
+        base: { ref: 'bad[regex' },
+        user: { login: 'dev' },
+        draft: false,
+      },
     ]);
 
     // Invalid regex like "bad[regex" should be treated as a literal
@@ -443,9 +527,7 @@ describe('PM source: _fetchGithubPrsViaSearch', () => {
 
   it('maps search results to standard format', async () => {
     pm._httpRequest = vi.fn().mockResolvedValue({
-      items: [
-        { number: 99, title: 'Search Result PR' },
-      ],
+      items: [{ number: 99, title: 'Search Result PR' }],
     });
 
     const result = await pm._fetchGithubPrsViaSearch({ repo: 'org/repo', labels: 'x' });
@@ -485,7 +567,8 @@ describe('PM source: _fetchGithubPrsViaSearch', () => {
   });
 
   it('filters results client-side when base has regex patterns', async () => {
-    pm._httpRequest = vi.fn()
+    pm._httpRequest = vi
+      .fn()
       .mockResolvedValueOnce({
         items: [
           { number: 10, title: 'Release PR' },
@@ -496,13 +579,18 @@ describe('PM source: _fetchGithubPrsViaSearch', () => {
       .mockResolvedValueOnce({ base: { ref: 'releases/4.2.0' } })
       .mockResolvedValueOnce({ base: { ref: 'feature/x' } });
 
-    const result = await pm._fetchGithubPrsViaSearch({ repo: 'org/repo', labels: 'x', base: 'releases/.*' });
+    const result = await pm._fetchGithubPrsViaSearch({
+      repo: 'org/repo',
+      labels: 'x',
+      base: 'releases/.*',
+    });
     expect(result).toHaveLength(1);
     expect(result[0].key).toBe('org/repo#10');
   });
 
   it('filters results client-side for multiple literal bases', async () => {
-    pm._httpRequest = vi.fn()
+    pm._httpRequest = vi
+      .fn()
       .mockResolvedValueOnce({
         items: [
           { number: 1, title: 'Main PR' },
@@ -514,9 +602,13 @@ describe('PM source: _fetchGithubPrsViaSearch', () => {
       .mockResolvedValueOnce({ base: { ref: 'develop' } })
       .mockResolvedValueOnce({ base: { ref: 'feature/x' } });
 
-    const result = await pm._fetchGithubPrsViaSearch({ repo: 'org/repo', labels: 'x', base: 'main, develop' });
+    const result = await pm._fetchGithubPrsViaSearch({
+      repo: 'org/repo',
+      labels: 'x',
+      base: 'main, develop',
+    });
     expect(result).toHaveLength(2);
-    const keys = result.map(r => r.key);
+    const keys = result.map((r) => r.key);
     expect(keys).toContain('org/repo#1');
     expect(keys).toContain('org/repo#2');
   });
@@ -545,16 +637,16 @@ describe('PM source: _fetchJenkins', () => {
   });
 
   it('throws when Jenkins credentials are missing', async () => {
-    await expect(pm._fetchJenkins({ jobPath: 'my-job' }))
-      .rejects.toThrow('Jenkins credentials not configured');
+    await expect(pm._fetchJenkins({ jobPath: 'my-job' })).rejects.toThrow(
+      'Jenkins credentials not configured',
+    );
   });
 
   it('throws when jobPath is missing', async () => {
     process.env.JENKINS_URL = 'https://ci.example.com';
     process.env.JENKINS_USER = 'admin';
     process.env.JENKINS_API_TOKEN = 'tok';
-    await expect(pm._fetchJenkins({}))
-      .rejects.toThrow('Jenkins job path not configured');
+    await expect(pm._fetchJenkins({})).rejects.toThrow('Jenkins job path not configured');
   });
 
   it('builds correct URL and uses Basic auth', async () => {
@@ -626,8 +718,7 @@ describe('PM source: _fetchZoho', () => {
 
   it('throws when ZOHO_DESK_ORG_ID is missing', async () => {
     delete process.env.ZOHO_DESK_ORG_ID;
-    await expect(pm._fetchZoho({}))
-      .rejects.toThrow('ZOHO_DESK_ORG_ID not configured');
+    await expect(pm._fetchZoho({})).rejects.toThrow('ZOHO_DESK_ORG_ID not configured');
   });
 
   it('uses search endpoint when query is provided', async () => {
@@ -668,9 +759,7 @@ describe('PM source: _fetchZoho', () => {
 
   it('maps tickets to standard format', async () => {
     pm._httpRequest = vi.fn().mockResolvedValue({
-      data: [
-        { ticketNumber: '5001', subject: 'Cannot login', id: 'abc' },
-      ],
+      data: [{ ticketNumber: '5001', subject: 'Cannot login', id: 'abc' }],
     });
 
     const result = await pm._fetchZoho({});
@@ -733,17 +822,20 @@ describe('PM source: _fetchReReviews', () => {
   });
 
   it('throws when repo is missing', async () => {
-    await expect(pm._fetchReReviews({ reviewer: 'alice' }, '1'))
-      .rejects.toThrow('GitHub repo not configured');
+    await expect(pm._fetchReReviews({ reviewer: 'alice' }, '1')).rejects.toThrow(
+      'GitHub repo not configured',
+    );
   });
 
   it('throws when reviewer is missing', async () => {
-    await expect(pm._fetchReReviews({ repo: 'org/repo' }, '1'))
-      .rejects.toThrow('Reviewer username not configured');
+    await expect(pm._fetchReReviews({ repo: 'org/repo' }, '1')).rejects.toThrow(
+      'Reviewer username not configured',
+    );
   });
 
   it('skips draft PRs', async () => {
-    pm._httpRequest = vi.fn()
+    pm._httpRequest = vi
+      .fn()
       .mockResolvedValueOnce([
         { number: 1, title: 'Draft PR', draft: true, updated_at: '2026-03-07T11:00:00Z' },
       ]);
@@ -755,7 +847,8 @@ describe('PM source: _fetchReReviews', () => {
   });
 
   it('detects trigger phrase in comment and returns result', async () => {
-    pm._httpRequest = vi.fn()
+    pm._httpRequest = vi
+      .fn()
       .mockResolvedValueOnce([
         { number: 10, title: 'My PR', draft: false, updated_at: '2026-03-07T11:00:00Z' },
       ])
@@ -770,13 +863,12 @@ describe('PM source: _fetchReReviews', () => {
   });
 
   it('uses custom trigger phrases', async () => {
-    pm._httpRequest = vi.fn()
+    pm._httpRequest = vi
+      .fn()
       .mockResolvedValueOnce([
         { number: 10, title: 'PR', draft: false, updated_at: '2026-03-07T11:00:00Z' },
       ])
-      .mockResolvedValueOnce([
-        { id: 501, body: 'custom-trigger here', user: { login: 'dev1' } },
-      ]);
+      .mockResolvedValueOnce([{ id: 501, body: 'custom-trigger here', user: { login: 'dev1' } }]);
 
     const result = await pm._fetchReReviews(
       { repo: 'org/repo', reviewer: 'alice', triggerPhrases: 'custom-trigger' },
@@ -786,7 +878,8 @@ describe('PM source: _fetchReReviews', () => {
   });
 
   it('skips bot comments (bee emoji prefix)', async () => {
-    pm._httpRequest = vi.fn()
+    pm._httpRequest = vi
+      .fn()
       .mockResolvedValueOnce([
         { number: 10, title: 'PR', draft: false, updated_at: '2026-03-07T11:00:00Z' },
       ])
@@ -799,7 +892,8 @@ describe('PM source: _fetchReReviews', () => {
   });
 
   it('skips [bot] user comments', async () => {
-    pm._httpRequest = vi.fn()
+    pm._httpRequest = vi
+      .fn()
       .mockResolvedValueOnce([
         { number: 10, title: 'PR', draft: false, updated_at: '2026-03-07T11:00:00Z' },
       ])
@@ -812,7 +906,8 @@ describe('PM source: _fetchReReviews', () => {
   });
 
   it('skips long comments (>500 chars) as likely bot-generated', async () => {
-    pm._httpRequest = vi.fn()
+    pm._httpRequest = vi
+      .fn()
       .mockResolvedValueOnce([
         { number: 10, title: 'PR', draft: false, updated_at: '2026-03-07T11:00:00Z' },
       ])
@@ -826,15 +921,18 @@ describe('PM source: _fetchReReviews', () => {
 
   it('marks _alreadyQueued when active task exists for PR', async () => {
     // Add an active task with the PR reference
-    taskQueue.tasks.set('existing', { id: 'existing', status: 'dispatched', text: 'org/repo#10 review' });
+    taskQueue.tasks.set('existing', {
+      id: 'existing',
+      status: 'dispatched',
+      text: 'org/repo#10 review',
+    });
 
-    pm._httpRequest = vi.fn()
+    pm._httpRequest = vi
+      .fn()
       .mockResolvedValueOnce([
         { number: 10, title: 'PR', draft: false, updated_at: '2026-03-07T11:00:00Z' },
       ])
-      .mockResolvedValueOnce([
-        { id: 700, body: 'ready for review', user: { login: 'dev1' } },
-      ]);
+      .mockResolvedValueOnce([{ id: 700, body: 'ready for review', user: { login: 'dev1' } }]);
 
     const result = await pm._fetchReReviews({ repo: 'org/repo', reviewer: 'alice' }, '1');
     expect(result).toHaveLength(1);
@@ -843,13 +941,17 @@ describe('PM source: _fetchReReviews', () => {
 
   it('paginates when >100 open PRs', async () => {
     const page1 = Array.from({ length: 100 }, (_, i) => ({
-      number: i + 1, title: `PR ${i + 1}`, draft: false, updated_at: '2026-03-07T11:00:00Z',
+      number: i + 1,
+      title: `PR ${i + 1}`,
+      draft: false,
+      updated_at: '2026-03-07T11:00:00Z',
     }));
     const page2 = [
       { number: 101, title: 'PR 101', draft: false, updated_at: '2026-03-07T11:00:00Z' },
     ];
     // Page 1 PRs, Page 2 PRs, then 101 comment fetches
-    pm._httpRequest = vi.fn()
+    pm._httpRequest = vi
+      .fn()
       .mockResolvedValueOnce(page1)
       .mockResolvedValueOnce(page2)
       .mockResolvedValue([]); // all comment fetches return empty
@@ -969,7 +1071,12 @@ describe('PM helpers: _hasActiveTaskForPR', () => {
   });
 
   it('scopes to the same PM when pmName is provided', () => {
-    taskQueue.tasks.set('1', { id: '1', status: 'dispatched', text: 'org/repo#55 review', source: 'pm:Re-reviews' });
+    taskQueue.tasks.set('1', {
+      id: '1',
+      status: 'dispatched',
+      text: 'org/repo#55 review',
+      source: 'pm:Re-reviews',
+    });
     // Without pmName, any PM's task counts (legacy behavior)
     expect(pm._hasActiveTaskForPR('org/repo', 55)).toBe(true);
     // Same PM name → true

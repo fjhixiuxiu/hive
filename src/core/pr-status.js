@@ -22,7 +22,7 @@ const HTTP_TIMEOUT = 5_000; // 5s per API call
 // socket; under sustained polling that leaks FDs on macOS until the process
 // hits the per-process file-descriptor limit.
 const httpsKeepAlive = new https.Agent({ keepAlive: true, maxSockets: 4 });
-const httpKeepAlive  = new http.Agent({  keepAlive: true, maxSockets: 4 });
+const httpKeepAlive = new http.Agent({ keepAlive: true, maxSockets: 4 });
 
 // ETag cache: url → { etag, data } — GitHub 304s don't count against rate limit
 const etagCache = new Map();
@@ -43,7 +43,7 @@ function fetchJSON(url, options = {}) {
 
     const headers = {
       'User-Agent': 'hive-ai',
-      'Accept': 'application/json',
+      Accept: 'application/json',
       ...options.headers,
     };
 
@@ -54,32 +54,40 @@ function fetchJSON(url, options = {}) {
     }
 
     const mod = url.startsWith('https') ? https : http;
-    const req = mod.request(url, {
-      method: options.method || 'GET',
-      headers,
-      agent: mod === https ? httpsKeepAlive : httpKeepAlive,
-    }, (res) => {
-      let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => {
-        clearTimeout(timer);
-        // 304 Not Modified — return cached data (free, no rate limit cost)
-        if (res.statusCode === 304 && cached) {
-          return resolve({ status: 200, data: cached.data });
-        }
-        try {
-          const parsed = JSON.parse(data);
-          // Store ETag for future conditional requests
-          const etag = res.headers['etag'];
-          if (etag && res.statusCode === 200) {
-            etagCache.set(url, { etag, data: parsed });
+    const req = mod.request(
+      url,
+      {
+        method: options.method || 'GET',
+        headers,
+        agent: mod === https ? httpsKeepAlive : httpKeepAlive,
+      },
+      (res) => {
+        let data = '';
+        res.on('data', (chunk) => (data += chunk));
+        res.on('end', () => {
+          clearTimeout(timer);
+          // 304 Not Modified — return cached data (free, no rate limit cost)
+          if (res.statusCode === 304 && cached) {
+            return resolve({ status: 200, data: cached.data });
           }
-          resolve({ status: res.statusCode, data: parsed });
-        }
-        catch { reject(new Error(`Invalid JSON from ${url}`)); }
-      });
+          try {
+            const parsed = JSON.parse(data);
+            // Store ETag for future conditional requests
+            const etag = res.headers['etag'];
+            if (etag && res.statusCode === 200) {
+              etagCache.set(url, { etag, data: parsed });
+            }
+            resolve({ status: res.statusCode, data: parsed });
+          } catch {
+            reject(new Error(`Invalid JSON from ${url}`));
+          }
+        });
+      },
+    );
+    req.on('error', (err) => {
+      clearTimeout(timer);
+      reject(err);
     });
-    req.on('error', (err) => { clearTimeout(timer); reject(err); });
     req.end();
   });
 }
@@ -134,16 +142,19 @@ async function getReviewStatus(owner, repo, prNum, token) {
   for (const review of data) {
     const login = review.user && review.user.login;
     if (!login) continue;
-    if (review.state === 'DISMISSED') { latest.delete(login); continue; }
+    if (review.state === 'DISMISSED') {
+      latest.delete(login);
+      continue;
+    }
     latest.set(login, { login, state: review.state, submittedAt: review.submitted_at });
   }
   const reviewers = [...latest.values()];
 
   // Rollup: worst state wins (changes > approved > commented)
   let rollup = '';
-  if (reviewers.some(r => r.state === 'CHANGES_REQUESTED')) rollup = 'CHANGES_REQUESTED';
-  else if (reviewers.some(r => r.state === 'APPROVED')) rollup = 'APPROVED';
-  else if (reviewers.some(r => r.state === 'COMMENTED')) rollup = 'COMMENTED';
+  if (reviewers.some((r) => r.state === 'CHANGES_REQUESTED')) rollup = 'CHANGES_REQUESTED';
+  else if (reviewers.some((r) => r.state === 'APPROVED')) rollup = 'APPROVED';
+  else if (reviewers.some((r) => r.state === 'COMMENTED')) rollup = 'COMMENTED';
 
   return { rollup, reviewers };
 }
@@ -187,17 +198,19 @@ async function fetch(branch, config) {
   // Check cache
   const cached = cache.get(branch);
   const now = Date.now();
-  if (cached && (now - cached.ts) < CACHE_TTL) {
+  if (cached && now - cached.ts < CACHE_TTL) {
     return cached.data;
   }
 
   // Stale-while-revalidate: return stale data, refresh in background
   if (cached && cached.data && !cached.pending) {
-    cached.pending = _fetch(branch, config, githubToken).then(data => {
-      cache.set(branch, { data, ts: Date.now(), pending: null });
-    }).catch(() => {
-      cached.pending = null;
-    });
+    cached.pending = _fetch(branch, config, githubToken)
+      .then((data) => {
+        cache.set(branch, { data, ts: Date.now(), pending: null });
+      })
+      .catch(() => {
+        cached.pending = null;
+      });
     return cached.data;
   }
 
@@ -303,10 +316,27 @@ async function getPRMeta(owner, repo, prNum, token) {
     headers: { Authorization: `token ${token}` },
   });
   if (status !== 200 || !data) {
-    return { state: '', merged: false, draft: false, mergedAt: null, headSha: null,
-             title: '', author: '', authorAvatar: '', baseBranch: '', headBranch: '',
-             additions: 0, deletions: 0, changedFiles: 0, mergedBy: '', mergedByAvatar: '',
-             updatedAt: null, createdAt: null, mergeable: null, mergeableState: '' };
+    return {
+      state: '',
+      merged: false,
+      draft: false,
+      mergedAt: null,
+      headSha: null,
+      title: '',
+      author: '',
+      authorAvatar: '',
+      baseBranch: '',
+      headBranch: '',
+      additions: 0,
+      deletions: 0,
+      changedFiles: 0,
+      mergedBy: '',
+      mergedByAvatar: '',
+      updatedAt: null,
+      createdAt: null,
+      mergeable: null,
+      mergeableState: '',
+    };
   }
   return {
     state: data.state || '',
@@ -372,9 +402,12 @@ async function getCheckDetails(owner, repo, sha, token) {
       fetchJSON(`https://api.github.com/repos/${owner}/${repo}/commits/${sha}/status`, {
         headers: { Authorization: `token ${token}` },
       }).catch(() => ({ status: 0, data: null })),
-      fetchJSON(`https://api.github.com/repos/${owner}/${repo}/commits/${sha}/check-runs?per_page=50`, {
-        headers: { Authorization: `token ${token}`, Accept: 'application/vnd.github+json' },
-      }).catch(() => ({ status: 0, data: null })),
+      fetchJSON(
+        `https://api.github.com/repos/${owner}/${repo}/commits/${sha}/check-runs?per_page=50`,
+        {
+          headers: { Authorization: `token ${token}`, Accept: 'application/vnd.github+json' },
+        },
+      ).catch(() => ({ status: 0, data: null })),
     ]);
 
     const out = [];
@@ -445,7 +478,7 @@ async function fetchReviewByPR(owner, repo, prNumber) {
   const key = `${owner}/${repo}#${prNumber}`;
   const cached = reviewCache.get(key);
   const now = Date.now();
-  if (cached && (now - cached.ts) < REVIEW_CACHE_TTL) return cached.data;
+  if (cached && now - cached.ts < REVIEW_CACHE_TTL) return cached.data;
 
   try {
     // Parallel fetch: reviews + PR meta. Both ETag-cached so 304s are free.

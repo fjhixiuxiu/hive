@@ -90,8 +90,9 @@ describe('plans-store', () => {
     });
 
     it('throws when republishing a missing planId', () => {
-      expect(() => plansStore.publishPlan({ planId: 'deadbeef', html: SAMPLE_HTML }))
-        .toThrow(/not found/);
+      expect(() => plansStore.publishPlan({ planId: 'deadbeef', html: SAMPLE_HTML })).toThrow(
+        /not found/,
+      );
     });
   });
 
@@ -157,7 +158,7 @@ describe('plans-store', () => {
       expect(out).toContain('content="dark"'); // author's declaration preserved
     });
 
-    it('forces light with !important so a plan\'s CSS color-scheme:light-dark cannot win the cascade', () => {
+    it("forces light with !important so a plan's CSS color-scheme:light-dark cannot win the cascade", () => {
       // Regression: plans generated with `:root{color-scheme:light dark}` in a
       // <style> have no color-scheme <meta>, so injection runs — but a bare
       // injected `color-scheme:light` loses the cascade to the plan's later
@@ -165,14 +166,17 @@ describe('plans-store', () => {
       // injected rule must be !important to win regardless of source order.
       const res = plansStore.publishPlan({
         sessionNum: 1,
-        html: '<!DOCTYPE html><html><head><title>P</title>'
-          + '<style>:root{color-scheme:light dark}</style></head><body><p>hi</p></body></html>',
+        html:
+          '<!DOCTYPE html><html><head><title>P</title>' +
+          '<style>:root{color-scheme:light dark}</style></head><body><p>hi</p></body></html>',
         title: 'CS',
       });
       const out = plansStore.getPlanHtml(res.planId);
       expect(out).toContain('color-scheme:light !important'); // injected rule wins the cascade
-      expect(out).toContain('color-scheme:light dark');       // plan's own declaration still present
-      expect(out.indexOf('color-scheme:light !important')).toBeLessThan(out.indexOf('color-scheme:light dark'));
+      expect(out).toContain('color-scheme:light dark'); // plan's own declaration still present
+      expect(out.indexOf('color-scheme:light !important')).toBeLessThan(
+        out.indexOf('color-scheme:light dark'),
+      );
     });
   });
 
@@ -206,8 +210,12 @@ describe('plans-store', () => {
     });
 
     it('addComment requires text and sectionId', () => {
-      expect(() => plansStore.addComment(planId, { sectionId: 'overview', text: '' })).toThrow(/text is required/);
-      expect(() => plansStore.addComment(planId, { sectionId: '', text: 'x' })).toThrow(/sectionId is required/);
+      expect(() => plansStore.addComment(planId, { sectionId: 'overview', text: '' })).toThrow(
+        /text is required/,
+      );
+      expect(() => plansStore.addComment(planId, { sectionId: '', text: 'x' })).toThrow(
+        /sectionId is required/,
+      );
     });
 
     it('updateCommentStatus flips draft → open', () => {
@@ -215,7 +223,7 @@ describe('plans-store', () => {
       const updated = plansStore.updateCommentStatus(planId, c.id, 'open');
       expect(updated.status).toBe('open');
       const all = plansStore.getComments(planId);
-      expect(all.find(x => x.id === c.id).status).toBe('open');
+      expect(all.find((x) => x.id === c.id).status).toBe('open');
     });
 
     it('updateCommentStatus returns null for missing id', () => {
@@ -234,7 +242,10 @@ describe('plans-store', () => {
     it('comments survive a version bump and become carry-forward in v2', () => {
       plansStore.addComment(planId, { sectionId: 'overview', text: 'old' });
       // Bumping creates a NEW version html without comments — caller controls v2 content
-      plansStore.publishPlan({ planId, html: '<section data-id="x"></section><script type="application/json" id="hive-comments">[]</script>' });
+      plansStore.publishPlan({
+        planId,
+        html: '<section data-id="x"></section><script type="application/json" id="hive-comments">[]</script>',
+      });
       // Old version still has the comment
       expect(plansStore.parseComments(plansStore.getPlanHtml(planId, 1))).toHaveLength(1);
       // New version starts empty
@@ -257,7 +268,10 @@ describe('plans-store', () => {
         patch: { sectionId: 'overview', html: '<p>Now uses Postgres.</p>' },
       });
       expect(reply.status).toBe('resolved');
-      expect(reply.thread[1].patch).toEqual({ sectionId: 'overview', html: '<p>Now uses Postgres.</p>' });
+      expect(reply.thread[1].patch).toEqual({
+        sectionId: 'overview',
+        html: '<p>Now uses Postgres.</p>',
+      });
       const html = plansStore.getPlanHtml(planId);
       expect(html).toContain('<p>Now uses Postgres.</p>');
       expect(html).not.toContain('Plan overview.');
@@ -308,8 +322,8 @@ describe('plans-store', () => {
       const b = plansStore.publishPlan({ sessionNum: 2, html: SAMPLE_HTML, title: 'B' });
       const all = plansStore.listPlans();
       expect(all.length).toBe(2);
-      expect(all.map(p => p.id)).toContain(a.planId);
-      expect(all.map(p => p.id)).toContain(b.planId);
+      expect(all.map((p) => p.id)).toContain(a.planId);
+      expect(all.map((p) => p.id)).toContain(b.planId);
     });
 
     it('filters by sessionNum', () => {
@@ -358,8 +372,18 @@ describe('plans-store', () => {
     });
 
     it('filters by sourceTaskId', () => {
-      plansStore.publishPlan({ sessionNum: 1, html: SAMPLE_HTML, title: 'A', sourceTaskId: 'task-1' });
-      plansStore.publishPlan({ sessionNum: 1, html: SAMPLE_HTML, title: 'B', sourceTaskId: 'task-2' });
+      plansStore.publishPlan({
+        sessionNum: 1,
+        html: SAMPLE_HTML,
+        title: 'A',
+        sourceTaskId: 'task-1',
+      });
+      plansStore.publishPlan({
+        sessionNum: 1,
+        html: SAMPLE_HTML,
+        title: 'B',
+        sourceTaskId: 'task-2',
+      });
       plansStore.publishPlan({ sessionNum: 1, html: SAMPLE_HTML, title: 'C', sourceTaskId: null });
       const t1 = plansStore.listPlans({ sourceTaskId: 'task-1' });
       expect(t1.length).toBe(1);
@@ -371,7 +395,12 @@ describe('plans-store', () => {
 
   describe('sourceTaskId stamping', () => {
     it('stamps sourceTaskId on first publish', () => {
-      const r = plansStore.publishPlan({ sessionNum: 1, html: SAMPLE_HTML, title: 'A', sourceTaskId: 'task-abc' });
+      const r = plansStore.publishPlan({
+        sessionNum: 1,
+        html: SAMPLE_HTML,
+        title: 'A',
+        sourceTaskId: 'task-abc',
+      });
       const meta = plansStore.getPlan(r.planId).meta;
       expect(meta.sourceTaskId).toBe('task-abc');
     });
@@ -383,8 +412,17 @@ describe('plans-store', () => {
     });
 
     it('does NOT overwrite sourceTaskId on republish', () => {
-      const v1 = plansStore.publishPlan({ sessionNum: 1, html: SAMPLE_HTML, title: 'A', sourceTaskId: 'task-orig' });
-      plansStore.publishPlan({ planId: v1.planId, html: '<p>v2</p>', sourceTaskId: 'task-different' });
+      const v1 = plansStore.publishPlan({
+        sessionNum: 1,
+        html: SAMPLE_HTML,
+        title: 'A',
+        sourceTaskId: 'task-orig',
+      });
+      plansStore.publishPlan({
+        planId: v1.planId,
+        html: '<p>v2</p>',
+        sourceTaskId: 'task-different',
+      });
       const meta = plansStore.getPlan(v1.planId).meta;
       expect(meta.sourceTaskId).toBe('task-orig');
     });

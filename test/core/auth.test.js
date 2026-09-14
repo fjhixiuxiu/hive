@@ -101,7 +101,9 @@ describe('auth', () => {
   describe('parseCookie with custom name', () => {
     it('extracts a named cookie', async () => {
       const auth = await loadAuth();
-      expect(auth.parseCookie('hive_oauth_state=abc123; hive_session=xyz', 'hive_oauth_state')).toBe('abc123');
+      expect(
+        auth.parseCookie('hive_oauth_state=abc123; hive_session=xyz', 'hive_oauth_state'),
+      ).toBe('abc123');
     });
 
     it('defaults to session cookie when no name given', async () => {

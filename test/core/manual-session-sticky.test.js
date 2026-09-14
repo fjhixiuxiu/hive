@@ -23,7 +23,9 @@ describe('Manual survives the session dying', () => {
   let tq, config, router;
 
   beforeEach(() => {
-    vi.spyOn(fs, 'readFileSync').mockImplementation(() => { throw new Error('ENOENT'); });
+    vi.spyOn(fs, 'readFileSync').mockImplementation(() => {
+      throw new Error('ENOENT');
+    });
     vi.spyOn(fs, 'writeFileSync').mockImplementation(() => {});
     vi.spyOn(fs, 'renameSync').mockImplementation(() => {});
     vi.spyOn(fs, 'readdirSync').mockReturnValue([]);
@@ -55,8 +57,8 @@ describe('Manual survives the session dying', () => {
 
     it('clears the opt-out when auto is switched back on', () => {
       tq.autoSessions.add(4);
-      tq.toggleAutoSession(4);      // → manual
-      tq.toggleAutoSession(4);      // → auto again
+      tq.toggleAutoSession(4); // → manual
+      tq.toggleAutoSession(4); // → auto again
 
       expect(tq.autoSessions.has(4)).toBe(true);
       expect(tq.manualSessions.has(4)).toBe(false);
@@ -79,8 +81,15 @@ describe('Manual survives the session dying', () => {
       tq.toggleAutoSession(4);
 
       const saved = fs.writeFileSync.mock.calls
-        .map(([, contents]) => { try { return JSON.parse(contents); } catch { return null; } })
-        .filter(Boolean).pop();
+        .map(([, contents]) => {
+          try {
+            return JSON.parse(contents);
+          } catch {
+            return null;
+          }
+        })
+        .filter(Boolean)
+        .pop();
       expect(saved.manualSessions).toContain(4);
     });
   });
@@ -96,15 +105,17 @@ describe('Manual survives the session dying', () => {
         serialize: () => ({ pms: [], knowledgeBase: [] }),
         enrichTaskText: (task) => task.text,
       };
-      tq.createTask('needs its own session', 'auto', null, 'Code Review', { source: 'pm:StrictPM' });
+      tq.createTask('needs its own session', 'auto', null, 'Code Review', {
+        source: 'pm:StrictPM',
+      });
     };
 
     it('skips a slot the user set to Manual and takes the next one', async () => {
-      tq.spawnSlotMin = 4;          // slot 4 is the first candidate...
-      tq.manualSessions.add(4);     // ...and it is Manual
+      tq.spawnSlotMin = 4; // slot 4 is the first candidate...
+      tq.manualSessions.add(4); // ...and it is Manual
       queueUnhostableTask();
 
-      await new Promise(r => setTimeout(r, 50));
+      await new Promise((r) => setTimeout(r, 50));
 
       expect(sessionManager.createSession).toHaveBeenCalled();
       expect(sessionManager.createSession.mock.calls[0][0]).toBe('5');
@@ -118,7 +129,7 @@ describe('Manual survives the session dying', () => {
       tq.manualSessions.add(5);
       queueUnhostableTask();
 
-      await new Promise(r => setTimeout(r, 50));
+      await new Promise((r) => setTimeout(r, 50));
 
       expect(sessionManager.createSession).not.toHaveBeenCalled();
       expect(tq.autoSessions.has(4)).toBe(false);
@@ -129,7 +140,7 @@ describe('Manual survives the session dying', () => {
       tq.spawnSlotMin = 4;
       queueUnhostableTask();
 
-      await new Promise(r => setTimeout(r, 50));
+      await new Promise((r) => setTimeout(r, 50));
 
       expect(sessionManager.createSession.mock.calls[0][0]).toBe('4');
       expect(tq.autoSessions.has(4)).toBe(true);
@@ -157,7 +168,9 @@ describe('Manual survives the session dying', () => {
         serialize: () => ({ pms: [], knowledgeBase: [] }),
         enrichTaskText: (task) => task.text,
       };
-      tq.createTask('needs its own session', 'auto', null, 'Code Review', { source: 'pm:StrictPM' });
+      tq.createTask('needs its own session', 'auto', null, 'Code Review', {
+        source: 'pm:StrictPM',
+      });
     };
 
     it('marks the slot Manual', async () => {
@@ -178,9 +191,9 @@ describe('Manual survives the session dying', () => {
       // slot 1 only, so 4 looks free to getAvailableSlots and nothing calls
       // cleanupSession.
       queueUnhostableTask();
-      await new Promise(r => setTimeout(r, 50));
+      await new Promise((r) => setTimeout(r, 50));
 
-      const spawnedInto = sessionManager.createSession.mock.calls.map(c => c[0]);
+      const spawnedInto = sessionManager.createSession.mock.calls.map((c) => c[0]);
       expect(spawnedInto).toContain('5');
       expect(spawnedInto).not.toContain('4');
       // The half that actually bit: auto-create ends with autoSessions.add(num),
@@ -225,7 +238,9 @@ describe('Manual survives the session dying', () => {
         serialize: () => ({ pms: [], knowledgeBase: [] }),
         enrichTaskText: (task) => task.text,
       };
-      tq.createTask('needs its own session', 'auto', null, 'Code Review', { source: 'pm:StrictPM' });
+      tq.createTask('needs its own session', 'auto', null, 'Code Review', {
+        source: 'pm:StrictPM',
+      });
     };
 
     it('clears the Manual mark when the user kills the session', () => {
@@ -242,11 +257,11 @@ describe('Manual survives the session dying', () => {
     it('frees the slot for auto-create again', async () => {
       tq.spawnSlotMin = 4;
       tq.autoSessions.add(4);
-      tq.toggleAutoSession(4);   // Manual — auto-create would skip slot 4
-      tq.cleanupSession(4);      // ...until the user closes it
+      tq.toggleAutoSession(4); // Manual — auto-create would skip slot 4
+      tq.cleanupSession(4); // ...until the user closes it
       queueUnhostableTask();
 
-      await new Promise(r => setTimeout(r, 50));
+      await new Promise((r) => setTimeout(r, 50));
 
       expect(sessionManager.createSession.mock.calls[0][0]).toBe('4');
     });
@@ -258,8 +273,15 @@ describe('Manual survives the session dying', () => {
       tq.cleanupSession(4);
 
       const saved = fs.writeFileSync.mock.calls
-        .map(([, contents]) => { try { return JSON.parse(contents); } catch { return null; } })
-        .filter(Boolean).pop();
+        .map(([, contents]) => {
+          try {
+            return JSON.parse(contents);
+          } catch {
+            return null;
+          }
+        })
+        .filter(Boolean)
+        .pop();
       expect(saved.manualSessions).not.toContain(4);
     });
 
@@ -317,7 +339,7 @@ describe('Manual survives the session dying', () => {
       expect(fresh.prompt).toBe('live session asking something else');
     });
 
-    it('leaves another session\'s approval pending', () => {
+    it("leaves another session's approval pending", () => {
       const mine = tq.createApproval(4, 'mine');
       const theirs = tq.createApproval(9, 'theirs');
 
@@ -350,10 +372,10 @@ describe('Manual survives the session dying', () => {
       // fleet, and nothing calls cleanupSession.
       expect(tq.manualSessions.has(4)).toBe(true);
       queueUnhostableTask();
-      await new Promise(r => setTimeout(r, 50));
+      await new Promise((r) => setTimeout(r, 50));
 
       // Slot 4 looks free, but it is still the user's — spawn goes elsewhere.
-      const spawnedInto = sessionManager.createSession.mock.calls.map(c => c[0]);
+      const spawnedInto = sessionManager.createSession.mock.calls.map((c) => c[0]);
       expect(spawnedInto).not.toContain('4');
       expect(tq.manualSessions.has(4)).toBe(true);
     });

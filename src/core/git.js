@@ -6,12 +6,23 @@
  * @returns {Promise<Array<{hash, short, message, author, relative}>>}
  */
 async function getLog(node, repoDir, n = 15) {
-  const out = await node.exec(`git -C "${repoDir}" log --format="%H|%h|%s|%an|%ar" -${n} 2>/dev/null`);
+  const out = await node.exec(
+    `git -C "${repoDir}" log --format="%H|%h|%s|%an|%ar" -${n} 2>/dev/null`,
+  );
   if (!out) return [];
-  return out.split('\n').filter(Boolean).map(line => {
-    const [hash, short, message, author, relative] = line.split('|');
-    return { hash, short, message: message || '', author: author || '', relative: relative || '' };
-  });
+  return out
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => {
+      const [hash, short, message, author, relative] = line.split('|');
+      return {
+        hash,
+        short,
+        message: message || '',
+        author: author || '',
+        relative: relative || '',
+      };
+    });
 }
 
 /**
@@ -21,10 +32,17 @@ async function getLog(node, repoDir, n = 15) {
 async function getDiffStat(node, repoDir) {
   const out = await node.exec(`git -C "${repoDir}" diff --numstat 2>/dev/null`);
   if (!out) return [];
-  return out.split('\n').filter(Boolean).map(line => {
-    const [added, deleted, ...fileParts] = line.split('\t');
-    return { file: fileParts.join('\t'), added: parseInt(added) || 0, deleted: parseInt(deleted) || 0 };
-  });
+  return out
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => {
+      const [added, deleted, ...fileParts] = line.split('\t');
+      return {
+        file: fileParts.join('\t'),
+        added: parseInt(added) || 0,
+        deleted: parseInt(deleted) || 0,
+      };
+    });
 }
 
 /**
@@ -34,10 +52,17 @@ async function getDiffStat(node, repoDir) {
 async function getStagedStat(node, repoDir) {
   const out = await node.exec(`git -C "${repoDir}" diff --cached --numstat 2>/dev/null`);
   if (!out) return [];
-  return out.split('\n').filter(Boolean).map(line => {
-    const [added, deleted, ...fileParts] = line.split('\t');
-    return { file: fileParts.join('\t'), added: parseInt(added) || 0, deleted: parseInt(deleted) || 0 };
-  });
+  return out
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => {
+      const [added, deleted, ...fileParts] = line.split('\t');
+      return {
+        file: fileParts.join('\t'),
+        added: parseInt(added) || 0,
+        deleted: parseInt(deleted) || 0,
+      };
+    });
 }
 
 /**
@@ -50,19 +75,23 @@ async function getChangedFiles(node, repoDir) {
   // Fallback: parse with regex that handles both " M" and "M " status formats.
   const out = await node.exec(`git -C "${repoDir}" status --porcelain 2>/dev/null`);
   if (!out) return [];
-  return out.split('\n').filter(Boolean).map(line => {
-    // Porcelain format: XY<space>filename — but trim() may strip leading space
-    // from first line, turning " M file" into "M file". Use regex to handle both.
-    const m = line.match(/^([MADRCU? ]{1,2})\s+(.+)$/);
-    if (!m) return null;
-    const status = m[1].trim();
-    let file = m[2];
-    // Handle rename: "R  old -> new" — use the new name
-    if (status.startsWith('R') && file.includes(' -> ')) {
-      file = file.split(' -> ').pop();
-    }
-    return { status, file };
-  }).filter(Boolean);
+  return out
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => {
+      // Porcelain format: XY<space>filename — but trim() may strip leading space
+      // from first line, turning " M file" into "M file". Use regex to handle both.
+      const m = line.match(/^([MADRCU? ]{1,2})\s+(.+)$/);
+      if (!m) return null;
+      const status = m[1].trim();
+      let file = m[2];
+      // Handle rename: "R  old -> new" — use the new name
+      if (status.startsWith('R') && file.includes(' -> ')) {
+        file = file.split(' -> ').pop();
+      }
+      return { status, file };
+    })
+    .filter(Boolean);
 }
 
 /**
@@ -78,9 +107,17 @@ async function getFileDiff(node, repoDir, file, base) {
   const gitOpts = { timeout: 30000 }; // 30s — large repos can be slow
   if (base) {
     // Use merge-base to only show branch-specific changes
-    const mergeBase = await node.exec(`git -C "${repoDir}" merge-base ${base} HEAD 2>/dev/null`, gitOpts);
+    const mergeBase = await node.exec(
+      `git -C "${repoDir}" merge-base ${base} HEAD 2>/dev/null`,
+      gitOpts,
+    );
     const diffRef = mergeBase ? mergeBase.trim() : base;
-    return await node.exec(`git -C "${repoDir}" diff ${diffRef}..HEAD -- "${file}" 2>/dev/null`, gitOpts) || '';
+    return (
+      (await node.exec(
+        `git -C "${repoDir}" diff ${diffRef}..HEAD -- "${file}" 2>/dev/null`,
+        gitOpts,
+      )) || ''
+    );
   }
 
   // Try normal diff first (staged + unstaged vs HEAD)
@@ -89,7 +126,10 @@ async function getFileDiff(node, repoDir, file, base) {
 
   // For untracked files, diff --no-index exits 1 (differences found),
   // so we can't use node.exec which returns null on non-zero. Use || true.
-  const untrackedDiff = await node.exec(`git -C "${repoDir}" diff --no-index /dev/null "${file}" 2>/dev/null || true`, gitOpts);
+  const untrackedDiff = await node.exec(
+    `git -C "${repoDir}" diff --no-index /dev/null "${file}" 2>/dev/null || true`,
+    gitOpts,
+  );
   if (untrackedDiff) return untrackedDiff;
 
   return '';
@@ -112,15 +152,23 @@ async function getBranchDiff(node, repoDir) {
   const mergeBase = await node.exec(`git -C "${repoDir}" merge-base ${base} HEAD 2>/dev/null`);
   const diffRef = mergeBase ? mergeBase.trim() : base;
 
-  const countOut = await node.exec(`git -C "${repoDir}" rev-list --count ${diffRef}..HEAD 2>/dev/null`);
+  const countOut = await node.exec(
+    `git -C "${repoDir}" rev-list --count ${diffRef}..HEAD 2>/dev/null`,
+  );
   const commitCount = parseInt(countOut) || 0;
 
-  const numstat = await node.exec(`git -C "${repoDir}" diff --numstat ${diffRef}..HEAD 2>/dev/null`);
+  const numstat = await node.exec(
+    `git -C "${repoDir}" diff --numstat ${diffRef}..HEAD 2>/dev/null`,
+  );
   const files = [];
   if (numstat) {
     for (const line of numstat.split('\n').filter(Boolean)) {
       const [added, deleted, ...fileParts] = line.split('\t');
-      files.push({ file: fileParts.join('\t'), added: parseInt(added) || 0, deleted: parseInt(deleted) || 0 });
+      files.push({
+        file: fileParts.join('\t'),
+        added: parseInt(added) || 0,
+        deleted: parseInt(deleted) || 0,
+      });
     }
   }
 
@@ -135,12 +183,21 @@ async function getBranchDiff(node, repoDir) {
  * @returns {Promise<Array<{file, added, deleted}>>}
  */
 async function getCommitFiles(node, repoDir, hash) {
-  const out = await node.exec(`git -C "${repoDir}" diff-tree --no-commit-id -r --numstat "${hash}" 2>/dev/null`);
+  const out = await node.exec(
+    `git -C "${repoDir}" diff-tree --no-commit-id -r --numstat "${hash}" 2>/dev/null`,
+  );
   if (!out) return [];
-  return out.split('\n').filter(Boolean).map(line => {
-    const [added, deleted, ...fileParts] = line.split('\t');
-    return { file: fileParts.join('\t'), added: parseInt(added) || 0, deleted: parseInt(deleted) || 0 };
-  });
+  return out
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => {
+      const [added, deleted, ...fileParts] = line.split('\t');
+      return {
+        file: fileParts.join('\t'),
+        added: parseInt(added) || 0,
+        deleted: parseInt(deleted) || 0,
+      };
+    });
 }
 
 /**
@@ -152,7 +209,11 @@ async function getCommitFiles(node, repoDir, hash) {
  * @returns {Promise<string>}
  */
 async function getCommitFileDiff(node, repoDir, hash, file) {
-  return await node.exec(`git -C "${repoDir}" diff "${hash}^".."${hash}" -- "${file}" 2>/dev/null`, { timeout: 30000 }) || '';
+  return (
+    (await node.exec(`git -C "${repoDir}" diff "${hash}^".."${hash}" -- "${file}" 2>/dev/null`, {
+      timeout: 30000,
+    })) || ''
+  );
 }
 
 module.exports = {

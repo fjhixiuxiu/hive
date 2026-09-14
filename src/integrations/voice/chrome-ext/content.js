@@ -17,7 +17,8 @@
       clearInterval(waitForBridge);
       startCapture();
     }
-    if (attempts > 30) { // 15 seconds
+    if (attempts > 30) {
+      // 15 seconds
       clearInterval(waitForBridge);
       console.log('[hive-ext] Bridge not found after 15s, giving up');
     }
@@ -38,7 +39,8 @@
       console.log('[hive-ext] Got stream ID, requesting audio...');
 
       // Use the stream ID with getUserMedia (bypasses our interception)
-      const origGetUserMedia = navigator.mediaDevices.getUserMedia.__original || navigator.mediaDevices.getUserMedia;
+      const origGetUserMedia =
+        navigator.mediaDevices.getUserMedia.__original || navigator.mediaDevices.getUserMedia;
       const stream = await origGetUserMedia.call(navigator.mediaDevices, {
         audio: {
           mandatory: {

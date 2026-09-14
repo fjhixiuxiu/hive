@@ -1,6 +1,13 @@
 import { describe, it, expect, vi, beforeAll, beforeEach, afterAll, afterEach } from 'vitest';
 import { createRequire } from 'module';
-import { createFakeWs, sentMessages, findSent, createMockNode, createMockConfig, createMockWatcher } from '../../helpers/mocks.js';
+import {
+  createFakeWs,
+  sentMessages,
+  findSent,
+  createMockNode,
+  createMockConfig,
+  createMockWatcher,
+} from '../../helpers/mocks.js';
 
 // ---------------------------------------------------------------------------
 // CJS interop: server.js uses require(), so we must get the same module
@@ -327,7 +334,10 @@ describe('multi-pane terminal viewer', () => {
     });
 
     it('sends multiple keys in sequence', async () => {
-      ws.emit('message', JSON.stringify({ type: 'keys', session: 6, pane: 0, keys: ['Escape', 'Enter'] }));
+      ws.emit(
+        'message',
+        JSON.stringify({ type: 'keys', session: 6, pane: 0, keys: ['Escape', 'Enter'] }),
+      );
       await vi.advanceTimersByTimeAsync(50);
 
       const sendKeyCalls = node.exec.mock.calls.filter(([cmd]) => cmd.includes('send-keys'));
@@ -373,12 +383,15 @@ describe('multi-pane terminal viewer', () => {
     });
 
     it('uses relay when pane equals claudePane', async () => {
-      ws.emit('message', JSON.stringify({
-        type: 'tell',
-        session: 6,
-        message: 'hello claude',
-        pane: config.sessions.claudePane,
-      }));
+      ws.emit(
+        'message',
+        JSON.stringify({
+          type: 'tell',
+          session: 6,
+          message: 'hello claude',
+          pane: config.sessions.claudePane,
+        }),
+      );
       await vi.advanceTimersByTimeAsync(50);
 
       expect(relay.tell).toHaveBeenCalled();
@@ -386,20 +399,19 @@ describe('multi-pane terminal viewer', () => {
     });
 
     it('uses sendKeys directly when pane differs from claudePane', async () => {
-      ws.emit('message', JSON.stringify({
-        type: 'tell',
-        session: 6,
-        message: 'ls -la',
-        pane: 0,
-      }));
+      ws.emit(
+        'message',
+        JSON.stringify({
+          type: 'tell',
+          session: 6,
+          message: 'ls -la',
+          pane: 0,
+        }),
+      );
       await vi.advanceTimersByTimeAsync(50);
 
       expect(relay.tell).not.toHaveBeenCalled();
-      expect(node.sendKeys).toHaveBeenCalledWith(
-        '=6-DEV-123:.0',
-        'ls -la',
-        true,
-      );
+      expect(node.sendKeys).toHaveBeenCalledWith('=6-DEV-123:.0', 'ls -la', true);
 
       const doneMsg = findSent(ws, 'tell:done');
       expect(doneMsg).toBeTruthy();
@@ -407,31 +419,33 @@ describe('multi-pane terminal viewer', () => {
     });
 
     it('uses sendKeys for pane 2 (non-claude)', async () => {
-      ws.emit('message', JSON.stringify({
-        type: 'tell',
-        session: 6,
-        message: 'npm start',
-        pane: 2,
-      }));
+      ws.emit(
+        'message',
+        JSON.stringify({
+          type: 'tell',
+          session: 6,
+          message: 'npm start',
+          pane: 2,
+        }),
+      );
       await vi.advanceTimersByTimeAsync(50);
 
       expect(relay.tell).not.toHaveBeenCalled();
-      expect(node.sendKeys).toHaveBeenCalledWith(
-        '=6-DEV-123:.2',
-        'npm start',
-        true,
-      );
+      expect(node.sendKeys).toHaveBeenCalledWith('=6-DEV-123:.2', 'npm start', true);
     });
 
     it('returns error when sendKeys fails for non-claude pane', async () => {
       node.sendKeys.mockRejectedValue(new Error('tmux send-keys failed'));
 
-      ws.emit('message', JSON.stringify({
-        type: 'tell',
-        session: 6,
-        message: 'some command',
-        pane: 2,
-      }));
+      ws.emit(
+        'message',
+        JSON.stringify({
+          type: 'tell',
+          session: 6,
+          message: 'some command',
+          pane: 2,
+        }),
+      );
       await vi.advanceTimersByTimeAsync(50);
 
       const doneMsg = findSent(ws, 'tell:done');
@@ -464,12 +478,15 @@ describe('multi-pane terminal viewer', () => {
     });
 
     it('falls through to relay when pane is a string (type check)', async () => {
-      ws.emit('message', JSON.stringify({
-        type: 'tell',
-        session: 6,
-        message: 'test',
-        pane: '0',
-      }));
+      ws.emit(
+        'message',
+        JSON.stringify({
+          type: 'tell',
+          session: 6,
+          message: 'test',
+          pane: '0',
+        }),
+      );
       await vi.advanceTimersByTimeAsync(50);
 
       expect(relay.tell).toHaveBeenCalled();

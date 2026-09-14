@@ -24,7 +24,12 @@ async function exec(cmd, opts = {}) {
 async function execRaw(cmd, opts = {}) {
   try {
     const { stdout, stderr } = await execAsync(cmd, { encoding: 'utf8', timeout: 10000, ...opts });
-    return { code: 0, stdout: (stdout || '').trim(), stderr: (stderr || '').trim(), timedOut: false };
+    return {
+      code: 0,
+      stdout: (stdout || '').trim(),
+      stderr: (stderr || '').trim(),
+      timedOut: false,
+    };
   } catch (err) {
     return {
       code: typeof err.code === 'number' ? err.code : null,
@@ -53,7 +58,9 @@ async function listSessions() {
 
   // Use list-windows to get window_activity (last output time), which is more
   // accurate than session_activity (last input time)
-  const out = await exec("tmux list-windows -a -F '#{session_name}|#{window_activity}' 2>/dev/null");
+  const out = await exec(
+    "tmux list-windows -a -F '#{session_name}|#{window_activity}' 2>/dev/null",
+  );
   if (!out) return [];
   // Sessions with multiple windows: take the most recent window_activity
   const map = new Map();
@@ -66,7 +73,8 @@ async function listSessions() {
     }
   }
   return Array.from(map.values()).sort((a, b) => {
-    const na = parseInt(a.name), nb = parseInt(b.name);
+    const na = parseInt(a.name),
+      nb = parseInt(b.name);
     if (!isNaN(na) && !isNaN(nb)) return na - nb;
     return a.name.localeCompare(b.name);
   });
@@ -113,26 +121,30 @@ async function sendKeys(target, keys, enter = true) {
     const tmpFile = `/tmp/hive-sendkeys-${process.pid}-${Date.now()}`;
     try {
       writeFileSync(tmpFile, cleaned, 'utf8');
-      const r = await exec(`tmux load-buffer "${tmpFile}" && tmux paste-buffer -t "${target}" -d -p`);
+      const r = await exec(
+        `tmux load-buffer "${tmpFile}" && tmux paste-buffer -t "${target}" -d -p`,
+      );
       if (r === null) {
         throw new Error(`tmux paste failed for target=${target}, len=${cleaned.length}`);
       }
     } finally {
-      try { unlinkSync(tmpFile); } catch {}
+      try {
+        unlinkSync(tmpFile);
+      } catch {}
     }
   }
   if (enter) {
     // For multi-line pastes, wait for the TUI to process the pasted content
     // before sending Enter — otherwise Enter can get swallowed
     if (isMultiLine) {
-      await new Promise(r => setTimeout(r, 150));
+      await new Promise((r) => setTimeout(r, 150));
     }
     await exec(`tmux send-keys -t "${target}" Enter`);
     // Safety: send a second Enter after a delay for multi-line pastes.
     // Claude Code's TUI sometimes swallows the first Enter while still
     // rendering/processing large pasted text.
     if (isMultiLine) {
-      await new Promise(r => setTimeout(r, 300));
+      await new Promise((r) => setTimeout(r, 300));
       await exec(`tmux send-keys -t "${target}" Enter`);
     }
   }
@@ -170,9 +182,9 @@ function paneTarget(name, pane) {
  * UNREACHABLE: only one of them means it is safe to run `tmux new-session`.
  */
 const SESSION_PROBE = {
-  EXISTS: 'EXISTS',           // server answered, session is there
-  ABSENT: 'ABSENT',           // server answered, session is not there
-  NO_SERVER: 'NO_SERVER',     // no socket to connect to
+  EXISTS: 'EXISTS', // server answered, session is there
+  ABSENT: 'ABSENT', // server answered, session is not there
+  NO_SERVER: 'NO_SERVER', // no socket to connect to
   UNREACHABLE: 'UNREACHABLE', // socket exists but the server did not answer
 };
 
@@ -347,7 +359,12 @@ function isSeparator(line) {
 // Interactive prompt patterns safe to check below the separator.
 // These only appear in permission/choice prompts, never in the status bar.
 // (Note: shift+tab appears in the status bar so is intentionally excluded.)
-const INTERACTIVE_PATTERNS = [/Do you want to proceed/, /Esc to cancel/, /Enter to select/, /^\s*❯/];
+const INTERACTIVE_PATTERNS = [
+  /Do you want to proceed/,
+  /Esc to cancel/,
+  /Enter to select/,
+  /^\s*❯/,
+];
 
 // Active Claude status indicators — the ❯ prompt is visible but not usable.
 // Active lines use ellipsis (Doodling…, Doing...), completed lines don't (Sautéed for 14m).
@@ -406,9 +423,8 @@ function _classifyState(lines, config) {
   }
 
   // Determine which lines to check: above the separator, or all lines as fallback
-  const checkLines = separatorIdx >= 0
-    ? lines.slice(Math.max(0, separatorIdx - 5), separatorIdx)
-    : lines;
+  const checkLines =
+    separatorIdx >= 0 ? lines.slice(Math.max(0, separatorIdx - 5), separatorIdx) : lines;
 
   // Check for active Claude status (Doodling…, Doing…, Churning...) before idle.
   // When Claude is working, the ❯ prompt is visible but not interactive.
@@ -444,7 +460,7 @@ function _classifyState(lines, config) {
     }
 
     // Real content that isn't idle/off → working
-    if (separatorIdx < 0) return 'off';  // No TUI separator → Claude not running
+    if (separatorIdx < 0) return 'off'; // No TUI separator → Claude not running
     return 'working';
   }
 
@@ -457,7 +473,9 @@ function _classifyState(lines, config) {
  */
 async function gitInfo(repoDir) {
   // Single shell command instead of 4 separate process spawns
-  const out = await exec(`cd "${repoDir}" 2>/dev/null && echo "$(git branch --show-current 2>/dev/null)" && echo "$(git diff --cached --shortstat 2>/dev/null | sed -E 's/^ *([0-9]+) file.*/\\1/')" && echo "$(git diff --shortstat 2>/dev/null | sed -E 's/^ *([0-9]+) file.*/\\1/')" && echo "$(git ls-files --others --exclude-standard 2>/dev/null | wc -l)"`);
+  const out = await exec(
+    `cd "${repoDir}" 2>/dev/null && echo "$(git branch --show-current 2>/dev/null)" && echo "$(git diff --cached --shortstat 2>/dev/null | sed -E 's/^ *([0-9]+) file.*/\\1/')" && echo "$(git diff --shortstat 2>/dev/null | sed -E 's/^ *([0-9]+) file.*/\\1/')" && echo "$(git ls-files --others --exclude-standard 2>/dev/null | wc -l)"`,
+  );
   if (!out) return { branch: '', staged: 0, modified: 0, untracked: 0 };
   const lines = out.split('\n');
   return {
@@ -477,23 +495,23 @@ async function killSession(name) {
 
 // Claude Code TUI chrome patterns (status bars, prompt, UI elements)
 const TUI_CHROME = [
-  /\$[\d.]+/,                    // cost: $186.73
+  /\$[\d.]+/, // cost: $186.73
   /bypass permissions/,
   /shift\+tab/,
   /ctrl-g to edit/,
   /ctrl\+o to expand/,
   /no JIRA ticket/i,
-  /^\s*>\s*$/,                   // bare prompt ">"
-  /^\s*copy\s*$/,                // TUI "copy" button
+  /^\s*>\s*$/, // bare prompt ">"
+  /^\s*copy\s*$/, // TUI "copy" button
   /-- INSERT --/,
-  /Cogitated for/,               // "Cogitated for 1m 19s"
-  /Baked for/,                   // "Baked for 3m 23s"
-  /^\s*\d+\s*tokens/,            // token count
+  /Cogitated for/, // "Cogitated for 1m 19s"
+  /Baked for/, // "Baked for 3m 23s"
+  /^\s*\d+\s*tokens/, // token count
   /^\s*CI\s+(no build|PASS|FAIL)/i, // CI status line
-  /^\s*approve,?\s*(next|merge)/i,  // "approve, next"
-  /^Waiting/,                    // "Waitingpr diff..." tool calls
-  /^Explore\(/,                  // "Explore(..." tool calls
-  /^Reading\(/,                  // "Reading(..." tool calls
+  /^\s*approve,?\s*(next|merge)/i, // "approve, next"
+  /^Waiting/, // "Waitingpr diff..." tool calls
+  /^Explore\(/, // "Explore(..." tool calls
+  /^Reading\(/, // "Reading(..." tool calls
 ];
 
 /**
@@ -510,10 +528,10 @@ function stripTUIChrome(content, config) {
     if (!clean) return true;
     // Config patterns
     if (config) {
-      for (const pat of (config.idlePatterns || [])) {
+      for (const pat of config.idlePatterns || []) {
         if (pat.test(clean)) return true;
       }
-      for (const pat of (config.offPatterns || [])) {
+      for (const pat of config.offPatterns || []) {
         if (pat.test(clean)) return true;
       }
     }
@@ -532,8 +550,9 @@ function stripTUIChrome(content, config) {
   let start = 0;
   while (start < end && isChrome(lines[start])) start++;
 
-  return lines.slice(start, end)
-    .map(l => l.replace(/[^\x20-\x7E]/g, '').trimEnd())
+  return lines
+    .slice(start, end)
+    .map((l) => l.replace(/[^\x20-\x7E]/g, '').trimEnd())
     .join('\n')
     .trim();
 }

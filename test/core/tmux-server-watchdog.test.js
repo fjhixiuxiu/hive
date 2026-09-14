@@ -130,7 +130,7 @@ describe('watcher tmux split-brain watchdog', () => {
 
     await w._checkTmuxServers();
 
-    expect(onAlert.mock.calls[0][0].servers.map(s => s.pid)).toEqual([27258, 77665]);
+    expect(onAlert.mock.calls[0][0].servers.map((s) => s.pid)).toEqual([27258, 77665]);
   });
 });
 

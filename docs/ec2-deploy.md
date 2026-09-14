@@ -159,10 +159,10 @@ The tmux sessions and hive server already run detached from your SSH session. Di
 
 ## Sizing guide
 
-| Sessions | Instance type | RAM   | Notes |
-|----------|--------------|-------|-------|
-| 1–4      | t3.medium    | 4 GB  | Good for small teams |
-| 4–8      | t3.large     | 8 GB  | Comfortable headroom |
-| 8–16     | t3.xlarge    | 16 GB | Heavy parallel workloads |
+| Sessions | Instance type | RAM   | Notes                    |
+| -------- | ------------- | ----- | ------------------------ |
+| 1–4      | t3.medium     | 4 GB  | Good for small teams     |
+| 4–8      | t3.large      | 8 GB  | Comfortable headroom     |
+| 8–16     | t3.xlarge     | 16 GB | Heavy parallel workloads |
 
 Claude Code is CPU-light but memory-heavy. Each session idles at ~300 MB and peaks around 500–700 MB during active work. Budget ~700 MB per session plus 1 GB for the OS and hive server.

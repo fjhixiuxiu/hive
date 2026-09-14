@@ -18,7 +18,9 @@ describe('TaskQueue', () => {
     vi.useFakeTimers({ shouldAdvanceTime: false });
 
     // Spy on dependencies so CJS require() picks up the mocks
-    vi.spyOn(fs, 'readFileSync').mockImplementation(() => { throw new Error('ENOENT'); });
+    vi.spyOn(fs, 'readFileSync').mockImplementation(() => {
+      throw new Error('ENOENT');
+    });
     vi.spyOn(fs, 'writeFileSync').mockImplementation(() => {});
     vi.spyOn(fs, 'readdirSync').mockReturnValue([]);
     vi.spyOn(fleetModule, 'getFleetStatus').mockResolvedValue([]);
@@ -66,7 +68,10 @@ describe('TaskQueue', () => {
 
     it('stores meta fields', () => {
       const task = tq.createTask('Fix CI', 'manual', 6, null, {
-        source: 'ci-fail', pr: '42', session: 6, createdBy: 'john',
+        source: 'ci-fail',
+        pr: '42',
+        session: 6,
+        createdBy: 'john',
       });
       expect(task.source).toBe('ci-fail');
       expect(task.sourcePR).toBe('42');
@@ -184,8 +189,10 @@ describe('TaskQueue', () => {
   describe('deferTask', () => {
     // The queue order the dispatcher actually walks is this.tasks insertion
     // order (see _tryAutoDispatch), so these assert on that, not on createdAt.
-    const queueOrder = (tq) => Array.from(tq.tasks.values())
-      .filter(t => t.status === 'queued').map(t => t.text);
+    const queueOrder = (tq) =>
+      Array.from(tq.tasks.values())
+        .filter((t) => t.status === 'queued')
+        .map((t) => t.text);
 
     it('moves a queued task to the back of the dispatch order', () => {
       tq.createTask('first', 'auto', null, null);
@@ -277,9 +284,9 @@ describe('TaskQueue', () => {
       // Without the defer, 'older work' wins on insertion order.
       tq.deferTask(older.id);
       await tq._tryAutoDispatch();
-      await new Promise(r => setTimeout(r, 50));
+      await new Promise((r) => setTimeout(r, 50));
 
-      const byText = (text) => Array.from(tq.tasks.values()).find(t => t.text === text);
+      const byText = (text) => Array.from(tq.tasks.values()).find((t) => t.text === text);
       expect(byText('newer work').status).toBe('dispatched');
       expect(byText('older work').status).toBe('queued');
     });
@@ -294,7 +301,7 @@ describe('TaskQueue', () => {
       expect(task.deferredAt).toBeGreaterThan(0);
 
       await tq._tryAutoDispatch();
-      await new Promise(r => setTimeout(r, 50));
+      await new Promise((r) => setTimeout(r, 50));
       expect(task.status).toBe('dispatched');
       expect(task.deferredAt).toBeNull();
     });
@@ -307,7 +314,7 @@ describe('TaskQueue', () => {
 
       // _saveState serialises Array.from(this.tasks.values()) with no sort and
       // _loadState re-sets in that order, so the order is the persisted order.
-      const persisted = Array.from(tq.tasks.values()).map(t => t.text);
+      const persisted = Array.from(tq.tasks.values()).map((t) => t.text);
       expect(persisted).toEqual(['first', 'third', 'second']);
     });
   });
@@ -361,10 +368,14 @@ describe('TaskQueue', () => {
       tq.createTask('c', 'auto', null, null);
 
       tq.deferTask(b.id);
-      const afterDefer = Array.from(tq.tasks.values()).filter(t => t.status === 'queued').map(t => t.text);
+      const afterDefer = Array.from(tq.tasks.values())
+        .filter((t) => t.status === 'queued')
+        .map((t) => t.text);
 
-      tq.moveTaskToQueuePosition(b.id, 99);   // clamped to the back
-      const afterMove = Array.from(tq.tasks.values()).filter(t => t.status === 'queued').map(t => t.text);
+      tq.moveTaskToQueuePosition(b.id, 99); // clamped to the back
+      const afterMove = Array.from(tq.tasks.values())
+        .filter((t) => t.status === 'queued')
+        .map((t) => t.text);
 
       expect(afterDefer).toEqual(['a', 'c', 'b']);
       expect(afterMove).toEqual(afterDefer);
@@ -376,11 +387,16 @@ describe('TaskQueue', () => {
     // restarts often (crash, reclaim, deploy). Nothing else in the create path
     // writes state: _tryAutoDispatch only saves if it actually dispatches, so a
     // task queued behind a busy fleet could sit unpersisted indefinitely.
-    const savedTaskTexts = () => fs.writeFileSync.mock.calls
-      .filter(([file]) => String(file).includes('.hive-state.json'))
-      .flatMap(([, contents]) => {
-        try { return (JSON.parse(contents).tasks || []).map(t => t.text); } catch { return []; }
-      });
+    const savedTaskTexts = () =>
+      fs.writeFileSync.mock.calls
+        .filter(([file]) => String(file).includes('.hive-state.json'))
+        .flatMap(([, contents]) => {
+          try {
+            return (JSON.parse(contents).tasks || []).map((t) => t.text);
+          } catch {
+            return [];
+          }
+        });
 
     it('persists a queued task at creation time', () => {
       tq.createTask('must survive a restart', 'auto', null, null);
@@ -538,7 +554,9 @@ describe('TaskQueue', () => {
 
   describe('task title field', () => {
     it('createTask stores meta.title on the task', () => {
-      const task = tq.createTask('Long prompt description', 'auto', null, null, { title: 'Short title' });
+      const task = tq.createTask('Long prompt description', 'auto', null, null, {
+        title: 'Short title',
+      });
       expect(task.title).toBe('Short title');
     });
 
@@ -589,14 +607,16 @@ describe('TaskQueue', () => {
 
     it('survives _saveState → _loadState round-trip', () => {
       let written = null;
-      fs.writeFileSync.mockImplementation((_path, payload) => { written = payload; });
+      fs.writeFileSync.mockImplementation((_path, payload) => {
+        written = payload;
+      });
       tq.createTask('Long prompt', 'auto', null, null, { title: 'My title' });
       tq._saveState();
       expect(written).not.toBeNull();
       // Reload into a fresh TaskQueue by feeding the captured JSON back via readFileSync
       fs.readFileSync.mockImplementation(() => written);
       const tq2 = new TaskQueue(config, watcher, router);
-      const reloaded = Array.from(tq2.tasks.values()).find(t => t.text === 'Long prompt');
+      const reloaded = Array.from(tq2.tasks.values()).find((t) => t.text === 'Long prompt');
       expect(reloaded).toBeDefined();
       expect(reloaded.title).toBe('My title');
     });
@@ -630,13 +650,15 @@ describe('TaskQueue', () => {
         if (typeof json === 'string') saved = JSON.parse(json);
       });
       tq._saveState();
-      expect(saved.slackDedup).toEqual({ '1778695122.824589': 1778695200000 });
+      expect(saved.slackDedup).toEqual({ 1778695122.824589: 1778695200000 });
     });
 
     it('restores slackDedup entries from disk on load', () => {
-      vi.spyOn(fs, 'readFileSync').mockReturnValue(JSON.stringify({
-        slackDedup: { '1778695122.824589': 1778695200000 },
-      }));
+      vi.spyOn(fs, 'readFileSync').mockReturnValue(
+        JSON.stringify({
+          slackDedup: { 1778695122.824589: 1778695200000 },
+        }),
+      );
       const tq2 = new TaskQueue(config, watcher, router);
       expect(tq2.slackDedup.get('1778695122.824589')).toBe(1778695200000);
     });
@@ -669,9 +691,9 @@ describe('TaskQueue', () => {
       tq.createTask('Fix bug', 'auto', null, null);
 
       // Wait for async dispatch chain to resolve
-      await new Promise(r => setTimeout(r, 50));
+      await new Promise((r) => setTimeout(r, 50));
 
-      const task = Array.from(tq.tasks.values()).find(t => t.text === 'Fix bug');
+      const task = Array.from(tq.tasks.values()).find((t) => t.text === 'Fix bug');
       expect(task.status).toBe('dispatched');
       expect(task.assignedTo).toBe(6);
     });
@@ -684,7 +706,7 @@ describe('TaskQueue', () => {
 
       await tq._tryAutoDispatch();
       const tasks = Array.from(tq.tasks.values());
-      const task = tasks.find(t => t.text === 'Review PR');
+      const task = tasks.find((t) => t.text === 'Review PR');
       expect(task.status).toBe('queued');
     });
 
@@ -696,8 +718,8 @@ describe('TaskQueue', () => {
       fleetModule.findSession.mockResolvedValue({ name: '6-DEV', nodeId: 'local' });
       tq.createTask('Review PR', 'auto', null, 'reviewer');
 
-      await new Promise(r => setTimeout(r, 50));
-      const task = Array.from(tq.tasks.values()).find(t => t.text === 'Review PR');
+      await new Promise((r) => setTimeout(r, 50));
+      const task = Array.from(tq.tasks.values()).find((t) => t.text === 'Review PR');
       expect(task.status).toBe('dispatched');
       expect(task.assignedTo).toBe(6);
     });
@@ -718,8 +740,8 @@ describe('TaskQueue', () => {
       fleetModule.findSession.mockResolvedValue({ name: '7-REV', nodeId: 'local' });
       tq.createTask('Review PR', 'auto', null, 'reviewer');
 
-      await new Promise(r => setTimeout(r, 50));
-      const task = Array.from(tq.tasks.values()).find(t => t.text === 'Review PR');
+      await new Promise((r) => setTimeout(r, 50));
+      const task = Array.from(tq.tasks.values()).find((t) => t.text === 'Review PR');
       expect(task.status).toBe('dispatched');
       expect(task.assignedTo).toBe(7);
     });
@@ -731,7 +753,7 @@ describe('TaskQueue', () => {
       fleetModule.getFleetStatus.mockResolvedValue([{ name: '6-DEV', num: 6, state: 'idle' }]);
 
       await tq._tryAutoDispatch();
-      const task = Array.from(tq.tasks.values()).find(t => t.text === 'Fix bug');
+      const task = Array.from(tq.tasks.values()).find((t) => t.text === 'Fix bug');
       expect(task.status).toBe('queued');
     });
 
@@ -752,7 +774,7 @@ describe('TaskQueue', () => {
       tq.createTask('Review PR', 'auto', null, 'reviewer', { source: 'pm:StrictPM' });
 
       await tq._tryAutoDispatch();
-      const task = Array.from(tq.tasks.values()).find(t => t.text === 'Review PR');
+      const task = Array.from(tq.tasks.values()).find((t) => t.text === 'Review PR');
       expect(task.status).toBe('queued'); // should NOT fall back to undesignated
     });
 
@@ -773,8 +795,8 @@ describe('TaskQueue', () => {
       };
       tq.createTask('Review PR', 'auto', null, 'reviewer', { source: 'pm:StrictPM' });
 
-      await new Promise(r => setTimeout(r, 50));
-      const task = Array.from(tq.tasks.values()).find(t => t.text === 'Review PR');
+      await new Promise((r) => setTimeout(r, 50));
+      const task = Array.from(tq.tasks.values()).find((t) => t.text === 'Review PR');
       expect(task.status).toBe('dispatched');
       expect(task.assignedTo).toBe(6);
     });
@@ -793,8 +815,8 @@ describe('TaskQueue', () => {
       };
       tq.createTask('Review PR', 'auto', null, 'reviewer', { source: 'pm:FlexPM' });
 
-      await new Promise(r => setTimeout(r, 50));
-      const task = Array.from(tq.tasks.values()).find(t => t.text === 'Review PR');
+      await new Promise((r) => setTimeout(r, 50));
+      const task = Array.from(tq.tasks.values()).find((t) => t.text === 'Review PR');
       expect(task.status).toBe('dispatched');
       expect(task.assignedTo).toBe(6);
     });
@@ -804,7 +826,7 @@ describe('TaskQueue', () => {
       fleetModule.getFleetStatus.mockResolvedValue([{ name: '6-DEV', num: 6, state: 'idle' }]);
 
       await tq._tryAutoDispatch();
-      const task = Array.from(tq.tasks.values()).find(t => t.text === 'Fix bug');
+      const task = Array.from(tq.tasks.values()).find((t) => t.text === 'Fix bug');
       expect(task.status).toBe('queued');
     });
 
@@ -813,10 +835,17 @@ describe('TaskQueue', () => {
       // (the `if (!idleAuto.length) return` before the auto-create block), so a queued
       // task could never trigger a spawn on a fully-busy fleet. It must now attempt one.
       sessionManagerModule.createSession.mockResolvedValue(); // override the default reject
-      fleetModule.getFleetStatus.mockResolvedValue([]);        // empty fleet: nothing free, slots open
+      fleetModule.getFleetStatus.mockResolvedValue([]); // empty fleet: nothing free, slots open
       tq.config.sessions.repoDir = (n) => `/tmp/wp${n}`;
       tq._pmManager = { pms: new Map([['1', { name: 'Intake', autoCreate: true }]]) };
-      tq.tasks.set('999', { id: '999', text: 'spawn me', mode: 'auto', status: 'queued', designation: null, source: 'pm:Intake' });
+      tq.tasks.set('999', {
+        id: '999',
+        text: 'spawn me',
+        mode: 'auto',
+        status: 'queued',
+        designation: null,
+        source: 'pm:Intake',
+      });
 
       await tq._tryAutoDispatch();
 
@@ -828,7 +857,14 @@ describe('TaskQueue', () => {
       fleetModule.getFleetStatus.mockResolvedValue([]);
       tq.config.sessions.repoDir = (n) => `/tmp/wp${n}`;
       tq._pmManager = { pms: new Map([['1', { name: 'NoAuto', autoCreate: false }]]) };
-      tq.tasks.set('998', { id: '998', text: 'do not spawn', mode: 'auto', status: 'queued', designation: null, source: 'pm:NoAuto' });
+      tq.tasks.set('998', {
+        id: '998',
+        text: 'do not spawn',
+        mode: 'auto',
+        status: 'queued',
+        designation: null,
+        source: 'pm:NoAuto',
+      });
 
       await tq._tryAutoDispatch();
 
@@ -842,7 +878,7 @@ describe('TaskQueue', () => {
       fleetModule.getFleetStatus.mockResolvedValue([{ name: '6-DEV', num: 6, state: 'idle' }]);
 
       await tq._tryAutoDispatch();
-      const task = Array.from(tq.tasks.values()).find(t => t.text === 'Fix bug');
+      const task = Array.from(tq.tasks.values()).find((t) => t.text === 'Fix bug');
       expect(task.status).toBe('queued');
     });
 
@@ -908,12 +944,12 @@ describe('TaskQueue', () => {
       tq.tasks.set(task.id, task);
       await tq._dispatchTask(task, 6);
       // Flush microtasks for the fire-and-forget sendTask chain
-      await new Promise(r => realSetTimeout(r, 10));
+      await new Promise((r) => realSetTimeout(r, 10));
 
       // relay.tell is called twice per dispatch: once for /clear, once for the
       // real prompt. Find the non-/clear call and inspect its message.
       const tellCalls = relayModule.tell.mock.calls;
-      const promptCall = tellCalls.find(args => args[3] !== '/clear');
+      const promptCall = tellCalls.find((args) => args[3] !== '/clear');
       expect(promptCall, 'expected relay.tell to be called with the task prompt').toBeDefined();
 
       const sentMessage = promptCall[3];
@@ -925,7 +961,9 @@ describe('TaskQueue', () => {
       expect(sentMessage).toContain('TASK:');
       expect(sentMessage).toContain('Cherry pick DEV-12345');
       // PM enrichment must NOT be silently dropped
-      expect(sentMessage).toContain('Instructions: Review the diff and cherry pick matching commits.');
+      expect(sentMessage).toContain(
+        'Instructions: Review the diff and cherry pick matching commits.',
+      );
       expect(sentMessage).toContain('## Hive Integration');
       expect(sentMessage).toContain('hive_get_task');
     });
@@ -947,7 +985,7 @@ describe('TaskQueue', () => {
 
       relayModule.ask.mockImplementation((config, node, sessionName, message) => {
         if (message === '/clear') {
-          return new Promise(resolve => {
+          return new Promise((resolve) => {
             realSetTimeout(() => {
               clearResolved = true;
               resolve({ success: true, response: 'cleared' });
@@ -968,25 +1006,32 @@ describe('TaskQueue', () => {
       fleetModule.findSession.mockResolvedValue({ name: '6-sess', nodeId: 'local' });
 
       const task = {
-        id: 'race-1', text: 'Do the thing', mode: 'auto',
-        designation: null, status: 'queued', source: 'pm:test',
-        assignedTo: null, createdAt: Date.now(),
+        id: 'race-1',
+        text: 'Do the thing',
+        mode: 'auto',
+        designation: null,
+        status: 'queued',
+        source: 'pm:test',
+        assignedTo: null,
+        createdAt: Date.now(),
       };
       tq.tasks.set(task.id, task);
       await tq._dispatchTask(task, 6);
       // Drain microtasks + the simulated 50ms /clear delay
-      await new Promise(r => realSetTimeout(r, 100));
+      await new Promise((r) => realSetTimeout(r, 100));
 
       // relay.ask MUST have been called with '/clear'
-      const askCall = relayModule.ask.mock.calls.find(args => args[3] === '/clear');
+      const askCall = relayModule.ask.mock.calls.find((args) => args[3] === '/clear');
       expect(askCall, 'expected relay.ask to be called with /clear').toBeDefined();
 
       // relay.tell MUST NOT have been called with the task text before /clear resolved
-      expect(tellCalledBeforeClearResolved,
-        'relay.tell(task) fired before relay.ask(/clear) resolved — race is back').toBe(false);
+      expect(
+        tellCalledBeforeClearResolved,
+        'relay.tell(task) fired before relay.ask(/clear) resolved — race is back',
+      ).toBe(false);
 
       // Sanity: the task DID eventually reach relay.tell
-      const tellCall = relayModule.tell.mock.calls.find(args => args[3] !== '/clear');
+      const tellCall = relayModule.tell.mock.calls.find((args) => args[3] !== '/clear');
       expect(tellCall, 'expected relay.tell to eventually be called with task text').toBeDefined();
     });
   });
@@ -1039,7 +1084,11 @@ describe('TaskQueue', () => {
 
   describe('designation definitions', () => {
     it('setDesignationDef stores color', () => {
-      const def = tq.setDesignationDef('reviews', { agentFiles: [], description: 'PR reviews', color: 'purple' });
+      const def = tq.setDesignationDef('reviews', {
+        agentFiles: [],
+        description: 'PR reviews',
+        color: 'purple',
+      });
       expect(def.color).toBe('purple');
       expect(def.name).toBe('reviews');
       expect(def.description).toBe('PR reviews');
@@ -1078,14 +1127,14 @@ describe('TaskQueue', () => {
 
   describe('rules', () => {
     it('idle-next-task triggers auto-dispatch', () => {
-      tq.rules.find(r => r.id === 'idle-next-task').enabled = true;
+      tq.rules.find((r) => r.id === 'idle-next-task').enabled = true;
       const spy = vi.spyOn(tq, '_tryAutoDispatch').mockResolvedValue();
       tq.evaluateRules('session:idle', { num: 6 });
       expect(spy).toHaveBeenCalled();
     });
 
     it('ci-fail-fix creates fix task', () => {
-      tq.rules.find(r => r.id === 'ci-fail-fix').enabled = true;
+      tq.rules.find((r) => r.id === 'ci-fail-fix').enabled = true;
       tq.autoSessions.add(6);
       const spy = vi.fn();
       tq.on('task:created', spy);
@@ -1095,7 +1144,7 @@ describe('TaskQueue', () => {
     });
 
     it('review-changes creates fix task', () => {
-      tq.rules.find(r => r.id === 'review-changes').enabled = true;
+      tq.rules.find((r) => r.id === 'review-changes').enabled = true;
       tq.autoSessions.add(6);
       const spy = vi.fn();
       tq.on('task:created', spy);
@@ -1104,7 +1153,7 @@ describe('TaskQueue', () => {
     });
 
     it('disabled rules do not trigger', () => {
-      tq.rules.find(r => r.id === 'ci-fail-fix').enabled = false;
+      tq.rules.find((r) => r.id === 'ci-fail-fix').enabled = false;
       const spy = vi.fn();
       tq.on('task:created', spy);
       tq.evaluateRules('ci:fail', { num: 6, pr: '42' });
@@ -1112,7 +1161,7 @@ describe('TaskQueue', () => {
     });
 
     it('toggleRule toggles enabled state', () => {
-      const rule = tq.rules.find(r => r.id === 'ci-fail-fix');
+      const rule = tq.rules.find((r) => r.id === 'ci-fail-fix');
       expect(rule.enabled).toBe(false);
       tq.toggleRule('ci-fail-fix');
       expect(rule.enabled).toBe(true);
@@ -1224,14 +1273,18 @@ describe('TaskQueue', () => {
     });
 
     it('ci:changed with FAILURE evaluates ci:fail rules', () => {
-      tq.rules.find(r => r.id === 'ci-fail-fix').enabled = true;
+      tq.rules.find((r) => r.id === 'ci-fail-fix').enabled = true;
       tq.autoSessions.add(6);
       const spy = vi.fn();
       tq.on('task:created', spy);
 
       watcher.emit('ci:changed', {
-        session: {}, name: '6-DEV', num: 6,
-        from: 'SUCCESS', to: 'FAILURE', pr: '42',
+        session: {},
+        name: '6-DEV',
+        num: 6,
+        from: 'SUCCESS',
+        to: 'FAILURE',
+        pr: '42',
       });
       expect(spy).toHaveBeenCalled();
     });
@@ -1264,8 +1317,8 @@ describe('TaskQueue', () => {
       const t2 = tq.createTask('Remove', 'auto', null, null);
       tq.cancelTask(t2.id);
       const list = tq.getTasksList();
-      expect(list.find(t => t.id === t1.id)).toBeDefined();
-      expect(list.find(t => t.id === t2.id)).toBeUndefined();
+      expect(list.find((t) => t.id === t1.id)).toBeDefined();
+      expect(list.find((t) => t.id === t2.id)).toBeUndefined();
     });
   });
 
@@ -1289,12 +1342,16 @@ describe('TaskQueue', () => {
 
     it('throws when slot is occupied', async () => {
       fleetModule.getFleetStatus.mockResolvedValue([{ num: 5, state: 'idle' }]);
-      await expect(tq.spawnSession({ num: 5, name: 'test' })).rejects.toThrow('Slot 5 is already occupied');
+      await expect(tq.spawnSession({ num: 5, name: 'test' })).rejects.toThrow(
+        'Slot 5 is already occupied',
+      );
     });
 
     it('throws when slot is out of range', async () => {
       fleetModule.getFleetStatus.mockResolvedValue([]);
-      await expect(tq.spawnSession({ num: 999, name: 'test' })).rejects.toThrow('Spawn slots must be');
+      await expect(tq.spawnSession({ num: 999, name: 'test' })).rejects.toThrow(
+        'Spawn slots must be',
+      );
     });
 
     it('throws when no slots available for auto-pick', async () => {
@@ -1336,7 +1393,7 @@ describe('TaskQueue', () => {
       // In test env, tmuxinator isn't available so both should fail
       // The key thing: dead sessions are attempted, not skipped
       expect(results.skipped).toEqual([]);
-      const attemptedNums = [...results.respawned, ...results.failed.map(f => f.num)].sort();
+      const attemptedNums = [...results.respawned, ...results.failed.map((f) => f.num)].sort();
       expect(attemptedNums).toEqual([5, 6]);
     });
 
@@ -1372,7 +1429,7 @@ describe('TaskQueue', () => {
       const results = await tq.respawnAll();
       expect(results.skipped).toEqual([5]);
       // Slot 6 was attempted (respawned or failed depending on env)
-      const attempted = [...results.respawned, ...results.failed.map(f => f.num)];
+      const attempted = [...results.respawned, ...results.failed.map((f) => f.num)];
       expect(attempted).toEqual([6]);
     });
   });

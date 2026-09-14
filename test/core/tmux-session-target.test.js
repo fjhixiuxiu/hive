@@ -48,12 +48,17 @@ describe('tmux exact-match session targets (regression: prefix-match bug)', () =
 
     it('no module builds a bare `${name}:.${pane}` pane target', () => {
       for (const f of [
-        'core/fleet.js', 'core/relay.js', 'core/watcher.js', 'core/taskqueue.js',
-        'core/session-manager.js', 'integrations/web/ws-handlers.js',
+        'core/fleet.js',
+        'core/relay.js',
+        'core/watcher.js',
+        'core/taskqueue.js',
+        'core/session-manager.js',
+        'integrations/web/ws-handlers.js',
         'integrations/telegram/commands.js',
       ]) {
-        expect(read(f), `${f} should use tmux.paneTarget(), not a bare template`)
-          .not.toMatch(/`\$\{[A-Za-z.]+\}:\.\$\{[^}]+\}`/);
+        expect(read(f), `${f} should use tmux.paneTarget(), not a bare template`).not.toMatch(
+          /`\$\{[A-Za-z.]+\}:\.\$\{[^}]+\}`/,
+        );
       }
     });
   });

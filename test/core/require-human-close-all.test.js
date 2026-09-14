@@ -28,7 +28,9 @@ describe('requireHumanCloseAll', () => {
 
   beforeEach(() => {
     vi.useFakeTimers({ shouldAdvanceTime: false });
-    vi.spyOn(fs, 'readFileSync').mockImplementation(() => { throw new Error('ENOENT'); });
+    vi.spyOn(fs, 'readFileSync').mockImplementation(() => {
+      throw new Error('ENOENT');
+    });
     vi.spyOn(fs, 'writeFileSync').mockImplementation(() => {});
     vi.spyOn(fs, 'readdirSync').mockReturnValue([]);
     vi.spyOn(fleetModule, 'getFleetStatus').mockResolvedValue([]);

@@ -1,6 +1,13 @@
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import { createRequire } from 'module';
-import { createFakeWs, sentMessages, findSent, createMockNode, createMockConfig, createMockWatcher } from '../../helpers/mocks.js';
+import {
+  createFakeWs,
+  sentMessages,
+  findSent,
+  createMockNode,
+  createMockConfig,
+  createMockWatcher,
+} from '../../helpers/mocks.js';
 
 const require = createRequire(import.meta.url);
 const fleet = require('../../../src/core/fleet.js');
@@ -87,7 +94,9 @@ describe('OAuth WebSocket reconnection', () => {
     it('authenticates immediately via cookie without needing auth message', async () => {
       vi.spyOn(auth, 'parseCookie').mockReturnValue('valid-jwt');
       vi.spyOn(auth, 'verifyToken').mockReturnValue({
-        sub: 'testuser', name: 'Test User', avatar: 'https://example.com/avatar.png',
+        sub: 'testuser',
+        name: 'Test User',
+        avatar: 'https://example.com/avatar.png',
       });
 
       const ws = createFakeWs();
@@ -155,14 +164,14 @@ describe('OAuth WebSocket reconnection', () => {
 
       // No immediate auth:ok since cookie is invalid
       const msgs = sentMessages(ws);
-      const authOk = msgs.find(m => m.type === 'auth' && m.ok === true);
+      const authOk = msgs.find((m) => m.type === 'auth' && m.ok === true);
       expect(authOk).toBeUndefined();
 
       // Client sends empty token (OAuth reconnect)
       ws.emit('message', JSON.stringify({ type: 'auth', token: '' }));
       await vi.advanceTimersByTimeAsync(50);
 
-      const authFail = sentMessages(ws).find(m => m.type === 'auth' && m.ok === false);
+      const authFail = sentMessages(ws).find((m) => m.type === 'auth' && m.ok === false);
       expect(authFail).toBeDefined();
       expect(ws.close).toHaveBeenCalled();
     });
@@ -181,7 +190,7 @@ describe('OAuth WebSocket reconnection', () => {
       ws.emit('message', JSON.stringify({ type: 'auth', token: 'test-token' }));
       await vi.advanceTimersByTimeAsync(50);
 
-      const authMsg = sentMessages(ws).find(m => m.type === 'auth');
+      const authMsg = sentMessages(ws).find((m) => m.type === 'auth');
       expect(authMsg).toBeDefined();
       expect(authMsg.ok).toBe(true);
       expect(authMsg.user.login).toBe('__service__');
@@ -200,7 +209,7 @@ describe('OAuth WebSocket reconnection', () => {
       // Don't send any auth message — wait for timeout
       await vi.advanceTimersByTimeAsync(6000);
 
-      const errorMsg = sentMessages(ws).find(m => m.type === 'error');
+      const errorMsg = sentMessages(ws).find((m) => m.type === 'error');
       expect(errorMsg).toBeDefined();
       expect(errorMsg.message).toMatch(/auth timeout/i);
       expect(ws.close).toHaveBeenCalled();

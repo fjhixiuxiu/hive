@@ -11,14 +11,20 @@ import createMessageHandler from '../../../src/integrations/web/ws-handlers.js';
 
 function makeDeps({ task } = {}) {
   const createTaskSpy = vi.fn((text, mode, targetSession, designation, meta) => ({
-    id: 't1', text, mode, targetSession, designation, title: meta?.title || null, status: 'queued',
+    id: 't1',
+    text,
+    mode,
+    targetSession,
+    designation,
+    title: meta?.title || null,
+    status: 'queued',
   }));
   const updateTaskSpy = vi.fn((taskId, updates) => {
     const t = task || { id: taskId, text: 'orig', title: null, status: 'queued' };
     const next = { ...t };
     if (t.status === 'queued' || t.status === 'snoozed') {
       for (const k of ['text', 'title', 'mode', 'targetSession', 'designation', 'actionContext']) {
-        if (k in updates) next[k] = (k === 'title' && updates[k] === '') ? null : updates[k];
+        if (k in updates) next[k] = k === 'title' && updates[k] === '' ? null : updates[k];
       }
     }
     return next;
@@ -42,14 +48,22 @@ function makeDeps({ task } = {}) {
     broadcast: (msg) => broadcasts.push(msg),
     checkPermission: () => true,
     resolveSession: async () => null,
-    clearTermSub: () => {}, clearConsoleSub: () => {},
-    termSubs: new Map(), consoleSubs: new Map(),
-    clearCardSub: () => {}, clearAllCardSubs: () => {},
+    clearTermSub: () => {},
+    clearConsoleSub: () => {},
+    termSubs: new Map(),
+    consoleSubs: new Map(),
+    clearCardSub: () => {},
+    clearAllCardSubs: () => {},
     cardTermSubs: new Map(),
-    sendFleetStatus: async () => {}, broadcastFleetStatus: async () => {},
-    sendInitialState: async () => {}, _previewCache: new Map(),
-    commands: new Map(), clients: new Set(), wsUser: new WeakMap(),
-    workers: new Map(), mcpClients: new Map(),
+    sendFleetStatus: async () => {},
+    broadcastFleetStatus: async () => {},
+    sendInitialState: async () => {},
+    _previewCache: new Map(),
+    commands: new Map(),
+    clients: new Set(),
+    wsUser: new WeakMap(),
+    workers: new Map(),
+    mcpClients: new Map(),
     voiceAgent: null,
   });
 
@@ -63,7 +77,7 @@ describe('task:create — title field', () => {
     await handle(
       { readyState: 1, send: vi.fn() },
       { type: 'task:create', text: 'Long prompt body', title: 'Short title', mode: 'auto' },
-      { login: 'tester' }
+      { login: 'tester' },
     );
 
     expect(createTaskSpy).toHaveBeenCalledTimes(1);
@@ -77,7 +91,7 @@ describe('task:create — title field', () => {
     await handle(
       { readyState: 1, send: vi.fn() },
       { type: 'task:create', text: 'No title here', mode: 'auto' },
-      { login: 'tester' }
+      { login: 'tester' },
     );
 
     expect(createTaskSpy.mock.calls[0][4].title).toBeNull();
@@ -89,7 +103,7 @@ describe('task:create — title field', () => {
     await handle(
       { readyState: 1, send: vi.fn() },
       { type: 'task:create', text: 'Empty title', title: '', mode: 'auto' },
-      { login: 'tester' }
+      { login: 'tester' },
     );
 
     expect(createTaskSpy.mock.calls[0][4].title).toBeNull();
@@ -102,11 +116,11 @@ describe('task:create — title field', () => {
     await handle(
       replyWs,
       { type: 'task:create', text: 'Prompt', title: 'My title', mode: 'auto' },
-      { login: 'tester' }
+      { login: 'tester' },
     );
 
-    const sent = replyWs.send.mock.calls.map(c => JSON.parse(c[0]));
-    const created = sent.find(m => m.type === 'task:created');
+    const sent = replyWs.send.mock.calls.map((c) => JSON.parse(c[0]));
+    const created = sent.find((m) => m.type === 'task:created');
     expect(created).toBeDefined();
     expect(created.task.title).toBe('My title');
   });
@@ -120,10 +134,13 @@ describe('task:update — title field', () => {
     await handle(
       { readyState: 1, send: vi.fn() },
       { type: 'task:update', taskId: 't42', updates: { title: 'Renamed' } },
-      { login: 'tester' }
+      { login: 'tester' },
     );
 
-    expect(updateTaskSpy).toHaveBeenCalledWith('t42', expect.objectContaining({ title: 'Renamed' }));
+    expect(updateTaskSpy).toHaveBeenCalledWith(
+      't42',
+      expect.objectContaining({ title: 'Renamed' }),
+    );
   });
 
   it('broadcasts task:updated with the new title', async () => {
@@ -133,10 +150,10 @@ describe('task:update — title field', () => {
     await handle(
       { readyState: 1, send: vi.fn() },
       { type: 'task:update', taskId: 't42', updates: { title: 'New' } },
-      { login: 'tester' }
+      { login: 'tester' },
     );
 
-    const updated = broadcasts.find(b => b.type === 'task:updated');
+    const updated = broadcasts.find((b) => b.type === 'task:updated');
     expect(updated).toBeDefined();
     expect(updated.task.title).toBe('New');
   });
@@ -148,10 +165,10 @@ describe('task:update — title field', () => {
     await handle(
       { readyState: 1, send: vi.fn() },
       { type: 'task:update', taskId: 't99', updates: { title: 'Should be ignored' } },
-      { login: 'tester' }
+      { login: 'tester' },
     );
 
-    const updated = broadcasts.find(b => b.type === 'task:updated');
+    const updated = broadcasts.find((b) => b.type === 'task:updated');
     expect(updated.task.title).toBe('Before');
   });
 });

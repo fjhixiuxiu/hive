@@ -16,7 +16,9 @@ const ghExecEnv = { ...process.env, PATH: `/opt/homebrew/bin:${process.env.PATH 
 
 // Setup wizard detection
 const setupPath = path.join(__dirname, '..', '..', '..', '.hive-setup.json');
-function isSetupComplete() { return fs.existsSync(setupPath); }
+function isSetupComplete() {
+  return fs.existsSync(setupPath);
+}
 
 // ── Contextual action definitions ───────────────────────
 
@@ -38,10 +40,10 @@ function decorateTaskActions(task, pmManager) {
   // Look up PM's allowed actions at render time (not baked into task)
   if (pmManager && task.source) {
     const pmName = task.source.replace(/^pm:/, '');
-    const pm = pmManager.getAll().find(p => p.name === pmName);
+    const pm = pmManager.getAll().find((p) => p.name === pmName);
     if (pm && pm.actions && pm.actions.length) {
       const allowed = new Set(pm.actions);
-      defs = defs.filter(d => allowed.has(d.id));
+      defs = defs.filter((d) => allowed.has(d.id));
     }
   }
   return { ...task, actions: defs };
@@ -55,39 +57,74 @@ async function executeGithubPrAction(ctx, actionId, pmManager, comment) {
     case 'approve': {
       const reviewBody = { event: 'APPROVE' };
       if (comment) reviewBody.body = `Approved via Hive\n\n${comment}`;
-      await pmManager._httpMethod('POST', `https://api.github.com/repos/${repo}/pulls/${prNumber}/reviews`, headers, reviewBody);
+      await pmManager._httpMethod(
+        'POST',
+        `https://api.github.com/repos/${repo}/pulls/${prNumber}/reviews`,
+        headers,
+        reviewBody,
+      );
       return { message: `Approved PR #${prNumber}`, closeTask: false };
     }
     case 'request-changes': {
       const rcBody = comment
         ? `Changes requested via Hive\n\n${comment}`
         : 'Changes requested via Hive';
-      await pmManager._httpMethod('POST', `https://api.github.com/repos/${repo}/pulls/${prNumber}/reviews`, headers, { event: 'REQUEST_CHANGES', body: rcBody });
+      await pmManager._httpMethod(
+        'POST',
+        `https://api.github.com/repos/${repo}/pulls/${prNumber}/reviews`,
+        headers,
+        { event: 'REQUEST_CHANGES', body: rcBody },
+      );
       return { message: `Requested changes on PR #${prNumber}`, closeTask: false };
     }
     case 'merge': {
       const mergeBody = { merge_method: 'squash' };
       if (comment) mergeBody.commit_message = comment;
-      await pmManager._httpMethod('PUT', `https://api.github.com/repos/${repo}/pulls/${prNumber}/merge`, headers, mergeBody);
+      await pmManager._httpMethod(
+        'PUT',
+        `https://api.github.com/repos/${repo}/pulls/${prNumber}/merge`,
+        headers,
+        mergeBody,
+      );
       return { message: `Merged PR #${prNumber} (squash)`, closeTask: false };
     }
     case 'merge-commit': {
       const mergeBody = { merge_method: 'merge' };
       if (comment) mergeBody.commit_message = comment;
-      await pmManager._httpMethod('PUT', `https://api.github.com/repos/${repo}/pulls/${prNumber}/merge`, headers, mergeBody);
+      await pmManager._httpMethod(
+        'PUT',
+        `https://api.github.com/repos/${repo}/pulls/${prNumber}/merge`,
+        headers,
+        mergeBody,
+      );
       return { message: `Merged PR #${prNumber} (merge commit)`, closeTask: false };
     }
     case 'admin-merge': {
       const mergeBody = { merge_method: 'squash', bypass_branch_protection: true };
       if (comment) mergeBody.commit_message = comment;
-      await pmManager._httpMethod('PUT', `https://api.github.com/repos/${repo}/pulls/${prNumber}/merge`, headers, mergeBody);
+      await pmManager._httpMethod(
+        'PUT',
+        `https://api.github.com/repos/${repo}/pulls/${prNumber}/merge`,
+        headers,
+        mergeBody,
+      );
       return { message: `Admin merged PR #${prNumber} (override)`, closeTask: false };
     }
     case 'close-pr': {
       // Close the PR, then add comment if provided
-      await pmManager._httpMethod('PATCH', `https://api.github.com/repos/${repo}/pulls/${prNumber}`, headers, { state: 'closed' });
+      await pmManager._httpMethod(
+        'PATCH',
+        `https://api.github.com/repos/${repo}/pulls/${prNumber}`,
+        headers,
+        { state: 'closed' },
+      );
       if (comment) {
-        await pmManager._httpMethod('POST', `https://api.github.com/repos/${repo}/issues/${prNumber}/comments`, headers, { body: comment });
+        await pmManager._httpMethod(
+          'POST',
+          `https://api.github.com/repos/${repo}/issues/${prNumber}/comments`,
+          headers,
+          { body: comment },
+        );
       }
       return { message: `Closed PR #${prNumber}`, closeTask: false };
     }
@@ -95,7 +132,12 @@ async function executeGithubPrAction(ctx, actionId, pmManager, comment) {
       // Legacy: kept for backwards compat with any in-flight tasks
       const reviewBody = { event: 'APPROVE' };
       if (comment) reviewBody.body = comment;
-      await pmManager._httpMethod('POST', `https://api.github.com/repos/${repo}/pulls/${prNumber}/reviews`, headers, reviewBody);
+      await pmManager._httpMethod(
+        'POST',
+        `https://api.github.com/repos/${repo}/pulls/${prNumber}/reviews`,
+        headers,
+        reviewBody,
+      );
       return { message: `Approved PR #${prNumber}`, closeTask: true };
     }
     default:
@@ -135,7 +177,7 @@ function getTailscaleIP() {
  */
 function getBindHosts() {
   const bindEnv = process.env.WEB_BIND;
-  if (bindEnv) return bindEnv.split(',').map(h => h.trim());
+  if (bindEnv) return bindEnv.split(',').map((h) => h.trim());
   const hosts = ['127.0.0.1'];
   const tsIP = getTailscaleIP();
   if (tsIP) hosts.push(tsIP);
@@ -147,7 +189,7 @@ function getBindHosts() {
 function scanCommands(dir) {
   const cmds = [];
   try {
-    const files = fs.readdirSync(dir).filter(f => f.endsWith('.md'));
+    const files = fs.readdirSync(dir).filter((f) => f.endsWith('.md'));
     for (const file of files) {
       const content = fs.readFileSync(path.join(dir, file), 'utf8');
       const m = content.match(/^---\n([\s\S]*?)\n---/);
@@ -185,8 +227,11 @@ function discoverCommands(config) {
 // ── Terminal capture ────────────────────────────────────
 
 async function capturePaneAnsi(node, target) {
-  const content = await node.exec(`tmux capture-pane -e -p -S -500 -t "${target}" 2>/dev/null`) || '';
-  const colsStr = await node.exec(`tmux display-message -p -t "${target}" "#{pane_width}" 2>/dev/null`);
+  const content =
+    (await node.exec(`tmux capture-pane -e -p -S -500 -t "${target}" 2>/dev/null`)) || '';
+  const colsStr = await node.exec(
+    `tmux display-message -p -t "${target}" "#{pane_width}" 2>/dev/null`,
+  );
   const cols = parseInt(colsStr) || 0;
   return { content, cols };
 }

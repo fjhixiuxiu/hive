@@ -16,16 +16,14 @@ process.on('uncaughtException', (err) => {
 // override: true preserves the prior behavior of overriding existing env vars.
 const envPath = path.join(__dirname, '..', '.env');
 if (fs.existsSync(envPath)) {
-    require('dotenv').config({ path: envPath, override: true });
+  require('dotenv').config({ path: envPath, override: true });
 }
 
 // Load config
 const configPath = path.join(__dirname, '..', 'hive.config.js');
 if (!fs.existsSync(configPath)) {
-    log.error(
-        'Missing hive.config.js -- copy from hive.config.example.js and customize.',
-    );
-    process.exit(1);
+  log.error('Missing hive.config.js -- copy from hive.config.example.js and customize.');
+  process.exit(1);
 }
 const config = require(configPath);
 
@@ -40,18 +38,16 @@ log.info('Node router initialized (local node)');
 const Watcher = require('./core/watcher');
 const watcher = new Watcher(config, router);
 watcher
-    .start()
-    .then(() => {
-        log.info(
-            `Watcher started (polling every ${config.watcher.interval / 1000}s)`,
-        );
-    })
-    .catch((err) => {
-        log.error('Watcher failed to start:', err.message);
-    });
+  .start()
+  .then(() => {
+    log.info(`Watcher started (polling every ${config.watcher.interval / 1000}s)`);
+  })
+  .catch((err) => {
+    log.error('Watcher failed to start:', err.message);
+  });
 
 // Start Telegram integration (optional)
-const {createBot} = require('./integrations/telegram/bot');
+const { createBot } = require('./integrations/telegram/bot');
 const telegramBot = createBot(config, watcher, router);
 
 // Start task queue
@@ -65,9 +61,9 @@ watcher.seedWorkingFromTasks([...taskQueue.activeTaskBySession.keys()]);
 // Patch config.sessions.repoDir to check spawned agents first
 const originalRepoDir = config.sessions.repoDir;
 config.sessions.repoDir = (n) => {
-    const spawned = taskQueue.getSpawnedAgent(n);
-    if (spawned) return spawned.repoDir;
-    return originalRepoDir(n);
+  const spawned = taskQueue.getSpawnedAgent(n);
+  if (spawned) return spawned.repoDir;
+  return originalRepoDir(n);
 };
 
 // Start project managers
@@ -75,11 +71,11 @@ const ProjectManager = require('./core/pm');
 const pmManager = new ProjectManager(taskQueue);
 // Load PM state from the state file (taskQueue already loaded it)
 try {
-    const stateFile = path.join(__dirname, '..', '.hive-state.json');
-    const state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
-    if (state.pms) pmManager.loadState(state.pms);
+  const stateFile = path.join(__dirname, '..', '.hive-state.json');
+  const state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+  if (state.pms) pmManager.loadState(state.pms);
 } catch {
-    // No PM state yet
+  // No PM state yet
 }
 
 // Start Slack bot (optional — needs SLACK_APP_TOKEN + SLACK_BOT_TOKEN)
@@ -91,29 +87,23 @@ const { createGithubBot } = require('./integrations/github/bot');
 const githubBot = createGithubBot(taskQueue, config, router, pmManager);
 
 // Start Web dashboard
-const {createWebServer} = require('./integrations/web/server');
-const webServer = createWebServer(
-    config,
-    watcher,
-    taskQueue,
-    pmManager,
-    router,
-);
+const { createWebServer } = require('./integrations/web/server');
+const webServer = createWebServer(config, watcher, taskQueue, pmManager, router);
 
 // Graceful shutdown
 process.on('SIGINT', () => {
-    log.info('\nShutting down...');
-    pmManager.stopAll();
-    watcher.stop();
-    if (githubBot) githubBot.stop();
-    if (webServer) webServer.close();
-    process.exit(0);
+  log.info('\nShutting down...');
+  pmManager.stopAll();
+  watcher.stop();
+  if (githubBot) githubBot.stop();
+  if (webServer) webServer.close();
+  process.exit(0);
 });
 
 process.on('SIGTERM', () => {
-    pmManager.stopAll();
-    watcher.stop();
-    if (githubBot) githubBot.stop();
-    if (webServer) webServer.close();
-    process.exit(0);
+  pmManager.stopAll();
+  watcher.stop();
+  if (githubBot) githubBot.stop();
+  if (webServer) webServer.close();
+  process.exit(0);
 });

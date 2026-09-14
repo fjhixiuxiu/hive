@@ -23,7 +23,7 @@ const NUMBERED_OPTION_PATTERN = /^\d+[.)]\s+.{5,}/;
 const API_ERROR_PATTERNS = [
   // HTTP status codes (Anthropic API)
   /API Error:?\s*\(?\s*(408|429|500|502|503|504|529)\b/,
-  /usage limit reached/i,   // quota message ("Usage limit reached. Resets at …") — no "API Error" prefix
+  /usage limit reached/i, // quota message ("Usage limit reached. Resets at …") — no "API Error" prefix
   /Internal server error/i,
   /timeout_error/i,
   // Timeout / streaming
@@ -96,8 +96,8 @@ const API_ERROR_PHRASES = [
 ];
 
 function lineHasRetryableError(line) {
-  if (API_ERROR_PATTERNS.some(p => p.test(line))) return true;
-  if (API_ERROR_LINE_RE.test(line)) return API_ERROR_PHRASES.some(p => p.test(line));
+  if (API_ERROR_PATTERNS.some((p) => p.test(line))) return true;
+  if (API_ERROR_LINE_RE.test(line)) return API_ERROR_PHRASES.some((p) => p.test(line));
   return false;
 }
 
@@ -140,7 +140,7 @@ const RETRY_SUBMITTED_RE = /^\s*[>❯]\s+retry\s*$/i;
 // real work. The wait between attempts grows exponentially (15s, 30s, 1m, 2m, 4m)
 // and is capped at 5m so a long server throttle (e.g. HTTP 529 "temporarily
 // limiting requests") doesn't hammer the API.
-const ERROR_RETRY_BASE = 15000;       // 15s before the first retry
+const ERROR_RETRY_BASE = 15000; // 15s before the first retry
 const ERROR_RETRY_MAX_DELAY = 300000; // cap exponential backoff at 5 min
 
 // Patterns to extract a reset time from rate limit messages
@@ -208,18 +208,14 @@ const APPROVAL_PATTERNS = [
 
 // Patterns that indicate Claude is asking the user a question
 const QUESTION_PATTERNS = [
-  /^\s*❯\s+/,           // selection cursor (AskUserQuestion UI)
-  /^\s*>\s+\S/,          // alternate selection cursor
-  /^\s*\?\s+.{5,}/,     // ? prefix on question line
-  /Other$/,              // "Other" option always present in AskUserQuestion
+  /^\s*❯\s+/, // selection cursor (AskUserQuestion UI)
+  /^\s*>\s+\S/, // alternate selection cursor
+  /^\s*\?\s+.{5,}/, // ? prefix on question line
+  /Other$/, // "Other" option always present in AskUserQuestion
 ];
 
 // Lines that look like questions but are actually Claude UI tips/chrome
-const QUESTION_IGNORE = [
-  /\?\s+for shortcuts/,
-  /\?\s+for help/,
-  /Try "/,
-];
+const QUESTION_IGNORE = [/\?\s+for shortcuts/, /\?\s+for help/, /Try "/];
 
 class Watcher extends EventEmitter {
   constructor(config, router) {
@@ -228,23 +224,23 @@ class Watcher extends EventEmitter {
     this.router = router;
     this.interval = null;
     this.approvalInterval = null;
-    this.prevStates = new Map();   // num -> 'idle'|'working'|'off'
+    this.prevStates = new Map(); // num -> 'idle'|'working'|'off'
     this.notifiedIdle = new Set(); // nums we've already emitted idle for
-    this.pendingIdle = new Map();  // num -> count of consecutive idle polls (confirm at 5)
-    this.seenWorking = new Set();  // nums that have been observed working at least once
+    this.pendingIdle = new Map(); // num -> count of consecutive idle polls (confirm at 5)
+    this.seenWorking = new Set(); // nums that have been observed working at least once
     this._pendingWorking = new Map(); // num -> count of consecutive working polls
-    this.prevCI = new Map();       // num -> CI result string
-    this.prevReview = new Map();   // num -> review status string
-    this.prevBranch = new Map();   // num -> branch name
+    this.prevCI = new Map(); // num -> CI result string
+    this.prevReview = new Map(); // num -> review status string
+    this.prevBranch = new Map(); // num -> branch name
     this.detectedWaiting = new Set(); // session nums waiting for user (approvals or questions)
     this.sessionActivity = new Map(); // num -> timestamp of last meaningful activity
-    this.errorRetries = new Map();    // num -> { count, lastRetryAt }
+    this.errorRetries = new Map(); // num -> { count, lastRetryAt }
     // Auto-retry of transient API errors types "retry" into the session on its own.
     // It's on by default; set watcher.errorRetry.enabled = false to opt out entirely.
     this.errorRetryEnabled = config.watcher?.errorRetry?.enabled !== false;
-    this._prevFleetNums = null;       // last poll's set of fleet session nums (drop/add diagnostics)
+    this._prevFleetNums = null; // last poll's set of fleet session nums (drop/add diagnostics)
     this.serverCheckInterval = null;
-    this._lastServerAlert = null;     // pid fingerprint of the last split-brain we alerted on
+    this._lastServerAlert = null; // pid fingerprint of the last split-brain we alerted on
     // Watch for a second tmux server appearing on the default socket. On by
     // default; set watcher.serverCheck.enabled = false to opt out.
     this.serverCheckEnabled = config.watcher?.serverCheck?.enabled !== false;
@@ -273,15 +269,15 @@ class Watcher extends EventEmitter {
     await this._seed();
 
     this.interval = setInterval(() => {
-      this._poll().catch(err => log.error('Watcher poll error:', err.message));
+      this._poll().catch((err) => log.error('Watcher poll error:', err.message));
     }, this.config.watcher.interval);
     // Approval detection: poll working sessions every 10s
     this.approvalInterval = setInterval(() => {
-      this._checkApprovals().catch(err => log.error('Approval check error:', err.message));
+      this._checkApprovals().catch((err) => log.error('Approval check error:', err.message));
     }, 10000);
     if (this.serverCheckEnabled) {
       this.serverCheckInterval = setInterval(() => {
-        this._checkTmuxServers().catch(err => log.error('tmux server check error:', err.message));
+        this._checkTmuxServers().catch((err) => log.error('tmux server check error:', err.message));
       }, this.serverCheckMs);
     }
   }
@@ -326,14 +322,17 @@ class Watcher extends EventEmitter {
       return;
     }
     // Alert once per distinct set of servers, not every tick.
-    const fingerprint = servers.map(s => s.pid).sort((a, b) => a - b).join(',');
+    const fingerprint = servers
+      .map((s) => s.pid)
+      .sort((a, b) => a - b)
+      .join(',');
     if (fingerprint === this._lastServerAlert) return;
     this._lastServerAlert = fingerprint;
 
     log.error(
       `[watcher] ${servers.length} tmux servers are running on the default socket (pids ${fingerprint}) — ` +
-      `the socket was replaced and one fleet is stranded. Recover with: tmux kill-server (kills the impostor), ` +
-      `then kill -USR1 <original-pid> to recreate its socket.`
+        `the socket was replaced and one fleet is stranded. Recover with: tmux kill-server (kills the impostor), ` +
+        `then kill -USR1 <original-pid> to recreate its socket.`,
     );
     this.emit('tmux:split-brain', { servers, count: servers.length, fingerprint });
   }
@@ -353,7 +352,8 @@ class Watcher extends EventEmitter {
     // Seed git info for all sessions (runs once, in background)
     for (const s of sessions) {
       const node = this.router.nodeFor(s.name);
-      if (node && fleet.refreshGitInfo) fleet.refreshGitInfo(this.config, node, s.name, s.nodeId).catch(() => {});
+      if (node && fleet.refreshGitInfo)
+        fleet.refreshGitInfo(this.config, node, s.name, s.nodeId).catch(() => {});
     }
 
     // One-time scan: retry any session stalled on an API error from before restart.
@@ -374,14 +374,16 @@ class Watcher extends EventEmitter {
     // Diagnostic: log when the fleet snapshot gains/loses sessions. A session that
     // drops out (e.g. under load / slow tmux capture) silently stops being polled —
     // and so stops being eligible for error-retry — without any other trace.
-    const fleetNums = new Set(sessions.map(s => s.num));
+    const fleetNums = new Set(sessions.map((s) => s.num));
     if (this._prevFleetNums) {
-      const dropped = [...this._prevFleetNums].filter(n => !fleetNums.has(n));
-      const added = [...fleetNums].filter(n => !this._prevFleetNums.has(n));
+      const dropped = [...this._prevFleetNums].filter((n) => !fleetNums.has(n));
+      const added = [...fleetNums].filter((n) => !this._prevFleetNums.has(n));
       if (dropped.length || added.length) {
-        log.info(`[watcher] fleet membership changed (${fleetNums.size} sessions)` +
-          `${dropped.length ? ` — dropped: ${dropped.join(',')}` : ''}` +
-          `${added.length ? ` — added: ${added.join(',')}` : ''}`);
+        log.info(
+          `[watcher] fleet membership changed (${fleetNums.size} sessions)` +
+            `${dropped.length ? ` — dropped: ${dropped.join(',')}` : ''}` +
+            `${added.length ? ` — added: ${added.join(',')}` : ''}`,
+        );
       }
     }
     this._prevFleetNums = fleetNums;
@@ -455,17 +457,30 @@ class Watcher extends EventEmitter {
               const node = this.router.nodeFor(s.name);
               if (node) {
                 // Refresh git info now that session finished work
-                if (fleet.refreshGitInfo) fleet.refreshGitInfo(this.config, node, s.name, s.nodeId).catch(() => {});
+                if (fleet.refreshGitInfo)
+                  fleet.refreshGitInfo(this.config, node, s.name, s.nodeId).catch(() => {});
                 preview = await fleet.peekSession(this.config, node, s.name);
                 // Also capture ANSI version + pane width for task snapshot display
                 const paneTarget = tmux.paneTarget(s.name, this.config.sessions.claudePane);
-                ansiSnapshot = await node.exec(`tmux capture-pane -e -p -S -500 -t "${paneTarget}" 2>/dev/null`) || '';
-                const colsStr = await node.exec(`tmux display-message -p -t "${paneTarget}" "#{pane_width}" 2>/dev/null`);
+                ansiSnapshot =
+                  (await node.exec(
+                    `tmux capture-pane -e -p -S -500 -t "${paneTarget}" 2>/dev/null`,
+                  )) || '';
+                const colsStr = await node.exec(
+                  `tmux display-message -p -t "${paneTarget}" "#{pane_width}" 2>/dev/null`,
+                );
                 paneCols = parseInt(colsStr) || 0;
               }
             } catch {}
             this.sessionActivity.set(s.num, Date.now());
-            this.emit('session:idle', { session: s, name: s.name, num: s.num, preview, ansiSnapshot, paneCols });
+            this.emit('session:idle', {
+              session: s,
+              name: s.name,
+              num: s.num,
+              preview,
+              ansiSnapshot,
+              paneCols,
+            });
           } else {
             this.pendingIdle.set(s.num, count);
           }
@@ -523,8 +538,12 @@ class Watcher extends EventEmitter {
       const currBranch = s.branch;
       if (currBranch && prevBranch && prevBranch !== currBranch) {
         this.emit('branch:changed', {
-          session: s, name: s.name, num: s.num,
-          from: prevBranch, to: currBranch, pr: s.pr || null,
+          session: s,
+          name: s.name,
+          num: s.num,
+          from: prevBranch,
+          to: currBranch,
+          pr: s.pr || null,
         });
       }
       if (currBranch) this.prevBranch.set(s.num, currBranch);
@@ -538,7 +557,7 @@ class Watcher extends EventEmitter {
     }
 
     // Clean up stale entries for sessions that no longer exist
-    const currentNums = new Set(sessions.map(s => s.num));
+    const currentNums = new Set(sessions.map((s) => s.num));
     for (const num of this.sessionActivity.keys()) {
       if (!currentNums.has(num)) this.sessionActivity.delete(num);
     }
@@ -583,11 +602,10 @@ class Watcher extends EventEmitter {
 
     const allLines = content.split('\n');
     const narrow = allLines.slice(-NARROW_SLICE_LINES);
-    const tasksPanelVisible = narrow.some(l =>
-      TASKS_PANEL_HEADER_RE.test(l) || TASKS_PANEL_SUMMARY_RE.test(l));
-    const lines = tasksPanelVisible
-      ? allLines.slice(-WIDE_SLICE_LINES)
-      : narrow;
+    const tasksPanelVisible = narrow.some(
+      (l) => TASKS_PANEL_HEADER_RE.test(l) || TASKS_PANEL_SUMMARY_RE.test(l),
+    );
+    const lines = tasksPanelVisible ? allLines.slice(-WIDE_SLICE_LINES) : narrow;
 
     // Track the LATEST index of each marker so we can answer "was a retry
     // submitted AFTER the most recent error?" — the stray-retry guard below.
@@ -604,7 +622,9 @@ class Watcher extends EventEmitter {
     // idle handling resume.
     if (!hasError) {
       if (this.errorRetries.has(s.num)) {
-        log.info(`[watcher] session ${s.num}: API error cleared after ${retry.count} retr${retry.count === 1 ? 'y' : 'ies'}`);
+        log.info(
+          `[watcher] session ${s.num}: API error cleared after ${retry.count} retr${retry.count === 1 ? 'y' : 'ies'}`,
+        );
         this.errorRetries.delete(s.num);
       }
       return false;
@@ -617,7 +637,9 @@ class Watcher extends EventEmitter {
     // text lingering in the slice would otherwise trigger a stray duplicate.
     // Stay in recovery (return true) so normal idle handling doesn't fire either.
     if (lastRetrySubmittedIdx > lastErrorIdx) {
-      log.info(`[watcher] session ${s.num}: retry already submitted in pane after API error — skipping (no duplicate)`);
+      log.info(
+        `[watcher] session ${s.num}: retry already submitted in pane after API error — skipping (no duplicate)`,
+      );
       return true;
     }
 
@@ -632,7 +654,9 @@ class Watcher extends EventEmitter {
     // permanently un-retried because no working→idle transition could ever fire
     // (the retry that would cause one was the very thing the gate blocked).
     if (!this.seenWorking.has(s.num)) {
-      log.info(`[watcher] session ${s.num}: promoting seenWorking on retryable error (was never marked working)`);
+      log.info(
+        `[watcher] session ${s.num}: promoting seenWorking on retryable error (was never marked working)`,
+      );
       this.seenWorking.add(s.num);
     }
     // A retryable API error means Claude stalled on an API *call*, not on a user prompt —
@@ -641,7 +665,9 @@ class Watcher extends EventEmitter {
     // otherwise only clears on a working transition the stuck session can never reach
     // (the retry that would get it there is the very thing the flag is blocking).
     if (this.detectedWaiting.has(s.num)) {
-      log.info(`[watcher] session ${s.num}: clearing stale detectedWaiting — retryable error present (Claude not awaiting user)`);
+      log.info(
+        `[watcher] session ${s.num}: clearing stale detectedWaiting — retryable error present (Claude not awaiting user)`,
+      );
       this.detectedWaiting.delete(s.num);
     }
     // Claude is actively working / self-retrying (spinner with an ellipsis, e.g.
@@ -662,10 +688,16 @@ class Watcher extends EventEmitter {
       retry.retryAfter = resetAt;
       this.errorRetries.set(s.num, retry);
       const waitMins = Math.ceil((resetAt - Date.now()) / 60000);
-      log.info(`[watcher] session ${s.num}: rate limit detected, will retry after reset (${waitMins}m)`);
+      log.info(
+        `[watcher] session ${s.num}: rate limit detected, will retry after reset (${waitMins}m)`,
+      );
       this.emit('session:error-retry', {
-        session: s, name: s.name, num: s.num,
-        retryCount: retry.count, retryAfter: resetAt, waitMins,
+        session: s,
+        name: s.name,
+        num: s.num,
+        retryCount: retry.count,
+        retryAfter: resetAt,
+        waitMins,
       });
       return true;
     }
@@ -676,8 +708,12 @@ class Watcher extends EventEmitter {
     retry.retryAfter = 0;
     this.errorRetries.set(s.num, retry);
 
-    const nextWait = Math.round(Math.min(ERROR_RETRY_BASE * 2 ** retry.count, ERROR_RETRY_MAX_DELAY) / 1000);
-    log.info(`[watcher] session ${s.num}: API error detected, sending retry (attempt ${retry.count}, next wait ≤${nextWait}s)`);
+    const nextWait = Math.round(
+      Math.min(ERROR_RETRY_BASE * 2 ** retry.count, ERROR_RETRY_MAX_DELAY) / 1000,
+    );
+    log.info(
+      `[watcher] session ${s.num}: API error detected, sending retry (attempt ${retry.count}, next wait ≤${nextWait}s)`,
+    );
 
     try {
       await node.sendKeys(paneTarget, 'retry', true);
@@ -711,7 +747,10 @@ class Watcher extends EventEmitter {
       const content = await node.capturePane(paneTarget, { lines: 8 });
       if (!content) continue;
 
-      const lines = content.split('\n').map(l => l.replace(/[^\x20-\x7E]/g, '').trim()).filter(Boolean);
+      const lines = content
+        .split('\n')
+        .map((l) => l.replace(/[^\x20-\x7E]/g, '').trim())
+        .filter(Boolean);
       let isWaiting = false;
       let prompt = '';
 
@@ -737,7 +776,10 @@ class Watcher extends EventEmitter {
               // Skip known UI chrome that looks like questions
               let ignored = false;
               for (const ign of QUESTION_IGNORE) {
-                if (ign.test(line)) { ignored = true; break; }
+                if (ign.test(line)) {
+                  ignored = true;
+                  break;
+                }
               }
               if (ignored) break;
               isWaiting = true;

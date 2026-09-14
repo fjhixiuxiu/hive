@@ -16,10 +16,20 @@ const prStatus = require('../../core/pr-status');
 const plansStore = require('../../core/plans-store');
 const log = require('../../core/log');
 const {
-  HIVE_CONSOLE_SESSION, HIVE_CONSOLE_DIR, ghExecEnv, setupPath,
-  isSetupComplete, decorateTaskActions, executeTaskAction,
-  getTailscaleIP, getBindHosts, scanCommands, discoverCommands,
-  capturePaneAnsi, buildConfigMessage, resolveMcpSessionNum,
+  HIVE_CONSOLE_SESSION,
+  HIVE_CONSOLE_DIR,
+  ghExecEnv,
+  setupPath,
+  isSetupComplete,
+  decorateTaskActions,
+  executeTaskAction,
+  getTailscaleIP,
+  getBindHosts,
+  scanCommands,
+  discoverCommands,
+  capturePaneAnsi,
+  buildConfigMessage,
+  resolveMcpSessionNum,
 } = require('./ws-helpers');
 const createMessageHandler = require('./ws-handlers');
 const VoiceAgent = require('../voice');
@@ -77,16 +87,22 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     try {
       // Hash every asset that index.html cache-busts with ?v={{V}} so editing
       // any one of them changes the version.
-      const publicAssets = ['app.js', 'styles.css', 'primary-action.js', 'plan-sanitize.js']
-        .map(f => fs.statSync(path.join(PUBLIC_DIR, f)).mtimeMs);
+      const publicAssets = ['app.js', 'styles.css', 'primary-action.js', 'plan-sanitize.js'].map(
+        (f) => fs.statSync(path.join(PUBLIC_DIR, f)).mtimeMs,
+      );
       publicAssets.push(fs.statSync(SESSION_LINKS_JS).mtimeMs);
       return String(Math.floor(publicAssets.reduce((a, b) => a + b, 0)));
-    } catch { return String(Date.now()); }
+    } catch {
+      return String(Date.now());
+    }
   }
   function serveIndex(_req, res) {
     let html;
-    try { html = fs.readFileSync(path.join(PUBLIC_DIR, 'index.html'), 'utf8'); }
-    catch (e) { return res.status(500).send('index.html not found'); }
+    try {
+      html = fs.readFileSync(path.join(PUBLIC_DIR, 'index.html'), 'utf8');
+    } catch (e) {
+      return res.status(500).send('index.html not found');
+    }
     html = html.replace(/\{\{V\}\}/g, assetVersion());
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
     res.setHeader('Content-Type', 'text/html; charset=UTF-8');
@@ -102,14 +118,16 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     res.sendFile(SESSION_LINKS_JS);
   });
 
-  app.use(express.static(PUBLIC_DIR, {
-    setHeaders: (res, filePath) => {
-      // Prevent browser caching of HTML/JS/CSS during development
-      if (/\.(html|js|css)$/.test(filePath)) {
-        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-      }
-    }
-  }));
+  app.use(
+    express.static(PUBLIC_DIR, {
+      setHeaders: (res, filePath) => {
+        // Prevent browser caching of HTML/JS/CSS during development
+        if (/\.(html|js|css)$/.test(filePath)) {
+          res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        }
+      },
+    }),
+  );
 
   // SPA fallback — serve index.html for /ui/* routes so browser refreshes work
   app.get('/ui/*', serveIndex);
@@ -123,7 +141,14 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     if (!ct.startsWith('image/')) {
       return res.status(400).json({ success: false, error: 'Content-Type must be image/*' });
     }
-    const extMap = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp', 'image/bmp': 'bmp', 'image/svg+xml': 'svg' };
+    const extMap = {
+      'image/png': 'png',
+      'image/jpeg': 'jpg',
+      'image/gif': 'gif',
+      'image/webp': 'webp',
+      'image/bmp': 'bmp',
+      'image/svg+xml': 'svg',
+    };
     const ext = extMap[ct] || 'png';
     const filename = `hive-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
     const filepath = path.join(uploadDir, filename);
@@ -132,24 +157,27 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
   });
 
   // TTL cleanup: delete uploaded images older than 1 hour, every 10 minutes
-  const uploadTtlInterval = setInterval(() => {
-    try {
-      const now = Date.now();
-      const files = fs.readdirSync(uploadDir);
-      let cleaned = 0;
-      for (const f of files) {
-        const fp = path.join(uploadDir, f);
-        try {
-          const stat = fs.statSync(fp);
-          if (now - stat.mtimeMs > 60 * 60 * 1000) {
-            fs.unlinkSync(fp);
-            cleaned++;
-          }
-        } catch {}
-      }
-      if (cleaned > 0) log.info(`[upload] Cleaned ${cleaned} expired file(s)`);
-    } catch {}
-  }, 10 * 60 * 1000);
+  const uploadTtlInterval = setInterval(
+    () => {
+      try {
+        const now = Date.now();
+        const files = fs.readdirSync(uploadDir);
+        let cleaned = 0;
+        for (const f of files) {
+          const fp = path.join(uploadDir, f);
+          try {
+            const stat = fs.statSync(fp);
+            if (now - stat.mtimeMs > 60 * 60 * 1000) {
+              fs.unlinkSync(fp);
+              cleaned++;
+            }
+          } catch {}
+        }
+        if (cleaned > 0) log.info(`[upload] Cleaned ${cleaned} expired file(s)`);
+      } catch {}
+    },
+    10 * 60 * 1000,
+  );
 
   // -- REST API for session context (MCP tool integration) -------------------
   app.use('/api/context', express.json());
@@ -197,7 +225,8 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     if (taskQueue) {
       for (const p of plans) {
         if (p.sourceTaskId == null) continue;
-        const t = taskQueue.tasks.get(p.sourceTaskId) || taskQueue.tasks.get(String(p.sourceTaskId));
+        const t =
+          taskQueue.tasks.get(p.sourceTaskId) || taskQueue.tasks.get(String(p.sourceTaskId));
         p.sourceTaskStatus = t ? t.status : 'missing';
       }
     }
@@ -241,16 +270,23 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
   app.use('/api/plans', express.json());
 
   app.get('/api/plans/:planId/comments', (req, res) => {
-    if (!plansStore.getPlan(req.params.planId)) return res.status(404).json({ error: 'Plan not found' });
+    if (!plansStore.getPlan(req.params.planId))
+      return res.status(404).json({ error: 'Plan not found' });
     res.json({ comments: plansStore.getComments(req.params.planId) });
   });
 
   app.post('/api/plans/:planId/comments', (req, res) => {
-    if (!plansStore.getPlan(req.params.planId)) return res.status(404).json({ error: 'Plan not found' });
+    if (!plansStore.getPlan(req.params.planId))
+      return res.status(404).json({ error: 'Plan not found' });
     const { sectionId, text } = req.body || {};
-    if (!sectionId || !text) return res.status(400).json({ error: 'sectionId and text are required' });
+    if (!sectionId || !text)
+      return res.status(400).json({ error: 'sectionId and text are required' });
     try {
-      const comment = plansStore.addComment(req.params.planId, { sectionId, text, status: 'draft' });
+      const comment = plansStore.addComment(req.params.planId, {
+        sectionId,
+        text,
+        status: 'draft',
+      });
       const html = plansStore.getPlanHtml(req.params.planId);
       const openCount = plansStore.countOpenComments(html);
       broadcastPlanCommentChange(req.params.planId, openCount);
@@ -261,7 +297,8 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
   });
 
   app.patch('/api/plans/:planId/comments/:commentId', (req, res) => {
-    if (!plansStore.getPlan(req.params.planId)) return res.status(404).json({ error: 'Plan not found' });
+    if (!plansStore.getPlan(req.params.planId))
+      return res.status(404).json({ error: 'Plan not found' });
     const { status } = req.body || {};
     if (!['draft', 'open', 'resolved', 'moved'].includes(status)) {
       return res.status(400).json({ error: 'status must be draft|open|resolved|moved' });
@@ -284,7 +321,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       return res.status(400).json({ error: 'Plan has no originating session — cannot send' });
     }
 
-    const drafts = plansStore.getComments(req.params.planId).filter(c => c.status === 'draft');
+    const drafts = plansStore.getComments(req.params.planId).filter((c) => c.status === 'draft');
     if (!drafts.length) return res.json({ sent: 0, message: 'No draft comments to send' });
 
     const found = await resolveSession({ session: sessionNum });
@@ -293,7 +330,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     if (!node) return res.status(503).json({ error: `Node ${found.nodeId} unavailable` });
 
     const title = plan.meta.title || 'plan';
-    const lines = drafts.map(c => {
+    const lines = drafts.map((c) => {
       const text = (c.thread?.[0]?.text || '').trim();
       return `[${c.id} §${c.sectionId}] ${text}`;
     });
@@ -364,7 +401,10 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     const pmName = task.source.slice(3);
     let pm = null;
     for (const candidate of pmManager.pms.values()) {
-      if (candidate.name === pmName) { pm = candidate; break; }
+      if (candidate.name === pmName) {
+        pm = candidate;
+        break;
+      }
     }
     if (!pm || !pm.autoArchivePlanOnTaskComplete) return;
     try {
@@ -382,7 +422,8 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
   }
 
   app.post('/api/plans/:planId/archive', (req, res) => {
-    if (!plansStore.getPlan(req.params.planId)) return res.status(404).json({ error: 'Plan not found' });
+    if (!plansStore.getPlan(req.params.planId))
+      return res.status(404).json({ error: 'Plan not found' });
     const ok = plansStore.archivePlan(req.params.planId);
     if (!ok) return res.status(500).json({ error: 'Archive failed' });
     clearPlanRefFromSessions(req.params.planId);
@@ -391,7 +432,8 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
   });
 
   app.post('/api/plans/:planId/unarchive', (req, res) => {
-    if (!plansStore.getPlan(req.params.planId)) return res.status(404).json({ error: 'Plan not found' });
+    if (!plansStore.getPlan(req.params.planId))
+      return res.status(404).json({ error: 'Plan not found' });
     const ok = plansStore.unarchivePlan(req.params.planId);
     if (!ok) return res.status(500).json({ error: 'Unarchive failed' });
     // Note: we do NOT auto-restore planRef to sessions. User must re-pin manually.
@@ -400,7 +442,8 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
   });
 
   app.post('/api/plans/:planId/delete', (req, res) => {
-    if (!plansStore.getPlan(req.params.planId)) return res.status(404).json({ error: 'Plan not found' });
+    if (!plansStore.getPlan(req.params.planId))
+      return res.status(404).json({ error: 'Plan not found' });
     const ok = plansStore.deletePlan(req.params.planId);
     if (!ok) return res.status(500).json({ error: 'Delete failed' });
     clearPlanRefFromSessions(req.params.planId);
@@ -423,15 +466,24 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     const failed = [];
     for (const id of ids) {
       try {
-        if (!plansStore.getPlan(id)) { failed.push({ id, error: 'not found' }); continue; }
+        if (!plansStore.getPlan(id)) {
+          failed.push({ id, error: 'not found' });
+          continue;
+        }
         let succeeded;
         if (action === 'archive') succeeded = plansStore.archivePlan(id);
         else if (action === 'unarchive') succeeded = plansStore.unarchivePlan(id);
         else succeeded = plansStore.deletePlan(id);
-        if (!succeeded) { failed.push({ id, error: `${action} failed` }); continue; }
+        if (!succeeded) {
+          failed.push({ id, error: `${action} failed` });
+          continue;
+        }
         if (action === 'archive' || action === 'delete') clearPlanRefFromSessions(id);
         ok.push(id);
-        broadcast({ type: `plan:${action === 'unarchive' ? 'unarchived' : action === 'archive' ? 'archived' : 'deleted'}`, planId: id });
+        broadcast({
+          type: `plan:${action === 'unarchive' ? 'unarchived' : action === 'archive' ? 'archived' : 'deleted'}`,
+          planId: id,
+        });
       } catch (err) {
         failed.push({ id, error: err.message });
       }
@@ -479,7 +531,9 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     }
     if (!taskQueue) return true; // no task queue = no permission system
     if (taskQueue.hasPermission(user.login, capability)) return true;
-    ws.send(JSON.stringify({ type: 'error', message: `Permission denied: requires "${capability}"` }));
+    ws.send(
+      JSON.stringify({ type: 'error', message: `Permission denied: requires "${capability}"` }),
+    );
     return false;
   }
 
@@ -509,64 +563,145 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     // Send user permissions
     if (auth.isOAuthEnabled() && user && user.login && taskQueue) {
       const u = taskQueue.getUser(user.login);
-      ws.send(JSON.stringify({ type: 'user:permissions', permissions: u ? u.permissions : ['view', 'comment'] }));
+      ws.send(
+        JSON.stringify({
+          type: 'user:permissions',
+          permissions: u ? u.permissions : ['view', 'comment'],
+        }),
+      );
     }
     await sendFleetStatus(ws);
     if (taskQueue) {
       ws.send(JSON.stringify({ type: 'workStates:list', states: taskQueue.getWorkStates() }));
-      ws.send(JSON.stringify({ type: 'tasks:list', tasks: taskQueue.getTasksList().map(t => decorateTaskActions(t, pmManager)) }));
-      ws.send(JSON.stringify({ type: 'auto:status', sessions: taskQueue.getAutoSessions(), manual: taskQueue.getManualSessions() }));
-      ws.send(JSON.stringify({ type: 'approvals:list', approvals: taskQueue.getPendingApprovals() }));
+      ws.send(
+        JSON.stringify({
+          type: 'tasks:list',
+          tasks: taskQueue.getTasksList().map((t) => decorateTaskActions(t, pmManager)),
+        }),
+      );
+      ws.send(
+        JSON.stringify({
+          type: 'auto:status',
+          sessions: taskQueue.getAutoSessions(),
+          manual: taskQueue.getManualSessions(),
+        }),
+      );
+      ws.send(
+        JSON.stringify({ type: 'approvals:list', approvals: taskQueue.getPendingApprovals() }),
+      );
       const feedData = taskQueue.getFeed(null, 50);
-      ws.send(JSON.stringify({ type: 'feed:entries', entries: feedData.entries, hasMore: feedData.hasMore }));
+      ws.send(
+        JSON.stringify({
+          type: 'feed:entries',
+          entries: feedData.entries,
+          hasMore: feedData.hasMore,
+        }),
+      );
       ws.send(JSON.stringify({ type: 'rules:list', rules: taskQueue.getRules() }));
       // Defs must precede assignments — getDesigColor() resolves names against the defs
       // cache, so re-renders triggered by `designations:status` need defs already loaded.
-      ws.send(JSON.stringify({ type: 'designationDefs:list', defs: taskQueue.getDesignationDefs() }));
-      ws.send(JSON.stringify({ type: 'designations:status', designations: taskQueue.getDesignations() }));
+      ws.send(
+        JSON.stringify({ type: 'designationDefs:list', defs: taskQueue.getDesignationDefs() }),
+      );
+      ws.send(
+        JSON.stringify({ type: 'designations:status', designations: taskQueue.getDesignations() }),
+      );
       ws.send(JSON.stringify({ type: 'vim:status', enabled: taskQueue.vimMode }));
-      ws.send(JSON.stringify({ type: 'taskAutoComplete:status', enabled: taskQueue.taskAutoComplete }));
-      ws.send(JSON.stringify({ type: 'requireHumanCloseAll:status', enabled: taskQueue.requireHumanCloseAll }));
-      ws.send(JSON.stringify({ type: 'autoCreateForManualTasks:status', enabled: taskQueue.autoCreateForManualTasks }));
-      ws.send(JSON.stringify({ type: 'taskButtons:status', requeue: taskQueue.showRequeueBtn, defer: taskQueue.showDeferBtn }));
+      ws.send(
+        JSON.stringify({ type: 'taskAutoComplete:status', enabled: taskQueue.taskAutoComplete }),
+      );
+      ws.send(
+        JSON.stringify({
+          type: 'requireHumanCloseAll:status',
+          enabled: taskQueue.requireHumanCloseAll,
+        }),
+      );
+      ws.send(
+        JSON.stringify({
+          type: 'autoCreateForManualTasks:status',
+          enabled: taskQueue.autoCreateForManualTasks,
+        }),
+      );
+      ws.send(
+        JSON.stringify({
+          type: 'taskButtons:status',
+          requeue: taskQueue.showRequeueBtn,
+          defer: taskQueue.showDeferBtn,
+        }),
+      );
       ws.send(JSON.stringify({ type: 'repoCaps:status', caps: taskQueue.getRepoCaps() }));
       ws.send(JSON.stringify({ type: 'agentRoots:list', roots: taskQueue.getAgentRoots() }));
       ws.send(JSON.stringify({ type: 'agentFiles:list', files: taskQueue.agentFilesList }));
-      ws.send(JSON.stringify({ type: 'checklistTemplates:list', templates: taskQueue.getChecklistTemplates() }));
-      ws.send(JSON.stringify({ type: 'spawnedAgents:list', agents: taskQueue.getSpawnedAgentsList() }));
+      ws.send(
+        JSON.stringify({
+          type: 'checklistTemplates:list',
+          templates: taskQueue.getChecklistTemplates(),
+        }),
+      );
+      ws.send(
+        JSON.stringify({ type: 'spawnedAgents:list', agents: taskQueue.getSpawnedAgentsList() }),
+      );
       ws.send(JSON.stringify({ type: 'context:all', contexts: taskQueue.getAllSessionContexts() }));
       // Send users list to all authenticated users (needed for assignee dropdown)
       // Full details to admins, login+name+avatar only to others
       if (!user || (user.login && taskQueue.hasPermission(user.login, 'admin'))) {
         ws.send(JSON.stringify({ type: 'users:list', users: taskQueue.getUsersList() }));
       } else {
-        const basicUsers = taskQueue.getUsersList().map(u => ({ login: u.login, name: u.name, avatar: u.avatar }));
+        const basicUsers = taskQueue
+          .getUsersList()
+          .map((u) => ({ login: u.login, name: u.name, avatar: u.avatar }));
         ws.send(JSON.stringify({ type: 'users:basic', users: basicUsers }));
       }
     }
     if (pmManager) {
       ws.send(JSON.stringify({ type: 'pm:list', pms: pmManager.getAll() }));
     }
-    const workerNodes = Array.from(workers.values()).map(n => ({
-      id: n.id, type: n.type, connected: n.connected,
+    const workerNodes = Array.from(workers.values()).map((n) => ({
+      id: n.id,
+      type: n.type,
+      connected: n.connected,
     }));
     ws.send(JSON.stringify({ type: 'nodes:list', nodes: workerNodes }));
     // Session 0 (hive console) status
-    tmux.hasSession(HIVE_CONSOLE_SESSION).then(exists => {
-      if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'console:status', available: exists }));
-    }).catch(() => {});
+    tmux
+      .hasSession(HIVE_CONSOLE_SESSION)
+      .then((exists) => {
+        if (ws.readyState === 1)
+          ws.send(JSON.stringify({ type: 'console:status', available: exists }));
+      })
+      .catch(() => {});
     // Integration status (configured or not, without revealing tokens)
-    ws.send(JSON.stringify({
-      type: 'integration:status',
-      integrations: {
-        github: { configured: !!process.env.GITHUB_TOKEN },
-        jenkins: { configured: !!(process.env.JENKINS_URL && process.env.JENKINS_USER && process.env.JENKINS_API_TOKEN) },
-        slack: { configured: !!(process.env.SLACK_BOT_TOKEN && process.env.SLACK_APP_TOKEN) },
-        jira: { configured: !!(process.env.JIRA_BASE_URL && process.env.JIRA_EMAIL && process.env.JIRA_API_TOKEN) },
-        zoho: { configured: !!(process.env.ZOHO_DESK_ORG_ID && process.env.ZOHO_DESK_CLIENT_ID && process.env.ZOHO_DESK_REFRESH_TOKEN) },
-        nectar: { configured: !!(process.env.NECTAR_URL && process.env.NECTAR_API_KEY) },
-      }
-    }));
+    ws.send(
+      JSON.stringify({
+        type: 'integration:status',
+        integrations: {
+          github: { configured: !!process.env.GITHUB_TOKEN },
+          jenkins: {
+            configured: !!(
+              process.env.JENKINS_URL &&
+              process.env.JENKINS_USER &&
+              process.env.JENKINS_API_TOKEN
+            ),
+          },
+          slack: { configured: !!(process.env.SLACK_BOT_TOKEN && process.env.SLACK_APP_TOKEN) },
+          jira: {
+            configured: !!(
+              process.env.JIRA_BASE_URL &&
+              process.env.JIRA_EMAIL &&
+              process.env.JIRA_API_TOKEN
+            ),
+          },
+          zoho: {
+            configured: !!(
+              process.env.ZOHO_DESK_ORG_ID &&
+              process.env.ZOHO_DESK_CLIENT_ID &&
+              process.env.ZOHO_DESK_REFRESH_TOKEN
+            ),
+          },
+          nectar: { configured: !!(process.env.NECTAR_URL && process.env.NECTAR_API_KEY) },
+        },
+      }),
+    );
   }
 
   function handleWsConnection(ws, request) {
@@ -584,19 +719,23 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
         if (taskQueue) taskQueue.ensureUser(userInfo.login, userInfo.name, userInfo.avatar);
         wsUser.set(ws, userInfo);
         clients.add(ws);
-        const perms = taskQueue ? (taskQueue.getUser(userInfo.login) || {}).permissions || ['view', 'comment'] : [];
+        const perms = taskQueue
+          ? (taskQueue.getUser(userInfo.login) || {}).permissions || ['view', 'comment']
+          : [];
         ws.send(JSON.stringify({ type: 'auth', ok: true, user: userInfo, permissions: perms }));
         sendInitialState(ws);
       }
     }
 
     // Auth timeout -- must authenticate within 5s
-    const authTimeout = authenticated ? null : setTimeout(() => {
-      if (!authenticated) {
-        ws.send(JSON.stringify({ type: 'error', message: 'Auth timeout' }));
-        ws.close();
-      }
-    }, 5000);
+    const authTimeout = authenticated
+      ? null
+      : setTimeout(() => {
+          if (!authenticated) {
+            ws.send(JSON.stringify({ type: 'error', message: 'Auth timeout' }));
+            ws.close();
+          }
+        }, 5000);
 
     ws.on('message', (raw) => {
       let msg;
@@ -615,14 +754,21 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
           if (authTimeout) clearTimeout(authTimeout);
           // Register user in permission system
           if (authResult.user && authResult.user.login && taskQueue) {
-            taskQueue.ensureUser(authResult.user.login, authResult.user.name, authResult.user.avatar);
+            taskQueue.ensureUser(
+              authResult.user.login,
+              authResult.user.name,
+              authResult.user.avatar,
+            );
           }
           wsUser.set(ws, authResult.user);
           clients.add(ws);
-          const perms = (authResult.user && authResult.user.login && taskQueue)
-            ? (taskQueue.getUser(authResult.user.login) || {}).permissions || ['view', 'comment']
-            : [];
-          ws.send(JSON.stringify({ type: 'auth', ok: true, user: authResult.user, permissions: perms }));
+          const perms =
+            authResult.user && authResult.user.login && taskQueue
+              ? (taskQueue.getUser(authResult.user.login) || {}).permissions || ['view', 'comment']
+              : [];
+          ws.send(
+            JSON.stringify({ type: 'auth', ok: true, user: authResult.user, permissions: perms }),
+          );
           sendInitialState(ws);
         } else if (msg.type === 'worker:register' && workerSecret && msg.secret === workerSecret) {
           // Worker node registration
@@ -651,7 +797,9 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
             const sessionNum = resolveMcpSessionNum(mcpSession, config.sessions?.namePrefix);
             mcpClients.set(ws, { session: sessionNum });
             if (sessionNum != null && String(sessionNum) !== mcpSession) {
-              log.info(`MCP client connected for session ${mcpSession} (resolved to ${sessionNum})`);
+              log.info(
+                `MCP client connected for session ${mcpSession} (resolved to ${sessionNum})`,
+              );
             } else {
               log.info(`MCP client connected for session ${mcpSession}`);
             }
@@ -676,7 +824,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
 
       // Dashboard client message routing
       const user = wsUser.get(ws) || null;
-      handleMessage(ws, msg, user).catch(err => {
+      handleMessage(ws, msg, user).catch((err) => {
         log.error('Message handler error:', err.message);
         if (ws.readyState === 1) {
           ws.send(JSON.stringify({ type: 'error', message: err.message }));
@@ -722,7 +870,10 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
 
   // -- Voice agent setup ---------------------------------------------------
   const voiceAgent = new VoiceAgent({
-    taskQueue, watcher, router, config,
+    taskQueue,
+    watcher,
+    router,
+    config,
     knowledgeBase: pmManager ? (entry) => pmManager.addKnowledge(entry) : null,
   });
   const voiceAudioWss = voiceAgent.setupAudioBridge();
@@ -757,12 +908,30 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
   // -- Message handlers (extracted to ws-handlers.js) ----------------------
 
   const handleMessage = createMessageHandler({
-    config, taskQueue, pmManager, router,
-    broadcast, checkPermission, resolveSession,
-    clearTermSub, clearConsoleSub, termSubs, consoleSubs,
-    clearCardSub, clearAllCardSubs, cardTermSubs,
-    sendFleetStatus, broadcastFleetStatus, sendInitialState, _previewCache,
-    commands, clients, wsUser, workers, mcpClients, voiceAgent,
+    config,
+    taskQueue,
+    pmManager,
+    router,
+    broadcast,
+    checkPermission,
+    resolveSession,
+    clearTermSub,
+    clearConsoleSub,
+    termSubs,
+    consoleSubs,
+    clearCardSub,
+    clearAllCardSubs,
+    cardTermSubs,
+    sendFleetStatus,
+    broadcastFleetStatus,
+    sendInitialState,
+    _previewCache,
+    commands,
+    clients,
+    wsUser,
+    workers,
+    mcpClients,
+    voiceAgent,
   });
 
   // ── Session 0 helper: resolve session (fleet or hive-console) ──
@@ -852,9 +1021,10 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
 
   function cleanPreview(content) {
     if (!content) return '';
-    const lines = content.split('\n')
-      .map(l => l.trimEnd())
-      .filter(l => {
+    const lines = content
+      .split('\n')
+      .map((l) => l.trimEnd())
+      .filter((l) => {
         const t = l.trim();
         if (!t) return false;
         for (const pat of PREVIEW_NOISE) {
@@ -879,29 +1049,33 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       const t0 = Date.now();
       const sessions = await fleet.getFleetStatus(config, router);
       // Fetch previews in parallel (each is an independent tmux capture-pane)
-      await Promise.all(sessions.map(async (s) => {
-        const watcherActivity = watcher.sessionActivity.get(s.num);
-        if (watcherActivity) s.lastActivity = watcherActivity;
-        try {
-          const node = s._node || router.nodeFor(s.name);
-          if (node) {
-            const content = await fleet.peekSession(config, node, s.name);
-            s.preview = cleanPreview(content);
-          } else {
+      await Promise.all(
+        sessions.map(async (s) => {
+          const watcherActivity = watcher.sessionActivity.get(s.num);
+          if (watcherActivity) s.lastActivity = watcherActivity;
+          try {
+            const node = s._node || router.nodeFor(s.name);
+            if (node) {
+              const content = await fleet.peekSession(config, node, s.name);
+              s.preview = cleanPreview(content);
+            } else {
+              s.preview = '';
+            }
+          } catch {
             s.preview = '';
           }
-        } catch {
-          s.preview = '';
-        }
-        s.repoDir = s.num != null ? config.sessions.repoDir(s.num) : '';
-        s.gitSummary = {
-          lastCommit: '',
-          lastCommitTime: '',
-          totalChanges: s.git ? s.git.staged + s.git.modified + s.git.untracked : 0,
-        };
-      }));
-      const withPreview = sessions.filter(s => s.preview).length;
-      log.info(`[perf] getFleetWithPreviews: ${Date.now() - t0}ms (${withPreview}/${sessions.length} have previews)`);
+          s.repoDir = s.num != null ? config.sessions.repoDir(s.num) : '';
+          s.gitSummary = {
+            lastCommit: '',
+            lastCommitTime: '',
+            totalChanges: s.git ? s.git.staged + s.git.modified + s.git.untracked : 0,
+          };
+        }),
+      );
+      const withPreview = sessions.filter((s) => s.preview).length;
+      log.info(
+        `[perf] getFleetWithPreviews: ${Date.now() - t0}ms (${withPreview}/${sessions.length} have previews)`,
+      );
       _previewCache.result = sessions;
       _previewCache.ts = Date.now();
       _previewCache.pending = null;
@@ -951,14 +1125,18 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
 
   // Broadcast fleet status every 15s
   const fleetInterval = setInterval(() => {
-    broadcastFleetStatus().catch(err => log.error('Fleet broadcast error:', err.message));
+    broadcastFleetStatus().catch((err) => log.error('Fleet broadcast error:', err.message));
   }, 15000);
 
   // Background PR/CI status refresh — runs every 5 min, fetches one branch at a time
   async function refreshPRStatus() {
     try {
       const sessions = await fleet.getFleetStatus(config, router);
-      const branches = [...new Set(sessions.map(s => s.branch).filter(b => b && b !== 'master' && b !== 'main'))];
+      const branches = [
+        ...new Set(
+          sessions.map((s) => s.branch).filter((b) => b && b !== 'master' && b !== 'main'),
+        ),
+      ];
       for (const branch of branches) {
         await prStatus.fetch(branch, config);
       }
@@ -993,7 +1171,15 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
   });
 
   watcher.on('session:error-retry', ({ name, num, retryCount, retryAfter, waitMins }) => {
-    broadcast({ type: 'notify', event: 'session:error-retry', session: num, name, retryCount, retryAfter, waitMins });
+    broadcast({
+      type: 'notify',
+      event: 'session:error-retry',
+      session: num,
+      name,
+      retryCount,
+      retryAfter,
+      waitMins,
+    });
     if (taskQueue) {
       const detail = retryAfter
         ? `Rate limit — waiting ${waitMins}m for reset`
@@ -1010,50 +1196,86 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
   watcher.on('tmux:split-brain', ({ servers, count, fingerprint }) => {
     broadcast({ type: 'notify', event: 'tmux:split-brain', count, servers, fingerprint });
     if (taskQueue) {
-      taskQueue.pushFeed('state', null,
-        `⚠️ ${count} tmux servers on one socket (pids ${fingerprint}) — a fleet is stranded, see server log for recovery`);
+      taskQueue.pushFeed(
+        'state',
+        null,
+        `⚠️ ${count} tmux servers on one socket (pids ${fingerprint}) — a fleet is stranded, see server log for recovery`,
+      );
     }
   });
 
   // -- TaskQueue event bridge ---------------------------------------------
 
   if (taskQueue) {
-    taskQueue.on('task:created', (task) => broadcast({ type: 'task:created', task: decorateTaskActions(task, pmManager) }));
-    taskQueue.on('task:dispatched', (task) => broadcast({ type: 'task:dispatched', task: decorateTaskActions(task, pmManager) }));
+    taskQueue.on('task:created', (task) =>
+      broadcast({ type: 'task:created', task: decorateTaskActions(task, pmManager) }),
+    );
+    taskQueue.on('task:dispatched', (task) =>
+      broadcast({ type: 'task:dispatched', task: decorateTaskActions(task, pmManager) }),
+    );
     taskQueue.on('task:completed', (task) => {
       broadcast({ type: 'task:completed', task: decorateTaskActions(task, pmManager) });
       autoArchivePlansForTask(task);
     });
-    taskQueue.on('task:failed', (task) => broadcast({ type: 'task:failed', task: decorateTaskActions(task, pmManager) }));
-    taskQueue.on('task:cancelled', (task) => broadcast({ type: 'task:cancelled', task: decorateTaskActions(task, pmManager) }));
-    taskQueue.on('task:requeued', (task) => broadcast({ type: 'task:requeued', task: decorateTaskActions(task, pmManager) }));
-    taskQueue.on('task:snoozed', (task) => broadcast({ type: 'task:snoozed', task: decorateTaskActions(task, pmManager) }));
-    taskQueue.on('task:unsnoozed', (task) => broadcast({ type: 'task:unsnoozed', task: decorateTaskActions(task, pmManager) }));
-    taskQueue.on('task:updated', (task) => broadcast({ type: 'task:updated', task: decorateTaskActions(task, pmManager) }));
+    taskQueue.on('task:failed', (task) =>
+      broadcast({ type: 'task:failed', task: decorateTaskActions(task, pmManager) }),
+    );
+    taskQueue.on('task:cancelled', (task) =>
+      broadcast({ type: 'task:cancelled', task: decorateTaskActions(task, pmManager) }),
+    );
+    taskQueue.on('task:requeued', (task) =>
+      broadcast({ type: 'task:requeued', task: decorateTaskActions(task, pmManager) }),
+    );
+    taskQueue.on('task:snoozed', (task) =>
+      broadcast({ type: 'task:snoozed', task: decorateTaskActions(task, pmManager) }),
+    );
+    taskQueue.on('task:unsnoozed', (task) =>
+      broadcast({ type: 'task:unsnoozed', task: decorateTaskActions(task, pmManager) }),
+    );
+    taskQueue.on('task:updated', (task) =>
+      broadcast({ type: 'task:updated', task: decorateTaskActions(task, pmManager) }),
+    );
     // Read the marks off the queue rather than the event payload — the event
     // carries only the auto list, and both halves have to move together or the
     // grid keeps drawing a released slot as still reserved.
-    taskQueue.on('auto:changed', (sessions) => broadcast({ type: 'auto:status', sessions, manual: taskQueue.getManualSessions() }));
+    taskQueue.on('auto:changed', (sessions) =>
+      broadcast({ type: 'auto:status', sessions, manual: taskQueue.getManualSessions() }),
+    );
     taskQueue.on('feed:new', (entry) => broadcast({ type: 'feed:new', entry }));
     taskQueue.on('approval:new', (approval) => broadcast({ type: 'approval:new', approval }));
-    taskQueue.on('approval:resolved', (approval) => broadcast({ type: 'approval:resolved', approval }));
+    taskQueue.on('approval:resolved', (approval) =>
+      broadcast({ type: 'approval:resolved', approval }),
+    );
     taskQueue.on('rules:changed', (rules) => broadcast({ type: 'rules:list', rules }));
-    taskQueue.on('designations:changed', (designations) => broadcast({ type: 'designations:status', designations }));
-    taskQueue.on('designationDefs:changed', (defs) => broadcast({ type: 'designationDefs:list', defs }));
+    taskQueue.on('designations:changed', (designations) =>
+      broadcast({ type: 'designations:status', designations }),
+    );
+    taskQueue.on('designationDefs:changed', (defs) =>
+      broadcast({ type: 'designationDefs:list', defs }),
+    );
     taskQueue.on('agentRoots:changed', (roots) => broadcast({ type: 'agentRoots:list', roots }));
     taskQueue.on('agentFiles:scanned', (files) => broadcast({ type: 'agentFiles:list', files }));
     taskQueue.on('vim:changed', (enabled) => broadcast({ type: 'vim:status', enabled }));
-    taskQueue.on('spawnSlotRange:changed', (range) => broadcast({ type: 'spawn:config', min: range.min, max: range.max }));
-    taskQueue.on('task:comment:added', (data) => broadcast({ type: 'task:comment:added', taskId: data.taskId, comment: data.comment }));
-    taskQueue.on('task:comment:deleted', (data) => broadcast({ type: 'task:comment:deleted', taskId: data.taskId, commentId: data.commentId }));
-    taskQueue.on('checklistTemplates:changed', (templates) => broadcast({ type: 'checklistTemplates:list', templates }));
+    taskQueue.on('spawnSlotRange:changed', (range) =>
+      broadcast({ type: 'spawn:config', min: range.min, max: range.max }),
+    );
+    taskQueue.on('task:comment:added', (data) =>
+      broadcast({ type: 'task:comment:added', taskId: data.taskId, comment: data.comment }),
+    );
+    taskQueue.on('task:comment:deleted', (data) =>
+      broadcast({ type: 'task:comment:deleted', taskId: data.taskId, commentId: data.commentId }),
+    );
+    taskQueue.on('checklistTemplates:changed', (templates) =>
+      broadcast({ type: 'checklistTemplates:list', templates }),
+    );
     taskQueue.on('users:changed', (users) => {
-      const basicUsers = users.map(u => ({ login: u.login, name: u.name, avatar: u.avatar }));
+      const basicUsers = users.map((u) => ({ login: u.login, name: u.name, avatar: u.avatar }));
       for (const client of clients) {
         if (client.readyState !== 1) continue;
         const clientUser = wsUser.get(client);
         const isLegacy = !clientUser;
-        const isAdmin = clientUser && clientUser.login && taskQueue.hasPermission(clientUser.login, 'admin');
+        const isAdmin =
+          clientUser && clientUser.login && taskQueue.hasPermission(clientUser.login, 'admin');
         if (isLegacy || isAdmin) {
           client.send(JSON.stringify({ type: 'users:list', users }));
         } else if (clientUser) {
@@ -1064,7 +1286,9 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
   }
 
   if (pmManager) {
-    pmManager.on('pm:error', (data) => broadcast({ type: 'pm:error', id: data.id, error: data.error }));
+    pmManager.on('pm:error', (data) =>
+      broadcast({ type: 'pm:error', id: data.id, error: data.error }),
+    );
     pmManager.on('pm:changed', () => broadcast({ type: 'pm:list', pms: pmManager.getAll() }));
   }
 
@@ -1100,15 +1324,22 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
   // Initial agent file scan on startup
   if (taskQueue && taskQueue.agentRoots.length > 0) {
     taskQueue.scanAgentFiles();
-    log.info(`Scanned ${taskQueue.agentFilesList.length} agent files from ${taskQueue.agentRoots.length} root(s)`);
+    log.info(
+      `Scanned ${taskQueue.agentFilesList.length} agent files from ${taskQueue.agentRoots.length} root(s)`,
+    );
   }
 
   // ── Session 0: auto-create hive console tmux session ──
   if (isSetupComplete()) {
     (async () => {
       try {
-        if (!await sessionManager.isTmuxAvailable()) return;
-        const result = await sessionManager.createSession(HIVE_CONSOLE_SESSION, HIVE_CONSOLE_DIR, { panes: 1 }, { cols: 80, rows: 50 });
+        if (!(await sessionManager.isTmuxAvailable())) return;
+        const result = await sessionManager.createSession(
+          HIVE_CONSOLE_SESSION,
+          HIVE_CONSOLE_DIR,
+          { panes: 1 },
+          { cols: 80, rows: 50 },
+        );
         if (result.created) {
           await sessionManager.startClaude(HIVE_CONSOLE_SESSION, 1, 'claude --continue');
           log.info('[session-0] Created hive console session');

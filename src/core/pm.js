@@ -14,14 +14,17 @@ const MAX_LEARNING_LENGTH = 500;
 const MAX_KB_ENTRIES = 500;
 const SIMILARITY_THRESHOLD = 0.8; // 80% token overlap = duplicate
 
-
 let nextPmId = 1;
 
 /**
  * Normalize text for comparison: lowercase, strip punctuation, collapse whitespace.
  */
 function _normalizeForCompare(text) {
-  return text.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 /**
@@ -45,7 +48,7 @@ function _isSimilar(a, b) {
     if (larger.has(w)) overlap++;
   }
   // If 80%+ of the shorter text's words appear in the longer one, it's a dup
-  return (overlap / smaller.size) >= SIMILARITY_THRESHOLD;
+  return overlap / smaller.size >= SIMILARITY_THRESHOLD;
 }
 
 /**
@@ -64,7 +67,7 @@ function _isDuplicate(text, memory) {
 function _deduplicateMemory(memory) {
   const result = [];
   for (const text of memory) {
-    const dupeIdx = result.findIndex(existing => _isSimilar(text, existing));
+    const dupeIdx = result.findIndex((existing) => _isSimilar(text, existing));
     if (dupeIdx === -1) {
       result.push(text);
     } else if (text.length > result[dupeIdx].length) {
@@ -150,7 +153,15 @@ class ProjectManager extends EventEmitter {
     if (!pm) return null;
     const wasEnabled = pm.enabled;
     for (const [k, v] of Object.entries(updates)) {
-      if (k === 'id' || k === 'seenKeys' || k === 'tasksCreated' || k === 'lastPoll' || k === 'lastError' || k === 'memory') continue;
+      if (
+        k === 'id' ||
+        k === 'seenKeys' ||
+        k === 'tasksCreated' ||
+        k === 'lastPoll' ||
+        k === 'lastError' ||
+        k === 'memory'
+      )
+        continue;
       pm[k] = v;
     }
     // Restart polling if interval changed or was re-enabled
@@ -190,7 +201,7 @@ class ProjectManager extends EventEmitter {
     if (this._reReviewPollTimes) delete this._reReviewPollTimes[id];
     // Trigger an immediate poll
     if (pm.enabled) {
-      this._poll(id).catch(err => log.error(`Scan Now error for ${pm.name}:`, err.message));
+      this._poll(id).catch((err) => log.error(`Scan Now error for ${pm.name}:`, err.message));
     }
     // Emit rescan event so external bots (GitHub, etc.) can react
     this.emit('pm:rescan', pm);
@@ -248,7 +259,7 @@ class ProjectManager extends EventEmitter {
    */
   addKnowledge(entry) {
     // Dedup by insight text
-    const kbTexts = this.knowledgeBase.map(e => e.insight);
+    const kbTexts = this.knowledgeBase.map((e) => e.insight);
     if (_isDuplicate(entry.insight, kbTexts)) return false;
     this.knowledgeBase.push(entry);
     if (this.knowledgeBase.length > MAX_KB_ENTRIES) {
@@ -267,7 +278,13 @@ class ProjectManager extends EventEmitter {
     const queryFiles = Array.isArray(files) ? files : [];
     const queryDomain = (domain || '').toLowerCase();
     const queryWords = queryText
-      ? new Set(queryText.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter(w => w.length > 3))
+      ? new Set(
+          queryText
+            .toLowerCase()
+            .replace(/[^a-z0-9\s]/g, '')
+            .split(/\s+/)
+            .filter((w) => w.length > 3),
+        )
       : new Set();
 
     // If no filters at all, return nothing (don't dump the whole KB)
@@ -293,7 +310,11 @@ class ProjectManager extends EventEmitter {
 
       // Keyword overlap on insight text
       if (queryWords.size) {
-        const entryWords = entry.insight.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter(w => w.length > 3);
+        const entryWords = entry.insight
+          .toLowerCase()
+          .replace(/[^a-z0-9\s]/g, '')
+          .split(/\s+/)
+          .filter((w) => w.length > 3);
         for (const w of entryWords) {
           if (queryWords.has(w)) score += 1;
         }
@@ -385,7 +406,8 @@ class ProjectManager extends EventEmitter {
     const instructions = config.instructions || '';
     const configForJson = { ...config };
     if (instructions) {
-      configForJson.instructions = '(see Instructions section below — set this field in the pm:create/pm:update call)';
+      configForJson.instructions =
+        '(see Instructions section below — set this field in the pm:create/pm:update call)';
     }
 
     // Preamble with API reference
@@ -430,38 +452,55 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
         color: designationDef.color || 'orange',
       };
       if (hasAgentFiles) {
-        defExport.agentFiles = agentFiles.map(f => f.name);
+        defExport.agentFiles = agentFiles.map((f) => f.name);
       }
       let desigNote = '';
       if (hasAgentFiles) {
         desigNote = `\n\nNote: The \`agentFiles\` values above are filenames — after writing them to the agent root, use their full absolute paths when sending the \`designationDef:set\` message.`;
       }
-      sections.push(`## ${sectionNum}. Designation\n\nCreate or update via \`designationDef:set\`:\n\n\`\`\`json\n${JSON.stringify(defExport, null, 2)}\n\`\`\`${desigNote}`);
+      sections.push(
+        `## ${sectionNum}. Designation\n\nCreate or update via \`designationDef:set\`:\n\n\`\`\`json\n${JSON.stringify(defExport, null, 2)}\n\`\`\`${desigNote}`,
+      );
     }
 
     // PM config
     sectionNum++;
     // Build notes about fields that may need adjustment
     const envNotes = [];
-    if (config.source && config.source.repo) envNotes.push(`\`source.repo\` ("${config.source.repo}") — verify this repo is accessible from the target environment`);
-    if (config.source && config.source.jql) envNotes.push(`\`source.jql\` — verify this JQL query works in the target JIRA instance`);
-    if (config.checklistTemplate) envNotes.push(`\`checklistTemplate\` ("${config.checklistTemplate}") — this template must exist on the target hive`);
-    if (config.boardStates) envNotes.push(`\`boardStates\` — these work state IDs must exist on the target hive`);
-    const envWarning = envNotes.length > 0
-      ? `\n\n**Review before importing** — these fields may need adjustment for the target environment:\n${envNotes.map(n => '- ' + n).join('\n')}`
-      : '';
-    sections.push(`## ${sectionNum}. PM Configuration\n\nCreate or update a PM named "${config.name}" via \`pm:create\` (with \`config\` field) or \`pm:update\` (with \`id\` and \`updates\` fields):\n\n\`\`\`json\n${JSON.stringify(configForJson, null, 2)}\n\`\`\`${envWarning}`);
+    if (config.source && config.source.repo)
+      envNotes.push(
+        `\`source.repo\` ("${config.source.repo}") — verify this repo is accessible from the target environment`,
+      );
+    if (config.source && config.source.jql)
+      envNotes.push(`\`source.jql\` — verify this JQL query works in the target JIRA instance`);
+    if (config.checklistTemplate)
+      envNotes.push(
+        `\`checklistTemplate\` ("${config.checklistTemplate}") — this template must exist on the target hive`,
+      );
+    if (config.boardStates)
+      envNotes.push(`\`boardStates\` — these work state IDs must exist on the target hive`);
+    const envWarning =
+      envNotes.length > 0
+        ? `\n\n**Review before importing** — these fields may need adjustment for the target environment:\n${envNotes.map((n) => '- ' + n).join('\n')}`
+        : '';
+    sections.push(
+      `## ${sectionNum}. PM Configuration\n\nCreate or update a PM named "${config.name}" via \`pm:create\` (with \`config\` field) or \`pm:update\` (with \`id\` and \`updates\` fields):\n\n\`\`\`json\n${JSON.stringify(configForJson, null, 2)}\n\`\`\`${envWarning}`,
+    );
 
     // Instructions as separate section
     if (instructions) {
       sectionNum++;
-      sections.push(`## ${sectionNum}. Instructions\n\nSet the PM's \`instructions\` field to the content below. Include this directly in the \`pm:create\` config or \`pm:update\` updates — the WebSocket JSON handles the escaping, so just pass the string value as-is.\n\nFull instructions content:\n\n---\n${instructions}\n---`);
+      sections.push(
+        `## ${sectionNum}. Instructions\n\nSet the PM's \`instructions\` field to the content below. Include this directly in the \`pm:create\` config or \`pm:update\` updates — the WebSocket JSON handles the escaping, so just pass the string value as-is.\n\nFull instructions content:\n\n---\n${instructions}\n---`,
+      );
     }
 
     // Memory note
     if (config.memory && config.memory.length > 0) {
       sectionNum++;
-      sections.push(`## ${sectionNum}. PM Learnings\n\nThe PM has ${config.memory.length} learned insight(s) included in the PM configuration above. These are from previous task executions and may contain useful context. **Review them for any sensitive data before sharing.**`);
+      sections.push(
+        `## ${sectionNum}. PM Learnings\n\nThe PM has ${config.memory.length} learned insight(s) included in the PM configuration above. These are from previous task executions and may contain useful context. **Review them for any sensitive data before sharing.**`,
+      );
     }
 
     // Skills
@@ -478,19 +517,27 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
     sectionNum++;
     const verifyChecks = [];
     if (hasDesignation) {
-      verifyChecks.push(`- Send \`designationDefs:get\` → response \`designationDefs:list\` should contain a def with \`name: "${designationDef.name}"\``);
+      verifyChecks.push(
+        `- Send \`designationDefs:get\` → response \`designationDefs:list\` should contain a def with \`name: "${designationDef.name}"\``,
+      );
     }
-    verifyChecks.push(`- Send \`pm:list\` → response \`pm:list\` should contain a PM with \`name: "${config.name}"\` and \`enabled: false\``);
+    verifyChecks.push(
+      `- Send \`pm:list\` → response \`pm:list\` should contain a PM with \`name: "${config.name}"\` and \`enabled: false\``,
+    );
     if (instructions) {
       const instrPreview = instructions.slice(0, 80).replace(/\n/g, ' ').trim();
-      verifyChecks.push(`- The PM's \`instructions\` field should start with: "${instrPreview}..."`);
+      verifyChecks.push(
+        `- The PM's \`instructions\` field should start with: "${instrPreview}..."`,
+      );
     }
     if (hasAgentFiles) {
       for (const af of agentFiles) {
         verifyChecks.push(`- Agent file "${af.name}" exists on disk in an agent root directory`);
       }
     }
-    sections.push(`## ${sectionNum}. Verification\n\nAfter setup, verify by querying the API:\n${verifyChecks.join('\n')}`);
+    sections.push(
+      `## ${sectionNum}. Verification\n\nAfter setup, verify by querying the API:\n${verifyChecks.join('\n')}`,
+    );
 
     return sections.join('\n\n');
   }
@@ -498,7 +545,7 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
   // ── Serialization ───────────────────────────────────
 
   serialize() {
-    return this.getAll().map(pm => ({
+    return this.getAll().map((pm) => ({
       ...pm,
       seenKeys: pm.seenKeys.slice(-5000),
       memory: (pm.memory || []).slice(-MAX_MEMORY),
@@ -526,8 +573,14 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
         mcpEnabled: data.mcpEnabled || false,
         learningEnabled: data.learningEnabled || false,
         learningPrompt: data.learningPrompt || '',
-        memory: _deduplicateMemory(Array.isArray(data.memory) ? data.memory.filter(m => typeof m === 'string' && m.trim()) : []),
-        completionConditions: Array.isArray(data.completionConditions) ? data.completionConditions : [],
+        memory: _deduplicateMemory(
+          Array.isArray(data.memory)
+            ? data.memory.filter((m) => typeof m === 'string' && m.trim())
+            : [],
+        ),
+        completionConditions: Array.isArray(data.completionConditions)
+          ? data.completionConditions
+          : [],
         continueConditions: Array.isArray(data.continueConditions) ? data.continueConditions : [],
         slackUserId: data.slackUserId || null,
         boardStates: Array.isArray(data.boardStates) ? data.boardStates : null,
@@ -549,7 +602,11 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
         lastError: data.lastError || null,
       };
       // Config-only sources don't poll — clear stale poll errors
-      if (pm.source.type === 'slack' || pm.source.type === 'github-mentions' || pm.source.type === 'slack-channel-monitor') {
+      if (
+        pm.source.type === 'slack' ||
+        pm.source.type === 'github-mentions' ||
+        pm.source.type === 'slack-channel-monitor'
+      ) {
         pm.lastError = null;
       }
       this.pms.set(id, pm);
@@ -568,7 +625,11 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
     this._stopPolling(id); // clear any existing
 
     // Slack/GitHub mentions source: config-only, no polling (bot reads PM on demand)
-    if (pm.source.type === 'slack' || pm.source.type === 'github-mentions' || pm.source.type === 'slack-channel-monitor') {
+    if (
+      pm.source.type === 'slack' ||
+      pm.source.type === 'github-mentions' ||
+      pm.source.type === 'slack-channel-monitor'
+    ) {
       return;
     }
 
@@ -581,13 +642,29 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
     // Determine the callback based on source type
     let callback;
     if (pm.source.type === 'manual') {
-      callback = async () => { await this._createManualTask(id); await this._checkCompletions(id); await this._checkContinueConditions(id); };
+      callback = async () => {
+        await this._createManualTask(id);
+        await this._checkCompletions(id);
+        await this._checkContinueConditions(id);
+      };
     } else if (pm.source.type === 'command') {
-      callback = async () => { await this._createCommandTask(id); await this._checkCompletions(id); await this._checkContinueConditions(id); };
+      callback = async () => {
+        await this._createCommandTask(id);
+        await this._checkCompletions(id);
+        await this._checkContinueConditions(id);
+      };
     } else if (pm.source.type === 'script') {
-      callback = async () => { await this._runScript(id); await this._checkCompletions(id); await this._checkContinueConditions(id); };
+      callback = async () => {
+        await this._runScript(id);
+        await this._checkCompletions(id);
+        await this._checkContinueConditions(id);
+      };
     } else {
-      callback = async () => { await this._poll(id); await this._checkCompletions(id); await this._checkContinueConditions(id); };
+      callback = async () => {
+        await this._poll(id);
+        await this._checkCompletions(id);
+        await this._checkContinueConditions(id);
+      };
     }
 
     // Run immediately (skip for manual+schedule — those should only fire on cron)
@@ -601,7 +678,9 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
       this.timers.set(id, task);
     } else {
       if (pm.schedule && !cron.validate(pm.schedule)) {
-        log.error(`[pm] Invalid cron expression "${pm.schedule}" for "${pm.name}", falling back to interval`);
+        log.error(
+          `[pm] Invalid cron expression "${pm.schedule}" for "${pm.name}", falling back to interval`,
+        );
         pm.lastError = `Invalid cron expression: ${pm.schedule}`;
       }
       const interval = setInterval(callback, pm.pollInterval);
@@ -646,7 +725,13 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
     if (pm.taskFormat) {
       taskText = pm.taskFormat.replace('{key}', key).replace('{summary}', text);
     }
-    const task = this.taskQueue.createTask(taskText, mode, pm.targetSession || null, pm.designation, { source: `pm:${pm.name}`, requireHumanClose: !!pm.requireHumanClose });
+    const task = this.taskQueue.createTask(
+      taskText,
+      mode,
+      pm.targetSession || null,
+      pm.designation,
+      { source: `pm:${pm.name}`, requireHumanClose: !!pm.requireHumanClose },
+    );
     this._seedChecklist(pm, task);
     pm.tasksCreated++;
     pm.lastPoll = Date.now();
@@ -674,36 +759,27 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
     const existing = [...this.taskQueue.tasks.values()].find(
       (t) =>
         t.text === command &&
-        (t.status === 'queued' ||
-          t.status === 'dispatched' ||
-          t.status === 'in-progress'),
+        (t.status === 'queued' || t.status === 'dispatched' || t.status === 'in-progress'),
     );
     if (existing) return;
 
     // Find an idle auto-session to dispatch to
     const fleet = require('./fleet');
-    const sessions = await fleet.getFleetStatus(
-      this.taskQueue.config,
-      this.taskQueue.router,
-    );
+    const sessions = await fleet.getFleetStatus(this.taskQueue.config, this.taskQueue.router);
     const idle = sessions.find(
       (s) =>
         s.state === 'idle' &&
         this.taskQueue.autoSessions.has(s.num) &&
         !this.taskQueue.dispatchLock.has(s.num) &&
         !this.taskQueue.activeTaskBySession.has(s.num) &&
-        (!pm.designation ||
-          this.taskQueue.designations.get(s.num) === pm.designation),
+        (!pm.designation || this.taskQueue.designations.get(s.num) === pm.designation),
     );
 
     if (idle) {
-      const task = this.taskQueue.createTask(
-        command,
-        'auto',
-        idle.num,
-        pm.designation,
-        { source: `pm:${pm.name}`, requireHumanClose: !!pm.requireHumanClose },
-      );
+      const task = this.taskQueue.createTask(command, 'auto', idle.num, pm.designation, {
+        source: `pm:${pm.name}`,
+        requireHumanClose: !!pm.requireHumanClose,
+      });
       this._seedChecklist(pm, task);
       pm.tasksCreated++;
       this.taskQueue.pushFeed(
@@ -712,14 +788,13 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
         `PM "${pm.name}" dispatched ${command} to session ${idle.num}`,
       );
     } else {
-      const task = this.taskQueue.createTask(command, 'auto', null, pm.designation, { source: `pm:${pm.name}`, requireHumanClose: !!pm.requireHumanClose });
+      const task = this.taskQueue.createTask(command, 'auto', null, pm.designation, {
+        source: `pm:${pm.name}`,
+        requireHumanClose: !!pm.requireHumanClose,
+      });
       this._seedChecklist(pm, task);
       pm.tasksCreated++;
-      this.taskQueue.pushFeed(
-        'task',
-        null,
-        `PM "${pm.name}" queued ${command} (no idle session)`,
-      );
+      this.taskQueue.pushFeed('task', null, `PM "${pm.name}" queued ${command} (no idle session)`);
     }
 
     pm.lastPoll = Date.now();
@@ -752,14 +827,18 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
         const existing = [...this.taskQueue.tasks.values()].find(
           (t) =>
             t.source === `pm:${pm.name}` &&
-            (t.status === 'queued' ||
-              t.status === 'dispatched' ||
-              t.status === 'in-progress'),
+            (t.status === 'queued' || t.status === 'dispatched' || t.status === 'in-progress'),
         );
         if (!existing) {
           const mode = pm.targetSession ? 'manual' : 'auto';
           const taskText = output || '(no output)';
-          const task = this.taskQueue.createTask(taskText, mode, pm.targetSession || null, pm.designation, { source: `pm:${pm.name}` });
+          const task = this.taskQueue.createTask(
+            taskText,
+            mode,
+            pm.targetSession || null,
+            pm.designation,
+            { source: `pm:${pm.name}` },
+          );
           this._seedChecklist(pm, task);
           pm.tasksCreated++;
           this.taskQueue.pushFeed('task', null, `PM "${pm.name}" created task from script output`);
@@ -780,19 +859,39 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
   async _poll(id) {
     const pm = this.pms.get(id);
     if (!pm || !pm.enabled) return;
-    if (pm.source.type === 'slack' || pm.source.type === 'github-mentions' || pm.source.type === 'slack-channel-monitor') return; // config-only, no polling
+    if (
+      pm.source.type === 'slack' ||
+      pm.source.type === 'github-mentions' ||
+      pm.source.type === 'slack-channel-monitor'
+    )
+      return; // config-only, no polling
 
     try {
       let issues;
       switch (pm.source.type) {
-        case 'jira':    issues = await this._fetchJira(pm.source); break;
-        case 'github-issues': issues = await this._fetchGithubIssues(pm.source); break;
-        case 'github-prs':   issues = await this._fetchGithubPrs(pm.source); break;
-        case 'jenkins': issues = await this._fetchJenkins(pm.source); break;
-        case 'zoho':    issues = await this._fetchZoho(pm.source); break;
-        case 'github-re-reviews': issues = await this._fetchReReviews(pm.source, pm.id); break;
-        case 'nectar':  issues = await this._fetchNectar(pm.source); break;
-        default: throw new Error(`Unsupported source type: ${pm.source.type}`);
+        case 'jira':
+          issues = await this._fetchJira(pm.source);
+          break;
+        case 'github-issues':
+          issues = await this._fetchGithubIssues(pm.source);
+          break;
+        case 'github-prs':
+          issues = await this._fetchGithubPrs(pm.source);
+          break;
+        case 'jenkins':
+          issues = await this._fetchJenkins(pm.source);
+          break;
+        case 'zoho':
+          issues = await this._fetchZoho(pm.source);
+          break;
+        case 'github-re-reviews':
+          issues = await this._fetchReReviews(pm.source, pm.id);
+          break;
+        case 'nectar':
+          issues = await this._fetchNectar(pm.source);
+          break;
+        default:
+          throw new Error(`Unsupported source type: ${pm.source.type}`);
       }
       pm.lastPoll = Date.now();
       pm.lastError = null;
@@ -809,7 +908,7 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
 
         // Already-queued: react on GitHub instead of posting a comment
         if (issue._alreadyQueued) {
-          this._reactOnPR(issue._repo, issue._prNumber, 'eyes').catch(err => {
+          this._reactOnPR(issue._repo, issue._prNumber, 'eyes').catch((err) => {
             log.error(`Failed to react on PR #${issue._prNumber}:`, err.message);
           });
           continue;
@@ -838,7 +937,11 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
         if (pm.source.type === 'github-prs' || pm.source.type === 'github-re-reviews') {
           const prMeta = this._parsePRFromKey(issue.key);
           if (prMeta) {
-            meta.actionContext = { type: 'github-pr', repo: prMeta.repo, prNumber: prMeta.prNumber };
+            meta.actionContext = {
+              type: 'github-pr',
+              repo: prMeta.repo,
+              prNumber: prMeta.prNumber,
+            };
             meta.pr = prMeta.prNumber;
           }
         }
@@ -846,10 +949,21 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
         // Attach actionContext for issue-sourced tasks (used by Primary Action URL builder)
         if (pm.source.type === 'github-issues') {
           const m = /^(.+)#(\d+)$/.exec(issue.key);
-          if (m) meta.actionContext = { type: 'github-issue', repo: m[1], issueNumber: parseInt(m[2], 10) };
+          if (m)
+            meta.actionContext = {
+              type: 'github-issue',
+              repo: m[1],
+              issueNumber: parseInt(m[2], 10),
+            };
         }
 
-        const task = this.taskQueue.createTask(text, mode, pm.targetSession || null, pm.designation, meta);
+        const task = this.taskQueue.createTask(
+          text,
+          mode,
+          pm.targetSession || null,
+          pm.designation,
+          meta,
+        );
         task.sourceKey = issue.key;
         this._seedChecklist(pm, task);
 
@@ -857,7 +971,7 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
         if (pm.source.type === 'github-prs' || pm.source.type === 'github-re-reviews') {
           const prInfo = this._parsePRFromKey(issue.key);
           if (prInfo) {
-            this._reactOnPR(prInfo.repo, prInfo.prNumber, 'eyes').catch(err => {
+            this._reactOnPR(prInfo.repo, prInfo.prNumber, 'eyes').catch((err) => {
               log.error(`Failed to react on PR #${prInfo.prNumber}:`, err.message);
             });
           }
@@ -873,8 +987,11 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
       }
 
       if (created > 0) {
-        this.taskQueue.pushFeed('task', null,
-          `PM "${pm.name}" created ${created} task${created > 1 ? 's' : ''}`);
+        this.taskQueue.pushFeed(
+          'task',
+          null,
+          `PM "${pm.name}" created ${created} task${created > 1 ? 's' : ''}`,
+        );
       }
 
       this._save();
@@ -893,8 +1010,10 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
     if (!pm || !pm.enabled || !pm.completionConditions?.length) return;
 
     const prefix = `pm:${pm.name}`;
-    const activeTasks = [...this.taskQueue.tasks.values()]
-      .filter(t => (t.status === 'queued' || t.status === 'dispatched') && t.source === prefix && t.sourceKey);
+    const activeTasks = [...this.taskQueue.tasks.values()].filter(
+      (t) =>
+        (t.status === 'queued' || t.status === 'dispatched') && t.source === prefix && t.sourceKey,
+    );
 
     for (const task of activeTasks) {
       try {
@@ -909,8 +1028,11 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
             task.result = `Auto-completed: ${reason}`;
             this.taskQueue.emit('task:completed', task);
           }
-          this.taskQueue.pushFeed('task', task.assignedTo,
-            `PM "${pm.name}" auto-completed task: ${reason}`);
+          this.taskQueue.pushFeed(
+            'task',
+            task.assignedTo,
+            `PM "${pm.name}" auto-completed task: ${reason}`,
+          );
         }
       } catch (err) {
         log.error(`[pm] Completion check error for task ${task.id}:`, err.message);
@@ -931,7 +1053,9 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
             const ctx = this.taskQueue.getSessionContext(task.assignedTo);
             const sessionBranch = ctx.branch;
             if (sessionBranch && sessionBranch !== pr.head.ref) {
-              log.warn(`[pm] Skipping completion for task ${task.id}: session S:${task.assignedTo} on branch "${sessionBranch}" but PR #${prInfo.prNumber} is on "${pr.head.ref}"`);
+              log.warn(
+                `[pm] Skipping completion for task ${task.id}: session S:${task.assignedTo} on branch "${sessionBranch}" but PR #${prInfo.prNumber} is on "${pr.head.ref}"`,
+              );
               continue;
             }
           }
@@ -949,11 +1073,14 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
           const auth = Buffer.from(`${email}:${apiToken}`).toString('base64');
           const url = `${baseUrl}/rest/api/3/issue/${task.sourceKey}?fields=status`;
           const issue = await this._httpRequest(url, {
-            'Authorization': `Basic ${auth}`,
-            'Accept': 'application/json',
+            Authorization: `Basic ${auth}`,
+            Accept: 'application/json',
           });
           const statusName = issue.fields?.status?.name;
-          if (statusName && cond.statuses.some(s => s.toLowerCase() === statusName.toLowerCase())) {
+          if (
+            statusName &&
+            cond.statuses.some((s) => s.toLowerCase() === statusName.toLowerCase())
+          ) {
             return `${task.sourceKey} status: ${statusName}`;
           }
         }
@@ -974,25 +1101,23 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
     const now = Date.now();
 
     // Find dispatched tasks from this PM that have a sourceKey
-    const activeTasks = [...this.taskQueue.tasks.values()]
-      .filter(t => t.status === 'dispatched'
-        && t.source === prefix
-        && t.sourceKey
-        && t.assignedTo);
+    const activeTasks = [...this.taskQueue.tasks.values()].filter(
+      (t) => t.status === 'dispatched' && t.source === prefix && t.sourceKey && t.assignedTo,
+    );
 
     if (!activeTasks.length) return;
     if (!this._lastContinueCheck) this._lastContinueCheck = new Map();
 
     // Get fleet status once for all tasks
     const sessions = await fleet.getFleetStatus(this.taskQueue.config, this.taskQueue.router);
-    const idleSet = new Set(sessions.filter(s => s.state === 'idle').map(s => s.num));
+    const idleSet = new Set(sessions.filter((s) => s.state === 'idle').map((s) => s.num));
 
     for (const task of activeTasks) {
       // Only nudge idle sessions — don't interrupt active work
       if (!idleSet.has(task.assignedTo)) continue;
 
       // Guard: verify session is actually on the PR's branch before nudging
-      const session = sessions.find(s => s.num === task.assignedTo);
+      const session = sessions.find((s) => s.num === task.assignedTo);
       const ctx = this.taskQueue.getSessionContext(task.assignedTo);
       const sessionBranch = ctx.branch || session?.branch;
       if (sessionBranch) {
@@ -1002,7 +1127,9 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
             const prUrl = `https://api.github.com/repos/${prInfo.repo}/pulls/${prInfo.prNumber}`;
             const pr = await this._httpRequest(prUrl, this._githubHeaders());
             if (pr.head?.ref && sessionBranch !== pr.head.ref) {
-              log.warn(`[pm] Skipping continue nudge for task ${task.id}: S:${task.assignedTo} on "${sessionBranch}" but PR #${prInfo.prNumber} is on "${pr.head.ref}"`);
+              log.warn(
+                `[pm] Skipping continue nudge for task ${task.id}: S:${task.assignedTo} on "${sessionBranch}" but PR #${prInfo.prNumber} is on "${pr.head.ref}"`,
+              );
               continue;
             }
           } catch {} // if API fails, proceed with nudge
@@ -1011,7 +1138,7 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
 
       // Debounce: skip if checked within last 5 minutes
       const lastCheck = this._lastContinueCheck.get(task.sourceKey);
-      if (lastCheck && (now - lastCheck) < 5 * 60 * 1000) continue;
+      if (lastCheck && now - lastCheck < 5 * 60 * 1000) continue;
       this._lastContinueCheck.set(task.sourceKey, now);
 
       // Check since last continue nudge, or since dispatch
@@ -1021,17 +1148,28 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
         const reason = await this._evaluateContinue(pm, task, checkSince);
         if (reason) {
           // Send follow-up message to the session
-          const found = await fleet.findSession(this.taskQueue.config, this.taskQueue.router, task.assignedTo);
+          const found = await fleet.findSession(
+            this.taskQueue.config,
+            this.taskQueue.router,
+            task.assignedTo,
+          );
           if (found) {
             const node = this.taskQueue.router.getNode(found.nodeId);
             const message = `New activity on ${task.sourceKey}:\n\n${reason}\n\nReview these changes and continue your work.`;
-            const result = await relay.tell(this.taskQueue.config, node, found.name, message, { vimMode: this.taskQueue.vimMode });
+            const result = await relay.tell(this.taskQueue.config, node, found.name, message, {
+              vimMode: this.taskQueue.vimMode,
+            });
             if (result.success) {
               task._lastContinueAt = now;
               task.lastActivityAt = now;
-              this.taskQueue.pushFeed('task', task.assignedTo,
-                `PM "${pm.name}" nudged S:${task.assignedTo}: ${reason}`);
-              log.info(`[pm] Continue nudge sent to S:${task.assignedTo} for ${task.sourceKey}: ${reason}`);
+              this.taskQueue.pushFeed(
+                'task',
+                task.assignedTo,
+                `PM "${pm.name}" nudged S:${task.assignedTo}: ${reason}`,
+              );
+              log.info(
+                `[pm] Continue nudge sent to S:${task.assignedTo} for ${task.sourceKey}: ${reason}`,
+              );
             } else {
               log.error(`[pm] Continue nudge failed for S:${task.assignedTo}: ${result.error}`);
             }
@@ -1058,7 +1196,9 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
           const commitsUrl = `https://api.github.com/repos/${prInfo.repo}/pulls/${prInfo.prNumber}/commits?per_page=100`;
           const commits = await this._httpRequest(commitsUrl, this._githubHeaders());
           const newCommits = Array.isArray(commits)
-            ? commits.filter(c => c.commit?.committer?.date && new Date(c.commit.committer.date) > sinceDate)
+            ? commits.filter(
+                (c) => c.commit?.committer?.date && new Date(c.commit.committer.date) > sinceDate,
+              )
             : [];
           // Check for new comments (inline review + issue comments)
           const reviewsUrl = `https://api.github.com/repos/${prInfo.repo}/pulls/${prInfo.prNumber}/comments?since=${sinceISO}&per_page=100`;
@@ -1071,7 +1211,7 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
             ...(Array.isArray(reviewComments) ? reviewComments : []),
             ...(Array.isArray(issueComments) ? issueComments : []),
           ];
-          const newComments = allComments.filter(c => {
+          const newComments = allComments.filter((c) => {
             const created = new Date(c.created_at || c.updated_at);
             if (created <= sinceDate) return false;
             // Ignore hive's own comments and bot users
@@ -1110,11 +1250,14 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
           const auth = Buffer.from(`${email}:${apiToken}`).toString('base64');
           const url = `${baseUrl}/rest/api/3/issue/${task.sourceKey}?fields=status`;
           const issue = await this._httpRequest(url, {
-            'Authorization': `Basic ${auth}`,
-            'Accept': 'application/json',
+            Authorization: `Basic ${auth}`,
+            Accept: 'application/json',
           });
           const statusName = issue.fields?.status?.name;
-          if (statusName && cond.statuses.some(s => s.toLowerCase() === statusName.toLowerCase())) {
+          if (
+            statusName &&
+            cond.statuses.some((s) => s.toLowerCase() === statusName.toLowerCase())
+          ) {
             return `${task.sourceKey} status changed to: ${statusName}`;
           }
         }
@@ -1199,34 +1342,55 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
     const sessionName = `hive-pm-${pm.id}`;
     const sessionDir = path.join(__dirname, '..', '..'); // hive project root
 
-    const result = await sessionManager.createSession(sessionName, sessionDir, { panes: 1 }, { cols: 80, rows: 50 });
+    const result = await sessionManager.createSession(
+      sessionName,
+      sessionDir,
+      { panes: 1 },
+      { cols: 80, rows: 50 },
+    );
     if (result.created) {
       // Write MCP config so the PM session can use hive tools
       const port = config?.web?.port || process.env.WEB_PORT || 3000;
       const token = process.env.HIVE_TOKEN || process.env.WEB_TOKEN || '';
-      const mcpTools = ['hive_get_task', 'hive_create_task', 'hive_get_sessions', 'hive_get_knowledge', 'hive_post_update', 'hive_set_context'];
-      sessionManager.writeMcpConfig(sessionDir, `ws://127.0.0.1:${port}`, token, sessionName, mcpTools);
+      const mcpTools = [
+        'hive_get_task',
+        'hive_create_task',
+        'hive_get_sessions',
+        'hive_get_knowledge',
+        'hive_post_update',
+        'hive_set_context',
+      ];
+      sessionManager.writeMcpConfig(
+        sessionDir,
+        `ws://127.0.0.1:${port}`,
+        token,
+        sessionName,
+        mcpTools,
+      );
 
       // Build system prompt
       const systemPrompt = pm.source.systemPrompt || this._defaultMonitorPrompt(pm);
 
       // Write launch script (avoids shell quoting issues with complex prompts)
       const launchScript = path.join(require('os').tmpdir(), `hive-pm-${pm.id}-launch.sh`);
-      fs.writeFileSync(launchScript, [
-        '#!/bin/zsh -l',
-        "read -r -d '' PROMPT << 'PROMPT_END'",
-        systemPrompt,
-        'PROMPT_END',
-        'claude --dangerously-skip-permissions --append-system-prompt "$PROMPT"',
-        '',
-      ].join('\n'));
+      fs.writeFileSync(
+        launchScript,
+        [
+          '#!/bin/zsh -l',
+          "read -r -d '' PROMPT << 'PROMPT_END'",
+          systemPrompt,
+          'PROMPT_END',
+          'claude --dangerously-skip-permissions --append-system-prompt "$PROMPT"',
+          '',
+        ].join('\n'),
+      );
       fs.chmodSync(launchScript, 0o755);
 
       await sessionManager.startClaude(sessionName, 1, `bash ${launchScript}`);
       log.info(`[pm] Created monitor session "${sessionName}" for PM "${pm.name}"`);
 
       // Give Claude time to start up
-      await new Promise(r => setTimeout(r, 8000));
+      await new Promise((r) => setTimeout(r, 8000));
     } else {
       log.info(`[pm] Monitor session "${sessionName}" already exists`);
     }

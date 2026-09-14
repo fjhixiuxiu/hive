@@ -14,11 +14,11 @@ import {
 const here = path.dirname(fileURLToPath(import.meta.url));
 const indexSource = fs.readFileSync(
   path.join(here, '..', '..', 'src', 'mcp-server', 'index.mjs'),
-  'utf8'
+  'utf8',
 );
 const defaultFixture = fs.readFileSync(
   path.join(here, 'fixtures', 'instructions-default.txt'),
-  'utf8'
+  'utf8',
 );
 
 // The --tools lists hive is plausibly run with, including the subsets that
@@ -103,16 +103,16 @@ describe('MCP instruction/tool parity', () => {
     });
 
     it('is what index.mjs actually passes to the MCP server', () => {
-      expect(indexSource).toContain('instructions: buildInstructions({ enabledTools }) || undefined');
+      expect(indexSource).toContain(
+        'instructions: buildInstructions({ enabledTools }) || undefined',
+      );
     });
   });
 
   describe('block declarations stay honest', () => {
     for (const block of INSTRUCTION_BLOCKS) {
       it(`${block.id} declares every tool its text names`, () => {
-        const undeclared = toolsMentionedIn(block.text).filter(
-          (t) => !block.requires.includes(t)
-        );
+        const undeclared = toolsMentionedIn(block.text).filter((t) => !block.requires.includes(t));
         expect(undeclared).toEqual([]);
       });
 
@@ -132,9 +132,9 @@ describe('MCP instruction/tool parity', () => {
   });
 
   describe('the tool registry matches what index.mjs registers', () => {
-    const registeredInSource = [
-      ...indexSource.matchAll(/server\.tool\(\s*'(hive_[a-z_]+)'/g),
-    ].map((m) => m[1]);
+    const registeredInSource = [...indexSource.matchAll(/server\.tool\(\s*'(hive_[a-z_]+)'/g)].map(
+      (m) => m[1],
+    );
 
     it('every registered tool is in ALL_TOOLS', () => {
       expect(registeredInSource.filter((n) => !ALL_TOOLS.includes(n))).toEqual([]);
@@ -152,7 +152,7 @@ describe('MCP instruction/tool parity', () => {
       // A tool registered outside has(...) would bypass resolveTools, and the
       // parity invariant above would stop describing reality.
       const gated = [...indexSource.matchAll(/if \(has\('(hive_[a-z_]+)'\)\) \{/g)].map(
-        (m) => m[1]
+        (m) => m[1],
       );
       expect(ALL_TOOLS.filter((n) => !gated.includes(n))).toEqual([]);
       expect(indexSource).not.toContain('enabledTools.includes');
@@ -181,10 +181,9 @@ describe('MCP instruction/tool parity', () => {
 
   describe('toolsMentionedIn', () => {
     it('finds each distinct tool once', () => {
-      expect(toolsMentionedIn('call hive_get_task, then hive_get_task, then hive_post_update')).toEqual([
-        'hive_get_task',
-        'hive_post_update',
-      ]);
+      expect(
+        toolsMentionedIn('call hive_get_task, then hive_get_task, then hive_post_update'),
+      ).toEqual(['hive_get_task', 'hive_post_update']);
     });
 
     it('returns empty for text with no tool references', () => {

@@ -21,7 +21,9 @@ class GitHubAppAuth {
     }
 
     // Resolve key path relative to project root
-    const resolved = path.isAbsolute(keyPath) ? keyPath : path.join(__dirname, '..', '..', '..', keyPath);
+    const resolved = path.isAbsolute(keyPath)
+      ? keyPath
+      : path.join(__dirname, '..', '..', '..', keyPath);
     this.privateKey = fs.readFileSync(resolved, 'utf8');
 
     this._installationTokens = new Map(); // installationId → { token, expiresAt }
@@ -48,30 +50,44 @@ class GitHubAppAuth {
   _request(method, urlStr, headers, body) {
     return new Promise((resolve, reject) => {
       const url = new URL(urlStr);
-      const req = https.request(urlStr, {
-        method,
-        headers: {
-          'User-Agent': 'hive-github-bot',
-          'Accept': 'application/vnd.github+json',
-          ...headers,
+      const req = https.request(
+        urlStr,
+        {
+          method,
+          headers: {
+            'User-Agent': 'hive-github-bot',
+            Accept: 'application/vnd.github+json',
+            ...headers,
+          },
+          timeout: 15000,
+          agent: httpsKeepAlive,
         },
-        timeout: 15000,
-        agent: httpsKeepAlive,
-      }, (res) => {
-        let data = '';
-        res.on('data', (chunk) => data += chunk);
-        res.on('end', () => {
-          if (res.statusCode >= 200 && res.statusCode < 300) {
-            try { resolve(JSON.parse(data)); } catch { resolve(data); }
-          } else {
-            let detail = `HTTP ${res.statusCode}`;
-            try { const j = JSON.parse(data); if (j.message) detail += `: ${j.message}`; } catch {}
-            reject(new Error(detail));
-          }
-        });
-      });
+        (res) => {
+          let data = '';
+          res.on('data', (chunk) => (data += chunk));
+          res.on('end', () => {
+            if (res.statusCode >= 200 && res.statusCode < 300) {
+              try {
+                resolve(JSON.parse(data));
+              } catch {
+                resolve(data);
+              }
+            } else {
+              let detail = `HTTP ${res.statusCode}`;
+              try {
+                const j = JSON.parse(data);
+                if (j.message) detail += `: ${j.message}`;
+              } catch {}
+              reject(new Error(detail));
+            }
+          });
+        },
+      );
       req.on('error', (err) => reject(err));
-      req.on('timeout', () => { req.destroy(); reject(new Error('Request timed out')); });
+      req.on('timeout', () => {
+        req.destroy();
+        reject(new Error('Request timed out'));
+      });
       if (body) req.write(typeof body === 'string' ? body : JSON.stringify(body));
       req.end();
     });
@@ -87,14 +103,19 @@ class GitHubAppAuth {
     });
     this._installations = Array.isArray(data) ? data : [];
     // Refresh cache every 30 min
-    setTimeout(() => { this._installations = null; }, 30 * 60 * 1000);
+    setTimeout(
+      () => {
+        this._installations = null;
+      },
+      30 * 60 * 1000,
+    );
     return this._installations;
   }
 
   async getInstallationForRepo(owner) {
     const installations = await this.getInstallations();
-    return installations.find(i =>
-      i.account && i.account.login.toLowerCase() === owner.toLowerCase()
+    return installations.find(
+      (i) => i.account && i.account.login.toLowerCase() === owner.toLowerCase(),
     );
   }
 
@@ -105,9 +126,10 @@ class GitHubAppAuth {
     }
 
     const jwt = this.generateJWT();
-    const data = await this._request('POST',
+    const data = await this._request(
+      'POST',
       `https://api.github.com/app/installations/${installationId}/access_tokens`,
-      { Authorization: `Bearer ${jwt}` }
+      { Authorization: `Bearer ${jwt}` },
     );
 
     const token = data.token;
@@ -141,10 +163,15 @@ class GitHubAppAuth {
   async apiRequest(method, urlPath, repo, body) {
     const token = await this.getTokenForRepo(repo);
     const url = urlPath.startsWith('https://') ? urlPath : `https://api.github.com${urlPath}`;
-    return this._request(method, url, {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    }, body ? JSON.stringify(body) : null);
+    return this._request(
+      method,
+      url,
+      {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body ? JSON.stringify(body) : null,
+    );
   }
 
   async postComment(repo, issueNumber, body) {

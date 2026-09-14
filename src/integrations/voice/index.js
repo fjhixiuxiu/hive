@@ -19,12 +19,12 @@ const MEETINGS_FILE = path.join(__dirname, '..', '..', '..', '.hive-meetings.jso
 
 // Defaults (overridden by config.voice)
 const DEFAULTS = {
-  systemPrompt: null,       // null = use built-in default
-  mcpTools: null,           // null = all hive MCP tools
+  systemPrompt: null, // null = use built-in default
+  mcpTools: null, // null = all hive MCP tools
   ttsVoice: 'aura-orion-en',
   reportOnJoin: true,
-  maxDuration: 3600000,     // 1 hour
-  silenceGap: 3000,         // ms before sending buffered transcript
+  maxDuration: 3600000, // 1 hour
+  silenceGap: 3000, // ms before sending buffered transcript
   maxMeetings: 50,
 };
 
@@ -117,11 +117,13 @@ class VoiceAgent extends EventEmitter {
       if (u.hostname.includes('meet.google')) return 'Google Meet';
       if (u.hostname.includes('teams')) return 'Teams Meeting';
       return u.hostname;
-    } catch { return 'Meeting'; }
+    } catch {
+      return 'Meeting';
+    }
   }
 
   getMeetings() {
-    return this.meetings.map(m => ({
+    return this.meetings.map((m) => ({
       id: m.id,
       name: m.name,
       url: m.url,
@@ -149,7 +151,7 @@ class VoiceAgent extends EventEmitter {
       };
     }
     // Past meeting
-    return this.meetings.find(m => m.id === id) || null;
+    return this.meetings.find((m) => m.id === id) || null;
   }
 
   renameMeeting(id, name) {
@@ -157,8 +159,12 @@ class VoiceAgent extends EventEmitter {
       this._currentMeetingName = name;
       return true;
     }
-    const m = this.meetings.find(m => m.id === id);
-    if (m) { m.name = name; this._saveMeetings(); return true; }
+    const m = this.meetings.find((m) => m.id === id);
+    if (m) {
+      m.name = name;
+      this._saveMeetings();
+      return true;
+    }
     return false;
   }
 
@@ -175,8 +181,12 @@ class VoiceAgent extends EventEmitter {
       ws.on('message', (data) => {
         if (Buffer.isBuffer(data) || data instanceof ArrayBuffer) {
           this._audioChunksReceived = (this._audioChunksReceived || 0) + 1;
-          if (this._audioChunksReceived === 1) log.info(`[voice] First audio chunk received (${data.length || data.byteLength} bytes)`);
-          if (this._audioChunksReceived % 100 === 0) log.info(`[voice] Audio chunks received: ${this._audioChunksReceived}`);
+          if (this._audioChunksReceived === 1)
+            log.info(
+              `[voice] First audio chunk received (${data.length || data.byteLength} bytes)`,
+            );
+          if (this._audioChunksReceived % 100 === 0)
+            log.info(`[voice] Audio chunks received: ${this._audioChunksReceived}`);
           if (this.transcriber) {
             this.transcriber.send(data);
           }
@@ -197,14 +207,21 @@ class VoiceAgent extends EventEmitter {
    * Called from WS handler for voice:ensure-session so the session
    * can be accessed outside of meetings.
    */
-  async ensureSession() { return this._ensureVoiceSession(); }
+  async ensureSession() {
+    return this._ensureVoiceSession();
+  }
 
   async _ensureVoiceSession() {
-    if (!await sessionManager.isTmuxAvailable()) {
+    if (!(await sessionManager.isTmuxAvailable())) {
       throw new Error('tmux not available');
     }
 
-    const result = await sessionManager.createSession(VOICE_SESSION, VOICE_SESSION_DIR, { panes: 1 }, { cols: 80, rows: 50 });
+    const result = await sessionManager.createSession(
+      VOICE_SESSION,
+      VOICE_SESSION_DIR,
+      { panes: 1 },
+      { cols: 80, rows: 50 },
+    );
     if (result.created) {
       // Set up hive MCP server so the voice session has fleet tools
       const port = this.config?.web?.port || 3000;
@@ -216,26 +233,31 @@ class VoiceAgent extends EventEmitter {
         VOICE_SESSION,
         this._mcpTools, // null = all tools
       );
-      log.info(`[voice] MCP config written (tools: ${this._mcpTools ? this._mcpTools.join(', ') : 'all'})`);
+      log.info(
+        `[voice] MCP config written (tools: ${this._mcpTools ? this._mcpTools.join(', ') : 'all'})`,
+      );
 
       // Write a launcher script with heredoc to avoid shell-quoting issues
       // (system prompt has parens, quotes, brackets that break tmux send-keys)
       const launchScript = path.join(require('os').tmpdir(), 'hive-voice-launch.sh');
       const prompt = this._getSystemPrompt();
-      fs.writeFileSync(launchScript, [
-        '#!/bin/zsh -l',
-        "read -r -d '' PROMPT << 'PROMPT_END'",
-        prompt,
-        'PROMPT_END',
-        'claude --dangerously-skip-permissions --append-system-prompt "$PROMPT"',
-        '',
-      ].join('\n'));
+      fs.writeFileSync(
+        launchScript,
+        [
+          '#!/bin/zsh -l',
+          "read -r -d '' PROMPT << 'PROMPT_END'",
+          prompt,
+          'PROMPT_END',
+          'claude --dangerously-skip-permissions --append-system-prompt "$PROMPT"',
+          '',
+        ].join('\n'),
+      );
       fs.chmodSync(launchScript, 0o755);
 
       await sessionManager.startClaude(VOICE_SESSION, 1, `bash ${launchScript}`);
       log.info('[voice] Created hive-voice session with Claude');
       // Give Claude time to start up
-      await new Promise(r => setTimeout(r, 8000));
+      await new Promise((r) => setTimeout(r, 8000));
     } else {
       log.info('[voice] hive-voice session already exists');
     }
@@ -256,11 +278,11 @@ class VoiceAgent extends EventEmitter {
       '- If no one is talking to you, reply with exactly: SILENT',
       '- Keep responses under 2 sentences. Be concise — this is spoken aloud via TTS.',
       '- No markdown, no code blocks, no bullet points. Plain conversational English.',
-      '- If you don\'t know something, say so briefly.',
+      "- If you don't know something, say so briefly.",
       '',
       'FIRST INTERACTION:',
       '- The first time you are called on in a meeting, briefly introduce yourself.',
-      '  Example: "Hey everyone, I\'m Hive — I manage the engineering fleet. Here\'s where we\'re at..."',
+      "  Example: \"Hey everyone, I'm Hive — I manage the engineering fleet. Here's where we're at...\"",
       '- Then deliver any standup data you were primed with.',
       '- After the first introduction, just be conversational — no need to re-introduce.',
       '',
@@ -299,9 +321,9 @@ class VoiceAgent extends EventEmitter {
     if (this.taskQueue) {
       const tasks = [...this.taskQueue.tasks.values()];
       const since = Date.now() - 86400000;
-      const completed = tasks.filter(t => t.status === 'completed' && t.completedAt >= since);
-      const active = tasks.filter(t => t.status === 'dispatched');
-      const queued = tasks.filter(t => t.status === 'queued');
+      const completed = tasks.filter((t) => t.status === 'completed' && t.completedAt >= since);
+      const active = tasks.filter((t) => t.status === 'dispatched');
+      const queued = tasks.filter((t) => t.status === 'queued');
       let blocked = 0;
       if (this.watcher?.lastState) {
         for (const [, state] of this.watcher.lastState) {
@@ -322,7 +344,10 @@ class VoiceAgent extends EventEmitter {
    */
   _extractClaudeResponse(fullResponse, sentTranscript) {
     // Find the last [Speaker ...] line from the sent transcript
-    const lastSpeakerLine = sentTranscript.split('\n').filter(l => l.startsWith('[')).pop();
+    const lastSpeakerLine = sentTranscript
+      .split('\n')
+      .filter((l) => l.startsWith('['))
+      .pop();
     if (!lastSpeakerLine) return fullResponse;
 
     // Search for it in the pane output (may be wrapped/truncated)
@@ -334,7 +359,8 @@ class VoiceAgent extends EventEmitter {
     const afterTranscript = fullResponse.substring(idx + searchKey.length);
     // Find the end of the matched line
     const nlIdx = afterTranscript.indexOf('\n');
-    const response = nlIdx >= 0 ? afterTranscript.substring(nlIdx + 1).trim() : afterTranscript.trim();
+    const response =
+      nlIdx >= 0 ? afterTranscript.substring(nlIdx + 1).trim() : afterTranscript.trim();
     return response || fullResponse;
   }
 
@@ -392,13 +418,18 @@ class VoiceAgent extends EventEmitter {
         const node = this.router.getNode('local');
         const cfg = this.config || this.taskQueue?.config;
         if (cfg && node) {
-          await relay.tell(cfg, node, VOICE_SESSION, [
-            'You just joined a meeting. Here is your standup update — keep it ready.',
-            'When someone calls on you (e.g. "Hive, your turn" or "Hive, what\'s your update?"),',
-            'deliver this as a concise spoken summary. Do NOT speak until called on.',
-            '',
-            reportData,
-          ].join('\n'));
+          await relay.tell(
+            cfg,
+            node,
+            VOICE_SESSION,
+            [
+              'You just joined a meeting. Here is your standup update — keep it ready.',
+              'When someone calls on you (e.g. "Hive, your turn" or "Hive, what\'s your update?"),',
+              'deliver this as a concise spoken summary. Do NOT speak until called on.',
+              '',
+              reportData,
+            ].join('\n'),
+          );
           log.info('[voice] Standup data primed — waiting to be called on');
         }
       }
@@ -450,7 +481,7 @@ class VoiceAgent extends EventEmitter {
       // Grab and clear the buffer
       const entries = this._transcriptBuffer.splice(0);
       const transcriptText = entries
-        .map(e => {
+        .map((e) => {
           const speaker = e.speaker != null ? `Speaker ${e.speaker}` : 'Unknown';
           return `[${speaker}] ${e.text}`;
         })
@@ -569,16 +600,19 @@ class VoiceAgent extends EventEmitter {
     for (const match of dispatchMatches) {
       const taskId = match[1];
       const sessionNum = parseInt(match[2], 10);
-      this.taskQueue.dispatchTaskTo(taskId, sessionNum).then(task => {
-        if (task) {
-          log.info(`[voice] Task dispatched: T:${taskId} → S:${sessionNum}`);
-          this.emit('task-action', { action: 'dispatched', id: taskId, session: sessionNum });
-        } else {
-          log.warn(`[voice] Could not dispatch T:${taskId} to S:${sessionNum}`);
-        }
-      }).catch(e => {
-        log.error(`[voice] Dispatch failed for T:${taskId}: ${e.message}`);
-      });
+      this.taskQueue
+        .dispatchTaskTo(taskId, sessionNum)
+        .then((task) => {
+          if (task) {
+            log.info(`[voice] Task dispatched: T:${taskId} → S:${sessionNum}`);
+            this.emit('task-action', { action: 'dispatched', id: taskId, session: sessionNum });
+          } else {
+            log.warn(`[voice] Could not dispatch T:${taskId} to S:${sessionNum}`);
+          }
+        })
+        .catch((e) => {
+          log.error(`[voice] Dispatch failed for T:${taskId}: ${e.message}`);
+        });
     }
   }
 
@@ -616,12 +650,28 @@ class VoiceAgent extends EventEmitter {
       if (this.transcriber) this.transcriber._paused = true;
 
       const useBlackHole = this._hasBlackHole !== false;
-      log.info(`[voice] Playing TTS via ${useBlackHole ? 'BlackHole' : 'speakers'} (${(durationMs / 1000).toFixed(1)}s)`);
+      log.info(
+        `[voice] Playing TTS via ${useBlackHole ? 'BlackHole' : 'speakers'} (${(durationMs / 1000).toFixed(1)}s)`,
+      );
 
       await new Promise((resolve, reject) => {
         const args = useBlackHole
-          ? ['-t', 'raw', '-r', '24000', '-e', 'signed', '-b', '16', '-c', '1', tmpFile,
-             '-t', 'coreaudio', 'BlackHole 2ch']
+          ? [
+              '-t',
+              'raw',
+              '-r',
+              '24000',
+              '-e',
+              'signed',
+              '-b',
+              '16',
+              '-c',
+              '1',
+              tmpFile,
+              '-t',
+              'coreaudio',
+              'BlackHole 2ch',
+            ]
           : ['-t', 'raw', '-r', '24000', '-e', 'signed', '-b', '16', '-c', '1', tmpFile];
         const proc = spawn('sox', args, { stdio: ['pipe', 'pipe', 'pipe'] });
         proc.on('exit', (code) => {
@@ -642,10 +692,14 @@ class VoiceAgent extends EventEmitter {
       });
 
       // Resume transcription after playback + settle time
-      await new Promise(r => setTimeout(r, 500));
+      await new Promise((r) => setTimeout(r, 500));
       if (this.transcriber) this.transcriber._paused = false;
     } finally {
-      try { fs.unlinkSync(tmpFile); } catch (e) { /* ignore */ }
+      try {
+        fs.unlinkSync(tmpFile);
+      } catch (e) {
+        /* ignore */
+      }
     }
   }
 
@@ -709,7 +763,9 @@ class VoiceAgent extends EventEmitter {
       });
       if (this.meetings.length > this._maxMeetings) this.meetings.length = this._maxMeetings;
       this._saveMeetings();
-      log.info(`[voice] Meeting saved: ${this._currentMeetingId} (${this._currentTranscript.length} entries)`);
+      log.info(
+        `[voice] Meeting saved: ${this._currentMeetingId} (${this._currentTranscript.length} entries)`,
+      );
     }
 
     this.active = false;

@@ -72,7 +72,7 @@ function parseComments(html) {
 }
 
 function countOpenComments(html) {
-  return parseComments(html).filter(c => c && c.status === 'open').length;
+  return parseComments(html).filter((c) => c && c.status === 'open').length;
 }
 
 // Replace the comments block in HTML with a new array. If no block exists,
@@ -131,13 +131,15 @@ function addComment(planId, { sectionId, text, status = 'draft', author = 'user'
 
 function updateCommentStatus(planId, commentId, status) {
   let found = null;
-  mutateComments(planId, (arr) => arr.map(c => {
-    if (c.id === commentId) {
-      found = { ...c, status };
-      return found;
-    }
-    return c;
-  }));
+  mutateComments(planId, (arr) =>
+    arr.map((c) => {
+      if (c.id === commentId) {
+        found = { ...c, status };
+        return found;
+      }
+      return c;
+    }),
+  );
   return found;
 }
 
@@ -161,7 +163,7 @@ function escapeRegex(s) {
 function applySectionPatch(html, sectionId, newInnerHtml) {
   const re = new RegExp(
     `(<section\\b[^>]*\\bdata-id\\s*=\\s*["']${escapeRegex(sectionId)}["'][^>]*>)([\\s\\S]*?)(<\\/section>)`,
-    'i'
+    'i',
   );
   if (!re.test(html)) return html;
   return html.replace(re, (_m, open, _inner, close) => `${open}\n${newInnerHtml}\n${close}`);
@@ -178,7 +180,7 @@ function replyToComment(planId, commentId, { text, patch, author = 'claude' } = 
   let html = fs.readFileSync(filePath, 'utf8');
 
   let updatedComment = null;
-  const updated = parseComments(html).map(c => {
+  const updated = parseComments(html).map((c) => {
     if (c.id !== commentId) return c;
     const reply = { author, text, at: new Date().toISOString() };
     if (patch) reply.patch = patch;
@@ -214,7 +216,7 @@ function resolveComment(planId, commentId, reason) {
   const html = fs.readFileSync(filePath, 'utf8');
 
   let updatedComment = null;
-  const updated = parseComments(html).map(c => {
+  const updated = parseComments(html).map((c) => {
     if (c.id !== commentId) return c;
     const thread = [...(c.thread || [])];
     if (reason) thread.push({ author: 'claude', text: reason, at: new Date().toISOString() });

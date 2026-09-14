@@ -1,6 +1,12 @@
 import { describe, it, expect, vi, beforeAll, beforeEach, afterAll, afterEach } from 'vitest';
 import { createRequire } from 'module';
-import { createFakeWs, findSent, createMockNode, createMockConfig, createMockWatcher } from '../../helpers/mocks.js';
+import {
+  createFakeWs,
+  findSent,
+  createMockNode,
+  createMockConfig,
+  createMockWatcher,
+} from '../../helpers/mocks.js';
 
 // CJS interop: server.js uses require()
 const require = createRequire(import.meta.url);
@@ -100,7 +106,10 @@ describe('terminal:resize for hive-console (Ask panel width sync)', () => {
     await vi.advanceTimersByTimeAsync(50);
 
     // Register the console subscription that terminal:resize requires
-    ws.emit('message', JSON.stringify({ type: 'terminal:subscribe', session: 'hive-console', cols: 80, rows: 24 }));
+    ws.emit(
+      'message',
+      JSON.stringify({ type: 'terminal:subscribe', session: 'hive-console', cols: 80, rows: 24 }),
+    );
     await vi.advanceTimersByTimeAsync(50);
     node.exec.mockClear();
     ws.send.mockClear();
@@ -111,7 +120,10 @@ describe('terminal:resize for hive-console (Ask panel width sync)', () => {
   });
 
   it('runs `tmux resize-window` on the hive-console session with the supplied cols/rows', async () => {
-    ws.emit('message', JSON.stringify({ type: 'terminal:resize', session: 'hive-console', cols: 220, rows: 50 }));
+    ws.emit(
+      'message',
+      JSON.stringify({ type: 'terminal:resize', session: 'hive-console', cols: 220, rows: 50 }),
+    );
     await vi.advanceTimersByTimeAsync(50);
 
     const resizeCall = node.exec.mock.calls.find(([cmd]) => cmd.includes('resize-window'));
@@ -126,10 +138,16 @@ describe('terminal:resize for hive-console (Ask panel width sync)', () => {
 
   it('runs resize-window with the larger cols on expand, then the smaller cols on collapse', async () => {
     // Expand
-    ws.emit('message', JSON.stringify({ type: 'terminal:resize', session: 'hive-console', cols: 220, rows: 50 }));
+    ws.emit(
+      'message',
+      JSON.stringify({ type: 'terminal:resize', session: 'hive-console', cols: 220, rows: 50 }),
+    );
     await vi.advanceTimersByTimeAsync(50);
     // Collapse
-    ws.emit('message', JSON.stringify({ type: 'terminal:resize', session: 'hive-console', cols: 110, rows: 50 }));
+    ws.emit(
+      'message',
+      JSON.stringify({ type: 'terminal:resize', session: 'hive-console', cols: 110, rows: 50 }),
+    );
     await vi.advanceTimersByTimeAsync(50);
 
     const resizeCalls = node.exec.mock.calls.filter(([cmd]) => cmd.includes('resize-window'));
@@ -147,7 +165,10 @@ describe('terminal:resize for hive-console (Ask panel width sync)', () => {
     await vi.advanceTimersByTimeAsync(50);
     node.exec.mockClear();
 
-    ws.emit('message', JSON.stringify({ type: 'terminal:resize', session: 'hive-console', cols: 220, rows: 50 }));
+    ws.emit(
+      'message',
+      JSON.stringify({ type: 'terminal:resize', session: 'hive-console', cols: 220, rows: 50 }),
+    );
     await vi.advanceTimersByTimeAsync(50);
 
     const resizeCall = node.exec.mock.calls.find(([cmd]) => cmd.includes('resize-window'));
@@ -155,8 +176,14 @@ describe('terminal:resize for hive-console (Ask panel width sync)', () => {
   });
 
   it('ignores resize with zero/missing cols (defensive against bad client input)', async () => {
-    ws.emit('message', JSON.stringify({ type: 'terminal:resize', session: 'hive-console', cols: 0, rows: 50 }));
-    ws.emit('message', JSON.stringify({ type: 'terminal:resize', session: 'hive-console', rows: 50 }));
+    ws.emit(
+      'message',
+      JSON.stringify({ type: 'terminal:resize', session: 'hive-console', cols: 0, rows: 50 }),
+    );
+    ws.emit(
+      'message',
+      JSON.stringify({ type: 'terminal:resize', session: 'hive-console', rows: 50 }),
+    );
     await vi.advanceTimersByTimeAsync(50);
 
     const resizeCall = node.exec.mock.calls.find(([cmd]) => cmd.includes('resize-window'));

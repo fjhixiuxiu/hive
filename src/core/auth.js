@@ -43,7 +43,7 @@ async function checkOrgMembership(accessToken) {
     headers: { Authorization: `token ${accessToken}` },
   });
   if (!Array.isArray(orgs)) return false;
-  return orgs.some(o => o.login.toLowerCase() === requiredOrg.toLowerCase());
+  return orgs.some((o) => o.login.toLowerCase() === requiredOrg.toLowerCase());
 }
 
 /**
@@ -51,18 +51,25 @@ async function checkOrgMembership(accessToken) {
  */
 function httpRequest(url, options = {}) {
   return new Promise((resolve, reject) => {
-    const req = https.request(url, {
-      headers: { 'User-Agent': 'hive-ai', 'Accept': 'application/json', ...options.headers },
-      method: options.method || 'GET',
-      agent: httpsKeepAlive,
-    }, (res) => {
-      let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => {
-        try { resolve(JSON.parse(data)); }
-        catch { reject(new Error(`Invalid JSON from ${url}`)); }
-      });
-    });
+    const req = https.request(
+      url,
+      {
+        headers: { 'User-Agent': 'hive-ai', Accept: 'application/json', ...options.headers },
+        method: options.method || 'GET',
+        agent: httpsKeepAlive,
+      },
+      (res) => {
+        let data = '';
+        res.on('data', (chunk) => (data += chunk));
+        res.on('end', () => {
+          try {
+            resolve(JSON.parse(data));
+          } catch {
+            reject(new Error(`Invalid JSON from ${url}`));
+          }
+        });
+      },
+    );
     req.on('error', reject);
     if (options.body) req.write(options.body);
     req.end();
@@ -99,12 +106,16 @@ async function fetchGitHubUser(accessToken) {
  * Issue a JWT for an authenticated user.
  */
 function issueToken(user) {
-  return jwt.sign({
-    sub: user.login,
-    name: user.name || user.login,
-    avatar: user.avatar_url,
-    githubId: user.id,
-  }, JWT_SECRET, { expiresIn: JWT_EXPIRY });
+  return jwt.sign(
+    {
+      sub: user.login,
+      name: user.name || user.login,
+      avatar: user.avatar_url,
+      githubId: user.id,
+    },
+    JWT_SECRET,
+    { expiresIn: JWT_EXPIRY },
+  );
 }
 
 /**
@@ -125,7 +136,7 @@ function verifyToken(token) {
  */
 function parseCookie(cookieHeader, name = COOKIE_NAME) {
   if (!cookieHeader) return null;
-  const match = cookieHeader.split(';').find(c => c.trim().startsWith(`${name}=`));
+  const match = cookieHeader.split(';').find((c) => c.trim().startsWith(`${name}=`));
   return match ? match.split('=')[1].trim() : null;
 }
 
@@ -190,7 +201,11 @@ function wireAuthRoutes(app, taskQueue) {
         const isMember = await checkOrgMembership(accessToken);
         if (!isMember) {
           log.error(`[auth] ${user.login} is not a member of org ${process.env.GITHUB_ORG}`);
-          return res.status(403).send(`Access denied — you must be a member of the ${process.env.GITHUB_ORG} GitHub organization.`);
+          return res
+            .status(403)
+            .send(
+              `Access denied — you must be a member of the ${process.env.GITHUB_ORG} GitHub organization.`,
+            );
         }
       }
 
@@ -256,13 +271,23 @@ function authenticateWebSocket(msg, request) {
     const token = parseCookie(cookieHeader);
     const user = token ? verifyToken(token) : null;
     if (user) {
-      return { authenticated: true, user: { login: user.sub, name: user.name, avatar: user.avatar } };
+      return {
+        authenticated: true,
+        user: { login: user.sub, name: user.name, avatar: user.avatar },
+      };
     }
     // Also accept auth message with JWT token directly
     if (msg.type === 'auth' && msg.token) {
       const userFromToken = verifyToken(msg.token);
       if (userFromToken) {
-        return { authenticated: true, user: { login: userFromToken.sub, name: userFromToken.name, avatar: userFromToken.avatar } };
+        return {
+          authenticated: true,
+          user: {
+            login: userFromToken.sub,
+            name: userFromToken.name,
+            avatar: userFromToken.avatar,
+          },
+        };
       }
     }
     return { authenticated: false };

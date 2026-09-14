@@ -1,6 +1,15 @@
 const log = require('./log');
 
-const ALL_PERMISSIONS = ['view', 'comment', 'create-tasks', 'send-messages', 'cancel', 'restart', 'dispatch', 'admin'];
+const ALL_PERMISSIONS = [
+  'view',
+  'comment',
+  'create-tasks',
+  'send-messages',
+  'cancel',
+  'restart',
+  'dispatch',
+  'admin',
+];
 
 // ── Users + Permissions ─────────────────────────────────
 
@@ -45,7 +54,7 @@ function hasPermission(login, capability) {
 function setUserPermissions(login, permissions) {
   const user = this.users.get(login);
   if (!user) return null;
-  user.permissions = permissions.filter(p => ALL_PERMISSIONS.includes(p));
+  user.permissions = permissions.filter((p) => ALL_PERMISSIONS.includes(p));
   this.emit('users:changed', this.getUsersList());
   this._saveState();
   return user;
@@ -110,7 +119,7 @@ function addComment(taskId, authorLogin, authorName, text) {
 function deleteComment(taskId, commentId, requestingLogin) {
   const task = this.tasks.get(taskId);
   if (!task || !task.comments) return false;
-  const idx = task.comments.findIndex(c => c.id === commentId);
+  const idx = task.comments.findIndex((c) => c.id === commentId);
   if (idx < 0) return false;
   const comment = task.comments[idx];
   // Only author or admin can delete

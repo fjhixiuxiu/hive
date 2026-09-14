@@ -28,7 +28,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           return;
         }
 
-        console.log('[hive-ext] Tab audio capture started, tracks:', stream.getAudioTracks().length);
+        console.log(
+          '[hive-ext] Tab audio capture started, tracks:',
+          stream.getAudioTracks().length,
+        );
 
         // We can't pass the stream directly to content script in MV3.
         // Instead, use an offscreen document or pipe through messaging.
@@ -45,7 +48,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         globalThis.__hiveStream = stream;
 
         sendResponse({ ok: true, streamId: 'active' });
-      }
+      },
     );
 
     return true; // async sendResponse
@@ -73,18 +76,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
 
     // getMediaStreamId gives an ID that can be used with getUserMedia in the content script
-    chrome.tabCapture.getMediaStreamId(
-      { targetTabId: tabId },
-      (streamId) => {
-        if (chrome.runtime.lastError) {
-          console.error('[hive-ext] getMediaStreamId error:', chrome.runtime.lastError.message);
-          sendResponse({ error: chrome.runtime.lastError.message });
-          return;
-        }
-        console.log('[hive-ext] Got stream ID for tab', tabId);
-        sendResponse({ streamId });
+    chrome.tabCapture.getMediaStreamId({ targetTabId: tabId }, (streamId) => {
+      if (chrome.runtime.lastError) {
+        console.error('[hive-ext] getMediaStreamId error:', chrome.runtime.lastError.message);
+        sendResponse({ error: chrome.runtime.lastError.message });
+        return;
       }
-    );
+      console.log('[hive-ext] Got stream ID for tab', tabId);
+      sendResponse({ streamId });
+    });
 
     return true; // async
   }

@@ -2,7 +2,10 @@ import { describe, it, expect } from 'vitest';
 import { createRequire } from 'module';
 
 const require = createRequire(import.meta.url);
-const { getTaskActions, getTaskPrimaryAction } = require('../../../src/integrations/web/public/primary-action.js');
+const {
+  getTaskActions,
+  getTaskPrimaryAction,
+} = require('../../../src/integrations/web/public/primary-action.js');
 
 /**
  * Auto-derived context actions (Open Thread, Open PR, Open Issue).
@@ -22,10 +25,12 @@ describe('getTaskActions', () => {
   describe('Slack thread actions', () => {
     it('builds Open Thread from slackChannel + slackThreadTs', () => {
       const task = { slackChannel: 'C08LPA0N9J8', slackThreadTs: '1776268446.027589' };
-      expect(getTaskActions(task)).toEqual([{
-        url: 'https://vivtechnologies.slack.com/archives/C08LPA0N9J8/p1776268446027589',
-        label: 'Open Thread',
-      }]);
+      expect(getTaskActions(task)).toEqual([
+        {
+          url: 'https://vivtechnologies.slack.com/archives/C08LPA0N9J8/p1776268446027589',
+          label: 'Open Thread',
+        },
+      ]);
     });
 
     it('prefers slackPermalink when present', () => {
@@ -34,10 +39,12 @@ describe('getTaskActions', () => {
         slackChannel: 'C08',
         slackThreadTs: '1776268446.027589',
       };
-      expect(getTaskActions(task)).toEqual([{
-        url: 'https://vivtechnologies.slack.com/archives/C08/p1776268507043009',
-        label: 'Open Thread',
-      }]);
+      expect(getTaskActions(task)).toEqual([
+        {
+          url: 'https://vivtechnologies.slack.com/archives/C08/p1776268507043009',
+          label: 'Open Thread',
+        },
+      ]);
     });
 
     it('does not show Open Thread when slackChannel is missing', () => {
@@ -54,18 +61,22 @@ describe('getTaskActions', () => {
   describe('GitHub PR actions', () => {
     it('builds Open PR from actionContext', () => {
       const task = { actionContext: { type: 'github-pr', repo: 'mavencare/nectar', prNumber: 42 } };
-      expect(getTaskActions(task)).toEqual([{
-        url: 'https://github.com/mavencare/nectar/pull/42',
-        label: 'Open PR',
-      }]);
+      expect(getTaskActions(task)).toEqual([
+        {
+          url: 'https://github.com/mavencare/nectar/pull/42',
+          label: 'Open PR',
+        },
+      ]);
     });
 
     it('falls back to parsing sourceKey', () => {
       const task = { sourceKey: 'mavencare/nectar#7' };
-      expect(getTaskActions(task)).toEqual([{
-        url: 'https://github.com/mavencare/nectar/pull/7',
-        label: 'Open PR',
-      }]);
+      expect(getTaskActions(task)).toEqual([
+        {
+          url: 'https://github.com/mavencare/nectar/pull/7',
+          label: 'Open PR',
+        },
+      ]);
     });
 
     it('returns empty when neither actionContext nor sourceKey is usable', () => {
@@ -75,11 +86,15 @@ describe('getTaskActions', () => {
 
   describe('GitHub issue actions', () => {
     it('builds Open Issue from actionContext', () => {
-      const task = { actionContext: { type: 'github-issue', repo: 'mavencare/nectar', issueNumber: 15 } };
-      expect(getTaskActions(task)).toEqual([{
-        url: 'https://github.com/mavencare/nectar/issues/15',
-        label: 'Open Issue',
-      }]);
+      const task = {
+        actionContext: { type: 'github-issue', repo: 'mavencare/nectar', issueNumber: 15 },
+      };
+      expect(getTaskActions(task)).toEqual([
+        {
+          url: 'https://github.com/mavencare/nectar/issues/15',
+          label: 'Open Issue',
+        },
+      ]);
     });
   });
 

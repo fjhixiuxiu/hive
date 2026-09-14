@@ -4,7 +4,7 @@ const log = require('./log');
 
 // Shared keep-alive agents (see src/core/pr-status.js for the FD-leak rationale).
 const httpsKeepAlive = new https.Agent({ keepAlive: true, maxSockets: 4 });
-const httpKeepAlive  = new http.Agent({  keepAlive: true, maxSockets: 4 });
+const httpKeepAlive = new http.Agent({ keepAlive: true, maxSockets: 4 });
 
 const MCP_INSTRUCTIONS = `
 ## Hive Integration
@@ -35,14 +35,21 @@ const _etagCache = new Map();
 const _hostGateUntil = new Map(); // host → epoch-ms when we may try again
 
 function _hostOf(urlStr) {
-  try { return new URL(urlStr).host; } catch { return ''; }
+  try {
+    return new URL(urlStr).host;
+  } catch {
+    return '';
+  }
 }
 
 function _gateRemaining(host) {
   const until = _hostGateUntil.get(host);
   if (!until) return 0;
   const ms = until - Date.now();
-  if (ms <= 0) { _hostGateUntil.delete(host); return 0; }
+  if (ms <= 0) {
+    _hostGateUntil.delete(host);
+    return 0;
+  }
   return ms;
 }
 
@@ -87,7 +94,7 @@ function _httpRequest(urlStr, headers, body) {
 
     const req = mod.request(urlStr, options, (res) => {
       let data = '';
-      res.on('data', (chunk) => data += chunk);
+      res.on('data', (chunk) => (data += chunk));
       res.on('end', () => {
         // 304 Not Modified — return cached data (free, no rate limit cost)
         if (res.statusCode === 304 && cached) {
@@ -122,12 +129,16 @@ function _httpRequest(urlStr, headers, body) {
             const reset = parseInt(res.headers['x-ratelimit-reset'], 10);
             let backoff = 60;
             if (Number.isFinite(ra) && ra > 0) backoff = ra;
-            else if (Number.isFinite(reset)) backoff = Math.max(5, reset - Math.floor(Date.now() / 1000));
+            else if (Number.isFinite(reset))
+              backoff = Math.max(5, reset - Math.floor(Date.now() / 1000));
             _setGate(host, backoff);
           }
           // Extract clean error: JSON message if possible, otherwise just the status code
           let detail = `HTTP ${res.statusCode}`;
-          try { const j = JSON.parse(data); if (j.message) detail += `: ${j.message}`; } catch {
+          try {
+            const j = JSON.parse(data);
+            if (j.message) detail += `: ${j.message}`;
+          } catch {
             if (res.statusCode >= 500) detail += ' (server error, will retry)';
           }
           reject(new Error(detail));
@@ -136,7 +147,10 @@ function _httpRequest(urlStr, headers, body) {
     });
 
     req.on('error', (err) => reject(new Error(`Request failed: ${err.message}`)));
-    req.on('timeout', () => { req.destroy(); reject(new Error('Request timed out')); });
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error('Request timed out'));
+    });
     if (body) req.write(body);
     req.end();
   });
@@ -149,28 +163,42 @@ function _httpMethod(method, urlStr, headers, body) {
     const data = body ? JSON.stringify(body) : '';
     const reqHeaders = { ...headers, 'Content-Type': 'application/json' };
     if (data) reqHeaders['Content-Length'] = Buffer.byteLength(data);
-    const req = mod.request(urlStr, {
-      method,
-      headers: reqHeaders,
-      timeout: 30000,
-      agent: mod === https ? httpsKeepAlive : httpKeepAlive,
-    }, (res) => {
-      let resBody = '';
-      res.on('data', (chunk) => resBody += chunk);
-      res.on('end', () => {
-        if (res.statusCode >= 200 && res.statusCode < 300) {
-          try { resolve(JSON.parse(resBody)); } catch { resolve(resBody); }
-        } else {
-          let detail = `HTTP ${res.statusCode}`;
-          try { const j = JSON.parse(resBody); if (j.message) detail += `: ${j.message}`; } catch {
-            if (res.statusCode >= 500) detail += ' (server error, will retry)';
+    const req = mod.request(
+      urlStr,
+      {
+        method,
+        headers: reqHeaders,
+        timeout: 30000,
+        agent: mod === https ? httpsKeepAlive : httpKeepAlive,
+      },
+      (res) => {
+        let resBody = '';
+        res.on('data', (chunk) => (resBody += chunk));
+        res.on('end', () => {
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            try {
+              resolve(JSON.parse(resBody));
+            } catch {
+              resolve(resBody);
+            }
+          } else {
+            let detail = `HTTP ${res.statusCode}`;
+            try {
+              const j = JSON.parse(resBody);
+              if (j.message) detail += `: ${j.message}`;
+            } catch {
+              if (res.statusCode >= 500) detail += ' (server error, will retry)';
+            }
+            reject(new Error(detail));
           }
-          reject(new Error(detail));
-        }
-      });
-    });
+        });
+      },
+    );
     req.on('error', (err) => reject(new Error(`Request failed: ${err.message}`)));
-    req.on('timeout', () => { req.destroy(); reject(new Error('Request timed out')); });
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error('Request timed out'));
+    });
     if (data) req.write(data);
     req.end();
   });
@@ -185,7 +213,11 @@ function _httpPost(urlStr, headers, body) {
 function _githubHeaders() {
   const token = process.env.GITHUB_TOKEN;
   if (!token) throw new Error('GITHUB_TOKEN not configured');
-  return { 'Authorization': `Bearer ${token}`, 'Accept': 'application/vnd.github+json', 'User-Agent': 'hive-pm' };
+  return {
+    Authorization: `Bearer ${token}`,
+    Accept: 'application/vnd.github+json',
+    'User-Agent': 'hive-pm',
+  };
 }
 
 async function _resolveGithubLogin() {
@@ -249,12 +281,16 @@ async function _fetchJira(source) {
   const urlStr = `${baseUrl}/rest/api/3/search/jql`;
   const auth = Buffer.from(`${email}:${apiToken}`).toString('base64');
 
-  const data = await this._httpRequest(urlStr, {
-    'Authorization': `Basic ${auth}`,
-    'Accept': 'application/json',
-    'Content-Type': 'application/json',
-  }, JSON.stringify({ jql, fields, maxResults: 50 }));
-  return (data.issues || []).map(i => ({
+  const data = await this._httpRequest(
+    urlStr,
+    {
+      Authorization: `Basic ${auth}`,
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+    },
+    JSON.stringify({ jql, fields, maxResults: 50 }),
+  );
+  return (data.issues || []).map((i) => ({
     key: i.key,
     summary: i.fields.summary,
     issueType: i.fields.issuetype ? i.fields.issuetype.name : '',
@@ -269,7 +305,7 @@ async function _fetchGithubIssues(source) {
     const params = new URLSearchParams({ q, per_page: '50', sort: 'created', order: 'desc' });
     const urlStr = `https://api.github.com/search/issues?${params}`;
     const data = await this._httpRequest(urlStr, this._githubHeaders());
-    return (data && data.items ? data.items : []).map(item => ({
+    return (data && data.items ? data.items : []).map((item) => ({
       key: `${item.repository_url ? item.repository_url.replace('https://api.github.com/repos/', '') : 'unknown'}#${item.number}`,
       summary: item.title,
       issueType: 'issue',
@@ -286,13 +322,18 @@ async function _fetchGithubIssues(source) {
   const data = await this._httpRequest(urlStr, this._githubHeaders());
   const authorFilter = source.author ? source.author.toLowerCase() : null;
   const excludeSet = source.excludeLabels
-    ? new Set(source.excludeLabels.split(',').map(l => l.trim().toLowerCase()).filter(Boolean))
+    ? new Set(
+        source.excludeLabels
+          .split(',')
+          .map((l) => l.trim().toLowerCase())
+          .filter(Boolean),
+      )
     : null;
   return (Array.isArray(data) ? data : [])
-    .filter(i => !i.pull_request) // exclude PRs from issues endpoint
-    .filter(i => !authorFilter || (i.user && i.user.login.toLowerCase() === authorFilter))
-    .filter(i => !excludeSet || !i.labels.some(l => excludeSet.has(l.name.toLowerCase())))
-    .map(i => ({
+    .filter((i) => !i.pull_request) // exclude PRs from issues endpoint
+    .filter((i) => !authorFilter || (i.user && i.user.login.toLowerCase() === authorFilter))
+    .filter((i) => !excludeSet || !i.labels.some((l) => excludeSet.has(l.name.toLowerCase())))
+    .map((i) => ({
       key: `${source.repo}#${i.number}`,
       summary: i.title,
       issueType: 'issue',
@@ -319,7 +360,10 @@ async function _fetchGithubPrs(source) {
 
   // No label filters — use the Pulls API (faster, no rate limit concerns)
   const allowedBases = source.base
-    ? source.base.split(',').map(b => b.trim()).filter(Boolean)
+    ? source.base
+        .split(',')
+        .map((b) => b.trim())
+        .filter(Boolean)
     : ['main', 'master'];
 
   // Separate literal base names from regex patterns
@@ -327,7 +371,11 @@ async function _fetchGithubPrs(source) {
   const regexBases = [];
   for (const b of allowedBases) {
     if (/[.*+?^${}()|[\]\\]/.test(b)) {
-      try { regexBases.push(new RegExp(`^${b}$`)); } catch { literalBases.push(b); }
+      try {
+        regexBases.push(new RegExp(`^${b}$`));
+      } catch {
+        literalBases.push(b);
+      }
     } else {
       literalBases.push(b);
     }
@@ -353,7 +401,7 @@ async function _fetchGithubPrs(source) {
 
   // Deduplicate by PR number (a PR fetched via both paths)
   const seen = new Set();
-  const uniquePrs = allPrs.filter(pr => {
+  const uniquePrs = allPrs.filter((pr) => {
     if (seen.has(pr.number)) return false;
     seen.add(pr.number);
     return true;
@@ -362,16 +410,23 @@ async function _fetchGithubPrs(source) {
   function matchesBase(ref) {
     if (!ref) return false;
     if (literalBases.includes(ref)) return true;
-    return regexBases.some(rx => rx.test(ref));
+    return regexBases.some((rx) => rx.test(ref));
   }
 
   const authorFilter = source.author ? source.author.toLowerCase() : null;
-  const excludeSet = new Set((source.excludeAuthors || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean));
+  const excludeSet = new Set(
+    (source.excludeAuthors || '')
+      .split(',')
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean),
+  );
   return uniquePrs
-    .filter(pr => matchesBase(pr.base && pr.base.ref) && !pr.draft)
-    .filter(pr => !authorFilter || (pr.user && pr.user.login.toLowerCase() === authorFilter))
-    .filter(pr => !excludeSet.size || !excludeSet.has((pr.user && pr.user.login || '').toLowerCase()))
-    .map(pr => ({
+    .filter((pr) => matchesBase(pr.base && pr.base.ref) && !pr.draft)
+    .filter((pr) => !authorFilter || (pr.user && pr.user.login.toLowerCase() === authorFilter))
+    .filter(
+      (pr) => !excludeSet.size || !excludeSet.has(((pr.user && pr.user.login) || '').toLowerCase()),
+    )
+    .map((pr) => ({
       key: `${source.repo}#${pr.number}`,
       summary: pr.title,
       issueType: 'pr',
@@ -381,7 +436,12 @@ async function _fetchGithubPrs(source) {
 
 async function _fetchGithubPrsViaSearch(source) {
   // Parse base patterns up front (used for client-side filtering when needed)
-  const baseParts = source.base ? source.base.split(',').map(b => b.trim()).filter(Boolean) : [];
+  const baseParts = source.base
+    ? source.base
+        .split(',')
+        .map((b) => b.trim())
+        .filter(Boolean)
+    : [];
   const isSingleLiteral = baseParts.length === 1 && !/[.*+?^${}()|[\]\\]/.test(baseParts[0]);
 
   let q;
@@ -393,12 +453,18 @@ async function _fetchGithubPrsViaSearch(source) {
     const parts = ['is:pr', `repo:${source.repo}`];
     if (source.state && source.state !== 'all') parts.push(`is:${source.state}`);
     if (source.labels) {
-      for (const l of source.labels.split(',').map(s => s.trim()).filter(Boolean)) {
+      for (const l of source.labels
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)) {
         parts.push(l.includes(' ') ? `label:"${l}"` : `label:${l}`);
       }
     }
     if (source.excludeLabels) {
-      for (const l of source.excludeLabels.split(',').map(s => s.trim()).filter(Boolean)) {
+      for (const l of source.excludeLabels
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)) {
         parts.push(l.includes(' ') ? `-label:"${l}"` : `-label:${l}`);
       }
     }
@@ -407,7 +473,10 @@ async function _fetchGithubPrsViaSearch(source) {
     if (isSingleLiteral) parts.push(`base:${baseParts[0]}`);
     if (source.author) parts.push(`author:${source.author}`);
     if (source.excludeAuthors) {
-      for (const a of source.excludeAuthors.split(',').map(s => s.trim()).filter(Boolean)) {
+      for (const a of source.excludeAuthors
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)) {
         parts.push(`-author:${a}`);
       }
     }
@@ -426,7 +495,11 @@ async function _fetchGithubPrsViaSearch(source) {
     const regexList = [];
     for (const b of baseParts) {
       if (/[.*+?^${}()|[\]\\]/.test(b)) {
-        try { regexList.push(new RegExp(`^${b}$`)); } catch { literalSet.add(b); }
+        try {
+          regexList.push(new RegExp(`^${b}$`));
+        } catch {
+          literalSet.add(b);
+        }
       } else {
         literalSet.add(b);
       }
@@ -438,18 +511,27 @@ async function _fetchGithubPrsViaSearch(source) {
     for (const item of items) {
       const prNum = item.number;
       try {
-        const prData = await this._httpRequest(`https://api.github.com/repos/${repo}/pulls/${prNum}`, headers);
+        const prData = await this._httpRequest(
+          `https://api.github.com/repos/${repo}/pulls/${prNum}`,
+          headers,
+        );
         const ref = prData.base && prData.base.ref;
-        if (ref && (literalSet.has(ref) || regexList.some(rx => rx.test(ref)))) {
+        if (ref && (literalSet.has(ref) || regexList.some((rx) => rx.test(ref)))) {
           filtered.push(item);
         }
-      } catch { /* skip items we can't fetch */ }
+      } catch {
+        /* skip items we can't fetch */
+      }
     }
     items = filtered;
   }
 
-  return items.map(item => {
-    const repo = source.repo || (item.repository_url ? item.repository_url.replace('https://api.github.com/repos/', '') : 'unknown');
+  return items.map((item) => {
+    const repo =
+      source.repo ||
+      (item.repository_url
+        ? item.repository_url.replace('https://api.github.com/repos/', '')
+        : 'unknown');
     return {
       key: `${repo}#${item.number}`,
       summary: item.title,
@@ -463,19 +545,22 @@ async function _fetchJenkins(source) {
   const baseUrl = process.env.JENKINS_URL;
   const user = process.env.JENKINS_USER;
   const token = process.env.JENKINS_API_TOKEN;
-  if (!baseUrl || !user || !token) throw new Error('Jenkins credentials not configured (JENKINS_URL, JENKINS_USER, JENKINS_API_TOKEN)');
+  if (!baseUrl || !user || !token)
+    throw new Error(
+      'Jenkins credentials not configured (JENKINS_URL, JENKINS_USER, JENKINS_API_TOKEN)',
+    );
   if (!source.jobPath) throw new Error('Jenkins job path not configured');
 
   const urlStr = `${baseUrl}/job/${source.jobPath}/api/json?tree=builds[number,result,timestamp,url]{0,20}`;
   const auth = Buffer.from(`${user}:${token}`).toString('base64');
 
   const data = await this._httpRequest(urlStr, {
-    'Authorization': `Basic ${auth}`,
-    'Accept': 'application/json',
+    Authorization: `Basic ${auth}`,
+    Accept: 'application/json',
   });
   return (data.builds || [])
-    .filter(b => b.result === 'FAILURE')
-    .map(b => ({
+    .filter((b) => b.result === 'FAILURE')
+    .map((b) => ({
       key: `jenkins-${b.number}`,
       summary: `Build #${b.number} failed — ${source.jobPath}`,
       issueType: 'bug',
@@ -488,7 +573,9 @@ async function _refreshZohoToken() {
   const clientSecret = process.env.ZOHO_DESK_CLIENT_SECRET;
   const refreshToken = process.env.ZOHO_DESK_REFRESH_TOKEN;
   if (!clientId || !clientSecret || !refreshToken) {
-    throw new Error('Zoho OAuth refresh credentials not configured (ZOHO_DESK_CLIENT_ID, ZOHO_DESK_CLIENT_SECRET, ZOHO_DESK_REFRESH_TOKEN)');
+    throw new Error(
+      'Zoho OAuth refresh credentials not configured (ZOHO_DESK_CLIENT_ID, ZOHO_DESK_CLIENT_SECRET, ZOHO_DESK_REFRESH_TOKEN)',
+    );
   }
   const res = await fetch('https://accounts.zoho.com/oauth/v2/token', {
     method: 'POST',
@@ -537,19 +624,19 @@ async function _fetchZoho(source) {
   }
 
   const data = await this._httpRequest(urlStr, {
-    'Authorization': `Zoho-oauthtoken ${token}`,
-    'orgId': orgId,
-    'Accept': 'application/json',
+    Authorization: `Zoho-oauthtoken ${token}`,
+    orgId: orgId,
+    Accept: 'application/json',
   });
   const tickets = data.data || data || [];
   const since = source.since ? new Date(source.since).getTime() : 0;
   return (Array.isArray(tickets) ? tickets : [])
-    .filter(t => {
+    .filter((t) => {
       if (!since) return true;
       const created = new Date(t.createdTime).getTime();
       return created >= since;
     })
-    .map(t => ({
+    .map((t) => ({
       key: `zoho-${t.ticketNumber || t.id}`,
       summary: t.subject || t.description || '',
       issueType: 'ticket',
@@ -562,14 +649,17 @@ async function _fetchReReviews(source, pmId) {
   if (!source.reviewer) throw new Error('Reviewer username not configured');
 
   const triggers = (source.triggerPhrases || 'ready for review,ptal,please review,addressed')
-    .split(',').map(t => t.trim().toLowerCase()).filter(Boolean);
+    .split(',')
+    .map((t) => t.trim().toLowerCase())
+    .filter(Boolean);
   if (triggers.length === 0) throw new Error('No trigger phrases configured');
 
   // Optional cost-control settings:
   //   maxPerPoll      — cap NEW (non-already-queued) results per poll; pull oldest first
   //   skipIfApproved  — drop PRs where any review state is APPROVED (any reviewer)
   // Both default off / unlimited so existing PMs see no behavior change.
-  const maxPerPoll = Number.isInteger(source.maxPerPoll) && source.maxPerPoll > 0 ? source.maxPerPoll : null;
+  const maxPerPoll =
+    Number.isInteger(source.maxPerPoll) && source.maxPerPoll > 0 ? source.maxPerPoll : null;
   const skipIfApproved = source.skipIfApproved === true;
 
   const headers = this._githubHeaders();
@@ -588,11 +678,17 @@ async function _fetchReReviews(source, pmId) {
 
   const results = [];
   const reviewer = source.reviewer.toLowerCase();
-  const excludeSet = new Set((source.excludeAuthors || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean));
+  const excludeSet = new Set(
+    (source.excludeAuthors || '')
+      .split(',')
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean),
+  );
 
   for (const pr of prs) {
     if (pr.draft) continue;
-    if (excludeSet.size && excludeSet.has((pr.user && pr.user.login || '').toLowerCase())) continue;
+    if (excludeSet.size && excludeSet.has(((pr.user && pr.user.login) || '').toLowerCase()))
+      continue;
     // Skip PRs not updated since this PM's last poll (2 min buffer for clock/propagation lag)
     if (!this._reReviewPollTimes) this._reReviewPollTimes = {};
     const lastPoll = this._reReviewPollTimes[pmId];
@@ -602,7 +698,11 @@ async function _fetchReReviews(source, pmId) {
     const since = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
     const commentsUrl = `https://api.github.com/repos/${source.repo}/issues/${pr.number}/comments?since=${since}&per_page=100`;
     let comments;
-    try { comments = await this._httpRequest(commentsUrl, headers); } catch (e) { continue; }
+    try {
+      comments = await this._httpRequest(commentsUrl, headers);
+    } catch (e) {
+      continue;
+    }
     if (!Array.isArray(comments)) continue;
 
     for (const comment of comments) {
@@ -614,7 +714,7 @@ async function _fetchReReviews(source, pmId) {
       const rawBody = comment.body || '';
       if (rawBody.length > 500) continue; // Skip long bot summaries / auto-generated comments
       const body = rawBody.toLowerCase();
-      if (!triggers.some(t => body.includes(t))) continue;
+      if (!triggers.some((t) => body.includes(t))) continue;
 
       // If THIS PM already has a queued/dispatched task for this PR, flag it for
       // "already queued" reply. Scoped per-PM so an in-flight task from a different
@@ -662,7 +762,10 @@ async function _fetchReReviews(source, pmId) {
   const filtered = [];
   let kept = 0;
   for (const r of results) {
-    if (r._alreadyQueued) { filtered.push(r); continue; }
+    if (r._alreadyQueued) {
+      filtered.push(r);
+      continue;
+    }
     if (skipIfApproved) {
       const approved = await this._hasAnyApprovedReview(r._repo, r._prNumber);
       if (approved) continue;
@@ -683,7 +786,7 @@ async function _hasAnyApprovedReview(repo, prNumber) {
     const url = `https://api.github.com/repos/${repo}/pulls/${prNumber}/reviews?per_page=100`;
     const reviews = await this._httpRequest(url, this._githubHeaders());
     if (!Array.isArray(reviews)) return false;
-    return reviews.some(r => r && r.state === 'APPROVED');
+    return reviews.some((r) => r && r.state === 'APPROVED');
   } catch {
     return false;
   }
@@ -695,7 +798,7 @@ function _seedChecklist(pm, task) {
   if (!pm.checklistTemplate || !task) return;
   const tpl = this.taskQueue.checklistTemplates.get(pm.checklistTemplate);
   if (!tpl || !tpl.items || !tpl.items.length) return;
-  const checklist = tpl.items.map(text => ({
+  const checklist = tpl.items.map((text) => ({
     id: `cl-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     text,
     checked: false,
@@ -713,7 +816,7 @@ function enrichTaskText(task) {
     return task.text + `\n\n${MCP_INSTRUCTIONS}`;
   }
   const pmName = task.source.replace('pm:', '');
-  const pm = [...this.pms.values()].find(p => p.name === pmName);
+  const pm = [...this.pms.values()].find((p) => p.name === pmName);
   if (!pm) return task.text + `\n\n${MCP_INSTRUCTIONS}`;
   return this._buildFullText(pm, task.text);
 }
@@ -722,18 +825,22 @@ function _buildFullText(pm, text) {
   let result = text;
   if (pm.instructions) result += `\n\nInstructions: ${pm.instructions}`;
   if (pm.slackUserId) {
-    const ids = pm.slackUserId.split(',').map(id => id.trim()).filter(Boolean);
+    const ids = pm.slackUserId
+      .split(',')
+      .map((id) => id.trim())
+      .filter(Boolean);
     if (ids.length === 1) {
       result += `\n\n## PM Slack Contact\n\nThe PM assignee for this task has Slack User ID: \`${ids[0]}\`. When asked to report status to the PM, send a Slack DM to this user ID.`;
     } else if (ids.length > 1) {
-      const formatted = ids.map(id => `\`${id}\``).join(', ');
+      const formatted = ids.map((id) => `\`${id}\``).join(', ');
       result += `\n\n## PM Slack Contacts\n\nThe PM assignees for this task have Slack User IDs: ${formatted}. When asked to report status to the PMs, send a Slack DM to each of these user IDs.`;
     }
   }
   if (pm.mcpEnabled) result += `\n\n${MCP_INSTRUCTIONS}`;
   if (pm.learningEnabled && pm.learningPrompt) {
     result += '\n\n## Learning\n\n';
-    result += 'After completing this task, call `hive_report_learnings` with NEW insights you discovered.\n\n';
+    result +=
+      'After completing this task, call `hive_report_learnings` with NEW insights you discovered.\n\n';
     result += 'Focus on: ' + pm.learningPrompt + '\n';
   }
   return result;
@@ -756,14 +863,14 @@ async function _fetchNectar(source) {
   if (!apiKey) throw new Error('Nectar API key not configured (source.apiKey or NECTAR_API_KEY)');
 
   const headers = {
-    'Authorization': `Bearer ${apiKey}`,
-    'Accept': 'application/json',
+    Authorization: `Bearer ${apiKey}`,
+    Accept: 'application/json',
   };
 
   const tasks = await _httpRequest(`${url}/api/tasks?status=pending`, headers);
   const items = Array.isArray(tasks) ? tasks : tasks.tasks || [];
 
-  return items.map(t => ({
+  return items.map((t) => ({
     key: t.id,
     summary: `[${t.type}] ${t.input?.version || 'unknown'} — ${t.input?.tickets?.length || 0} tickets`,
     issueType: 'task', // Route through auto-dispatch in _evaluateComplexity
@@ -781,10 +888,15 @@ async function _claimNectarTask(source, taskId) {
   if (!url || !apiKey) return;
 
   try {
-    await _httpMethod('PATCH', `${url}/api/tasks/${taskId}`, {
-      'Authorization': `Bearer ${apiKey}`,
-      'Accept': 'application/json',
-    }, { status: 'in-progress' });
+    await _httpMethod(
+      'PATCH',
+      `${url}/api/tasks/${taskId}`,
+      {
+        Authorization: `Bearer ${apiKey}`,
+        Accept: 'application/json',
+      },
+      { status: 'in-progress' },
+    );
   } catch (err) {
     log.error(`Failed to claim Nectar task ${taskId}: ${err.message}`);
   }

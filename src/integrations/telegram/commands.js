@@ -5,10 +5,7 @@ const tmux = require('../../core/tmux');
 // -- Formatting helpers -------------------------------------------------
 
 function esc(s) {
-  return (s || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+  return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 const HTML = { parse_mode: 'HTML' };
@@ -30,7 +27,10 @@ function mdToHtml(text) {
 
     // Code block fences
     if (trimmed.startsWith('```')) {
-      if (inBlockquote) { out.push('</blockquote>'); inBlockquote = false; }
+      if (inBlockquote) {
+        out.push('</blockquote>');
+        inBlockquote = false;
+      }
       if (inCodeBlock) {
         out.push('</pre>');
         inCodeBlock = false;
@@ -52,7 +52,10 @@ function mdToHtml(text) {
 
     // Horizontal rules (--- or ***)
     if (/^[-*_]{3,}$/.test(trimmed)) {
-      if (inBlockquote) { out.push('</blockquote>'); inBlockquote = false; }
+      if (inBlockquote) {
+        out.push('</blockquote>');
+        inBlockquote = false;
+      }
       out.push('\u2500'.repeat(19));
       continue;
     }
@@ -60,7 +63,10 @@ function mdToHtml(text) {
     // H1: # heading -> |HEADING (bold + line)
     const h1 = line.match(/^#{1}\s+(.+)$/);
     if (h1) {
-      if (inBlockquote) { out.push('</blockquote>'); inBlockquote = false; }
+      if (inBlockquote) {
+        out.push('</blockquote>');
+        inBlockquote = false;
+      }
       out.push(`\n<b>\u258e${h1[1].toUpperCase()}</b>`);
       continue;
     }
@@ -68,7 +74,10 @@ function mdToHtml(text) {
     // H2: ## heading -> bold with marker
     const h2 = line.match(/^#{2}\s+(.+)$/);
     if (h2) {
-      if (inBlockquote) { out.push('</blockquote>'); inBlockquote = false; }
+      if (inBlockquote) {
+        out.push('</blockquote>');
+        inBlockquote = false;
+      }
       out.push(`\n<b>\u25c6 ${h2[1]}</b>`);
       continue;
     }
@@ -76,21 +85,33 @@ function mdToHtml(text) {
     // H3: ### heading -> bold italic
     const h3 = line.match(/^#{3,}\s+(.+)$/);
     if (h3) {
-      if (inBlockquote) { out.push('</blockquote>'); inBlockquote = false; }
+      if (inBlockquote) {
+        out.push('</blockquote>');
+        inBlockquote = false;
+      }
       out.push(`<b><i>${h3[1]}</i></b>`);
       continue;
     }
 
     // Detect standalone section headers (short lines, Title Case or ALL CAPS, no punctuation at end)
-    if (escapedTrimmed.length > 0 && escapedTrimmed.length < 40 &&
-        !escapedTrimmed.endsWith('.') && !escapedTrimmed.endsWith(':') &&
-        !escapedTrimmed.startsWith('\u2022') && !escapedTrimmed.startsWith('-') &&
-        /^[A-Z]/.test(escapedTrimmed) &&
-        i > 0 && (!lines[i-1] || !lines[i-1].trim())) {
+    if (
+      escapedTrimmed.length > 0 &&
+      escapedTrimmed.length < 40 &&
+      !escapedTrimmed.endsWith('.') &&
+      !escapedTrimmed.endsWith(':') &&
+      !escapedTrimmed.startsWith('\u2022') &&
+      !escapedTrimmed.startsWith('-') &&
+      /^[A-Z]/.test(escapedTrimmed) &&
+      i > 0 &&
+      (!lines[i - 1] || !lines[i - 1].trim())
+    ) {
       // Check next line exists and is content (not empty)
-      const nextLine = lines[i+1];
+      const nextLine = lines[i + 1];
       if (nextLine && nextLine.trim() && !nextLine.trim().startsWith('#')) {
-        if (inBlockquote) { out.push('</blockquote>'); inBlockquote = false; }
+        if (inBlockquote) {
+          out.push('</blockquote>');
+          inBlockquote = false;
+        }
         out.push(`\n<b>\u25c6 ${escapedTrimmed}</b>`);
         continue;
       }
@@ -99,7 +120,10 @@ function mdToHtml(text) {
     // Blockquote lines (> text)
     const bq = line.match(/^&gt;\s*(.*)$/);
     if (bq) {
-      if (!inBlockquote) { out.push('<blockquote>'); inBlockquote = true; }
+      if (!inBlockquote) {
+        out.push('<blockquote>');
+        inBlockquote = true;
+      }
       out.push(applyInlineFormatting(bq[1]));
       continue;
     } else if (inBlockquote && trimmed === '') {
@@ -137,7 +161,10 @@ function mdToHtml(text) {
   if (inBlockquote) out.push('</blockquote>');
 
   // Clean up excessive blank lines
-  return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  return out
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 /**
@@ -160,30 +187,44 @@ function applyInlineFormatting(line) {
 
 function stateTag(state) {
   switch (state) {
-    case 'idle':    return '[IDLE]';
-    case 'working': return '[WORK]';
-    case 'off':     return '[ OFF]';
-    default:        return '[  ? ]';
+    case 'idle':
+      return '[IDLE]';
+    case 'working':
+      return '[WORK]';
+    case 'off':
+      return '[ OFF]';
+    default:
+      return '[  ? ]';
   }
 }
 
 function ciTag(result) {
   switch (result) {
-    case 'SUCCESS':  return 'CI:PASS';
-    case 'FAILURE':  return 'CI:FAIL';
-    case 'RUNNING':  return 'CI:RUN ';
-    case 'UNSTABLE': return 'CI:WARN';
-    case 'ABORTED':  return 'CI:STOP';
-    default:         return '';
+    case 'SUCCESS':
+      return 'CI:PASS';
+    case 'FAILURE':
+      return 'CI:FAIL';
+    case 'RUNNING':
+      return 'CI:RUN ';
+    case 'UNSTABLE':
+      return 'CI:WARN';
+    case 'ABORTED':
+      return 'CI:STOP';
+    default:
+      return '';
   }
 }
 
 function reviewTag(review) {
   switch (review) {
-    case 'APPROVED':         return 'APPROVED';
-    case 'CHANGES_REQUESTED': return 'CHANGES';
-    case 'REVIEW_REQUIRED':  return 'REVIEW?';
-    default:                 return '';
+    case 'APPROVED':
+      return 'APPROVED';
+    case 'CHANGES_REQUESTED':
+      return 'CHANGES';
+    case 'REVIEW_REQUIRED':
+      return 'REVIEW?';
+    default:
+      return '';
   }
 }
 
@@ -193,8 +234,12 @@ function shortBranch(branch) {
   return short.length > 30 ? short.substring(0, 27) + '...' : short;
 }
 
-function pad(s, n) { return String(s).padEnd(n); }
-function rpad(s, n) { return String(s).padStart(n); }
+function pad(s, n) {
+  return String(s).padEnd(n);
+}
+function rpad(s, n) {
+  return String(s).padStart(n);
+}
 
 function formatGitStatus(git) {
   if (git.staged + git.modified + git.untracked === 0) return 'clean';
@@ -236,21 +281,23 @@ async function status(config, send, router) {
     if (s.pr) {
       const ci = s.pr.ciResult ? ` ${ciTag(s.pr.ciResult)}` : '';
       const rv = s.pr.review ? ` ${reviewTag(s.pr.review)}` : '';
-      lines.push(`         PR#${pad(s.pr.prNum, 6)} +${rpad(s.pr.prAdds, 4)} -${rpad(s.pr.prDels, 4)}${ci}${rv}`);
+      lines.push(
+        `         PR#${pad(s.pr.prNum, 6)} +${rpad(s.pr.prAdds, 4)} -${rpad(s.pr.prDels, 4)}${ci}${rv}`,
+      );
     }
   }
 
   lines.push('\u2550'.repeat(42));
-  const idle = sessions.filter(s => s.state === 'idle').length;
-  const work = sessions.filter(s => s.state === 'working').length;
-  const off = sessions.filter(s => s.state === 'off').length;
+  const idle = sessions.filter((s) => s.state === 'idle').length;
+  const work = sessions.filter((s) => s.state === 'working').length;
+  const off = sessions.filter((s) => s.state === 'off').length;
   lines.push(`${idle} idle  ${work} working  ${off} off`);
 
   send(`<pre>${lines.join('\n')}</pre>`, HTML);
 }
 
 async function idle(config, send, router) {
-  const sessions = (await fleet.getFleetStatus(config, router)).filter(s => s.state === 'idle');
+  const sessions = (await fleet.getFleetStatus(config, router)).filter((s) => s.state === 'idle');
   if (sessions.length === 0) {
     send('<pre>No idle sessions.</pre>', HTML);
     return;
@@ -268,7 +315,9 @@ async function idle(config, send, router) {
 }
 
 async function working(config, send, router) {
-  const sessions = (await fleet.getFleetStatus(config, router)).filter(s => s.state === 'working');
+  const sessions = (await fleet.getFleetStatus(config, router)).filter(
+    (s) => s.state === 'working',
+  );
   if (sessions.length === 0) {
     send('<pre>No sessions currently working.</pre>', HTML);
     return;
@@ -337,9 +386,8 @@ async function peek(config, send, router, query) {
   // Telegram has a 4096 char limit
   const header = `<b>Session ${num}</b>\n\n`;
   const maxContent = 4096 - header.length - 10;
-  const truncated = formatted.length > maxContent
-    ? formatted.substring(formatted.length - maxContent)
-    : formatted;
+  const truncated =
+    formatted.length > maxContent ? formatted.substring(formatted.length - maxContent) : formatted;
 
   send(`${header}${truncated}`, HTML);
 }
@@ -360,9 +408,8 @@ async function ask(config, send, edit, router, query, message) {
     onStream: (content, isFinal) => {
       if (!msgId) return;
       const formatted = mdToHtml(content);
-      const truncated = formatted.length > 3800
-        ? formatted.substring(formatted.length - 3800)
-        : formatted;
+      const truncated =
+        formatted.length > 3800 ? formatted.substring(formatted.length - 3800) : formatted;
       edit(msgId, `\u23f3 <b>Session ${num}</b> -- working...\n\n${truncated}`, HTML);
     },
   });
@@ -370,9 +417,10 @@ async function ask(config, send, edit, router, query, message) {
   if (result.success) {
     const duration = Math.round(result.duration / 1000);
     const formatted = mdToHtml(result.response);
-    const truncated = formatted.length > 3800
-      ? formatted.substring(0, 3800) + '\n\n<i>... truncated -- /peek for full</i>'
-      : formatted;
+    const truncated =
+      formatted.length > 3800
+        ? formatted.substring(0, 3800) + '\n\n<i>... truncated -- /peek for full</i>'
+        : formatted;
     const text = `\u2705 <b>Session ${num}</b> (${duration}s)\n\n${truncated}`;
     if (msgId) {
       edit(msgId, text, HTML);
@@ -397,7 +445,10 @@ async function tell(config, send, router, query, message) {
   const node = router.getNode(nodeId);
   const result = await relay.tell(config, node, name, message);
   if (result.success) {
-    send(`\ud83d\udce8 Sent to session ${fleet.sessionNum(name, config.sessions.namePrefix)}`, HTML);
+    send(
+      `\ud83d\udce8 Sent to session ${fleet.sessionNum(name, config.sessions.namePrefix)}`,
+      HTML,
+    );
   } else {
     send(`\u274c ${esc(result.error)}`, HTML);
   }
@@ -414,7 +465,10 @@ async function restart(config, send, router, query) {
   await node.exec(`tmux send-keys -t "${paneTarget}" Escape`);
   setTimeout(async () => {
     await node.sendKeys(paneTarget, '/exit', true);
-    send(`\u267b\ufe0f Restarting Claude in session ${fleet.sessionNum(name, config.sessions.namePrefix)}...`, HTML);
+    send(
+      `\u267b\ufe0f Restarting Claude in session ${fleet.sessionNum(name, config.sessions.namePrefix)}...`,
+      HTML,
+    );
     setTimeout(async () => {
       await node.sendKeys(paneTarget, 'claude --resume', true);
     }, 3000);
@@ -429,14 +483,17 @@ async function kill(config, send, router, query) {
   const node = router.getNode(nodeId);
   const ok = await node.killSession(name);
   if (ok) {
-    send(`\ud83d\udc80 Session ${fleet.sessionNum(name, config.sessions.namePrefix)} killed.`, HTML);
+    send(
+      `\ud83d\udc80 Session ${fleet.sessionNum(name, config.sessions.namePrefix)} killed.`,
+      HTML,
+    );
   } else {
     send(`\u274c Failed to kill session.`, HTML);
   }
 }
 
 async function prs(config, send, router) {
-  const sessions = (await fleet.getFleetStatus(config, router)).filter(s => s.pr);
+  const sessions = (await fleet.getFleetStatus(config, router)).filter((s) => s.pr);
   if (sessions.length === 0) {
     send('<pre>No open PRs.</pre>', HTML);
     return;

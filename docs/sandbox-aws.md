@@ -6,14 +6,14 @@ The sandbox user may need AWS access for CI checks, log reading, or deployments.
 
 Most coding fleets only need read access. Only add write permissions if your fleet actually deploys.
 
-| Use case | Permissions needed |
-|---|---|
-| Read CI/build logs | CodeBuild read, CodePipeline read |
-| Read ECS service logs | ECS read, CloudWatch Logs read |
-| Check deployment status | CodePipeline read, ECS read |
+| Use case                     | Permissions needed                          |
+| ---------------------------- | ------------------------------------------- |
+| Read CI/build logs           | CodeBuild read, CodePipeline read           |
+| Read ECS service logs        | ECS read, CloudWatch Logs read              |
+| Check deployment status      | CodePipeline read, ECS read                 |
 | Read secrets (for debugging) | SecretsManager read (specific secrets only) |
-| Deploy (trigger pipelines) | CodePipeline start, ECS update-service |
-| Full dev access | PowerUserAccess (not recommended) |
+| Deploy (trigger pipelines)   | CodePipeline start, ECS update-service      |
+| Full dev access              | PowerUserAccess (not recommended)           |
 
 ## Create an IAM user
 

@@ -34,7 +34,9 @@ const NodeRouter = require('../../src/core/node-router');
 
 function setup() {
   vi.useFakeTimers({ shouldAdvanceTime: false });
-  vi.spyOn(fs, 'readFileSync').mockImplementation(() => { throw new Error('ENOENT'); });
+  vi.spyOn(fs, 'readFileSync').mockImplementation(() => {
+    throw new Error('ENOENT');
+  });
   vi.spyOn(fs, 'writeFileSync').mockImplementation(() => {});
   vi.spyOn(fs, 'readdirSync').mockReturnValue([]);
   vi.spyOn(fleetModule, 'getFleetStatus').mockResolvedValue([]);
@@ -95,7 +97,7 @@ describe('Context Consolidation: dispatch propagation', () => {
     task.slackChannel = 'C123';
     task.slackThreadTs = '1234.5678';
 
-    await new Promise(r => setTimeout(r, 100));
+    await new Promise((r) => setTimeout(r, 100));
 
     const ctx = tq.getSessionContext(6);
     expect(ctx.slackThread).toBe('C123:1234.5678');
@@ -109,7 +111,7 @@ describe('Context Consolidation: dispatch propagation', () => {
 
     tq.createTask('Fix bug', 'auto', null, null);
 
-    await new Promise(r => setTimeout(r, 100));
+    await new Promise((r) => setTimeout(r, 100));
 
     const ctx = tq.getSessionContext(6);
     expect(ctx.slackThread).toBeUndefined();
@@ -137,7 +139,7 @@ describe('Context Consolidation: thread routing', () => {
     // Mirrors bot.js findActiveTaskForThread sessionContext fallback path
     const threadKey = 'C123:1234.5678';
     const tasks = tq.getTasksList();
-    const found = tasks.find(t => {
+    const found = tasks.find((t) => {
       if (t.status !== 'dispatched' || !t.assignedTo) return false;
       const ctx = tq.getSessionContext(t.assignedTo);
       return ctx.slackThread === threadKey;
@@ -156,9 +158,9 @@ describe('Context Consolidation: thread routing', () => {
     });
 
     const tasks = tq.getTasksList();
-    const found = tasks.find(t =>
-      (t.status === 'queued' || t.status === 'dispatched') &&
-      t.slackThreadTs === '1234.5678'
+    const found = tasks.find(
+      (t) =>
+        (t.status === 'queued' || t.status === 'dispatched') && t.slackThreadTs === '1234.5678',
     );
 
     expect(found).toBeDefined();
@@ -172,7 +174,7 @@ describe('Context Consolidation: thread routing', () => {
 
     const threadKey = 'C123:1234.5678';
     const tasks = tq.getTasksList();
-    const found = tasks.find(t => {
+    const found = tasks.find((t) => {
       if (t.status !== 'dispatched' || !t.assignedTo) return false;
       const ctx = tq.getSessionContext(t.assignedTo);
       return ctx.slackThread === threadKey;
@@ -186,7 +188,7 @@ describe('Context Consolidation: thread routing', () => {
     tq.setSessionContext(6, { slackThread: 'C123:1234.5678' });
 
     const tasks = tq.getTasksList();
-    const found = tasks.find(t => {
+    const found = tasks.find((t) => {
       if (t.status !== 'dispatched' || !t.assignedTo) return false;
       const ctx = tq.getSessionContext(t.assignedTo);
       return ctx.slackThread === 'CXXX:9999.9999';

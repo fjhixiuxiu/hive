@@ -6,7 +6,9 @@ const fs = require('fs');
 let setup = null;
 try {
   setup = JSON.parse(fs.readFileSync(path.join(__dirname, '.hive-setup.json'), 'utf8'));
-} catch { /* no setup file — use hardcoded defaults */ }
+} catch {
+  /* no setup file — use hardcoded defaults */
+}
 
 // Build roles map from setup or use defaults
 function buildRoles() {
@@ -19,13 +21,33 @@ function buildRoles() {
     return roles;
   }
   return {
-    1: 'Reviews', 2: 'Ideas', 3: 'Urgent', 4: 'Tests',
-    5: 'Slot 5', 6: 'Slot 6', 7: 'Slot 7', 8: 'Slot 8',
-    9: 'Slot 9', 10: 'Slot 10', 11: 'Slot 11', 12: 'Slot 12',
-    13: 'Slot 13', 14: 'Slot 14', 15: 'Slot 15', 16: 'Slot 16',
-    22: 'Slot 22', 23: 'Slot 23',
-    24: 'Slot 24', 25: 'Slot 25', 26: 'Slot 26', 27: 'Slot 27',
-    28: 'Slot 28', 29: 'Slot 29', 30: 'Slot 30', 31: 'Slot 31', 32: 'Slot 32',
+    1: 'Reviews',
+    2: 'Ideas',
+    3: 'Urgent',
+    4: 'Tests',
+    5: 'Slot 5',
+    6: 'Slot 6',
+    7: 'Slot 7',
+    8: 'Slot 8',
+    9: 'Slot 9',
+    10: 'Slot 10',
+    11: 'Slot 11',
+    12: 'Slot 12',
+    13: 'Slot 13',
+    14: 'Slot 14',
+    15: 'Slot 15',
+    16: 'Slot 16',
+    22: 'Slot 22',
+    23: 'Slot 23',
+    24: 'Slot 24',
+    25: 'Slot 25',
+    26: 'Slot 26',
+    27: 'Slot 27',
+    28: 'Slot 28',
+    29: 'Slot 29',
+    30: 'Slot 30',
+    31: 'Slot 31',
+    32: 'Slot 32',
   };
 }
 
@@ -53,7 +75,9 @@ module.exports = {
     // When hiveName is set, pattern auto-matches prefixed names.
     pattern: (() => {
       const name = (setup && setup.hiveName) || process.env.HIVE_NAME || '';
-      return name ? new RegExp('^' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '-\\d+') : /^\d+/;
+      return name
+        ? new RegExp('^' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '-\\d+')
+        : /^\d+/;
     })(),
 
     // Map session number → repo directory
@@ -64,8 +88,7 @@ module.exports = {
         return setup.sharedRepo ? base : base + String(n);
       }
       const base = (
-        process.env.HIVE_REPO_DIR ||
-        path.join(os.homedir(), 'ai-dev', 'webplatform')
+        process.env.HIVE_REPO_DIR || path.join(os.homedir(), 'ai-dev', 'webplatform')
       ).replace(/^~/, os.homedir());
       return base + String(n);
     },
@@ -102,9 +125,7 @@ module.exports = {
   ],
 
   // Patterns that indicate Claude isn't running
-  offPatterns: [
-    /conversation\./,
-  ],
+  offPatterns: [/conversation\./],
 
   // ── Cache (from tmux dashboard scripts) ─────────────────
   cache: {
@@ -184,10 +205,13 @@ module.exports = {
   // Use ${prNum}, ${ciBuild} as placeholders. `jira` is a base URL (a key
   // like `DEV-1234` is appended). Set any to null to disable linking.
   links: {
-    pr: (setup && setup.githubRepo)
-      ? `https://github.com/${setup.githubRepo}/pull/\${prNum}`
-      : 'https://github.com/mavencare/webplatform/pull/${prNum}',
+    pr:
+      setup && setup.githubRepo
+        ? `https://github.com/${setup.githubRepo}/pull/\${prNum}`
+        : 'https://github.com/mavencare/webplatform/pull/${prNum}',
     ci: 'https://jenkins.vivtechnologies.com/job/webplatform/job/PR-${prNum}/${ciBuild}/',
-    jira: (process.env.JIRA_BASE_URL || 'https://vivtechnologies.atlassian.net').replace(/\/+$/, '') + '/browse/',
+    jira:
+      (process.env.JIRA_BASE_URL || 'https://vivtechnologies.atlassian.net').replace(/\/+$/, '') +
+      '/browse/',
   },
 };

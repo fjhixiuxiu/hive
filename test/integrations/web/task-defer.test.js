@@ -13,7 +13,12 @@ import createMessageHandler from '../../../src/integrations/web/ws-handlers.js';
  */
 function makeDeps(overrides = {}) {
   const sampleTask = { id: 't1', status: 'dispatched', assignedTo: 7 };
-  const deferTaskSpy = vi.fn(() => ({ ...sampleTask, status: 'queued', assignedTo: null, deferredAt: 123 }));
+  const deferTaskSpy = vi.fn(() => ({
+    ...sampleTask,
+    status: 'queued',
+    assignedTo: null,
+    deferredAt: 123,
+  }));
   const requeueTaskSpy = vi.fn();
 
   const taskQueue = {
@@ -40,14 +45,22 @@ function makeDeps(overrides = {}) {
     broadcast: (msg) => broadcasts.push(msg),
     checkPermission: overrides.checkPermission || (() => true),
     resolveSession: async () => null,
-    clearTermSub: () => {}, clearConsoleSub: () => {},
-    termSubs: new Map(), consoleSubs: new Map(),
-    clearCardSub: () => {}, clearAllCardSubs: () => {},
+    clearTermSub: () => {},
+    clearConsoleSub: () => {},
+    termSubs: new Map(),
+    consoleSubs: new Map(),
+    clearCardSub: () => {},
+    clearAllCardSubs: () => {},
     cardTermSubs: new Map(),
-    sendFleetStatus: async () => {}, broadcastFleetStatus: async () => {},
-    sendInitialState: async () => {}, _previewCache: new Map(),
-    commands: new Map(), clients: new Set(), wsUser: new WeakMap(),
-    workers: new Map(), mcpClients: new Map(),
+    sendFleetStatus: async () => {},
+    broadcastFleetStatus: async () => {},
+    sendInitialState: async () => {},
+    _previewCache: new Map(),
+    commands: new Map(),
+    clients: new Set(),
+    wsUser: new WeakMap(),
+    workers: new Map(),
+    mcpClients: new Map(),
     voiceAgent: null,
   });
 
@@ -63,7 +76,7 @@ describe('task:defer', () => {
     expect(deferTaskSpy).toHaveBeenCalledWith('t1');
     // Never the in-place path — that would silently promote an old task.
     expect(requeueTaskSpy).not.toHaveBeenCalled();
-    const msg = broadcasts.find(b => b.type === 'task:deferred');
+    const msg = broadcasts.find((b) => b.type === 'task:deferred');
     expect(msg).toBeTruthy();
     expect(msg.task).toMatchObject({ id: 't1', status: 'queued', deferredAt: 123 });
   });
@@ -73,7 +86,7 @@ describe('task:defer', () => {
 
     await handle(ws, { type: 'task:defer', taskId: 'nope' }, { login: 'tester' });
 
-    expect(broadcasts.find(b => b.type === 'task:deferred')).toBeUndefined();
+    expect(broadcasts.find((b) => b.type === 'task:deferred')).toBeUndefined();
   });
 
   it('requires the dispatch permission', async () => {
@@ -93,7 +106,7 @@ describe('taskButtons:toggle', () => {
 
     expect(taskQueue.showDeferBtn).toBe(false);
     expect(taskQueue.showRequeueBtn).toBe(true);
-    const msg = broadcasts.filter(b => b.type === 'taskButtons:status').pop();
+    const msg = broadcasts.filter((b) => b.type === 'taskButtons:status').pop();
     expect(msg).toEqual({ type: 'taskButtons:status', requeue: true, defer: false });
   });
 
@@ -121,7 +134,7 @@ describe('taskButtons:toggle', () => {
 
     expect(taskQueue.showRequeueBtn).toBe(true);
     expect(taskQueue.showDeferBtn).toBe(true);
-    expect(broadcasts.find(b => b.type === 'taskButtons:status')).toBeUndefined();
+    expect(broadcasts.find((b) => b.type === 'taskButtons:status')).toBeUndefined();
     expect(taskQueue._saveState).not.toHaveBeenCalled();
   });
 

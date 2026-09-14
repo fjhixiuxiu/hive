@@ -33,7 +33,9 @@ describe('tmux — pure functions', () => {
 
     it('returns "working" for active content with TUI separator', () => {
       const sep = '─'.repeat(40);
-      expect(tmux.detectState(`Compiling typescript...\n${sep}\nModel: Opus`, config)).toBe('working');
+      expect(tmux.detectState(`Compiling typescript...\n${sep}\nModel: Opus`, config)).toBe(
+        'working',
+      );
     });
 
     it('strips non-printable characters before matching', () => {
@@ -84,7 +86,9 @@ describe('tmux — pure functions', () => {
     it('recognizes a dashed (\u254c) separator for the working-content case too', () => {
       const dashed = '\u254c'.repeat(40);
       // Active content above a dashed separator \u2192 working (mirrors the solid-\u2500 case).
-      expect(tmux.detectState(`Compiling typescript...\n${dashed}\nModel: Opus`, config)).toBe('working');
+      expect(tmux.detectState(`Compiling typescript...\n${dashed}\nModel: Opus`, config)).toBe(
+        'working',
+      );
     });
   });
 

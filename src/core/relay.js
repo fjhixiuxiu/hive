@@ -21,11 +21,11 @@ async function captureResponse(node, paneTarget, config) {
  */
 async function clearInputVim(node, paneTarget) {
   await node.exec(`tmux send-keys -t "${paneTarget}" Escape`);
-  await new Promise(r => setTimeout(r, 250));
+  await new Promise((r) => setTimeout(r, 250));
   await node.exec(`tmux send-keys -t "${paneTarget}" g g d G`);
-  await new Promise(r => setTimeout(r, 150));
+  await new Promise((r) => setTimeout(r, 150));
   await node.exec(`tmux send-keys -t "${paneTarget}" i`);
-  await new Promise(r => setTimeout(r, 250));
+  await new Promise((r) => setTimeout(r, 250));
 }
 
 /**
@@ -94,7 +94,7 @@ async function pasteWithVerify(node, paneTarget, message, vimMode) {
   } catch (err) {
     return { ok: false, error: `Failed to send message: ${err.message}` };
   }
-  await new Promise(r => setTimeout(r, INITIAL_DWELL_MS));
+  await new Promise((r) => setTimeout(r, INITIAL_DWELL_MS));
 
   if (await verifyPasteLanded(node, paneTarget, message)) {
     return { ok: true };
@@ -102,13 +102,15 @@ async function pasteWithVerify(node, paneTarget, message, vimMode) {
 
   const pollStart = Date.now();
   while (Date.now() - pollStart < VERIFY_DEADLINE_MS) {
-    await new Promise(r => setTimeout(r, VERIFY_POLL_MS));
+    await new Promise((r) => setTimeout(r, VERIFY_POLL_MS));
     if (await verifyPasteLanded(node, paneTarget, message)) {
       return { ok: true };
     }
   }
 
-  log.warn(`[relay] paste verification missed on ${paneTarget} after ${INITIAL_DWELL_MS + VERIFY_DEADLINE_MS}ms — sending Enter anyway (advisory, no retry)`);
+  log.warn(
+    `[relay] paste verification missed on ${paneTarget} after ${INITIAL_DWELL_MS + VERIFY_DEADLINE_MS}ms — sending Enter anyway (advisory, no retry)`,
+  );
   return { ok: true };
 }
 
@@ -125,9 +127,10 @@ async function pasteWithVerify(node, paneTarget, message, vimMode) {
  * @returns {Promise<{ success: boolean, response?: string, error?: string, duration?: number }>}
  */
 async function ask(config, node, sessionName, message, callbacks = {}) {
-  const { onProgress, onStream, vimMode, force } = typeof callbacks === 'function'
-    ? { onProgress: callbacks } // backward compat: single function = onProgress
-    : callbacks;
+  const { onProgress, onStream, vimMode, force } =
+    typeof callbacks === 'function'
+      ? { onProgress: callbacks } // backward compat: single function = onProgress
+      : callbacks;
 
   const paneTarget = tmux.paneTarget(sessionName, config.sessions.claudePane);
   const { pollInterval, cooldown, timeout } = config.relay;
@@ -144,7 +147,7 @@ async function ask(config, node, sessionName, message, callbacks = {}) {
     return { success: false, error: 'Claude is not running in this session.' };
   }
   if (currentState === 'working' && !force) {
-    return { success: false, error: 'Session is busy. Use /peek to see what it\'s doing.' };
+    return { success: false, error: "Session is busy. Use /peek to see what it's doing." };
   }
 
   await clearInput(node, paneTarget, vimMode);
@@ -158,7 +161,7 @@ async function ask(config, node, sessionName, message, callbacks = {}) {
   if (message && message.includes('\n')) {
     // Safety second Enter for multi-line — TUI sometimes swallows the first
     // while still rendering pasted content.
-    await new Promise(r => setTimeout(r, 300));
+    await new Promise((r) => setTimeout(r, 300));
     await node.exec(`tmux send-keys -t "${paneTarget}" Enter`);
   }
 
@@ -199,7 +202,7 @@ async function ask(config, node, sessionName, message, callbacks = {}) {
         const state = tmux.detectState(tail, config);
 
         // Stream update if enough time has passed
-        if (onStream && state === 'working' && (Date.now() - lastStreamAt >= streamInterval)) {
+        if (onStream && state === 'working' && Date.now() - lastStreamAt >= streamInterval) {
           const content = await captureResponse(node, paneTarget, config);
           if (content && content !== lastStreamContent) {
             lastStreamContent = content;
@@ -262,14 +265,14 @@ async function tell(config, node, sessionName, message, { vimMode } = {}) {
       return { success: false, error: 'Claude is not running in this session.' };
     }
     if (state === 'idle') {
-      if (!sawWorking) break;             // idle from the start → no settle needed
-      if (++consecutiveIdle >= 2) break;  // 2 consecutive idle reads → settled
+      if (!sawWorking) break; // idle from the start → no settle needed
+      if (++consecutiveIdle >= 2) break; // 2 consecutive idle reads → settled
     } else {
       sawWorking = true;
       consecutiveIdle = 0;
     }
     if (Date.now() - startedAt >= TELL_IDLE_BUDGET_MS) break; // budget out, paste anyway
-    await new Promise(r => setTimeout(r, TELL_IDLE_POLL_MS));
+    await new Promise((r) => setTimeout(r, TELL_IDLE_POLL_MS));
   }
 
   await clearInput(node, paneTarget, vimMode);
@@ -281,7 +284,7 @@ async function tell(config, node, sessionName, message, { vimMode } = {}) {
 
   await node.exec(`tmux send-keys -t "${paneTarget}" Enter`);
   if (message && message.includes('\n')) {
-    await new Promise(r => setTimeout(r, 300));
+    await new Promise((r) => setTimeout(r, 300));
     await node.exec(`tmux send-keys -t "${paneTarget}" Enter`);
   }
   return { success: true };

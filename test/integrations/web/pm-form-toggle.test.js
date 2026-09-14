@@ -62,13 +62,23 @@ function applyToggle(type, types, fields) {
 function modelFields() {
   return [
     // Exclude Authors — dual-tagged (index.html line ~1189)
-    { id: 'excludeAuthors', classes: new Set(['pm-fields-github', 'pm-fields-re-reviews']), hasRepoInput: false, display: 'none' },
+    {
+      id: 'excludeAuthors',
+      classes: new Set(['pm-fields-github', 'pm-fields-re-reviews']),
+      hasRepoInput: false,
+      display: 'none',
+    },
     // Repo — github-tagged but holds #pm-form-gh-repo, needed by re-reviews too
     { id: 'repo', classes: new Set(['pm-fields-github']), hasRepoInput: true, display: 'none' },
     // Query — a github-only field that must NOT show for re-reviews
     { id: 'query', classes: new Set(['pm-fields-github']), hasRepoInput: false, display: 'none' },
     // Reviewer — re-reviews only
-    { id: 'reviewer', classes: new Set(['pm-fields-re-reviews']), hasRepoInput: false, display: 'none' },
+    {
+      id: 'reviewer',
+      classes: new Set(['pm-fields-re-reviews']),
+      hasRepoInput: false,
+      display: 'none',
+    },
   ];
 }
 
@@ -125,12 +135,19 @@ describe('togglePmSourceFields source invariants', () => {
     const html = fs.readFileSync(HTML_PATH, 'utf8');
     const line = html
       .split('\n')
-      .find((l) => l.includes('pm-form-gh-exclude-authors') || (l.includes('pm-fields-github') && l.includes('pm-fields-re-reviews')));
+      .find(
+        (l) =>
+          l.includes('pm-form-gh-exclude-authors') ||
+          (l.includes('pm-fields-github') && l.includes('pm-fields-re-reviews')),
+      );
     // The wrapping div must carry both classes; assert against the wrapper.
     const wrapper = html
       .split('\n')
       .find((l) => l.includes('pm-fields-github') && l.includes('pm-fields-re-reviews'));
-    expect(wrapper, 'a div tagged both pm-fields-github and pm-fields-re-reviews must exist').toBeTruthy();
+    expect(
+      wrapper,
+      'a div tagged both pm-fields-github and pm-fields-re-reviews must exist',
+    ).toBeTruthy();
     expect(html).toContain('pm-form-gh-exclude-authors');
   });
 });

@@ -20,14 +20,29 @@ const { setupPath } = require('../../../src/integrations/web/ws-helpers.js');
 
 function makeTaskQueueStub() {
   return {
-    vimMode: false, taskAutoComplete: false, agentFilesList: [], agentRoots: [],
-    getWorkStates: () => [], getTasksList: () => [], getAutoSessions: () => [],
-    getPendingApprovals: () => [], getFeed: () => ({ entries: [], hasMore: false }),
-    getRules: () => [], getDesignations: () => ({}), getRepoCaps: () => ({}),
-    getDesignationDefs: () => [], getAgentRoots: () => [], getChecklistTemplates: () => [],
-    getSpawnedAgentsList: () => [], getAllSessionContexts: () => ({}), getUsersList: () => [],
-    getUser: () => ({ permissions: ['admin'] }), ensureUser: () => {}, hasPermission: () => true,
-    on: () => {}, emit: () => {},
+    vimMode: false,
+    taskAutoComplete: false,
+    agentFilesList: [],
+    agentRoots: [],
+    getWorkStates: () => [],
+    getTasksList: () => [],
+    getAutoSessions: () => [],
+    getPendingApprovals: () => [],
+    getFeed: () => ({ entries: [], hasMore: false }),
+    getRules: () => [],
+    getDesignations: () => ({}),
+    getRepoCaps: () => ({}),
+    getDesignationDefs: () => [],
+    getAgentRoots: () => [],
+    getChecklistTemplates: () => [],
+    getSpawnedAgentsList: () => [],
+    getAllSessionContexts: () => ({}),
+    getUsersList: () => [],
+    getUser: () => ({ permissions: ['admin'] }),
+    ensureUser: () => {},
+    hasPermission: () => true,
+    on: () => {},
+    emit: () => {},
   };
 }
 
@@ -48,7 +63,8 @@ describe('serveIndex asset versioning', () => {
       nodeFor: vi.fn().mockReturnValue(node),
       listAllSessions: vi.fn().mockResolvedValue([]),
       allNodes: vi.fn().mockReturnValue([node]),
-      addNode: vi.fn(), removeNode: vi.fn(),
+      addNode: vi.fn(),
+      removeNode: vi.fn(),
     };
 
     vi.spyOn(fleet, 'getFleetStatus').mockResolvedValue([]);
@@ -82,7 +98,9 @@ describe('serveIndex asset versioning', () => {
     delete process.env.WEB_BIND;
     vi.restoreAllMocks();
     if (setupFileCreated) {
-      try { fs.unlinkSync(setupPath); } catch {}
+      try {
+        fs.unlinkSync(setupPath);
+      } catch {}
     }
   });
 

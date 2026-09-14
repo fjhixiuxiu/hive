@@ -4,8 +4,13 @@
 let DeepgramClient;
 function getDeepgramClient() {
   if (!DeepgramClient) {
-    try { DeepgramClient = require('@deepgram/sdk').DeepgramClient; }
-    catch { throw new Error('@deepgram/sdk is required for transcription — install it with: npm i @deepgram/sdk'); }
+    try {
+      DeepgramClient = require('@deepgram/sdk').DeepgramClient;
+    } catch {
+      throw new Error(
+        '@deepgram/sdk is required for transcription — install it with: npm i @deepgram/sdk',
+      );
+    }
   }
   return DeepgramClient;
 }
@@ -29,7 +34,8 @@ class Transcriber extends EventEmitter {
   constructor(opts = {}) {
     super();
     this.apiKey = opts.apiKey || process.env.DEEPGRAM_API_KEY;
-    if (!this.apiKey) log.warn('[transcriber] DEEPGRAM_API_KEY not set — transcription will not work');
+    if (!this.apiKey)
+      log.warn('[transcriber] DEEPGRAM_API_KEY not set — transcription will not work');
     // SDK v5: must set env var for WebSocket auth — constructor arg doesn't propagate to WS headers
     if (this.apiKey && !process.env.DEEPGRAM_API_KEY) {
       process.env.DEEPGRAM_API_KEY = this.apiKey;
@@ -46,7 +52,10 @@ class Transcriber extends EventEmitter {
    */
   async start() {
     if (this.running) return;
-    if (!this.client) { log.error('[transcriber] No Deepgram client — cannot start'); return; }
+    if (!this.client) {
+      log.error('[transcriber] No Deepgram client — cannot start');
+      return;
+    }
     log.info('[transcriber] Starting Deepgram live transcription');
 
     this.connection = await this.client.listen.v1.connect({
@@ -120,7 +129,10 @@ class Transcriber extends EventEmitter {
         }
         resolve(); // resolve anyway, don't block
       }, 10000);
-      this.once('ready', () => { clearTimeout(timeout); resolve(); });
+      this.once('ready', () => {
+        clearTimeout(timeout);
+        resolve();
+      });
     });
   }
 
@@ -141,10 +153,10 @@ class Transcriber extends EventEmitter {
    * Get recent transcript (last N seconds).
    */
   getRecentTranscript(seconds = 60) {
-    const cutoff = Date.now() - (seconds * 1000);
+    const cutoff = Date.now() - seconds * 1000;
     return this.transcript
-      .filter(e => e.timestamp >= cutoff)
-      .map(e => {
+      .filter((e) => e.timestamp >= cutoff)
+      .map((e) => {
         const speaker = e.speaker != null ? `Speaker ${e.speaker}` : 'Unknown';
         return `[${speaker}] ${e.text}`;
       })
@@ -156,7 +168,7 @@ class Transcriber extends EventEmitter {
    */
   getFullTranscript() {
     return this.transcript
-      .map(e => {
+      .map((e) => {
         const speaker = e.speaker != null ? `Speaker ${e.speaker}` : 'Unknown';
         return `[${speaker}] ${e.text}`;
       })
@@ -173,8 +185,14 @@ class Transcriber extends EventEmitter {
       try {
         const ws = this.connection._socket || this.connection.ws;
         if (ws && typeof ws.on === 'function') ws.on('error', () => {});
-      } catch (_) { /* ignore */ }
-      try { this.connection.close(); } catch (e) { /* ignore */ }
+      } catch (_) {
+        /* ignore */
+      }
+      try {
+        this.connection.close();
+      } catch (e) {
+        /* ignore */
+      }
       this.connection = null;
     }
     this.running = false;

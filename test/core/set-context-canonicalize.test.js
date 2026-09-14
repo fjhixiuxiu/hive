@@ -17,7 +17,9 @@ const TaskQueue = require('../../src/core/taskqueue');
 const NodeRouter = require('../../src/core/node-router');
 
 function setup() {
-  vi.spyOn(fs, 'readFileSync').mockImplementation(() => { throw new Error('ENOENT'); });
+  vi.spyOn(fs, 'readFileSync').mockImplementation(() => {
+    throw new Error('ENOENT');
+  });
   vi.spyOn(fs, 'writeFileSync').mockImplementation(() => {});
   vi.spyOn(fs, 'readdirSync').mockReturnValue([]);
   vi.spyOn(fleetModule, 'getFleetStatus').mockResolvedValue([]);
@@ -39,11 +41,17 @@ function setup() {
 
 describe('setSessionContext canonicalizes ctx.pr on write', () => {
   let tq;
-  beforeEach(() => { ({ tq } = setup()); });
-  afterEach(() => { vi.restoreAllMocks(); });
+  beforeEach(() => {
+    ({ tq } = setup());
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
 
   it('a full URL passes through unchanged', () => {
-    const ctx = tq.setSessionContext(1, { pr: 'https://github.com/mavencare/webplatform/pull/33017' });
+    const ctx = tq.setSessionContext(1, {
+      pr: 'https://github.com/mavencare/webplatform/pull/33017',
+    });
     expect(ctx.pr).toBe('https://github.com/mavencare/webplatform/pull/33017');
   });
 
@@ -56,8 +64,12 @@ describe('setSessionContext canonicalizes ctx.pr on write', () => {
   });
 
   it('bare "#N" and "N" become URLs via config.github.repo', () => {
-    expect(tq.setSessionContext(1, { pr: '#123' }).pr).toBe('https://github.com/mavencare/webplatform/pull/123');
-    expect(tq.setSessionContext(2, { pr: '456' }).pr).toBe('https://github.com/mavencare/webplatform/pull/456');
+    expect(tq.setSessionContext(1, { pr: '#123' }).pr).toBe(
+      'https://github.com/mavencare/webplatform/pull/123',
+    );
+    expect(tq.setSessionContext(2, { pr: '456' }).pr).toBe(
+      'https://github.com/mavencare/webplatform/pull/456',
+    );
   });
 
   it('"owner/repo#N" becomes a URL', () => {
@@ -74,8 +86,8 @@ describe('setSessionContext canonicalizes ctx.pr on write', () => {
     const ctx = tq.setSessionContext(1, { pr: 'PR #1, mavencare/devops#2, #3' });
     expect(ctx.pr).toBe(
       'https://github.com/mavencare/webplatform/pull/1, ' +
-      'https://github.com/mavencare/devops/pull/2, ' +
-      'https://github.com/mavencare/webplatform/pull/3'
+        'https://github.com/mavencare/devops/pull/2, ' +
+        'https://github.com/mavencare/webplatform/pull/3',
     );
   });
 
@@ -134,16 +146,20 @@ describe('_loadState heals legacy ctx shapes on restart', () => {
     return new TaskQueue(config, watcher, router);
   }
 
-  afterEach(() => { vi.restoreAllMocks(); });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
 
   it('a "PR #N" left over from taskqueue.js:1511 becomes a URL on load', () => {
-    const tq = setupWithState(JSON.stringify({
-      sessionContext: {
-        '1': { pr: 'PR #33563', branch: 'eric/foo' },
-        '15': { pr: '#32647' },
-        '4': { pr: 'https://github.com/mavencare/webplatform/pull/33374' },
-      },
-    }));
+    const tq = setupWithState(
+      JSON.stringify({
+        sessionContext: {
+          1: { pr: 'PR #33563', branch: 'eric/foo' },
+          15: { pr: '#32647' },
+          4: { pr: 'https://github.com/mavencare/webplatform/pull/33374' },
+        },
+      }),
+    );
     expect(tq.getSessionContext(1).pr).toBe('https://github.com/mavencare/webplatform/pull/33563');
     expect(tq.getSessionContext(15).pr).toBe('https://github.com/mavencare/webplatform/pull/32647');
     expect(tq.getSessionContext(4).pr).toBe('https://github.com/mavencare/webplatform/pull/33374');
@@ -151,21 +167,25 @@ describe('_loadState heals legacy ctx shapes on restart', () => {
   });
 
   it('array-shaped ctx.jira from dc83441 flattens on load', () => {
-    const tq = setupWithState(JSON.stringify({
-      sessionContext: { '2': { jira: ['DEV-1', 'DEV-2', 'OPS-42'] } },
-    }));
+    const tq = setupWithState(
+      JSON.stringify({
+        sessionContext: { 2: { jira: ['DEV-1', 'DEV-2', 'OPS-42'] } },
+      }),
+    );
     expect(tq.getSessionContext(2).jira).toBe('DEV-1, DEV-2, OPS-42');
   });
 
   it('array-shaped ctx.pr from dc83441 canonicalizes each entry into a comma-joined URL string', () => {
-    const tq = setupWithState(JSON.stringify({
-      sessionContext: {
-        '3': { pr: ['PR #1', 'https://github.com/mavencare/devops/pull/2'] },
-      },
-    }));
+    const tq = setupWithState(
+      JSON.stringify({
+        sessionContext: {
+          3: { pr: ['PR #1', 'https://github.com/mavencare/devops/pull/2'] },
+        },
+      }),
+    );
     expect(tq.getSessionContext(3).pr).toBe(
       'https://github.com/mavencare/webplatform/pull/1, ' +
-      'https://github.com/mavencare/devops/pull/2'
+        'https://github.com/mavencare/devops/pull/2',
     );
   });
 });

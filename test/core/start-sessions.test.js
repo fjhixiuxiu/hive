@@ -2,7 +2,11 @@ import { describe, it, expect } from 'vitest';
 import { createRequire } from 'module';
 
 const require = createRequire(import.meta.url);
-const { parseExistingSessions, pathMatchesRoot, resolveSessionAction } = require('../../start-sessions');
+const {
+  parseExistingSessions,
+  pathMatchesRoot,
+  resolveSessionAction,
+} = require('../../start-sessions');
 
 // ── parseExistingSessions ──────────────────────────────────
 
@@ -10,8 +14,8 @@ describe('parseExistingSessions', () => {
   it('parses standard tmux list-sessions output', () => {
     const output = '1:/Users/me/agents/1\n2:/Users/me/agents/2\nhive-server:/Users/me/hive';
     expect(parseExistingSessions(output)).toEqual({
-      '1': '/Users/me/agents/1',
-      '2': '/Users/me/agents/2',
+      1: '/Users/me/agents/1',
+      2: '/Users/me/agents/2',
       'hive-server': '/Users/me/hive',
     });
   });
@@ -33,14 +37,14 @@ describe('parseExistingSessions', () => {
     // tmux format uses first colon as separator — paths with colons should work
     const output = '1:/Users/me/project:v2/agents/1';
     expect(parseExistingSessions(output)).toEqual({
-      '1': '/Users/me/project:v2/agents/1',
+      1: '/Users/me/project:v2/agents/1',
     });
   });
 
   it('handles single session', () => {
     const output = '3:/home/user/workspace/3\n';
     expect(parseExistingSessions(output)).toEqual({
-      '3': '/home/user/workspace/3',
+      3: '/home/user/workspace/3',
     });
   });
 });
@@ -74,9 +78,9 @@ describe('pathMatchesRoot', () => {
 
 describe('resolveSessionAction', () => {
   const existing = {
-    '1': '/Users/me/agents/1',
-    '2': '/Users/me',                 // wrong path (stale)
-    '3': '/Users/me/agents/30',       // wrong path (prefix collision)
+    1: '/Users/me/agents/1',
+    2: '/Users/me', // wrong path (stale)
+    3: '/Users/me/agents/30', // wrong path (prefix collision)
   };
 
   // ── non-explicit (default roles-map iteration) ──────────────
@@ -90,7 +94,9 @@ describe('resolveSessionAction', () => {
     });
 
     it('returns "noop" (not create) when session does not exist — killed sessions stay dead', () => {
-      expect(resolveSessionAction('99', '/Users/me/agents/99', existing, false, false)).toBe('noop');
+      expect(resolveSessionAction('99', '/Users/me/agents/99', existing, false, false)).toBe(
+        'noop',
+      );
     });
 
     it('returns "skip" for prefix-collision path when not explicit', () => {
@@ -105,31 +111,41 @@ describe('resolveSessionAction', () => {
     });
 
     it('returns "recreate" when session exists with wrong path', () => {
-      expect(resolveSessionAction('2', '/Users/me/agents/2', existing, false, true)).toBe('recreate');
+      expect(resolveSessionAction('2', '/Users/me/agents/2', existing, false, true)).toBe(
+        'recreate',
+      );
     });
 
     it('returns "create" when session does not exist', () => {
-      expect(resolveSessionAction('99', '/Users/me/agents/99', existing, false, true)).toBe('create');
+      expect(resolveSessionAction('99', '/Users/me/agents/99', existing, false, true)).toBe(
+        'create',
+      );
     });
 
     it('returns "recreate" for prefix-collision path (e.g. agents/30 vs agents/3)', () => {
-      expect(resolveSessionAction('3', '/Users/me/agents/3', existing, false, true)).toBe('recreate');
+      expect(resolveSessionAction('3', '/Users/me/agents/3', existing, false, true)).toBe(
+        'recreate',
+      );
     });
   });
 
   // ── --force flag ────────────────────────────────────────────
   describe('--force', () => {
     it('returns "recreate" with --force even when path is correct', () => {
-      expect(resolveSessionAction('1', '/Users/me/agents/1', existing, true, true)).toBe('recreate');
+      expect(resolveSessionAction('1', '/Users/me/agents/1', existing, true, true)).toBe(
+        'recreate',
+      );
     });
 
     it('returns "recreate" with --force on wrong path', () => {
-      expect(resolveSessionAction('2', '/Users/me/agents/2', existing, true, true)).toBe('recreate');
+      expect(resolveSessionAction('2', '/Users/me/agents/2', existing, true, true)).toBe(
+        'recreate',
+      );
     });
   });
 
   it('returns "skip" when current path is a subdirectory of root', () => {
-    const withSub = { '5': '/Users/me/agents/5/subdir' };
+    const withSub = { 5: '/Users/me/agents/5/subdir' };
     expect(resolveSessionAction('5', '/Users/me/agents/5', withSub, false, true)).toBe('skip');
   });
 

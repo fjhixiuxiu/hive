@@ -7,8 +7,8 @@ vi.mock('../../src/core/log.js', () => ({
   error: vi.fn(),
 }));
 
-
-const ProjectManager = (await import('../../src/core/pm.js')).default || (await import('../../src/core/pm.js'));
+const ProjectManager =
+  (await import('../../src/core/pm.js')).default || (await import('../../src/core/pm.js'));
 
 function createMockTaskQueue() {
   const tq = new EventEmitter();
@@ -215,7 +215,10 @@ describe('ProjectManager', () => {
       });
       pm.toggle(created.id);
       expect(taskQueue.createTask).toHaveBeenCalledWith(
-        'Do the thing', 'auto', null, null,
+        'Do the thing',
+        'auto',
+        null,
+        null,
         expect.objectContaining({ source: 'pm:Manual Task' }),
       );
     });
@@ -402,15 +405,17 @@ describe('ProjectManager', () => {
 
   describe('loadState backward compatibility', () => {
     it('old state data without schedule field loads correctly', () => {
-      const oldData = [{
-        id: '1',
-        name: 'Old PM',
-        source: { type: 'jira', jql: 'project = DEV' },
-        pollInterval: 300000,
-        enabled: false,
-        seenKeys: [],
-        tasksCreated: 0,
-      }];
+      const oldData = [
+        {
+          id: '1',
+          name: 'Old PM',
+          source: { type: 'jira', jql: 'project = DEV' },
+          pollInterval: 300000,
+          enabled: false,
+          seenKeys: [],
+          tasksCreated: 0,
+        },
+      ];
       const pm2 = new ProjectManager(taskQueue);
       pm2.loadState(oldData);
       const loaded = pm2.get('1');
@@ -557,7 +562,8 @@ describe('ProjectManager', () => {
       pm.get(created.id).enabled = true;
       await pm._runScript(created.id);
       expect(taskQueue.pushFeed).toHaveBeenCalledWith(
-        'task', null,
+        'task',
+        null,
         expect.stringContaining('script output:'),
       );
       expect(taskQueue.createTask).not.toHaveBeenCalled();
@@ -573,7 +579,9 @@ describe('ProjectManager', () => {
       await pm._runScript(created.id);
       expect(taskQueue.createTask).toHaveBeenCalledWith(
         expect.stringContaining('hello'),
-        'auto', null, null,
+        'auto',
+        null,
+        null,
         expect.objectContaining({ source: 'pm:Task Script' }),
       );
     });
@@ -619,7 +627,9 @@ describe('ProjectManager', () => {
       });
       pm.get(created.id).enabled = true;
       taskQueue.tasks.set('existing', {
-        id: 'existing', text: 'hello', status: 'queued',
+        id: 'existing',
+        text: 'hello',
+        status: 'queued',
         source: 'pm:Dedup Script',
       });
       await pm._runScript(created.id);
@@ -700,7 +710,9 @@ describe('ProjectManager', () => {
         name: 'CC PM',
         completionConditions: [{ type: 'github-pr-state', states: ['merged'] }],
       });
-      expect(created.completionConditions).toEqual([{ type: 'github-pr-state', states: ['merged'] }]);
+      expect(created.completionConditions).toEqual([
+        { type: 'github-pr-state', states: ['merged'] },
+      ]);
     });
 
     it('defaults completionConditions to empty array', () => {
@@ -731,12 +743,14 @@ describe('ProjectManager', () => {
 
     it('loadState handles missing completionConditions (backward compat)', () => {
       const pm2 = new ProjectManager(taskQueue);
-      pm2.loadState([{
-        id: '50',
-        name: 'Old PM',
-        source: { type: 'jira', jql: 'test' },
-        enabled: false,
-      }]);
+      pm2.loadState([
+        {
+          id: '50',
+          name: 'Old PM',
+          source: { type: 'jira', jql: 'test' },
+          enabled: false,
+        },
+      ]);
       expect(pm2.get('50').completionConditions).toEqual([]);
       pm2.stopAll();
     });
@@ -757,7 +771,10 @@ describe('ProjectManager', () => {
       created.enabled = true;
       // Add a task without sourceKey
       taskQueue.tasks.set('t1', {
-        id: 't1', status: 'queued', source: 'pm:CC PM', sourceKey: null,
+        id: 't1',
+        status: 'queued',
+        source: 'pm:CC PM',
+        sourceKey: null,
       });
       const spy = vi.spyOn(pm, '_evaluateCompletion');
       await pm._checkCompletions(created.id);
@@ -771,7 +788,10 @@ describe('ProjectManager', () => {
       });
       created.enabled = true;
       taskQueue.tasks.set('t1', {
-        id: 't1', status: 'completed', source: 'pm:CC PM', sourceKey: 'org/repo#1',
+        id: 't1',
+        status: 'completed',
+        source: 'pm:CC PM',
+        sourceKey: 'org/repo#1',
       });
       const spy = vi.spyOn(pm, '_evaluateCompletion');
       await pm._checkCompletions(created.id);
@@ -785,7 +805,10 @@ describe('ProjectManager', () => {
       });
       created.enabled = true;
       taskQueue.tasks.set('t1', {
-        id: 't1', status: 'queued', source: 'pm:GH PM', sourceKey: 'org/repo#42',
+        id: 't1',
+        status: 'queued',
+        source: 'pm:GH PM',
+        sourceKey: 'org/repo#42',
       });
       vi.spyOn(pm, '_httpRequest').mockResolvedValue({ merged: true, state: 'closed' });
       vi.spyOn(pm, '_githubHeaders').mockReturnValue({ Authorization: 'Bearer test' });
@@ -796,7 +819,8 @@ describe('ProjectManager', () => {
       expect(task.status).toBe('completed');
       expect(task.result).toContain('PR #42 merged');
       expect(taskQueue.pushFeed).toHaveBeenCalledWith(
-        'task', undefined,
+        'task',
+        undefined,
         expect.stringContaining('auto-completed'),
       );
     });
@@ -808,11 +832,15 @@ describe('ProjectManager', () => {
       });
       created.enabled = true;
       taskQueue.tasks.set('t2', {
-        id: 't2', status: 'dispatched', source: 'pm:GH PM2', sourceKey: 'org/repo#10',
+        id: 't2',
+        status: 'dispatched',
+        source: 'pm:GH PM2',
+        sourceKey: 'org/repo#10',
         assignedTo: 5,
       });
       taskQueue.completeTask = vi.fn().mockReturnValue({
-        id: 't2', status: 'completed',
+        id: 't2',
+        status: 'completed',
       });
       vi.spyOn(pm, '_httpRequest').mockResolvedValue({ merged: false, state: 'closed' });
       vi.spyOn(pm, '_githubHeaders').mockReturnValue({ Authorization: 'Bearer test' });
@@ -829,7 +857,10 @@ describe('ProjectManager', () => {
       });
       created.enabled = true;
       taskQueue.tasks.set('t3', {
-        id: 't3', status: 'queued', source: 'pm:JIRA PM', sourceKey: 'DEV-123',
+        id: 't3',
+        status: 'queued',
+        source: 'pm:JIRA PM',
+        sourceKey: 'DEV-123',
       });
       // Set env vars for JIRA
       const origBase = process.env.JIRA_BASE_URL;
@@ -860,7 +891,10 @@ describe('ProjectManager', () => {
       });
       created.enabled = true;
       taskQueue.tasks.set('t4', {
-        id: 't4', status: 'queued', source: 'pm:GH PM3', sourceKey: 'org/repo#5',
+        id: 't4',
+        status: 'queued',
+        source: 'pm:GH PM3',
+        sourceKey: 'org/repo#5',
       });
       vi.spyOn(pm, '_httpRequest').mockResolvedValue({ merged: false, state: 'open' });
       vi.spyOn(pm, '_githubHeaders').mockReturnValue({ Authorization: 'Bearer test' });
@@ -877,7 +911,10 @@ describe('ProjectManager', () => {
       });
       created.enabled = true;
       taskQueue.tasks.set('t5', {
-        id: 't5', status: 'queued', source: 'pm:Err PM', sourceKey: 'org/repo#99',
+        id: 't5',
+        status: 'queued',
+        source: 'pm:Err PM',
+        sourceKey: 'org/repo#99',
       });
       vi.spyOn(pm, '_httpRequest').mockRejectedValue(new Error('Network error'));
       vi.spyOn(pm, '_githubHeaders').mockReturnValue({ Authorization: 'Bearer test' });
@@ -1219,13 +1256,15 @@ describe('ProjectManager', () => {
     it('disabled PM does not start polling on loadState', () => {
       const pollSpy = vi.spyOn(pm, '_poll').mockImplementation(() => {});
       const pm2 = new ProjectManager(taskQueue);
-      pm2.loadState([{
-        id: '99',
-        name: 'Disabled',
-        source: { type: 'jira', jql: 'test' },
-        pollInterval: 60000,
-        enabled: false,
-      }]);
+      pm2.loadState([
+        {
+          id: '99',
+          name: 'Disabled',
+          source: { type: 'jira', jql: 'test' },
+          pollInterval: 60000,
+          enabled: false,
+        },
+      ]);
       expect(pollSpy).not.toHaveBeenCalled();
       expect(pm2.timers.size).toBe(0);
       pm2.stopAll();
@@ -1234,13 +1273,15 @@ describe('ProjectManager', () => {
     it('enabled PM starts polling on loadState', () => {
       const pm2 = new ProjectManager(taskQueue);
       const pollSpy = vi.spyOn(pm2, '_poll').mockImplementation(() => {});
-      pm2.loadState([{
-        id: '99',
-        name: 'Enabled',
-        source: { type: 'jira', jql: 'test' },
-        pollInterval: 60000,
-        enabled: true,
-      }]);
+      pm2.loadState([
+        {
+          id: '99',
+          name: 'Enabled',
+          source: { type: 'jira', jql: 'test' },
+          pollInterval: 60000,
+          enabled: true,
+        },
+      ]);
       expect(pollSpy).toHaveBeenCalledWith('99');
       expect(pm2.timers.has('99')).toBe(true);
       pm2.stopAll();

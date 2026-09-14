@@ -15,8 +15,11 @@ vi.mock('../../src/core/pr-status.js', () => ({
   getCached: vi.fn().mockReturnValue(null),
 }));
 
-const fleet = (await import('../../src/core/fleet.js')).default || await import('../../src/core/fleet.js');
-const NodeRouter = (await import('../../src/core/node-router.js')).default || (await import('../../src/core/node-router.js'));
+const fleet =
+  (await import('../../src/core/fleet.js')).default || (await import('../../src/core/fleet.js'));
+const NodeRouter =
+  (await import('../../src/core/node-router.js')).default ||
+  (await import('../../src/core/node-router.js'));
 
 describe('fleet', () => {
   beforeEach(() => {
@@ -115,10 +118,17 @@ describe('fleet', () => {
     it('aggregates sessions with state and branch info', async () => {
       const config = createMockConfig();
       const node = createMockNode();
-      node.listSessions.mockResolvedValue([{ name: '6-DEV-123', lastActivity: 1000, path: '/home/user/dev/session-6' }]);
+      node.listSessions.mockResolvedValue([
+        { name: '6-DEV-123', lastActivity: 1000, path: '/home/user/dev/session-6' },
+      ]);
       node.readFile.mockResolvedValue('idle');
       node.fileExists.mockResolvedValue(true);
-      node.gitInfo.mockResolvedValue({ branch: 'nukulb/DEV-123-fix', staged: 0, modified: 0, untracked: 0 });
+      node.gitInfo.mockResolvedValue({
+        branch: 'nukulb/DEV-123-fix',
+        staged: 0,
+        modified: 0,
+        untracked: 0,
+      });
 
       const router = new NodeRouter();
       router.addNode(node);
@@ -173,7 +183,9 @@ describe('fleet', () => {
     it('returns cached result within TTL', async () => {
       const config = createMockConfig();
       const node = createMockNode();
-      node.listSessions.mockResolvedValue([{ name: '1-main', lastActivity: 1000, path: '/home/user/dev/session-1' }]);
+      node.listSessions.mockResolvedValue([
+        { name: '1-main', lastActivity: 1000, path: '/home/user/dev/session-1' },
+      ]);
       node.readFile.mockResolvedValue('idle');
       node.fileExists.mockResolvedValue(false);
 
@@ -195,7 +207,9 @@ describe('fleet', () => {
       router.addNode(node);
 
       // A real poll establishes the last-known fleet.
-      node.listSessions.mockResolvedValue([{ name: '6-DEV-123', lastActivity: 1000, path: '/home/user/dev/session-6' }]);
+      node.listSessions.mockResolvedValue([
+        { name: '6-DEV-123', lastActivity: 1000, path: '/home/user/dev/session-6' },
+      ]);
       const good = await fleet.getFleetStatus(config, router);
       expect(good).toHaveLength(1);
 
@@ -217,7 +231,9 @@ describe('fleet', () => {
         const router = new NodeRouter();
         router.addNode(node);
 
-        node.listSessions.mockResolvedValue([{ name: '6-DEV-123', lastActivity: 1000, path: '/home/user/dev/session-6' }]);
+        node.listSessions.mockResolvedValue([
+          { name: '6-DEV-123', lastActivity: 1000, path: '/home/user/dev/session-6' },
+        ]);
         await fleet.getFleetStatus(config, router); // lastGood set at t=0
 
         vi.advanceTimersByTime(61000); // past the 60s fallback window
@@ -235,7 +251,9 @@ describe('fleet', () => {
     it('forces fresh fetch on next call', async () => {
       const config = createMockConfig();
       const node = createMockNode();
-      node.listSessions.mockResolvedValue([{ name: '1-main', lastActivity: 1000, path: '/home/user/dev/session-1' }]);
+      node.listSessions.mockResolvedValue([
+        { name: '1-main', lastActivity: 1000, path: '/home/user/dev/session-1' },
+      ]);
       node.readFile.mockResolvedValue('idle');
       node.fileExists.mockResolvedValue(false);
 

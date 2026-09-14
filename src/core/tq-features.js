@@ -82,7 +82,7 @@ function clearSessionContext(sessionNum) {
 function toggleChecklistItem(taskId, itemId) {
   const task = this.tasks.get(taskId);
   if (!task || !task.checklist) return null;
-  const item = task.checklist.find(i => i.id === itemId);
+  const item = task.checklist.find((i) => i.id === itemId);
   if (!item) return null;
   item.checked = !item.checked;
   this.emit('task:updated', task);
@@ -108,7 +108,7 @@ function addChecklistItem(taskId, text) {
 function removeChecklistItem(taskId, itemId) {
   const task = this.tasks.get(taskId);
   if (!task || !task.checklist) return null;
-  const idx = task.checklist.findIndex(i => i.id === itemId);
+  const idx = task.checklist.findIndex((i) => i.id === itemId);
   if (idx < 0) return null;
   task.checklist.splice(idx, 1);
   this.emit('task:updated', task);
@@ -119,7 +119,7 @@ function removeChecklistItem(taskId, itemId) {
 function setTaskChecklist(taskId, checklist) {
   const task = this.tasks.get(taskId);
   if (!task) return null;
-  task.checklist = (checklist || []).map(item => ({
+  task.checklist = (checklist || []).map((item) => ({
     id: item.id || `cl-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     text: item.text,
     checked: !!item.checked,
@@ -140,8 +140,7 @@ function setDesignation(num, designation) {
   this._saveState();
   this.emit('designations:changed', this.getDesignations());
   // Re-evaluate dispatch with new designation mapping
-  this._tryAutoDispatch().catch(err =>
-    log.error('Auto-dispatch error:', err.message));
+  this._tryAutoDispatch().catch((err) => log.error('Auto-dispatch error:', err.message));
 }
 
 function getDesignations() {
@@ -278,7 +277,9 @@ function scanSkills() {
             const descMatch = fmMatch[1].match(/description:\s*(.+)/);
             if (descMatch) description = descMatch[1].trim();
           }
-        } catch { /* ignore read errors */ }
+        } catch {
+          /* ignore read errors */
+        }
         results.push({ name: entry.name, path: skillPath, description });
         break;
       }
@@ -295,7 +296,7 @@ function getWorkStates() {
 
 function setWorkStates(states) {
   if (!Array.isArray(states) || !states.length) return this.workStates;
-  this.workStates = states.map(s => ({
+  this.workStates = states.map((s) => ({
     id: s.id || s.label.toLowerCase().replace(/\s+/g, '-'),
     label: s.label || s.id,
     color: s.color || '#6272a4',

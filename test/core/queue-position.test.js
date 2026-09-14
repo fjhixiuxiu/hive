@@ -19,14 +19,22 @@ const NodeRouter = require('../../src/core/node-router');
 describe('queue position', () => {
   let tq;
 
-  const queuedIds = () => Array.from(tq.tasks.values()).filter(t => t.status === 'queued').map(t => t.id);
+  const queuedIds = () =>
+    Array.from(tq.tasks.values())
+      .filter((t) => t.status === 'queued')
+      .map((t) => t.id);
   // What the dispatcher will actually walk, so the tests assert on dispatch
   // order rather than on the display's opinion of it.
-  const dispatchOrder = () => Array.from(tq.tasks.values()).filter(t => t.status === 'queued').map(t => t.text);
+  const dispatchOrder = () =>
+    Array.from(tq.tasks.values())
+      .filter((t) => t.status === 'queued')
+      .map((t) => t.text);
 
   beforeEach(() => {
     vi.useFakeTimers({ shouldAdvanceTime: false });
-    vi.spyOn(fs, 'readFileSync').mockImplementation(() => { throw new Error('ENOENT'); });
+    vi.spyOn(fs, 'readFileSync').mockImplementation(() => {
+      throw new Error('ENOENT');
+    });
     vi.spyOn(fs, 'writeFileSync').mockImplementation(() => {});
     vi.spyOn(fs, 'renameSync').mockImplementation(() => {});
     vi.spyOn(fs, 'readdirSync').mockReturnValue([]);
@@ -125,11 +133,17 @@ describe('queue position', () => {
       a.status = 'completed';
       b.status = 'dispatched';
       tq.createTask('c', 'auto', null, null);
-      const before = Array.from(tq.tasks.values()).filter(t => t.status !== 'queued').map(t => t.text);
+      const before = Array.from(tq.tasks.values())
+        .filter((t) => t.status !== 'queued')
+        .map((t) => t.text);
 
       tq.createTask('new', 'auto', null, null, { queuePosition: 1 });
 
-      expect(Array.from(tq.tasks.values()).filter(t => t.status !== 'queued').map(t => t.text)).toEqual(before);
+      expect(
+        Array.from(tq.tasks.values())
+          .filter((t) => t.status !== 'queued')
+          .map((t) => t.text),
+      ).toEqual(before);
     });
   });
 

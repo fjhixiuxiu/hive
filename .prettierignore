@@ -1,0 +1,17 @@
+# node_modules and everything in .gitignore are already skipped — prettier reads
+# .gitignore by default. This file is for the things that are tracked but must
+# not be reformatted.
+
+# Browser code with no module system, ignored by eslint.config.js for a related
+# reason. Three tests read these files as *text* rather than parsing them —
+# test/integrations/web/ci-link-template.test.js greps app.js for the ciUrl
+# expression, and tooltip.test.js and jr-query-preview.test.js assert on
+# individual source lines of index.html. Reformatting rewraps the lines those
+# regexes anchor to and all three fail. The tests are checking real contracts
+# (every view button carries a data-tooltip); making them robust to reflowed
+# source is its own change, and until somebody makes it, the formatter stays
+# out of this directory.
+src/integrations/web/public/
+
+# Generated. npm owns the formatting, and rewriting it only creates conflicts.
+package-lock.json

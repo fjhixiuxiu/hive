@@ -109,7 +109,7 @@ export function toolsMentionedIn(text) {
  * Mirrors the registration guards in index.mjs: `enabledTools` null means all.
  */
 export function resolveTools({ enabledTools = null } = {}) {
-  return ALL_TOOLS.filter(name => !enabledTools || enabledTools.includes(name));
+  return ALL_TOOLS.filter((name) => !enabledTools || enabledTools.includes(name));
 }
 
 /**
@@ -121,8 +121,7 @@ export function resolveTools({ enabledTools = null } = {}) {
  */
 export function buildInstructions({ enabledTools = null } = {}) {
   const available = new Set(resolveTools({ enabledTools }));
-  return INSTRUCTION_BLOCKS
-    .filter(block => block.requires.every(tool => available.has(tool)))
-    .map(block => block.text)
+  return INSTRUCTION_BLOCKS.filter((block) => block.requires.every((tool) => available.has(tool)))
+    .map((block) => block.text)
     .join('\n\n');
 }

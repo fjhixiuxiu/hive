@@ -54,26 +54,27 @@ function createGithubBot(taskQueue, config, router, pmManager) {
     if (!taskQueue) return null;
     const tasks = taskQueue.getTasksList();
     const pattern = `${repo}#${issueNumber}`;
-    return tasks.find(t =>
-      (t.status === 'queued' || t.status === 'dispatched') &&
-      (
+    return tasks.find(
+      (t) =>
+        (t.status === 'queued' || t.status === 'dispatched') &&
         // GitHub mentions tasks (stored metadata)
-        (t.githubRepo === repo && t.githubIssueNumber === issueNumber) ||
-        // PR review / re-review tasks (sourceKey pattern)
-        (t.sourceKey && t.sourceKey.includes(pattern)) ||
-        // Text match fallback (e.g. "[mavencare/webplatform#28510]")
-        (t.text && t.text.includes(pattern))
-      )
+        ((t.githubRepo === repo && t.githubIssueNumber === issueNumber) ||
+          // PR review / re-review tasks (sourceKey pattern)
+          (t.sourceKey && t.sourceKey.includes(pattern)) ||
+          // Text match fallback (e.g. "[mavencare/webplatform#28510]")
+          (t.text && t.text.includes(pattern))),
     );
   }
 
   function findGithubPM(repo) {
     if (!pmManager) return null;
-    const pms = pmManager.getAll().filter(pm => pm.enabled && pm.source.type === 'github-mentions');
+    const pms = pmManager
+      .getAll()
+      .filter((pm) => pm.enabled && pm.source.type === 'github-mentions');
     // Check if repo is in PM's repo list
-    const match = pms.find(pm => {
+    const match = pms.find((pm) => {
       const repos = pm.source.repos || [];
-      return repos.length === 0 || repos.some(r => r.toLowerCase() === repo.toLowerCase());
+      return repos.length === 0 || repos.some((r) => r.toLowerCase() === repo.toLowerCase());
     });
     return match || null;
   }
@@ -85,7 +86,7 @@ function createGithubBot(taskQueue, config, router, pmManager) {
     const headers = {
       Authorization: `Bearer ${token}`,
       'User-Agent': 'hive-github-bot',
-      'Accept': 'application/vnd.github+json',
+      Accept: 'application/vnd.github+json',
     };
 
     const _get = (url) => auth._request('GET', url, headers);
@@ -104,19 +105,29 @@ function createGithubBot(taskQueue, config, router, pmManager) {
     // Recent comments (last 20)
     let comments = [];
     try {
-      comments = await _get(`https://api.github.com/repos/${repo}/issues/${issueNumber}/comments?per_page=20&direction=desc`);
+      comments = await _get(
+        `https://api.github.com/repos/${repo}/issues/${issueNumber}/comments?per_page=20&direction=desc`,
+      );
       if (!Array.isArray(comments)) comments = [];
-    } catch { comments = []; }
+    } catch {
+      comments = [];
+    }
 
     // PR diff (changed files summary)
     let diff = null;
     if (isPR) {
       try {
-        const files = await _get(`https://api.github.com/repos/${repo}/pulls/${issueNumber}/files?per_page=50`);
+        const files = await _get(
+          `https://api.github.com/repos/${repo}/pulls/${issueNumber}/files?per_page=50`,
+        );
         if (Array.isArray(files)) {
-          diff = files.map(f => `${f.status} ${f.filename} (+${f.additions} -${f.deletions})`).join('\n');
+          diff = files
+            .map((f) => `${f.status} ${f.filename} (+${f.additions} -${f.deletions})`)
+            .join('\n');
         }
-      } catch { /* no diff */ }
+      } catch {
+        /* no diff */
+      }
     }
 
     return { issue, comments: comments.reverse(), diff, isPR };
@@ -134,10 +145,12 @@ function createGithubBot(taskQueue, config, router, pmManager) {
     // ── Status command ──
     if (lower === 'status' || lower === 'queue') {
       const tasks = taskQueue.getTasksList();
-      const queued = tasks.filter(t => t.status === 'queued').length;
-      const inProgress = tasks.filter(t => t.status === 'dispatched').length;
-      await auth.postComment(repo, issueNumber,
-        `🐝 **Hive Status**\n- Queued: ${queued}\n- In Progress: ${inProgress}`
+      const queued = tasks.filter((t) => t.status === 'queued').length;
+      const inProgress = tasks.filter((t) => t.status === 'dispatched').length;
+      await auth.postComment(
+        repo,
+        issueNumber,
+        `🐝 **Hive Status**\n- Queued: ${queued}\n- In Progress: ${inProgress}`,
       );
       return;
     }
@@ -168,10 +181,18 @@ function createGithubBot(taskQueue, config, router, pmManager) {
           const found = await fleet.findSession(config, router, existingTask.assignedTo);
           if (found) {
             const node = router.getNode(found.nodeId);
-            const result = await relay.tell(config, node, found.name, text + '\n\nReply back on the thread when done.', { vimMode: taskQueue.vimMode });
+            const result = await relay.tell(
+              config,
+              node,
+              found.name,
+              text + '\n\nReply back on the thread when done.',
+              { vimMode: taskQueue.vimMode },
+            );
             if (result.success) {
               await auth.addReaction(repo, comment.id, 'eyes', isReview).catch(() => {});
-              log.info(`[github] Follow-up relayed to session ${existingTask.assignedTo} for ${repo}#${issueNumber}`);
+              log.info(
+                `[github] Follow-up relayed to session ${existingTask.assignedTo} for ${repo}#${issueNumber}`,
+              );
               return;
             }
           }
@@ -198,11 +219,13 @@ function createGithubBot(taskQueue, config, router, pmManager) {
       contextParts.push(`Repo: ${repo}`);
       contextParts.push(`Author: @${issue.user ? issue.user.login : 'unknown'}`);
       if (issue.labels && issue.labels.length) {
-        contextParts.push(`Labels: ${issue.labels.map(l => l.name).join(', ')}`);
+        contextParts.push(`Labels: ${issue.labels.map((l) => l.name).join(', ')}`);
       }
       contextParts.push(`URL: ${issue.html_url}`);
       if (issue.body) {
-        contextParts.push(`\n## ${isPR ? 'PR' : 'Issue'} Description\n${issue.body.slice(0, 2000)}`);
+        contextParts.push(
+          `\n## ${isPR ? 'PR' : 'Issue'} Description\n${issue.body.slice(0, 2000)}`,
+        );
       }
     }
 
@@ -211,11 +234,14 @@ function createGithubBot(taskQueue, config, router, pmManager) {
     }
 
     if (comments.length > 0) {
-      const recentComments = comments.slice(-10).map(c => {
-        const cAuthor = c.user ? c.user.login : 'unknown';
-        const cBody = (c.body || '').slice(0, 300);
-        return `@${cAuthor}: ${cBody}`;
-      }).join('\n\n');
+      const recentComments = comments
+        .slice(-10)
+        .map((c) => {
+          const cAuthor = c.user ? c.user.login : 'unknown';
+          const cBody = (c.body || '').slice(0, 300);
+          return `@${cAuthor}: ${cBody}`;
+        })
+        .join('\n\n');
       contextParts.push(`\n## Recent Comments\n${recentComments}`);
     }
 
@@ -277,7 +303,9 @@ function createGithubBot(taskQueue, config, router, pmManager) {
 
     // Seed checklist
     if (pm && pm.checklistTemplate && pmManager) {
-      try { pmManager._seedChecklist(pm, task); } catch {}
+      try {
+        pmManager._seedChecklist(pm, task);
+      } catch {}
     }
 
     // PM stats
@@ -294,11 +322,13 @@ function createGithubBot(taskQueue, config, router, pmManager) {
     const posText = pos > 0 ? ` (position #${pos} in queue)` : '';
     const ackText = `🐝 Task created${posText} — dispatching to session.\n\n> ${text.slice(0, 200)}`;
     if (isReview) {
-      await auth.replyToReviewComment(repo, issueNumber, comment.id, ackText)
-        .catch(err => log.error(`[github] Failed to acknowledge review comment: ${err.message}`));
+      await auth
+        .replyToReviewComment(repo, issueNumber, comment.id, ackText)
+        .catch((err) => log.error(`[github] Failed to acknowledge review comment: ${err.message}`));
     } else {
-      await auth.postComment(repo, issueNumber, ackText)
-        .catch(err => log.error(`[github] Failed to acknowledge: ${err.message}`));
+      await auth
+        .postComment(repo, issueNumber, ackText)
+        .catch((err) => log.error(`[github] Failed to acknowledge: ${err.message}`));
     }
   }
 
@@ -329,7 +359,9 @@ function createGithubBot(taskQueue, config, router, pmManager) {
 
   function getWatchedRepos() {
     if (!pmManager) return [];
-    const pms = pmManager.getAll().filter(pm => pm.enabled && pm.source.type === 'github-mentions');
+    const pms = pmManager
+      .getAll()
+      .filter((pm) => pm.enabled && pm.source.type === 'github-mentions');
     const repos = new Set();
     for (const pm of pms) {
       const pmRepos = pm.source.repos || [];
@@ -344,24 +376,38 @@ function createGithubBot(taskQueue, config, router, pmManager) {
     const headers = {
       Authorization: `Bearer ${token}`,
       'User-Agent': 'hive-github-bot',
-      'Accept': 'application/vnd.github+json',
+      Accept: 'application/vnd.github+json',
     };
 
     // Fetch both issue comments and PR review comments in parallel
     const [issueComments, reviewComments] = await Promise.all([
-      auth._request('GET',
-        `https://api.github.com/repos/${repo}/issues/comments?since=${since}&per_page=100&sort=created&direction=asc`,
-        headers
-      ).catch(err => { log.error(`[github] Failed to fetch issue comments for ${repo}: ${err.message}`); return []; }),
-      auth._request('GET',
-        `https://api.github.com/repos/${repo}/pulls/comments?since=${since}&per_page=100&sort=created&direction=asc`,
-        headers
-      ).catch(err => { log.error(`[github] Failed to fetch review comments for ${repo}: ${err.message}`); return []; }),
+      auth
+        ._request(
+          'GET',
+          `https://api.github.com/repos/${repo}/issues/comments?since=${since}&per_page=100&sort=created&direction=asc`,
+          headers,
+        )
+        .catch((err) => {
+          log.error(`[github] Failed to fetch issue comments for ${repo}: ${err.message}`);
+          return [];
+        }),
+      auth
+        ._request(
+          'GET',
+          `https://api.github.com/repos/${repo}/pulls/comments?since=${since}&per_page=100&sort=created&direction=asc`,
+          headers,
+        )
+        .catch((err) => {
+          log.error(`[github] Failed to fetch review comments for ${repo}: ${err.message}`);
+          return [];
+        }),
     ]);
 
     lastPollTimes[repo] = new Date().toISOString();
 
-    log.info(`[github] Poll ${repo}: since=${since}, issue_comments=${Array.isArray(issueComments) ? issueComments.length : 0}, review_comments=${Array.isArray(reviewComments) ? reviewComments.length : 0}`);
+    log.info(
+      `[github] Poll ${repo}: since=${since}, issue_comments=${Array.isArray(issueComments) ? issueComments.length : 0}, review_comments=${Array.isArray(reviewComments) ? reviewComments.length : 0}`,
+    );
 
     // Normalize both comment types into a unified list
     const allComments = [];
@@ -369,7 +415,11 @@ function createGithubBot(taskQueue, config, router, pmManager) {
       for (const c of issueComments) {
         const issueMatch = c.issue_url && c.issue_url.match(/\/issues\/(\d+)$/);
         if (issueMatch) {
-          allComments.push({ ...c, _issueNumber: parseInt(issueMatch[1]), _isReviewComment: false });
+          allComments.push({
+            ...c,
+            _issueNumber: parseInt(issueMatch[1]),
+            _isReviewComment: false,
+          });
         }
       }
     }
@@ -394,7 +444,9 @@ function createGithubBot(taskQueue, config, router, pmManager) {
       const body = comment.body || '';
       const hasMention = body.toLowerCase().includes(`@${botName.toLowerCase()}`);
       if (!hasMention) continue;
-      log.info(`[github] Found mention in comment ${comment.id} by ${comment.user?.login}: "${body.slice(0, 80)}..."`);
+      log.info(
+        `[github] Found mention in comment ${comment.id} by ${comment.user?.login}: "${body.slice(0, 80)}..."`,
+      );
 
       // Dedupe: check if we've seen this comment
       const seenKey = `gh-mention-${comment.id}`;
@@ -409,7 +461,9 @@ function createGithubBot(taskQueue, config, router, pmManager) {
       }
 
       const issueNumber = comment._issueNumber;
-      log.info(`[github] New ${comment._isReviewComment ? 'review ' : ''}mention by @${comment.user.login} on ${repo}#${issueNumber}`);
+      log.info(
+        `[github] New ${comment._isReviewComment ? 'review ' : ''}mention by @${comment.user.login} on ${repo}#${issueNumber}`,
+      );
 
       try {
         await handleMention(repo, issueNumber, comment);
@@ -428,11 +482,11 @@ function createGithubBot(taskQueue, config, router, pmManager) {
         const duration = task.dispatchedAt
           ? Math.round((task.completedAt - task.dispatchedAt) / 60000)
           : 0;
-        const snippet = task.result
-          ? task.result.substring(0, 500)
-          : 'No result summary.';
-        await auth.postComment(task.githubRepo, task.githubIssueNumber,
-          `🐝 **Task completed** (${duration}m)\n\n${snippet}`
+        const snippet = task.result ? task.result.substring(0, 500) : 'No result summary.';
+        await auth.postComment(
+          task.githubRepo,
+          task.githubIssueNumber,
+          `🐝 **Task completed** (${duration}m)\n\n${snippet}`,
         );
       } catch (err) {
         log.error(`[github] Completion reply error: ${err.message}`);
@@ -442,8 +496,10 @@ function createGithubBot(taskQueue, config, router, pmManager) {
     taskQueue.on('task:failed', async (task) => {
       if (!task.githubRepo || !task.githubIssueNumber) return;
       try {
-        await auth.postComment(task.githubRepo, task.githubIssueNumber,
-          `🐝 **Task failed**: ${task.result || 'Unknown error'}`
+        await auth.postComment(
+          task.githubRepo,
+          task.githubIssueNumber,
+          `🐝 **Task failed**: ${task.result || 'Unknown error'}`,
         );
       } catch (err) {
         log.error(`[github] Failure reply error: ${err.message}`);
@@ -463,11 +519,11 @@ function createGithubBot(taskQueue, config, router, pmManager) {
     }
 
     // Initial poll
-    poll().catch(err => log.error(`[github] Initial poll error: ${err.message}`));
+    poll().catch((err) => log.error(`[github] Initial poll error: ${err.message}`));
 
     // Schedule recurring polls
     pollTimer = setInterval(() => {
-      poll().catch(err => log.error(`[github] Poll error: ${err.message}`));
+      poll().catch((err) => log.error(`[github] Poll error: ${err.message}`));
     }, POLL_INTERVAL);
 
     // Listen for Scan Now from PM dashboard
@@ -475,11 +531,11 @@ function createGithubBot(taskQueue, config, router, pmManager) {
       pmManager.on('pm:rescan', (pm) => {
         if (pm.source.type === 'github-mentions') {
           // Reset poll times so we look back further
-          for (const repo of (pm.source.repos || [])) {
+          for (const repo of pm.source.repos || []) {
             delete lastPollTimes[repo];
           }
           log.info(`[github] Scan Now triggered — polling now (reset timestamps)`);
-          poll().catch(err => log.error(`[github] Scan Now poll error: ${err.message}`));
+          poll().catch((err) => log.error(`[github] Scan Now poll error: ${err.message}`));
         }
       });
     }

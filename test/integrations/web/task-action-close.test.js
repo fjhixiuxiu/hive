@@ -25,7 +25,7 @@ function makeDeps() {
     id: 't1',
     status: 'dispatched',
     assignedTo: 7,
-    requireHumanClose: true,  // would have blocked the old (non-force) path
+    requireHumanClose: true, // would have blocked the old (non-force) path
     actionContext: { type: 'github-pr', repo: 'org/repo', prNumber: 42 },
   };
 
@@ -58,14 +58,22 @@ function makeDeps() {
     broadcast: (msg) => broadcasts.push(msg),
     checkPermission: () => true,
     resolveSession: async () => null,
-    clearTermSub: () => {}, clearConsoleSub: () => {},
-    termSubs: new Map(), consoleSubs: new Map(),
-    clearCardSub: () => {}, clearAllCardSubs: () => {},
+    clearTermSub: () => {},
+    clearConsoleSub: () => {},
+    termSubs: new Map(),
+    consoleSubs: new Map(),
+    clearCardSub: () => {},
+    clearAllCardSubs: () => {},
     cardTermSubs: new Map(),
-    sendFleetStatus: async () => {}, broadcastFleetStatus: async () => {},
-    sendInitialState: async () => {}, _previewCache: new Map(),
-    commands: new Map(), clients: new Set(), wsUser: new WeakMap(),
-    workers: new Map(), mcpClients: new Map(),
+    sendFleetStatus: async () => {},
+    broadcastFleetStatus: async () => {},
+    sendInitialState: async () => {},
+    _previewCache: new Map(),
+    commands: new Map(),
+    clients: new Set(),
+    wsUser: new WeakMap(),
+    workers: new Map(),
+    mcpClients: new Map(),
     voiceAgent: null,
   });
 
@@ -76,7 +84,11 @@ describe('task:complete force:true semantic (Done button)', () => {
   it('calls completeTask with { force: true } when user clicks Done', async () => {
     const { handle, ws, completeTaskSpy } = makeDeps();
 
-    await handle(ws, { type: 'task:complete', taskId: 't1', result: 'Manually done' }, { login: 'tester' });
+    await handle(
+      ws,
+      { type: 'task:complete', taskId: 't1', result: 'Manually done' },
+      { login: 'tester' },
+    );
 
     expect(completeTaskSpy).toHaveBeenCalledTimes(1);
     // Signature: completeTask(taskId, message, snapshot, snapshotCols, opts)
@@ -101,7 +113,7 @@ describe('task:complete force:true semantic (Done button)', () => {
 
     await handle(ws, { type: 'task:complete', taskId: 't1' }, { login: 'tester' });
 
-    const completedBroadcast = broadcasts.find(b => b.type === 'task:completed');
+    const completedBroadcast = broadcasts.find((b) => b.type === 'task:completed');
     expect(completedBroadcast).toBeDefined();
     expect(completedBroadcast.task.id).toBe('t1');
     expect(completedBroadcast.task.status).toBe('completed');
@@ -113,7 +125,7 @@ describe('task:complete force:true semantic (Done button)', () => {
 
     await handle(ws, { type: 'task:complete', taskId: 't1' }, { login: 'tester' });
 
-    const completedBroadcast = broadcasts.find(b => b.type === 'task:completed');
+    const completedBroadcast = broadcasts.find((b) => b.type === 'task:completed');
     expect(completedBroadcast).toBeUndefined();
     // completeTask was still called with { force: true } — the 'pending'
     // return path is the queue's signal that another resolution is in

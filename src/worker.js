@@ -41,7 +41,11 @@ function connect() {
 
   ws.on('message', async (raw) => {
     let msg;
-    try { msg = JSON.parse(raw); } catch { return; }
+    try {
+      msg = JSON.parse(raw);
+    } catch {
+      return;
+    }
 
     if (msg.type === 'worker:registered') {
       log.info(`Registered as node "${msg.nodeId}"`);
@@ -84,7 +88,11 @@ async function handleRpc(method, params) {
     case 'killSession':
       return tmux.killSession(params.name);
     case 'readFile':
-      try { return fs.readFileSync(params.filePath, 'utf8'); } catch { return null; }
+      try {
+        return fs.readFileSync(params.filePath, 'utf8');
+      } catch {
+        return null;
+      }
     case 'fileExists':
       return fs.existsSync(params.filePath);
     case 'gitInfo':
