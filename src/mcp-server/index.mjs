@@ -3,6 +3,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
+import { resolveTools, buildInstructions } from './instructions.mjs';
 import WebSocket from 'ws';
 import fs from 'fs';
 import path from 'path';
@@ -73,50 +74,21 @@ async function sendRequest(type, payload = {}, timeoutMs = 10000) {
 connectWs();
 
 // ── MCP Server ────────────────────────────────────────
-const SERVER_INSTRUCTIONS = `Plans (always use this flow, never just dump a plan in chat):
-
-When the user asks for a plan, proposal, design, or "think through" anything
-non-trivial, do NOT output the plan as a chat message. Instead:
-
-1. Write a self-contained HTML document to a file using your Write tool
-   (e.g. /tmp/plan-<slug>.html). Each top-level section MUST be wrapped in
-   <section data-id="kebab-case-id"> so comments can anchor. Include an empty
-   embedded comments block near the bottom:
-   <script type="application/json" id="hive-comments">[]</script>
-2. Call hive_publish_plan({ path: "/tmp/plan-<slug>.html" }) — hive reads the
-   file, stores the versioned artifact, updates session context, and notifies
-   the user's dashboard.
-3. Reply in chat with one line only: "Plan published — <title>." The dashboard
-   will surface the URL.
-
-To publish a revised version of an existing plan, overwrite the same file (or
-write a new one) and call hive_publish_plan again with its path; hive
-auto-bumps the version for the current session's plan.
-
-Never paste raw HTML into chat. Never invent a planId — it is returned to you
-by hive_publish_plan.
-
-When you receive a relay message that begins with "N new comments on your plan":
-- For each comment, call hive_reply_to_comment({ commentId, text, patch? }).
-  Pass a patch ONLY when your reply rewrites a specific section's content
-  (the patch auto-resolves the comment). For acknowledgements or follow-up
-  questions that don't change the plan, just pass text.
-- For comments where you agree but no change is needed, call
-  hive_resolve_comment({ commentId, reason? }).
-- For sweeping changes that touch many sections, call hive_publish_plan again
-  with a new HTML file — that bumps the plan version.
-Do NOT reply to comments by typing in chat — the user reads them in the
-dashboard. Use the tools.`;
+// Instruction text and tool gating both live in instructions.mjs so the
+// contract between them — instructions never name a tool this hive did not
+// register — is testable without a live hive connection.
+const availableTools = new Set(resolveTools({ enabledTools }));
+const has = (name) => availableTools.has(name);
 
 const server = new McpServer({
   name: 'hive',
   version: '1.0.0',
 }, {
-  instructions: SERVER_INSTRUCTIONS,
+  instructions: buildInstructions({ enabledTools }) || undefined,
 });
 
 // Tool: hive_get_task
-if (!enabledTools || enabledTools.includes('hive_get_task')) {
+if (has('hive_get_task')) {
   server.tool(
     'hive_get_task',
     'Get your currently assigned task from hive',
@@ -133,7 +105,7 @@ if (!enabledTools || enabledTools.includes('hive_get_task')) {
 }
 
 // Tool: hive_complete_task
-if (!enabledTools || enabledTools.includes('hive_complete_task')) {
+if (has('hive_complete_task')) {
   server.tool(
     'hive_complete_task',
     'Mark your current task as complete. Before completing, ensure you have set context (PR URL, branch) via hive_set_context if applicable.',
@@ -153,7 +125,7 @@ if (!enabledTools || enabledTools.includes('hive_complete_task')) {
 }
 
 // Tool: hive_post_update
-if (!enabledTools || enabledTools.includes('hive_post_update')) {
+if (has('hive_post_update')) {
   server.tool(
     'hive_post_update',
     'Post a status update to the hive activity feed',
@@ -170,7 +142,7 @@ if (!enabledTools || enabledTools.includes('hive_post_update')) {
 }
 
 // Tool: hive_get_sessions
-if (!enabledTools || enabledTools.includes('hive_get_sessions')) {
+if (has('hive_get_sessions')) {
   server.tool(
     'hive_get_sessions',
     'Get the status of all active sessions',
@@ -187,7 +159,7 @@ if (!enabledTools || enabledTools.includes('hive_get_sessions')) {
 }
 
 // Tool: hive_report_learnings
-if (!enabledTools || enabledTools.includes('hive_report_learnings')) {
+if (has('hive_report_learnings')) {
   server.tool(
     'hive_report_learnings',
     'Report learnings/insights discovered during this task',
@@ -204,7 +176,7 @@ if (!enabledTools || enabledTools.includes('hive_report_learnings')) {
 }
 
 // Tool: hive_share_knowledge
-if (!enabledTools || enabledTools.includes('hive_share_knowledge')) {
+if (has('hive_share_knowledge')) {
   server.tool(
     'hive_share_knowledge',
     'Share an insight with the fleet knowledge base so other sessions can benefit from your experience',
@@ -226,7 +198,7 @@ if (!enabledTools || enabledTools.includes('hive_share_knowledge')) {
 }
 
 // Tool: hive_get_knowledge
-if (!enabledTools || enabledTools.includes('hive_get_knowledge')) {
+if (has('hive_get_knowledge')) {
   server.tool(
     'hive_get_knowledge',
     'Query the fleet knowledge base for insights from other sessions about specific files, domains, or topics',
@@ -264,7 +236,7 @@ if (!enabledTools || enabledTools.includes('hive_get_knowledge')) {
 }
 
 // Tool: hive_get_context
-if (!enabledTools || enabledTools.includes('hive_get_context')) {
+if (has('hive_get_context')) {
   server.tool(
     'hive_get_context',
     'Get shared context for this session (plan file, PR, JIRA, etc.)',
@@ -281,7 +253,7 @@ if (!enabledTools || enabledTools.includes('hive_get_context')) {
 }
 
 // Tool: hive_set_context
-if (!enabledTools || enabledTools.includes('hive_set_context')) {
+if (has('hive_set_context')) {
   server.tool(
     'hive_set_context',
     'Share context with hive. IMPORTANT: You MUST call this when you: (1) open or start working on a PR (set "pr"), (2) switch branches (set "branch"), (3) post to or engage in a Slack thread (set "slackThread" to "CHANNEL_ID:THREAD_TS") — this enables automatic routing of follow-up thread messages to your session. Multi-value: "pr" and "jira" accept comma-separated strings — "https://github.com/o/webplatform/pull/1, https://github.com/o/devops/pull/2" or "DEV-1, DEV-2" — for sessions spanning multiple PRs / tickets. Set a value to null to remove it.',
@@ -298,7 +270,7 @@ if (!enabledTools || enabledTools.includes('hive_set_context')) {
 }
 
 // Tool: hive_set_working_dir
-if (!enabledTools || enabledTools.includes('hive_set_working_dir')) {
+if (has('hive_set_working_dir')) {
   server.tool(
     'hive_set_working_dir',
     'Tell hive which git repository you are actually working in. Use this when you are working in a directory different from your default repo (e.g. a git worktree). This enables the hive dashboard to show the correct git diff and commit history for your session.',
@@ -316,7 +288,7 @@ if (!enabledTools || enabledTools.includes('hive_set_working_dir')) {
 
 
 // Tool: hive_reply_thread
-if (!enabledTools || enabledTools.includes('hive_reply_thread')) {
+if (has('hive_reply_thread')) {
   server.tool(
     'hive_reply_thread',
     'Reply to the Slack thread associated with your current task. Use this instead of slack_post_message when replying to the thread that created your task — it automatically routes to the correct channel and thread.',
@@ -336,7 +308,7 @@ if (!enabledTools || enabledTools.includes('hive_reply_thread')) {
 }
 
 // Tool: hive_create_task
-if (!enabledTools || enabledTools.includes('hive_create_task')) {
+if (has('hive_create_task')) {
   server.tool(
     'hive_create_task',
     'Create a new task in the hive queue for another session to pick up. Use this when you identify actionable work that needs to be done by a worker session.',
@@ -370,7 +342,7 @@ if (!enabledTools || enabledTools.includes('hive_create_task')) {
 }
 
 // Tool: hive_publish_plan
-if (!enabledTools || enabledTools.includes('hive_publish_plan')) {
+if (has('hive_publish_plan')) {
   server.tool(
     'hive_publish_plan',
     'Publish a plan from a file you already wrote. Use this whenever the user asks for a plan, proposal, design doc, or wants you to "think through" something non-trivial. The file must be a self-contained HTML document where each top-level section is wrapped in <section data-id="kebab-case-id"> (so comments can anchor) and includes an empty embedded comments block: <script type="application/json" id="hive-comments">[]</script>. Calling this for the same session again republishes as a new version (auto-bumped) — overwrite the same file or pass a new path. Returns { planId, version, url }. Side effects: writes planRef into session context, broadcasts plan:published to the dashboard.',
@@ -404,7 +376,7 @@ if (!enabledTools || enabledTools.includes('hive_publish_plan')) {
 }
 
 // Tool: hive_reply_to_comment
-if (!enabledTools || enabledTools.includes('hive_reply_to_comment')) {
+if (has('hive_reply_to_comment')) {
   server.tool(
     'hive_reply_to_comment',
     'Reply to a single open comment on your current plan. Use when you receive a relay message starting with "N new comments on your plan". Pass an optional patch to rewrite a section inline (the patch auto-resolves the comment, no version bump). For acknowledgements or follow-up questions, just pass text. Resolves to the session\'s currently pinned plan.',
@@ -430,7 +402,7 @@ if (!enabledTools || enabledTools.includes('hive_reply_to_comment')) {
 }
 
 // Tool: hive_resolve_comment
-if (!enabledTools || enabledTools.includes('hive_resolve_comment')) {
+if (has('hive_resolve_comment')) {
   server.tool(
     'hive_resolve_comment',
     'Mark a comment resolved without a reply. Use when you agree with the comment but no plan change is needed (e.g. "good catch, noted"). Optional reason becomes a system message in the thread.',
