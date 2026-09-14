@@ -486,6 +486,11 @@ describe('Watcher', () => {
     const RETRYABLE_FIXTURES = [
       ['Request timed out', 'API Error (Request timed out.) · Retrying in 1s... (attempt 1/10)\n❯ '],
       ['Stream idle timeout', '  ⎿  API Error: Stream idle timeout - partial response received\n❯ '],
+      // Real fixture from S:24 — same streaming abort as the line above, worded
+      // differently by Claude Code. No status code, so it used to fall through as
+      // non-retryable. Phrase-gated on "API Error", which this real line carries;
+      // the narration case is pinned in NON_RETRYABLE_FIXTURES below.
+      ['response stopped arriving', '  ⎿  API Error: The response stopped arriving. The response above may be incomplete.\n\n✻ Cooked for 14m 37s · done 10:13 AM\n\n❯ '],
       ['Connection error',    '  ⎿  API Error (Connection error.) · Retrying in 1s... (attempt 1/3)\n❯ '],
       ['ECONNRESET',          '  ⎿  API Error: fetch failed (ECONNRESET)\n❯ '],
       ['ETIMEDOUT',           '  ⎿  Error: connect ETIMEDOUT 104.18.32.115:443\n❯ '],
@@ -542,6 +547,89 @@ describe('Watcher', () => {
         );
       });
     }
+
+    // The mirror of RETRYABLE_FIXTURES: pane text that CONTAINS a retryable
+    // phrase but is not a live error, so it must NOT fire a retry. These pin the
+    // phrase gate — every entry here would retry if its phrase were moved into
+    // the unambiguous API_ERROR_PATTERNS list.
+    const NON_RETRYABLE_FIXTURES = [
+      // Claude narrating an error it already recovered from. This is the case
+      // review raised on "response stopped arriving": unlike `SSL: <UPPER_SNAKE>`
+      // or `"type":"api_error"`, it is an ordinary English sentence. Without the
+      // "API Error" gate hive reads Claude's own prose as a live error.
+      ['narrating a past streaming abort',
+        '⏺ The earlier failure was that the response stopped arriving partway through,\n  so I re-ran the command and it succeeded.\n\n❯ '],
+      // The same hazard in this repo specifically: the phrase lives in a source
+      // comment and a test fixture, so a session working on the watcher puts it
+      // on screen just by grepping. Protected while the output does not also
+      // carry "API Error" — see the KNOWN GAP test below for when it does.
+      ['grep output showing the pattern line',
+        '⏺ Bash(grep -n "stopped arriving" src/core/watcher.js)\n  ⎿  47:  /response stopped arriving/i,\n\n❯ '],
+      // Pre-existing gated phrases, pinned the same way.
+      ['narrating a past rate limit',
+        '⏺ That was the stale rate-limit-era queue draining; it has cleared now.\n\n❯ '],
+      ['narrating capacity',
+        '⏺ The provider was at capacity earlier, which is why the first attempt failed.\n\n❯ '],
+    ];
+
+    for (const [label, paneContent] of NON_RETRYABLE_FIXTURES) {
+      it(`does NOT retry on: ${label}`, async () => {
+        const retrySpy = vi.fn();
+        watcher = new Watcher(config, router);
+        watcher.on('session:error-retry', retrySpy);
+
+        const mockNode = createMockNode();
+        mockNode.capturePane.mockResolvedValue(paneContent);
+        mockNode.sendKeys.mockResolvedValue(null);
+        router.nodeFor.mockReturnValue(mockNode);
+
+        watcher.seenWorking.add(6);
+        watcher.prevStates.set(6, 'idle');
+
+        fleetSpy.mockResolvedValue([makeSession(6, 'idle')]);
+        for (let i = 0; i < 5; i++) await watcher._poll();
+
+        expect(retrySpy).not.toHaveBeenCalled();
+        expect(mockNode.sendKeys).not.toHaveBeenCalledWith(
+          expect.anything(), 'retry', expect.anything()
+        );
+      });
+    }
+
+    // KNOWN GAP, pinned so it is a decision rather than a surprise.
+    //
+    // The phrase gate stops bare prose, but it cannot tell a live error from a
+    // pane QUOTING the whole error line — both carry "API Error" plus the phrase.
+    // Found by writing the test above: `grep -n "stopped arriving" watcher.js`
+    // returns the source comment, which quotes the full line, so it still fires.
+    //
+    // This is not specific to this phrase — quoting "API Error: overloaded" has
+    // always done the same, so it is the bar every gated phrase already meets.
+    // Documented rather than fixed: distinguishing a quoted error from a live one
+    // needs more than a line match, and the blast radius is one stray "retry"
+    // prompt, bounded per occurrence by RETRY_SUBMITTED_RE.
+    it('KNOWN GAP: a pane quoting the full error line still retries', async () => {
+      const retrySpy = vi.fn();
+      watcher = new Watcher(config, router);
+      watcher.on('session:error-retry', retrySpy);
+
+      const mockNode = createMockNode();
+      mockNode.capturePane.mockResolvedValue(
+        '⏺ Bash(grep -n "stopped arriving" src/core/watcher.js)\n  ⎿  38:  //   API Error: The response stopped arriving. The response above may be incomplete.\n\n❯ '
+      );
+      mockNode.sendKeys.mockResolvedValue(null);
+      router.nodeFor.mockReturnValue(mockNode);
+
+      watcher.seenWorking.add(6);
+      watcher.prevStates.set(6, 'idle');
+
+      fleetSpy.mockResolvedValue([makeSession(6, 'idle')]);
+      for (let i = 0; i < 5; i++) await watcher._poll();
+
+      // Asserting the CURRENT behaviour, not the desired one. If someone makes
+      // quoted errors distinguishable, this test should flip to not.toHaveBeenCalled().
+      expect(retrySpy).toHaveBeenCalled();
+    });
 
     it('ignores OLD errors deep in scrollback (false-positive guard)', async () => {
       // Regression: tmux's `capture-pane -S -15 -p` extends 15 lines into

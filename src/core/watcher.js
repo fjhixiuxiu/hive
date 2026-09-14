@@ -74,6 +74,25 @@ const API_ERROR_PHRASES = [
   /rate.?limit/i,
   /capacity/i,
   /temporarily limiting requests/i,
+  // Claude Code's other wording for the same streaming abort already covered by
+  // /partial response received/ — the server closed the stream mid-response.
+  // Real fixture from S:24:
+  //   API Error: The response stopped arriving. The response above may be incomplete.
+  // It carries no status code, so before this it fell through as non-retryable and
+  // the session sat idle.
+  //
+  // Gated rather than unambiguous, deliberately. This is the most prose-shaped
+  // phrase in either list — unlike `SSL: <UPPER_SNAKE>`, `(_ssl.c:NNNN)` or
+  // `"type":"api_error"`, it is an ordinary English sentence Claude could write
+  // while narrating an error it already recovered from. That matters most in
+  // THIS repo, where the phrase sits in a source comment and a test fixture, so
+  // a session working on the watcher can put it in its own pane.
+  //
+  // The real error always carries "API Error" on the same line, so requiring it
+  // costs nothing and removes the narration risk. RETRY_SUBMITTED_RE bounds
+  // duplicates per occurrence but does NOT bound a loop: a retry that provokes a
+  // fresh narration below the `> retry` line re-arms the check.
+  /response stopped arriving/i,
 ];
 
 function lineHasRetryableError(line) {
