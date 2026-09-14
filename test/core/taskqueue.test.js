@@ -181,6 +181,196 @@ describe('TaskQueue', () => {
     });
   });
 
+  describe('deferTask', () => {
+    // The queue order the dispatcher actually walks is this.tasks insertion
+    // order (see _tryAutoDispatch), so these assert on that, not on createdAt.
+    const queueOrder = (tq) => Array.from(tq.tasks.values())
+      .filter(t => t.status === 'queued').map(t => t.text);
+
+    it('moves a queued task to the back of the dispatch order', () => {
+      tq.createTask('first', 'auto', null, null);
+      const second = tq.createTask('second', 'auto', null, null);
+      tq.createTask('third', 'auto', null, null);
+      expect(queueOrder(tq)).toEqual(['first', 'second', 'third']);
+
+      tq.deferTask(second.id);
+      expect(queueOrder(tq)).toEqual(['first', 'third', 'second']);
+    });
+
+    it('leaves requeue as the in-place option — the two differ only in position', () => {
+      const first = tq.createTask('first', 'auto', null, null);
+      tq.createTask('second', 'auto', null, null);
+      first.status = 'dispatched';
+      first.assignedTo = 6;
+      tq.activeTaskBySession.set(6, first.id);
+
+      tq.requeueTask(first.id);
+      // Requeue does not move it: an old task lands back ahead of newer ones.
+      expect(queueOrder(tq)).toEqual(['first', 'second']);
+    });
+
+    it('releases the session when the task was dispatched', () => {
+      const task = tq.createTask('Test', 'auto', null, null);
+      task.status = 'dispatched';
+      task.assignedTo = 6;
+      task.dispatchedAt = Date.now();
+      tq.activeTaskBySession.set(6, task.id);
+      tq.dispatchLock.add(6);
+
+      const result = tq.deferTask(task.id);
+      expect(result.status).toBe('queued');
+      expect(result.assignedTo).toBeNull();
+      expect(result.dispatchedAt).toBeNull();
+      expect(result.targetSession).toBeNull();
+      expect(tq.activeTaskBySession.has(6)).toBe(false);
+      expect(tq.dispatchLock.has(6)).toBe(false);
+    });
+
+    it('accepts an already-queued task — de-prioritising is the point', () => {
+      const task = tq.createTask('Test', 'auto', null, null);
+      const result = tq.deferTask(task.id);
+      expect(result).not.toBeNull();
+      expect(result.status).toBe('queued');
+      expect(result.deferredAt).toBeGreaterThan(0);
+    });
+
+    it('stamps deferredAt so the card can show why it is last', () => {
+      const task = tq.createTask('Test', 'auto', null, null);
+      tq.deferTask(task.id);
+      expect(task.deferredAt).toBeGreaterThan(0);
+    });
+
+    it('refuses a snoozed task — it is already out of the dispatch set', () => {
+      const task = tq.createTask('Test', 'auto', null, null);
+      task.status = 'snoozed';
+      expect(tq.deferTask(task.id)).toBeNull();
+    });
+
+    it('returns null for a completed or non-existent task', () => {
+      const task = tq.createTask('Test', 'auto', null, null);
+      task.status = 'completed';
+      expect(tq.deferTask(task.id)).toBeNull();
+      expect(tq.deferTask('999')).toBeNull();
+    });
+
+    it('emits task:deferred and adds a feed entry', () => {
+      const spy = vi.fn();
+      tq.on('task:deferred', spy);
+      const task = tq.createTask('Defer me', 'auto', null, null);
+      const feedBefore = tq.feed.length;
+
+      tq.deferTask(task.id);
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(spy).toHaveBeenCalledWith(task);
+      expect(tq.feed.length).toBe(feedBefore + 1);
+    });
+
+    it('makes the dispatcher pick the un-deferred task first', async () => {
+      // The whole point: not just list order, but who actually gets dispatched.
+      vi.useRealTimers();
+      tq.autoSessions.add(6);
+      fleetModule.getFleetStatus.mockResolvedValue([{ name: '6-DEV', num: 6, state: 'idle' }]);
+      fleetModule.findSession.mockResolvedValue({ name: '6-DEV', nodeId: 'local' });
+      const older = tq.createTask('older work', 'auto', null, null);
+      tq.createTask('newer work', 'auto', null, null);
+
+      // Without the defer, 'older work' wins on insertion order.
+      tq.deferTask(older.id);
+      await tq._tryAutoDispatch();
+      await new Promise(r => setTimeout(r, 50));
+
+      const byText = (text) => Array.from(tq.tasks.values()).find(t => t.text === text);
+      expect(byText('newer work').status).toBe('dispatched');
+      expect(byText('older work').status).toBe('queued');
+    });
+
+    it('clears the deferred stamp once the task finally dispatches', async () => {
+      vi.useRealTimers();
+      tq.autoSessions.add(6);
+      fleetModule.getFleetStatus.mockResolvedValue([{ name: '6-DEV', num: 6, state: 'idle' }]);
+      fleetModule.findSession.mockResolvedValue({ name: '6-DEV', nodeId: 'local' });
+      const task = tq.createTask('deferred then run', 'auto', null, null);
+      tq.deferTask(task.id);
+      expect(task.deferredAt).toBeGreaterThan(0);
+
+      await tq._tryAutoDispatch();
+      await new Promise(r => setTimeout(r, 50));
+      expect(task.status).toBe('dispatched');
+      expect(task.deferredAt).toBeNull();
+    });
+
+    it('survives a save/load round trip in its deferred position', () => {
+      tq.createTask('first', 'auto', null, null);
+      const second = tq.createTask('second', 'auto', null, null);
+      tq.createTask('third', 'auto', null, null);
+      tq.deferTask(second.id);
+
+      // _saveState serialises Array.from(this.tasks.values()) with no sort and
+      // _loadState re-sets in that order, so the order is the persisted order.
+      const persisted = Array.from(tq.tasks.values()).map(t => t.text);
+      expect(persisted).toEqual(['first', 'third', 'second']);
+    });
+  });
+
+  // Defer and explicit positioning arrived on different branches and both
+  // express queue order through this.tasks insertion order — defer by
+  // delete+set, positioning by rebuilding the Map. They have to agree, because
+  // the dashboard shows one number and offers both controls.
+  describe('defer and explicit queue positioning agree', () => {
+    it('reports the deferred task as last', () => {
+      tq.createTask('first', 'auto', null, null);
+      const second = tq.createTask('second', 'auto', null, null);
+      tq.createTask('third', 'auto', null, null);
+
+      tq.deferTask(second.id);
+
+      expect(tq.getQueuePosition(second.id)).toBe(3);
+    });
+
+    it('lets positioning pull a deferred task back to the front', () => {
+      // Defer is a decision, not a sentence. The two controls are inverses and
+      // must compose in both directions.
+      const first = tq.createTask('first', 'auto', null, null);
+      const second = tq.createTask('second', 'auto', null, null);
+
+      tq.deferTask(first.id);
+      expect(tq.getQueuePosition(first.id)).toBe(2);
+
+      tq.moveTaskToQueuePosition(first.id, 1);
+      expect(tq.getQueuePosition(first.id)).toBe(1);
+      expect(tq.getQueuePosition(second.id)).toBe(2);
+    });
+
+    it('keeps deferredAt when a task is repositioned', () => {
+      // The stamp says why the card was at the back; moving it is not the same
+      // as un-deferring it, and dropping the stamp silently would change what
+      // the card can explain.
+      const task = tq.createTask('work', 'auto', null, null);
+      tq.createTask('other', 'auto', null, null);
+      tq.deferTask(task.id);
+      const stamp = task.deferredAt;
+
+      tq.moveTaskToQueuePosition(task.id, 1);
+
+      expect(task.deferredAt).toBe(stamp);
+    });
+
+    it('sends a task to the back either way, with the same resulting order', () => {
+      tq.createTask('a', 'auto', null, null);
+      const b = tq.createTask('b', 'auto', null, null);
+      tq.createTask('c', 'auto', null, null);
+
+      tq.deferTask(b.id);
+      const afterDefer = Array.from(tq.tasks.values()).filter(t => t.status === 'queued').map(t => t.text);
+
+      tq.moveTaskToQueuePosition(b.id, 99);   // clamped to the back
+      const afterMove = Array.from(tq.tasks.values()).filter(t => t.status === 'queued').map(t => t.text);
+
+      expect(afterDefer).toEqual(['a', 'c', 'b']);
+      expect(afterMove).toEqual(afterDefer);
+    });
+  });
+
   describe('createTask persistence', () => {
     // A task that only exists in memory is lost on any restart, and hive
     // restarts often (crash, reclaim, deploy). Nothing else in the create path

@@ -1146,6 +1146,11 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   background: rgba(241,250,140,0.15); color: var(--yellow); font-size: var(--fs-sm);
   font-weight: 700; padding: 2px 6px; border-radius: 3px;
 }
+.task-deferred-badge {
+  background: rgba(189,147,249,0.15); color: var(--purple); font-size: var(--fs-sm);
+  font-weight: 700; padding: 2px 6px; border-radius: 3px;
+  border: 1px solid rgba(189,147,249,0.35);
+}
 .task-checkbox {
   -webkit-appearance: none; appearance: none;
   width: 20px; height: 20px; border: 2px solid var(--dim); border-radius: 4px;

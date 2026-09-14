@@ -49,6 +49,11 @@ class TaskQueue extends EventEmitter {
     this.spawnSlotMax = 32;
     this.vimMode = false;
     this.taskAutoComplete = true; // when false, tasks require manual completion
+    // Which of the two return-to-queue buttons the dashboard renders. Both
+    // do the same thing to the session and differ only in where the task
+    // lands, so a fleet that only ever wants one of them can hide the other.
+    this.showRequeueBtn = true;
+    this.showDeferBtn = true;
     // The switch above only guards _handleSessionIdle. A session calling
     // hive_complete_task walks straight past it, because that is a deliberate
     // act rather than a timeout — which is why a fleet with auto-complete off
@@ -343,6 +348,48 @@ class TaskQueue extends EventEmitter {
     task.targetSession = null;
     this.emit('task:requeued', task);
     this.pushFeed('task', prevSession, `Task returned to queue: "${task.text}"`);
+    this._saveState();
+    return task;
+  }
+
+  /**
+   * Return a task to the queue at the BACK of the line.
+   *
+   * requeueTask puts a task back "where it was", and where it was is its
+   * position in this.tasks — a Map, so insertion order, which is exactly the
+   * order _tryAutoDispatch walks. That makes requeueing an OLD task a
+   * promotion: it sits ahead of everything queued since. Defer is the other
+   * half of that decision — same release, but re-inserted last.
+   *
+   * Takes a dispatched task (releases the session, as requeue does) or one that
+   * is already queued (pure de-prioritisation, nothing to release). Snoozed
+   * tasks are left alone: they are already out of the dispatch set, and their
+   * timer would return them to the queue anyway.
+   */
+  deferTask(taskId) {
+    const task = this.tasks.get(taskId);
+    if (!task || (task.status !== 'dispatched' && task.status !== 'queued')) return null;
+    const prevSession = task.assignedTo;
+    if (task.assignedTo) {
+      log.info(`[taskmap] S:${task.assignedTo} ✕ task ${task.id} (defer)`);
+      this.activeTaskBySession.delete(task.assignedTo);
+      this.dispatchLock.delete(task.assignedTo);
+      this.clearSessionContext(task.assignedTo);
+    }
+    task.status = 'queued';
+    task.workStateManual = false;
+    task.assignedTo = null;
+    task.dispatchedAt = null;
+    task.targetSession = null;
+    // Stamped so the card can say WHY this one is sitting at the back, and so
+    // the queue view can group deferred work last instead of by createdAt.
+    task.deferredAt = Date.now();
+    // Re-insert last. delete+set is the only way to move a key in a Map, and
+    // the Map IS the queue order — see _tryAutoDispatch.
+    this.tasks.delete(task.id);
+    this.tasks.set(task.id, task);
+    this.emit('task:deferred', task);
+    this.pushFeed('task', prevSession ?? null, `Task deferred to the back of the queue: "${task.text}"`);
     this._saveState();
     return task;
   }
@@ -661,6 +708,9 @@ class TaskQueue extends EventEmitter {
     task.assignedTo = sessionNum;
     task.dispatchedAt = Date.now();
     task.lastActivityAt = Date.now();
+    // The task got its turn — drop the deferred stamp so the card stops
+    // claiming it is waiting at the back of a queue it has already left.
+    task.deferredAt = null;
     // Update watcher activity timestamp on dispatch
     if (this.watcher) this.watcher.sessionActivity.set(sessionNum, Date.now());
     const prevTaskId = this.activeTaskBySession.get(sessionNum);
@@ -1506,6 +1556,8 @@ class TaskQueue extends EventEmitter {
       }
       if (data.vimMode !== undefined) this.vimMode = data.vimMode;
       if (data.taskAutoComplete !== undefined) this.taskAutoComplete = data.taskAutoComplete;
+      if (data.showRequeueBtn !== undefined) this.showRequeueBtn = !!data.showRequeueBtn;
+      if (data.showDeferBtn !== undefined) this.showDeferBtn = !!data.showDeferBtn;
       if (typeof data.requireHumanCloseAll === 'boolean') this.requireHumanCloseAll = data.requireHumanCloseAll;
       if (typeof data.autoCreateForManualTasks === 'boolean') this.autoCreateForManualTasks = data.autoCreateForManualTasks;
       if (data.spawnSlotMin !== undefined) this.spawnSlotMin = data.spawnSlotMin;
@@ -1611,6 +1663,8 @@ class TaskQueue extends EventEmitter {
       feed: this.feed,
       vimMode: this.vimMode,
       taskAutoComplete: this.taskAutoComplete,
+      showRequeueBtn: this.showRequeueBtn,
+      showDeferBtn: this.showDeferBtn,
       requireHumanCloseAll: this.requireHumanCloseAll,
       autoCreateForManualTasks: this.autoCreateForManualTasks,
       spawnSlotMin: this.spawnSlotMin,

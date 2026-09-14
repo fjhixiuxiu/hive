@@ -528,6 +528,7 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
       ws.send(JSON.stringify({ type: 'taskAutoComplete:status', enabled: taskQueue.taskAutoComplete }));
       ws.send(JSON.stringify({ type: 'requireHumanCloseAll:status', enabled: taskQueue.requireHumanCloseAll }));
       ws.send(JSON.stringify({ type: 'autoCreateForManualTasks:status', enabled: taskQueue.autoCreateForManualTasks }));
+      ws.send(JSON.stringify({ type: 'taskButtons:status', requeue: taskQueue.showRequeueBtn, defer: taskQueue.showDeferBtn }));
       ws.send(JSON.stringify({ type: 'repoCaps:status', caps: taskQueue.getRepoCaps() }));
       ws.send(JSON.stringify({ type: 'agentRoots:list', roots: taskQueue.getAgentRoots() }));
       ws.send(JSON.stringify({ type: 'agentFiles:list', files: taskQueue.agentFilesList }));

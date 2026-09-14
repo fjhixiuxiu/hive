@@ -323,6 +323,7 @@
             <span class="bulk-count" id="tasks-bulk-count">0 selected</span>
             <button class="bulk-btn cancel" id="tasks-bulk-cancel">Cancel</button>
             <button class="bulk-btn requeue" id="tasks-bulk-requeue">Requeue</button>
+            <button class="bulk-btn defer" id="tasks-bulk-defer">Defer</button>
             <button class="bulk-btn done" id="tasks-bulk-done">Mark Done</button>
           </div>
           <div class="tasks-scroll" id="tasks-scroll"></div>
@@ -529,6 +530,18 @@
               <span class="rule-hint">— only the idle path. A session that calls hive_complete_task still closes its own task; use the switch below to gate that too</span>
             </span>
             <button class="rule-toggle" id="toggle-task-autocomplete"></button>
+          </div>
+          <div class="rule-row">
+            <span class="rule-name">Show Requeue button
+              <span class="rule-hint">— returns a task to the queue at its current priority, which for an older task means near the front</span>
+            </span>
+            <button class="rule-toggle" id="toggle-requeue-btn"></button>
+          </div>
+          <div class="rule-row">
+            <span class="rule-name">Show Defer button
+              <span class="rule-hint">— returns a task to the queue behind everything already waiting, without losing it</span>
+            </span>
+            <button class="rule-toggle" id="toggle-defer-btn"></button>
           </div>
           <div class="rule-row">
             <span class="rule-name">Require human close on ALL completions
@@ -923,7 +936,8 @@
             <button class="font-size-btn" data-action="font-up" data-tooltip="Increase font size">A+</button>
           </div>
           <button id="track-btn" data-tooltip="Attach a tracking task to this session">Track</button>
-          <button id="session-task-requeue" class="session-task-btn" style="display:none" data-tooltip="Return task to queue">Requeue</button>
+          <button id="session-task-requeue" class="session-task-btn" style="display:none" data-tooltip="Back to the queue at its current priority">Requeue</button>
+          <button id="session-task-defer" class="session-task-btn" style="display:none" data-tooltip="Back to the queue, behind everything already waiting">Defer</button>
           <button id="session-task-done" class="session-task-btn done" style="display:none" data-tooltip="Mark task as done">Done</button>
           <button id="session-task-cancel" class="session-task-btn cancel" style="display:none" data-tooltip="Cancel task">Cancel</button>
           <button id="restart-btn" data-tooltip="Restart Claude in this session">Restart</button>

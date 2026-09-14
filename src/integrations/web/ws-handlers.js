@@ -617,6 +617,14 @@ function createMessageHandler(deps) {
         break;
       }
 
+      case 'task:defer': {
+        if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'dispatch')) break;
+        const deferredTask = taskQueue.deferTask(msg.taskId);
+        if (deferredTask) broadcast({ type: 'task:deferred', task: decorateTaskActions(deferredTask, pmManager) });
+        break;
+      }
+
       case 'task:cancel': {
         if (!taskQueue) break;
         if (!checkPermission(ws, user, 'cancel')) break;
@@ -1028,6 +1036,19 @@ function createMessageHandler(deps) {
         taskQueue.taskAutoComplete = !taskQueue.taskAutoComplete;
         taskQueue._saveState();
         broadcast({ type: 'taskAutoComplete:status', enabled: taskQueue.taskAutoComplete });
+        break;
+      }
+
+      case 'taskButtons:toggle': {
+        if (!taskQueue) break;
+        if (!checkPermission(ws, user, 'dispatch')) break;
+        // One handler, one payload: which button, and the panel reads both back.
+        if (msg.button === 'requeue') taskQueue.showRequeueBtn = !taskQueue.showRequeueBtn;
+        else if (msg.button === 'defer') taskQueue.showDeferBtn = !taskQueue.showDeferBtn;
+        else break;
+        taskQueue._saveState();
+        broadcast({ type: 'taskButtons:status',
+          requeue: taskQueue.showRequeueBtn, defer: taskQueue.showDeferBtn });
         break;
       }
 

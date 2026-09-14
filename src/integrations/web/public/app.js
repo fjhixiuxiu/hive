@@ -188,6 +188,9 @@
   let taskQueueMode = 'back';
   let vimMode = false;
   let taskAutoComplete = true;
+  // Which return-to-queue buttons this hive shows (Settings → Task Settings).
+  let showRequeueBtn = true;
+  let showDeferBtn = true;
   let requireHumanCloseAll = false;
   let autoCreateForManualTasks = false;
   let manualTarget = null;
@@ -1373,6 +1376,11 @@
         selectedTaskIds.delete(msg.task.id);
         renderTasks(); updateTasksBadge(); updateSessionTaskButtons(); break;
       }
+      case 'task:deferred': {
+        const idx = tasks.findIndex(t => t.id === msg.task.id);
+        if (idx >= 0) tasks[idx] = msg.task; else tasks.unshift(msg.task);
+        renderTasks(); updateTasksBadge(); updateTsNavButtons(); updateSessionTaskButtons(); break;
+      }
       case 'task:requeued': {
         const idx = tasks.findIndex(t => t.id === msg.task.id);
         if (idx >= 0) tasks[idx] = msg.task; else tasks.unshift(msg.task);
@@ -1466,6 +1474,18 @@
         if (activeTab === 'more-panel') renderRepoCaps();
         break;
       case 'vim:status': vimMode = msg.enabled; updateVimToggles(); break;
+      case 'taskButtons:status': {
+        showRequeueBtn = msg.requeue !== false;
+        showDeferBtn = msg.defer !== false;
+        const rBtn = document.getElementById('toggle-requeue-btn');
+        if (rBtn) rBtn.classList.toggle('on', showRequeueBtn);
+        const dBtn = document.getElementById('toggle-defer-btn');
+        if (dBtn) dBtn.classList.toggle('on', showDeferBtn);
+        renderTasks();
+        updateSessionTaskButtons();
+        break;
+      }
+
       case 'taskAutoComplete:status': {
         taskAutoComplete = msg.enabled;
         const btn = document.getElementById('toggle-task-autocomplete');
@@ -4261,6 +4281,12 @@
   document.getElementById('toggle-task-autocomplete').addEventListener('click', function() {
     if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'taskAutoComplete:toggle' }));
   });
+  document.getElementById('toggle-requeue-btn').addEventListener('click', function() {
+    if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'taskButtons:toggle', button: 'requeue' }));
+  });
+  document.getElementById('toggle-defer-btn').addEventListener('click', function() {
+    if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'taskButtons:toggle', button: 'defer' }));
+  });
   document.getElementById('toggle-require-human-close-all').addEventListener('click', function() {
     if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'requireHumanCloseAll:toggle' }));
   });
@@ -5426,22 +5452,27 @@
   function updateSessionTaskButtons() {
     const trackBtn = document.getElementById('track-btn');
     const requeueBtn = document.getElementById('session-task-requeue');
+    const deferBtn = document.getElementById('session-task-defer');
     const doneBtn = document.getElementById('session-task-done');
     const cancelBtn = document.getElementById('session-task-cancel');
     if (!currentSession) {
       trackBtn.style.display = ''; requeueBtn.style.display = 'none';
+      if (deferBtn) deferBtn.style.display = 'none';
       doneBtn.style.display = 'none'; cancelBtn.style.display = 'none';
       return;
     }
     const activeTask = tasks.find(t => t.status === 'dispatched' && String(t.assignedTo) === currentSession);
     if (activeTask) {
       trackBtn.style.display = 'none';
-      requeueBtn.style.display = '';
+      // Both are gated by their Settings toggle — hiding one must not hide the other.
+      requeueBtn.style.display = showRequeueBtn ? '' : 'none';
+      if (deferBtn) deferBtn.style.display = showDeferBtn ? '' : 'none';
       doneBtn.style.display = '';
       cancelBtn.style.display = '';
     } else {
       trackBtn.style.display = '';
       requeueBtn.style.display = 'none';
+      if (deferBtn) deferBtn.style.display = 'none';
       doneBtn.style.display = 'none';
       cancelBtn.style.display = 'none';
     }
@@ -5452,6 +5483,13 @@
     const task = tasks.find(t => t.status === 'dispatched' && String(t.assignedTo) === currentSession);
     if (!task) return;
     openTaskConfirmDialog('requeue', task.id);
+  });
+
+  document.getElementById('session-task-defer').addEventListener('click', () => {
+    if (!currentSession || !ws || ws.readyState !== 1) return;
+    const task = tasks.find(t => t.status === 'dispatched' && String(t.assignedTo) === currentSession);
+    if (!task) return;
+    openTaskConfirmDialog('defer', task.id);
   });
 
   document.getElementById('session-task-done').addEventListener('click', () => {
@@ -7039,6 +7077,12 @@
     });
 
     // Wire requeue buttons (via confirm dialog)
+    tasksScroll.querySelectorAll('.task-defer-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openTaskConfirmDialog('defer', btn.dataset.id);
+      });
+    });
     tasksScroll.querySelectorAll('.task-requeue-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -7232,10 +7276,12 @@
     document.getElementById('tasks-bulk-count').textContent = `${count} selected`;
     const cancelBtn = document.getElementById('tasks-bulk-cancel');
     const requeueBtn = document.getElementById('tasks-bulk-requeue');
+    const deferBtn = document.getElementById('tasks-bulk-defer');
     const doneBtn = document.getElementById('tasks-bulk-done');
     if (count === 0) {
       cancelBtn.disabled = true; requeueBtn.disabled = true; doneBtn.disabled = true;
       cancelBtn.style.display = ''; requeueBtn.style.display = ''; doneBtn.style.display = '';
+      if (deferBtn) { deferBtn.disabled = true; deferBtn.style.display = showDeferBtn ? '' : 'none'; }
       doneBtn.textContent = 'Mark Done';
     } else {
       const hasQueued = [...selectedTaskIds].some(id => { const t = tasks.find(x => x.id === id); return t && t.status === 'queued'; });
@@ -7244,8 +7290,13 @@
       const hasCompleted = [...selectedTaskIds].some(id => { const t = tasks.find(x => x.id === id); return t && (t.status === 'completed' || t.status === 'failed'); });
       cancelBtn.style.display = (hasQueued || hasDispatched || hasSnoozed) ? '' : 'none';
       cancelBtn.disabled = false;
-      requeueBtn.style.display = hasDispatched ? '' : 'none';
+      requeueBtn.style.display = (hasDispatched && showRequeueBtn) ? '' : 'none';
       requeueBtn.disabled = false;
+      // Defer takes queued tasks too — that is the whole point of it.
+      if (deferBtn) {
+        deferBtn.style.display = ((hasDispatched || hasQueued) && showDeferBtn) ? '' : 'none';
+        deferBtn.disabled = false;
+      }
       doneBtn.style.display = (hasDispatched || hasCompleted) ? '' : 'none';
       doneBtn.disabled = false;
       doneBtn.textContent = hasDispatched ? 'Mark Done' : 'Clear';
@@ -7262,6 +7313,21 @@
       }
     }
     showToast('Bulk Cancel', `Cancelling ${selectedTaskIds.size} task(s)`, 'success');
+    selectedTaskIds.clear();
+    updateTasksBulkBar();
+  });
+
+  document.getElementById('tasks-bulk-defer').addEventListener('click', () => {
+    if (!ws || ws.readyState !== 1) return;
+    let count = 0;
+    for (const id of selectedTaskIds) {
+      const t = tasks.find(x => x.id === id);
+      if (t && (t.status === 'dispatched' || t.status === 'queued')) {
+        ws.send(JSON.stringify({ type: 'task:defer', taskId: id }));
+        count++;
+      }
+    }
+    if (count) showToast('Bulk Defer', `Deferring ${count} task(s)`, 'success');
     selectedTaskIds.clear();
     updateTasksBulkBar();
   });
@@ -7778,7 +7844,8 @@
     if (task.status === 'dispatched') {
       actionsHtml = `<button class="task-detail-action primary" data-action="done">Done</button>`;
       overflowItems = [
-        { action: 'requeue', label: 'Requeue' },
+        ...(showRequeueBtn ? [{ action: 'requeue', label: 'Requeue' }] : []),
+        ...(showDeferBtn ? [{ action: 'defer', label: 'Defer' }] : []),
         { action: 'snooze', label: 'Snooze' },
         { action: 'rename', label: 'Rename' },
         { action: 'cancel', label: 'Cancel', danger: true },
@@ -7787,6 +7854,7 @@
       actionsHtml = `<button class="task-detail-action primary" data-action="assign">Assign</button>`;
       overflowItems = [
         { action: 'edit', label: 'Edit' },
+        ...(showDeferBtn ? [{ action: 'defer', label: 'Defer' }] : []),
         { action: 'snooze', label: 'Snooze' },
         { action: 'rename', label: 'Rename' },
         { action: 'cancel', label: 'Cancel', danger: true },
@@ -8445,6 +8513,9 @@
       case 'requeue':
         openTaskConfirmDialog('requeue', task.id);
         break;
+      case 'defer':
+        openTaskConfirmDialog('defer', task.id);
+        break;
       case 'snooze':
         openTaskConfirmDialog('snooze', task.id);
         break;
@@ -8650,6 +8721,13 @@
       }
     }
 
+    // Deferred marker. Queue position is invisible in this view — the list is
+    // sorted by createdAt, not by dispatch order — so without this the task
+    // just sits where it always sat and Defer looks like it did nothing.
+    const deferBadge = (t.status === 'queued' && t.deferredAt)
+      ? `<span class="task-deferred-badge" title="Sent to the back of the queue ${timeAgo(t.deferredAt)}">deferred</span>`
+      : '';
+
     // Assignee button for action rows
     const cardAssigneeUser = t.assignee ? allUsers.find(u => u.login === t.assignee) : null;
     const cardAssigneeName = cardAssigneeUser ? cardAssigneeUser.name : t.assignee;
@@ -8666,7 +8744,8 @@
       const btns = [
         assigneeBtnHtml,
         hasPerm('dispatch') ? `<button class="task-snooze-btn" data-id="${t.id}">Snooze</button>` : '',
-        hasPerm('dispatch') ? `<button class="task-requeue-btn" data-id="${t.id}">Requeue</button>` : '',
+        hasPerm('dispatch') && showRequeueBtn ? `<button class="task-requeue-btn" data-id="${t.id}" title="Back to the queue at its current priority">Requeue</button>` : '',
+        hasPerm('dispatch') && showDeferBtn ? `<button class="task-defer-btn" data-id="${t.id}" title="Back to the queue, behind everything already waiting">Defer</button>` : '',
         hasPerm('cancel') ? `<button class="task-done-btn" data-id="${t.id}">Done</button>` : '',
         hasPerm('cancel') ? `<button class="task-cancel" data-id="${t.id}">Cancel</button>` : '',
       ].filter(Boolean).join('');
@@ -8676,6 +8755,9 @@
         hasPerm('create-tasks') ? `<button class="task-edit-btn" data-id="${t.id}">Edit</button>` : '',
         assigneeBtnHtml,
         hasPerm('dispatch') ? `<button class="task-assign-btn" data-id="${t.id}">Assign</button>` : '',
+        // Defer is worth more here than on a dispatched task: this is the queue
+        // entry you want kept but overtaken.
+        hasPerm('dispatch') && showDeferBtn ? `<button class="task-defer-btn" data-id="${t.id}" title="Send to the back of the queue">Defer</button>` : '',
         hasPerm('dispatch') ? `<button class="task-snooze-btn" data-id="${t.id}">Snooze</button>` : '',
         hasPerm('cancel') ? `<button class="task-cancel" data-id="${t.id}">Cancel</button>` : '',
       ].filter(Boolean).join('');
@@ -8708,7 +8790,7 @@
       ? `<span class="cardpr-badges" data-task-id="${esc(t.id)}" data-pr-key="${esc(tprForBadges.repo + '#' + tprForBadges.prNumber)}">${renderTaskPrBadges(t)}</span>`
       : '';
     return `<div class="task-card-row"><input type="checkbox" class="task-checkbox" data-id="${t.id}"${checked}><div class="task-card ${t.status}${selected}" data-id="${t.id}">
-      <div class="task-top"><span class="task-hex">${hex}</span><div class="task-body"><div class="task-text">${esc(taskDisplayName(t))}</div><div class="task-info">${sourceBadge}${pendingBadge}${waitBadge}<span class="task-time">${timeStr}</span>${prBadgesHost}</div></div>${editIcon}</div>${actions}</div></div>`;
+      <div class="task-top"><span class="task-hex">${hex}</span><div class="task-body"><div class="task-text">${esc(taskDisplayName(t))}</div><div class="task-info">${sourceBadge}${pendingBadge}${deferBadge}${waitBadge}<span class="task-time">${timeStr}</span>${prBadgesHost}</div></div>${editIcon}</div>${actions}</div></div>`;
   }
 
   // ── Comment panel (rendered into tab content divs) ─────
@@ -9081,6 +9163,12 @@
       submitEl.textContent = 'Requeue';
       submitEl.style.background = 'var(--orange)';
       picker.style.display = 'none';
+    } else if (type === 'defer') {
+      titleEl.textContent = 'Defer Task';
+      bodyEl.textContent = `Send "${snippet}" to the back of the queue? It stays queued — everything already waiting goes first.`;
+      submitEl.textContent = 'Defer';
+      submitEl.style.background = 'var(--purple)';
+      picker.style.display = 'none';
     } else if (type === 'snooze') {
       titleEl.textContent = 'Snooze Task';
       bodyEl.textContent = `Snooze "${snippet}" for:`;
@@ -9127,6 +9215,9 @@
     } else if (type === 'requeue') {
       ws.send(JSON.stringify({ type: 'task:requeue', taskId }));
       showToast('Requeued', 'Task moved back to queue', 'success');
+    } else if (type === 'defer') {
+      ws.send(JSON.stringify({ type: 'task:defer', taskId }));
+      showToast('Deferred', 'Task sent to the back of the queue', 'success');
     } else if (type === 'snooze') {
       ws.send(JSON.stringify({ type: 'task:snooze', taskId, durationMs }));
       const label = durationMs >= 86400000 ? `${Math.round(durationMs / 86400000)}d` : durationMs >= 3600000 ? `${Math.round(durationMs / 3600000)}h` : `${Math.round(durationMs / 60000)}m`;
