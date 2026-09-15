@@ -1,0 +1,27 @@
+# Commits to skip when running `git blame`.
+#
+# Only bulk, provably mechanical rewrites belong here — a commit in this file is
+# one blame will look straight through, so adding a commit that changed behaviour
+# would hide that behaviour from the next person trying to find out who changed it
+# and why. The bar is: the commit's semantic diff is empty.
+#
+# Enabled automatically by `npm run prepare` (which sets blame.ignoreRevsFile).
+# To enable by hand in an existing clone:
+#
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+#
+# GitHub reads this file on its own — no setting needed for the web blame view.
+
+# chore(format): adopt prettier, correct its config, and format the repo (#352)
+#
+# 99 files, +6750/-3328, and none of it semantic. prettier had been configured in
+# the tree since early on but was never a dependency and no script ever ran it, so
+# the committed .prettierrc.js had drifted to describe a codebase this is not
+# (tabWidth 4 against a 2-space tree, bracketSpacing false against a tree where
+# every destructure is `{ TaskStatus }`). That commit corrects the config to match
+# what was on disk and applies it once.
+#
+# Verified mechanical rather than assumed: each of the 84 changed .js/.mjs files
+# was re-printed from both its old and its new source at --print-width 1, and all
+# 84 pairs came out byte-identical — same AST, same comments, same strings.
+3dd563422569934e2eb47b054a868d34b6575f5e
