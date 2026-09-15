@@ -1,6 +1,7 @@
 const https = require('https');
 const http = require('http');
 const log = require('./log');
+const { isActiveTaskStatus } = require('./vocab');
 
 // Shared keep-alive agents (see src/core/pr-status.js for the FD-leak rationale).
 const httpsKeepAlive = new https.Agent({ keepAlive: true, maxSockets: 4 });
@@ -258,7 +259,7 @@ function _hasActiveTaskForPR(repo, number, pmName) {
   const pattern = `${repo}#${number}`;
   const sourceFilter = pmName ? `pm:${pmName}` : null;
   for (const task of this.taskQueue.tasks.values()) {
-    if ((task.status === 'queued' || task.status === 'dispatched') && task.text.includes(pattern)) {
+    if (isActiveTaskStatus(task.status) && task.text.includes(pattern)) {
       if (!sourceFilter || task.source === sourceFilter) return true;
     }
   }

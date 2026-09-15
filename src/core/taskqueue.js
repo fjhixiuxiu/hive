@@ -14,6 +14,7 @@ const { cloneOrReuse } = require('./git-utils');
 const tqUsers = require('./tq-users');
 const tqFeatures = require('./tq-features');
 const sessionLinks = require('./session-links');
+const { TaskStatus, ApprovalStatus, transitionTask } = require('./vocab');
 
 const STATE_FILE = path.join(__dirname, '..', '..', '.hive-state.json');
 
@@ -140,7 +141,7 @@ class TaskQueue extends EventEmitter {
         for (const [num, taskId] of this.activeTaskBySession) {
           const s = sessions.find((s) => s.num === num);
           const task = this.tasks.get(taskId);
-          if (s && s.state === 'idle' && (!task || task.status !== 'dispatched')) {
+          if (s && s.state === 'idle' && (!task || task.status !== TaskStatus.DISPATCHED)) {
             staleCount++;
             log.info(
               `[reconcile] S:${num} is idle with stale task mapping (task=${taskId}, status=${task?.status}), clearing lock`,
@@ -148,7 +149,7 @@ class TaskQueue extends EventEmitter {
             log.info(`[taskmap] S:${num} ✕ task ${taskId} (reconcile — stale)`);
             this.dispatchLock.delete(num);
             this.activeTaskBySession.delete(num);
-          } else if (s && task?.status === 'dispatched') {
+          } else if (s && task?.status === TaskStatus.DISPATCHED) {
             // Session has an in-progress dispatched task — keep lock held regardless of apparent state
             log.info(
               `[reconcile] S:${num} has dispatched task "${(task.text || '').slice(0, 60)}" — keeping lock`,
@@ -183,7 +184,7 @@ class TaskQueue extends EventEmitter {
     // Periodic backlog check — catches tasks stuck when sessions boot after startup
     // or when idle events are missed. Runs every 30s.
     this._backlogInterval = setInterval(() => {
-      const hasQueued = Array.from(this.tasks.values()).some((t) => t.status === 'queued');
+      const hasQueued = Array.from(this.tasks.values()).some((t) => t.status === TaskStatus.QUEUED);
       if (hasQueued) {
         this._tryAutoDispatch().catch((err) => log.error('Backlog check error:', err.message));
       }
@@ -231,7 +232,7 @@ class TaskQueue extends EventEmitter {
       mode, // 'auto' or 'manual'
       targetSession: targetSession || null,
       designation: designation || null,
-      status: 'queued',
+      status: TaskStatus.QUEUED,
       assignedTo: null,
       createdAt: Date.now(),
       dispatchedAt: null,
@@ -293,7 +294,7 @@ class TaskQueue extends EventEmitter {
       mode: 'manual',
       targetSession: sessionNum,
       designation: null,
-      status: 'dispatched',
+      status: TaskStatus.DISPATCHED,
       assignedTo: sessionNum,
       createdAt: Date.now(),
       dispatchedAt: Date.now(),
@@ -338,7 +339,7 @@ class TaskQueue extends EventEmitter {
     }
 
     // Other fields only on queued/snoozed tasks
-    if (task.status === 'queued' || task.status === 'snoozed') {
+    if (task.status === TaskStatus.QUEUED || task.status === TaskStatus.SNOOZED) {
       const normalized =
         'title' in updates && updates.title === '' ? { ...updates, title: null } : updates;
       const allowed = ['text', 'title', 'mode', 'targetSession', 'designation', 'actionContext'];
@@ -375,7 +376,7 @@ class TaskQueue extends EventEmitter {
    */
   async dispatchTaskTo(taskId, sessionNum) {
     const task = this.tasks.get(taskId);
-    if (!task || task.status !== 'queued') return null;
+    if (!task || task.status !== TaskStatus.QUEUED) return null;
     task.mode = 'manual';
     task.targetSession = sessionNum;
     await this._dispatchTask(task, sessionNum);
@@ -384,7 +385,7 @@ class TaskQueue extends EventEmitter {
 
   requeueTask(taskId) {
     const task = this.tasks.get(taskId);
-    if (!task || task.status !== 'dispatched') return null;
+    if (!task || task.status !== TaskStatus.DISPATCHED) return null;
     if (task.assignedTo) {
       log.info(`[taskmap] S:${task.assignedTo} ✕ task ${task.id} (requeue)`);
       this.activeTaskBySession.delete(task.assignedTo);
@@ -392,7 +393,7 @@ class TaskQueue extends EventEmitter {
       this.clearSessionContext(task.assignedTo);
     }
     const prevSession = task.assignedTo;
-    task.status = 'queued';
+    transitionTask(task, TaskStatus.QUEUED);
     task.workStateManual = false;
     task.assignedTo = null;
     task.dispatchedAt = null;
@@ -419,7 +420,8 @@ class TaskQueue extends EventEmitter {
    */
   deferTask(taskId) {
     const task = this.tasks.get(taskId);
-    if (!task || (task.status !== 'dispatched' && task.status !== 'queued')) return null;
+    if (!task || (task.status !== TaskStatus.DISPATCHED && task.status !== TaskStatus.QUEUED))
+      return null;
     const prevSession = task.assignedTo;
     if (task.assignedTo) {
       log.info(`[taskmap] S:${task.assignedTo} ✕ task ${task.id} (defer)`);
@@ -427,7 +429,11 @@ class TaskQueue extends EventEmitter {
       this.dispatchLock.delete(task.assignedTo);
       this.clearSessionContext(task.assignedTo);
     }
-    task.status = 'queued';
+    // Defer takes an already-queued task as pure de-prioritisation, so this can
+    // be queued → queued. That is not permitted by the table — it is not in it —
+    // it is permitted because transitionTask short-circuits when prev === next.
+    // Only the Map position changes.
+    transitionTask(task, TaskStatus.QUEUED);
     task.workStateManual = false;
     task.assignedTo = null;
     task.dispatchedAt = null;
@@ -471,7 +477,7 @@ class TaskQueue extends EventEmitter {
    */
   moveTaskToQueuePosition(taskId, position, opts) {
     const task = this.tasks.get(taskId);
-    if (!task || task.status !== 'queued') return null;
+    if (!task || task.status !== TaskStatus.QUEUED) return null;
 
     const target = Math.max(1, Math.floor(Number(position) || 1));
     const entries = Array.from(this.tasks.entries()).filter(([id]) => id !== taskId);
@@ -482,7 +488,7 @@ class TaskQueue extends EventEmitter {
     let seen = 0;
     let insertAt = entries.length;
     for (let i = 0; i < entries.length; i++) {
-      if (entries[i][1].status !== 'queued') continue;
+      if (entries[i][1].status !== TaskStatus.QUEUED) continue;
       seen++;
       if (seen === target) {
         insertAt = i;
@@ -508,7 +514,8 @@ class TaskQueue extends EventEmitter {
 
   cancelTask(taskId) {
     const task = this.tasks.get(taskId);
-    if (!task || task.status === 'completed' || task.status === 'failed') return null;
+    if (!task || task.status === TaskStatus.COMPLETED || task.status === TaskStatus.FAILED)
+      return null;
 
     // Clear snooze timer if task was snoozed
     if (this._snoozeTimers.has(taskId)) {
@@ -516,12 +523,12 @@ class TaskQueue extends EventEmitter {
       this._snoozeTimers.delete(taskId);
     }
 
-    if (task.status === 'dispatched' && task.assignedTo) {
+    if (task.status === TaskStatus.DISPATCHED && task.assignedTo) {
       log.info(`[taskmap] S:${task.assignedTo} ✕ task ${task.id} (cancel)`);
       this.activeTaskBySession.delete(task.assignedTo);
       this.clearSessionContext(task.assignedTo);
     }
-    task.status = 'cancelled';
+    transitionTask(task, TaskStatus.CANCELLED);
     task.workStateManual = false;
     this.emit('task:cancelled', task);
     this.pushFeed('task', task.assignedTo, `Task cancelled: "${task.text}"`);
@@ -532,11 +539,11 @@ class TaskQueue extends EventEmitter {
     const task = this.tasks.get(taskId);
     if (!task) return null;
     // If dispatched, requeue first (requeue already clears session context)
-    if (task.status === 'dispatched') {
+    if (task.status === TaskStatus.DISPATCHED) {
       this.requeueTask(taskId);
     }
-    if (task.status !== 'queued') return null;
-    task.status = 'snoozed';
+    if (task.status !== TaskStatus.QUEUED) return null;
+    transitionTask(task, TaskStatus.SNOOZED);
     task.workStateManual = false;
     task.snoozedUntil = Date.now() + durationMs;
     this._armSnoozeTimer(task);
@@ -548,12 +555,12 @@ class TaskQueue extends EventEmitter {
 
   unsnoozeTask(taskId) {
     const task = this.tasks.get(taskId);
-    if (!task || task.status !== 'snoozed') return null;
+    if (!task || task.status !== TaskStatus.SNOOZED) return null;
     if (this._snoozeTimers.has(taskId)) {
       clearTimeout(this._snoozeTimers.get(taskId));
       this._snoozeTimers.delete(taskId);
     }
-    task.status = 'queued';
+    transitionTask(task, TaskStatus.QUEUED);
     task.workStateManual = false;
     task.snoozedUntil = null;
     this.emit('task:unsnoozed', task);
@@ -576,8 +583,8 @@ class TaskQueue extends EventEmitter {
   _wakeTask(taskId) {
     this._snoozeTimers.delete(taskId);
     const task = this.tasks.get(taskId);
-    if (!task || task.status !== 'snoozed') return;
-    task.status = 'queued';
+    if (!task || task.status !== TaskStatus.SNOOZED) return;
+    transitionTask(task, TaskStatus.QUEUED);
     task.workStateManual = false;
     task.snoozedUntil = null;
     this.emit('task:unsnoozed', task);
@@ -594,14 +601,14 @@ class TaskQueue extends EventEmitter {
   resumeTask(taskId) {
     const task = this.tasks.get(taskId);
     if (!task) return null;
-    if (task.status !== 'completed' && task.status !== 'failed') return null;
+    if (task.status !== TaskStatus.COMPLETED && task.status !== TaskStatus.FAILED) return null;
     if (!task.assignedTo) return null;
 
     // Check if session already has an active task
     const existingTaskId = this.activeTaskBySession.get(task.assignedTo);
     if (existingTaskId && existingTaskId !== taskId) return null;
 
-    task.status = 'dispatched';
+    transitionTask(task, TaskStatus.DISPATCHED);
     task.workStateManual = false;
     task.mode = 'manual';
     task.completedAt = null;
@@ -634,7 +641,7 @@ class TaskQueue extends EventEmitter {
    */
   completeTask(taskId, result, snapshot, snapshotCols, opts) {
     const task = this.tasks.get(taskId);
-    if (!task || task.status !== 'dispatched') return null;
+    if (!task || task.status !== TaskStatus.DISPATCHED) return null;
 
     // Gate: requireHumanClose blocks MCP-initiated completions. The hive-wide
     // switch is the same gate with a wider net — it turns every task into a
@@ -652,7 +659,7 @@ class TaskQueue extends EventEmitter {
       return 'pending';
     }
 
-    task.status = 'completed';
+    transitionTask(task, TaskStatus.COMPLETED);
     task.workStateManual = false;
     task.completedAt = Date.now();
     task.result = result || null;
@@ -717,9 +724,9 @@ class TaskQueue extends EventEmitter {
 
   failTask(taskId, error) {
     const task = this.tasks.get(taskId);
-    if (!task || task.status !== 'dispatched') return null;
+    if (!task || task.status !== TaskStatus.DISPATCHED) return null;
 
-    task.status = 'failed';
+    transitionTask(task, TaskStatus.FAILED);
     task.workStateManual = false;
     task.completedAt = Date.now();
     task.result = error;
@@ -762,7 +769,7 @@ class TaskQueue extends EventEmitter {
       return false; // silently skip -- don't fail the task, just don't dispatch yet
     }
 
-    task.status = 'dispatched';
+    transitionTask(task, TaskStatus.DISPATCHED);
     task.workStateManual = false;
     task.assignedTo = sessionNum;
     task.dispatchedAt = Date.now();
@@ -955,7 +962,7 @@ class TaskQueue extends EventEmitter {
 
     // Retry any queued manual tasks targeting this session
     const pendingManual = Array.from(this.tasks.values()).find(
-      (t) => t.status === 'queued' && t.mode === 'manual' && t.targetSession === num,
+      (t) => t.status === TaskStatus.QUEUED && t.mode === 'manual' && t.targetSession === num,
     );
     if (pendingManual) {
       this._dispatchTask(pendingManual, num).catch((err) =>
@@ -974,7 +981,7 @@ class TaskQueue extends EventEmitter {
       // For targeted tasks, dispatch if the session has no active task — don't require
       // fleet state === 'idle' since the state file can be stale
       const manualTargeted = Array.from(this.tasks.values()).filter(
-        (t) => t.status === 'queued' && t.mode === 'manual' && t.targetSession,
+        (t) => t.status === TaskStatus.QUEUED && t.mode === 'manual' && t.targetSession,
       );
       for (const task of manualTargeted) {
         const session = sessions.find((s) => s.num === task.targetSession);
@@ -993,7 +1000,7 @@ class TaskQueue extends EventEmitter {
       // PM in manual triage mode). Manual tasks WITH a targetSession stay out
       // of this list — they're handled by the targeted retry above.
       const queuedTasks = Array.from(this.tasks.values()).filter((t) => {
-        if (t.status !== 'queued') return false;
+        if (t.status !== TaskStatus.QUEUED) return false;
         if (t.mode === 'auto') return true;
         if (t.mode === 'manual' && !t.targetSession && this.autoCreateForManualTasks) return true;
         return false;
@@ -1027,7 +1034,7 @@ class TaskQueue extends EventEmitter {
       // Undesignated tasks still only go to undesignated sessions.
       const dispatched = new Set(); // track sessions claimed this round
       for (const task of queuedTasks) {
-        if (task.status !== 'queued') continue;
+        if (task.status !== TaskStatus.QUEUED) continue;
         const candidates = idleAuto.filter((s) => !dispatched.has(s.num));
         const pm = this._getSourcePm(task);
         const matchMode = (pm && pm.designationMatch) || 'flexible';
@@ -1053,7 +1060,7 @@ class TaskQueue extends EventEmitter {
       //    manual-triage tasks (source PM, but no autoCreate of its own) — both
       //    cases would otherwise sit in the queue indefinitely.
       const autoCreateTasks = queuedTasks.filter((t) => {
-        if (t.status !== 'queued') return false;
+        if (t.status !== TaskStatus.QUEUED) return false;
         const pm = this._getSourcePm(t);
         if (pm && pm.autoCreate) return true;
         if (this.autoCreateForManualTasks && !t.targetSession) return true;
@@ -1567,7 +1574,7 @@ class TaskQueue extends EventEmitter {
       id: String(nextApprovalId++),
       session: sessionNum,
       prompt,
-      status: 'pending', // 'pending' | 'approved' | 'denied'
+      status: ApprovalStatus.PENDING,
       createdAt: Date.now(),
       resolvedAt: null,
     };
@@ -1790,13 +1797,13 @@ class TaskQueue extends EventEmitter {
         for (const t of data.tasks) {
           // Preserve dispatched tasks and their session assignments across restarts.
           // The session is still running in tmux — don't reset to queued or send /clear.
-          if (t.status === 'dispatched' && t.assignedTo) {
+          if (t.status === TaskStatus.DISPATCHED && t.assignedTo) {
             log.info(`[taskmap] S:${t.assignedTo} ← task ${t.id} (loadState restore)`);
             this.activeTaskBySession.set(t.assignedTo, t.id);
             this.dispatchLock.add(t.assignedTo);
           }
           // Re-arm snooze timers for persisted snoozed tasks
-          if (t.status === 'snoozed' && t.snoozedUntil) {
+          if (t.status === TaskStatus.SNOOZED && t.snoozedUntil) {
             this._armSnoozeTimer(t);
           }
           // Normalize fields added in later versions so old tasks have a consistent shape
@@ -1833,11 +1840,11 @@ class TaskQueue extends EventEmitter {
     // Persist non-cancelled tasks; drop completed/failed older than 2 days
     const twoDaysAgo = Date.now() - 2 * 24 * 60 * 60 * 1000;
     const tasksArr = Array.from(this.tasks.values())
-      .filter((t) => t.status !== 'cancelled')
+      .filter((t) => t.status !== TaskStatus.CANCELLED)
       .filter(
         (t) =>
           !(
-            (t.status === 'completed' || t.status === 'failed') &&
+            (t.status === TaskStatus.COMPLETED || t.status === TaskStatus.FAILED) &&
             t.completedAt &&
             t.completedAt < twoDaysAgo
           ),
@@ -1967,14 +1974,14 @@ class TaskQueue extends EventEmitter {
    * was 29 of 33 queued tasks.
    */
   getQueuePosition(taskId) {
-    const queued = Array.from(this.tasks.values()).filter((t) => t.status === 'queued');
+    const queued = Array.from(this.tasks.values()).filter((t) => t.status === TaskStatus.QUEUED);
     const idx = queued.findIndex((t) => t.id === taskId);
     return idx >= 0 ? idx + 1 : null;
   }
 
   getTasksList() {
     return Array.from(this.tasks.values())
-      .filter((t) => t.status !== 'cancelled')
+      .filter((t) => t.status !== TaskStatus.CANCELLED)
       .sort((a, b) => b.createdAt - a.createdAt)
       .map((t) => {
         const { snapshot, snapshotCols, ...rest } = t;

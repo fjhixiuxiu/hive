@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import createMessageHandler from '../../../src/integrations/web/ws-handlers.js';
 import { createMockNode, createMockConfig } from '../../helpers/mocks.js';
+import { TaskStatus } from '../../../src/core/vocab.js';
 
 /**
  * Tests for namePrefix-aware MCP session resolution.
@@ -58,7 +59,10 @@ function makeDeps(overrides = {}) {
     completeTask: vi.fn((taskId, summary) => {
       const t = tasks.get(taskId);
       if (!t) return null;
-      t.status = 'done';
+      // Must match the real TaskQueue.completeTask. This double used to write
+      // 'done', a status hive has never had, which is how the dead
+      // `status === 'done'` branch in mcp:complete_task passed review twice.
+      t.status = TaskStatus.COMPLETED;
       t.summary = summary;
       activeTaskBySession.delete(t.assignedTo);
       lastCompletedAt.set(t.assignedTo, Date.now());
@@ -196,7 +200,7 @@ describe('MCP namePrefix session resolution', () => {
       );
 
       expect(ctx.sent[0]).toMatchObject({ ok: true });
-      expect(ctx.tasks.get('t-1').status).toBe('done');
+      expect(ctx.tasks.get('t-1').status).toBe(TaskStatus.COMPLETED);
       expect(ctx.tasks.get('t-1').summary).toBe('done');
     });
 
@@ -206,9 +210,10 @@ describe('MCP namePrefix session resolution', () => {
       const task = {
         id: 't-1',
         text: 'x',
-        status: 'done',
+        status: TaskStatus.COMPLETED,
         assignedTo: 1,
         summary: null,
+        completedAt: Date.now() - 5000,
         checklist: [],
       };
       ctx.tasks.set('t-1', task);
@@ -228,6 +233,79 @@ describe('MCP namePrefix session resolution', () => {
 
       expect(ctx.sent[0]).toMatchObject({ ok: true });
       expect(task.summary).toBe('late');
+    });
+
+    it('attaches the late summary to the most recently completed task', async () => {
+      // The session has history: an older completed task that also never got a
+      // summary. Scanning the Map in insertion order would pick that one.
+      const ctx = makeDeps({ namePrefix: 'VIV-' });
+      const older = {
+        id: 't-old',
+        text: 'older',
+        status: TaskStatus.COMPLETED,
+        assignedTo: 1,
+        summary: null,
+        completedAt: Date.now() - 3600_000,
+        checklist: [],
+      };
+      const recent = {
+        id: 't-new',
+        text: 'recent',
+        status: TaskStatus.COMPLETED,
+        assignedTo: 1,
+        summary: null,
+        completedAt: Date.now() - 5000,
+        checklist: [],
+      };
+      ctx.tasks.set('t-old', older);
+      ctx.tasks.set('t-new', recent);
+      ctx.lastCompletedAt.set(1, Date.now() - 5000);
+      const handler = createMessageHandler(ctx.deps);
+
+      await handler(
+        ctx.ws,
+        {
+          type: 'mcp:complete_task',
+          _reqId: 1,
+          session: 'VIV-1',
+          summary: 'late',
+        },
+        {},
+      );
+
+      expect(ctx.sent[0]).toMatchObject({ ok: true });
+      expect(recent.summary).toBe('late');
+      expect(older.summary).toBe(null);
+    });
+
+    it('ignores completed tasks belonging to another session', async () => {
+      const ctx = makeDeps({ namePrefix: 'VIV-' });
+      const otherSession = {
+        id: 't-2',
+        text: 'theirs',
+        status: TaskStatus.COMPLETED,
+        assignedTo: 2,
+        summary: null,
+        completedAt: Date.now() - 1000,
+        checklist: [],
+      };
+      ctx.tasks.set('t-2', otherSession);
+      ctx.lastCompletedAt.set(1, Date.now() - 5000);
+      const handler = createMessageHandler(ctx.deps);
+
+      await handler(
+        ctx.ws,
+        {
+          type: 'mcp:complete_task',
+          _reqId: 1,
+          session: 'VIV-1',
+          summary: 'late',
+        },
+        {},
+      );
+
+      expect(ctx.sent[0]).toMatchObject({ ok: true });
+      expect(otherSession.summary).toBe(null);
     });
 
     it('returns no-active-task error for prefixed session with no task', async () => {

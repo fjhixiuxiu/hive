@@ -1,6 +1,7 @@
 'use strict';
 
 const log = require('../../core/log');
+const { TaskStatus } = require('../../core/vocab');
 
 /**
  * Standup Report Generator — builds a spoken fleet status report
@@ -18,14 +19,14 @@ class StandupReport {
     const tasks = [...taskQueue.tasks.values()];
 
     const completed = tasks
-      .filter((t) => t.status === 'completed' && t.completedAt >= since)
+      .filter((t) => t.status === TaskStatus.COMPLETED && t.completedAt >= since)
       .map((t) => this._summarize(t.title || t.text));
 
     const active = tasks
-      .filter((t) => t.status === 'dispatched')
+      .filter((t) => t.status === TaskStatus.DISPATCHED)
       .map((t) => this._summarize(t.title || t.text));
 
-    const queued = tasks.filter((t) => t.status === 'queued');
+    const queued = tasks.filter((t) => t.status === TaskStatus.QUEUED);
 
     // Get blocked sessions
     let blocked = [];

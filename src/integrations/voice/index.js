@@ -12,6 +12,7 @@ const Transcriber = require('./transcriber');
 const sessionManager = require('../../core/session-manager');
 const relay = require('../../core/relay');
 const log = require('../../core/log');
+const { TaskStatus } = require('../../core/vocab');
 
 const VOICE_SESSION = 'hive-voice';
 const VOICE_SESSION_DIR = path.join(__dirname, '..', '..', '..');
@@ -321,9 +322,11 @@ class VoiceAgent extends EventEmitter {
     if (this.taskQueue) {
       const tasks = [...this.taskQueue.tasks.values()];
       const since = Date.now() - 86400000;
-      const completed = tasks.filter((t) => t.status === 'completed' && t.completedAt >= since);
-      const active = tasks.filter((t) => t.status === 'dispatched');
-      const queued = tasks.filter((t) => t.status === 'queued');
+      const completed = tasks.filter(
+        (t) => t.status === TaskStatus.COMPLETED && t.completedAt >= since,
+      );
+      const active = tasks.filter((t) => t.status === TaskStatus.DISPATCHED);
+      const queued = tasks.filter((t) => t.status === TaskStatus.QUEUED);
       let blocked = 0;
       if (this.watcher?.lastState) {
         for (const [, state] of this.watcher.lastState) {

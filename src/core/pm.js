@@ -6,6 +6,7 @@ const cron = require('node-cron');
 const log = require('./log');
 const sessionManager = require('./session-manager');
 const pmSources = require('./pm-sources');
+const { TaskStatus, isActiveTaskStatus, transitionTask } = require('./vocab');
 
 const KB_FILE = path.join(process.cwd(), '.hive-knowledge.json');
 
@@ -714,7 +715,7 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
 
     // Skip if there's already a queued or dispatched task with the same text
     const existing = [...this.taskQueue.tasks.values()].find(
-      (t) => t.source === `pm:${pm.name}` && (t.status === 'queued' || t.status === 'dispatched'),
+      (t) => t.source === `pm:${pm.name}` && isActiveTaskStatus(t.status),
     );
     if (existing) return;
 
@@ -756,10 +757,10 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
     if (!command) return;
 
     // Skip if there's already a queued or active task for this command
+    // 'in-progress' used to be a third arm here. It is a Nectar task status
+    // (see pm-sources claimNectarTask), never a hive one, so it never matched.
     const existing = [...this.taskQueue.tasks.values()].find(
-      (t) =>
-        t.text === command &&
-        (t.status === 'queued' || t.status === 'dispatched' || t.status === 'in-progress'),
+      (t) => t.text === command && isActiveTaskStatus(t.status),
     );
     if (existing) return;
 
@@ -825,9 +826,7 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
       } else if (action === 'task' || (action === 'task-if-output' && output)) {
         // Skip if there's already a queued or active task from this PM/script
         const existing = [...this.taskQueue.tasks.values()].find(
-          (t) =>
-            t.source === `pm:${pm.name}` &&
-            (t.status === 'queued' || t.status === 'dispatched' || t.status === 'in-progress'),
+          (t) => t.source === `pm:${pm.name}` && isActiveTaskStatus(t.status),
         );
         if (!existing) {
           const mode = pm.targetSession ? 'manual' : 'auto';
@@ -1011,19 +1010,20 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
 
     const prefix = `pm:${pm.name}`;
     const activeTasks = [...this.taskQueue.tasks.values()].filter(
-      (t) =>
-        (t.status === 'queued' || t.status === 'dispatched') && t.source === prefix && t.sourceKey,
+      (t) => isActiveTaskStatus(t.status) && t.source === prefix && t.sourceKey,
     );
 
     for (const task of activeTasks) {
       try {
         const reason = await this._evaluateCompletion(pm, task);
         if (reason) {
-          if (task.status === 'dispatched') {
+          if (task.status === TaskStatus.DISPATCHED) {
             this.taskQueue.completeTask(task.id, `Auto-completed: ${reason}`);
           } else {
-            // Queued tasks can't use completeTask (requires dispatched), mark directly
-            task.status = 'completed';
+            // Queued tasks can't use completeTask (requires dispatched), mark
+            // directly — but still through transitionTask, so this write is held
+            // to the same state machine as every other one.
+            transitionTask(task, TaskStatus.COMPLETED);
             task.completedAt = Date.now();
             task.result = `Auto-completed: ${reason}`;
             this.taskQueue.emit('task:completed', task);
@@ -1102,7 +1102,8 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
 
     // Find dispatched tasks from this PM that have a sourceKey
     const activeTasks = [...this.taskQueue.tasks.values()].filter(
-      (t) => t.status === 'dispatched' && t.source === prefix && t.sourceKey && t.assignedTo,
+      (t) =>
+        t.status === TaskStatus.DISPATCHED && t.source === prefix && t.sourceKey && t.assignedTo,
     );
 
     if (!activeTasks.length) return;

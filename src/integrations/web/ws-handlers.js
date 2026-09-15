@@ -13,6 +13,7 @@ const log = require('../../core/log');
 const prStatus = require('../../core/pr-status');
 const plansStore = require('../../core/plans-store');
 const sessionLinks = require('../../core/session-links');
+const { TaskStatus, isActiveTaskStatus } = require('../../core/vocab');
 const {
   HIVE_CONSOLE_SESSION,
   ghExecEnv,
@@ -995,7 +996,7 @@ function createMessageHandler(deps) {
             const TWO_DAYS = 2 * 24 * 60 * 60 * 1000;
             const now = Date.now();
             const openTasks = [...taskQueue.tasks.values()].filter(
-              (t) => t.status === 'queued' || t.status === 'dispatched' || t.status === 'snoozed',
+              (t) => isActiveTaskStatus(t.status) || t.status === TaskStatus.SNOOZED,
             );
             const sessions = await fleet.getFleetStatus(config, router);
 
@@ -1077,7 +1078,7 @@ function createMessageHandler(deps) {
             // 3. Any dispatched task with no session activity for 2+ days
             for (const t of openTasks) {
               if (seen.has(t.id)) continue;
-              if (t.status !== 'dispatched') continue;
+              if (t.status !== TaskStatus.DISPATCHED) continue;
               const lastActive = t.lastActivityAt || t.dispatchedAt || t.createdAt;
               if (now - lastActive < TWO_DAYS) continue;
               const s = sessions.find((x) => x.num === t.assignedTo);
@@ -2747,14 +2748,25 @@ function createMessageHandler(deps) {
             console.log(
               `[mcp] complete_task S:${sessionNum} — no active task but recently auto-completed (${Math.round((Date.now() - lastCompleted) / 1000)}s ago), returning ok`,
             );
-            // Retroactively attach the MCP summary to the completed task
+            // Retroactively attach the MCP summary to the task the watcher just
+            // auto-completed. This tested `status === 'done'` until now — a
+            // status hive has never written — so it matched nothing and every
+            // summary that hit this race was dropped.
+            //
+            // Take the most recently completed task rather than the first match
+            // in Map order: a session accumulates completed tasks, and the older
+            // ones are exactly the summary-less candidates this would otherwise
+            // pick.
             if (msg.summary) {
+              let target = null;
               for (const [, task] of taskQueue.tasks) {
-                if (task.assignedTo === sessionNum && task.status === 'done' && !task.summary) {
-                  task.summary = msg.summary;
-                  broadcast({ type: 'task:updated', task });
-                  break;
-                }
+                if (task.assignedTo !== sessionNum) continue;
+                if (task.status !== TaskStatus.COMPLETED || task.summary) continue;
+                if (!target || (task.completedAt || 0) > (target.completedAt || 0)) target = task;
+              }
+              if (target) {
+                target.summary = msg.summary;
+                broadcast({ type: 'task:updated', task: target });
               }
             }
             ws.send(JSON.stringify({ _reqId: msg._reqId, ok: true }));
@@ -3224,7 +3236,7 @@ function createMessageHandler(deps) {
         // Find the active task for this session
         const sessionNum = resolveSessionNum(msg.session);
         const activeTask = [...taskQueue.tasks.values()].find(
-          (t) => t.status === 'dispatched' && t.assignedTo === sessionNum,
+          (t) => t.status === TaskStatus.DISPATCHED && t.assignedTo === sessionNum,
         );
         if (!activeTask || !activeTask.slackChannel || !activeTask.slackThreadTs) {
           ws.send(

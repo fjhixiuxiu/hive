@@ -3,6 +3,7 @@ const { WebClient, retryPolicies } = require('@slack/web-api');
 const fleet = require('../../core/fleet');
 const relay = require('../../core/relay');
 const log = require('../../core/log');
+const { TaskStatus, isActiveTaskStatus } = require('../../core/vocab');
 
 // Slack's `apps.connections.open` (the Socket Mode handshake) is a Tier-1
 // endpoint — roughly one call per minute. The @slack/web-api default of
@@ -208,7 +209,7 @@ function createSlackBot(taskQueue, config, router, pmManager) {
     const tasks = Array.from(taskQueue.tasks.values());
     // Direct match on task.slackThreadTs (existing behavior)
     const directMatch = tasks.find(
-      (t) => (t.status === 'queued' || t.status === 'dispatched') && t.slackThreadTs === threadTs,
+      (t) => isActiveTaskStatus(t.status) && t.slackThreadTs === threadTs,
     );
     if (directMatch) {
       log.info(
@@ -225,7 +226,7 @@ function createSlackBot(taskQueue, config, router, pmManager) {
     }
     const ctxMatch =
       tasks.find((t) => {
-        if (t.status !== 'dispatched' || !t.assignedTo) return false;
+        if (t.status !== TaskStatus.DISPATCHED || !t.assignedTo) return false;
         const ctx = taskQueue.getSessionContext(t.assignedTo);
         return ctx.slackThread === threadKey;
       }) || null;
@@ -404,9 +405,9 @@ function createSlackBot(taskQueue, config, router, pmManager) {
         return;
       }
       const tasks = taskQueue.getTasksList();
-      const queued = tasks.filter((t) => t.status === 'queued').length;
-      const inProgress = tasks.filter((t) => t.status === 'dispatched').length;
-      const completed = tasks.filter((t) => t.status === 'completed').length;
+      const queued = tasks.filter((t) => t.status === TaskStatus.QUEUED).length;
+      const inProgress = tasks.filter((t) => t.status === TaskStatus.DISPATCHED).length;
+      const completed = tasks.filter((t) => t.status === TaskStatus.COMPLETED).length;
       await say({
         text: `:bee: *Hive Status*\n• Queued: ${queued}\n• In Progress: ${inProgress}\n• Completed today: ${completed}`,
         thread_ts: event.thread_ts || event.ts,
@@ -434,7 +435,7 @@ function createSlackBot(taskQueue, config, router, pmManager) {
         await say({ text: 'No active task in this thread.', thread_ts: event.thread_ts });
         return;
       }
-      if (activeTask.status === 'dispatched') {
+      if (activeTask.status === TaskStatus.DISPATCHED) {
         taskQueue.completeTask(activeTask.id, 'Closed via Slack');
       } else {
         taskQueue.cancelTask(activeTask.id);
@@ -459,7 +460,7 @@ function createSlackBot(taskQueue, config, router, pmManager) {
         `[slack:rcv] _handleMessage follow-up check: threadTs=${threadTs} activeTask=${activeTask ? `${activeTask.id}/${activeTask.status}` : 'null'}`,
       );
       if (activeTask) {
-        if (activeTask.status === 'dispatched' && activeTask.assignedTo) {
+        if (activeTask.status === TaskStatus.DISPATCHED && activeTask.assignedTo) {
           // Running on a session — relay directly
           try {
             const found = await fleet.findSession(config, router, activeTask.assignedTo);
@@ -489,7 +490,7 @@ function createSlackBot(taskQueue, config, router, pmManager) {
           } catch (err) {
             console.error('Slack follow-up relay error:', err.message);
           }
-        } else if (activeTask.status === 'queued') {
+        } else if (activeTask.status === TaskStatus.QUEUED) {
           // Still queued — append follow-up to the task text
           activeTask.text += `\n\nFollow-up:\n${text}`;
           taskQueue._saveState();
@@ -515,7 +516,7 @@ function createSlackBot(taskQueue, config, router, pmManager) {
       .getTasksList()
       .find(
         (t) =>
-          (t.status === 'queued' || t.status === 'dispatched') &&
+          isActiveTaskStatus(t.status) &&
           t.slackChannel === event.channel &&
           t.slackThreadTs === dedupTs,
       );
@@ -771,7 +772,8 @@ function createSlackBot(taskQueue, config, router, pmManager) {
 
     // Only relay if this thread is linked to an active dispatched task
     const activeTask = findActiveTaskForThread(event.thread_ts, event.channel);
-    if (!activeTask || activeTask.status !== 'dispatched' || !activeTask.assignedTo) return;
+    if (!activeTask || activeTask.status !== TaskStatus.DISPATCHED || !activeTask.assignedTo)
+      return;
 
     // Mark BEFORE relay.tell to prevent concurrent retries from racing past
     // the dedup check while the first invocation is still pasting.
@@ -1078,7 +1080,7 @@ function createSlackBot(taskQueue, config, router, pmManager) {
       // Add channels from active Slack-sourced tasks (dispatched or queued)
       if (taskQueue) {
         for (const t of taskQueue.tasks.values()) {
-          if (t.status !== 'dispatched' && t.status !== 'queued') continue;
+          if (t.status !== TaskStatus.DISPATCHED && t.status !== TaskStatus.QUEUED) continue;
           if (t.slackChannel) probeChannels.add(t.slackChannel);
           // Also check sessionContext for slack threads
           const ctx = taskQueue.sessionContext.get(t.assignedTo);
@@ -1144,7 +1146,12 @@ function createSlackBot(taskQueue, config, router, pmManager) {
       if (!taskQueue) return;
       let relayed = 0;
       for (const t of taskQueue.tasks.values()) {
-        if (t.status !== 'dispatched' || !t.slackChannel || !t.slackThreadTs || !t.assignedTo)
+        if (
+          t.status !== TaskStatus.DISPATCHED ||
+          !t.slackChannel ||
+          !t.slackThreadTs ||
+          !t.assignedTo
+        )
           continue;
         const threadKey = `${t.slackChannel}:${t.slackThreadTs}`;
         // Use persisted high-water mark (survives restarts), then in-memory, then thread parent

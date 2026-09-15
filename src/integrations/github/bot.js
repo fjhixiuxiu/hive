@@ -2,6 +2,7 @@ const fleet = require('../../core/fleet');
 const relay = require('../../core/relay');
 const GitHubAppAuth = require('./auth');
 const log = require('../../core/log');
+const { TaskStatus, isActiveTaskStatus } = require('../../core/vocab');
 
 /**
  * GitHub bot — polls for @mentions on issues/PRs, creates tasks,
@@ -56,7 +57,7 @@ function createGithubBot(taskQueue, config, router, pmManager) {
     const pattern = `${repo}#${issueNumber}`;
     return tasks.find(
       (t) =>
-        (t.status === 'queued' || t.status === 'dispatched') &&
+        isActiveTaskStatus(t.status) &&
         // GitHub mentions tasks (stored metadata)
         ((t.githubRepo === repo && t.githubIssueNumber === issueNumber) ||
           // PR review / re-review tasks (sourceKey pattern)
@@ -145,8 +146,8 @@ function createGithubBot(taskQueue, config, router, pmManager) {
     // ── Status command ──
     if (lower === 'status' || lower === 'queue') {
       const tasks = taskQueue.getTasksList();
-      const queued = tasks.filter((t) => t.status === 'queued').length;
-      const inProgress = tasks.filter((t) => t.status === 'dispatched').length;
+      const queued = tasks.filter((t) => t.status === TaskStatus.QUEUED).length;
+      const inProgress = tasks.filter((t) => t.status === TaskStatus.DISPATCHED).length;
       await auth.postComment(
         repo,
         issueNumber,
@@ -162,7 +163,7 @@ function createGithubBot(taskQueue, config, router, pmManager) {
         await auth.postComment(repo, issueNumber, '🐝 No active task for this issue.');
         return;
       }
-      if (activeTask.status === 'dispatched') {
+      if (activeTask.status === TaskStatus.DISPATCHED) {
         taskQueue.completeTask(activeTask.id, 'Closed via GitHub');
       } else {
         taskQueue.cancelTask(activeTask.id);
@@ -175,7 +176,7 @@ function createGithubBot(taskQueue, config, router, pmManager) {
     const isReview = !!comment._isReviewComment;
     const existingTask = findActiveTaskForIssue(repo, issueNumber);
     if (existingTask) {
-      if (existingTask.status === 'dispatched' && existingTask.assignedTo) {
+      if (existingTask.status === TaskStatus.DISPATCHED && existingTask.assignedTo) {
         // Relay directly to session
         try {
           const found = await fleet.findSession(config, router, existingTask.assignedTo);
@@ -199,7 +200,7 @@ function createGithubBot(taskQueue, config, router, pmManager) {
         } catch (err) {
           log.error(`[github] Follow-up relay error: ${err.message}`);
         }
-      } else if (existingTask.status === 'queued') {
+      } else if (existingTask.status === TaskStatus.QUEUED) {
         existingTask.text += `\n\n---\nFollow-up from @${author}:\n${text}`;
         taskQueue._saveState();
         await auth.addReaction(repo, comment.id, 'eyes', isReview).catch(() => {});
