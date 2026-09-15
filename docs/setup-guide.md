@@ -230,6 +230,22 @@ done
 
 This script detects when Claude transitions from working to idle and writes state files to `/tmp/tmux-claude-states/`.
 
+> **This is optional, and it takes over.** hive has its own state detection in
+> `tmux.detectState()`, but `fleet.getSession()` prefers the cache file and only
+> falls back to detecting when no entry is there. So while this daemon runs, the
+> answers below are hive's answers — the separator handling, the approval-prompt
+> detection, and the check that stops hive auto-completing a task Claude
+> abandoned mid-checklist all belong to the JavaScript path and are bypassed.
+>
+> If you are not sure you need it, don't run it: with no daemon and no state
+> directory, hive detects state live for every session, which is the more
+> accurate path. Run it when capturing a pane per session per poll is too
+> expensive for your fleet size.
+>
+> Stop the daemon and its entries stop being refreshed, but nothing removes
+> them. Delete `/tmp/tmux-claude-states/` when you stop running it, or hive will
+> keep reading whatever those files last said.
+
 Create `idle-watcher.sh`:
 
 ```bash

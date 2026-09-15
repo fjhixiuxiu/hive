@@ -190,6 +190,37 @@ class TaskQueue extends EventEmitter {
     }, 30000);
   }
 
+  /**
+   * Drop a session's entry from the state cache after its task ends.
+   *
+   * This used to write the literal 'idle' instead of removing the file, to stop
+   * a stale cached 'working' from looking like a busy session (f525370). The
+   * cure had the same disease: nothing in hive ever deletes these files, and the
+   * only other writer is the optional idle-watcher.sh daemon from the setup
+   * guide. On a fleet where that daemon is not running — but the directory
+   * exists, because it ran earlier — the written 'idle' was never corrected by
+   * anything. fleet.getSession() prefers the cache over live detection, so the
+   * session reported idle permanently, however busy it actually was.
+   *
+   * Removing the entry asks fleet to look at the pane instead of trusting a
+   * value hive made up. That is the same answer when the session really is idle,
+   * and the truth when it is not.
+   *
+   * Best-effort: a missing file or directory is the normal case on installs that
+   * never ran the daemon, and a failure here must not fail task completion.
+   *
+   * Known gap, unchanged by this: for a session on a remote node the state file
+   * lives on that host, while this (like the write before it) touches the local
+   * filesystem. Remote entries are written and expired by the daemon there.
+   */
+  _invalidateStateCache(sessionNum) {
+    try {
+      fs.unlinkSync(path.join(this.config.cache.stateDir, String(sessionNum)));
+    } catch {
+      // ENOENT is the common, healthy case — no cache file to invalidate.
+    }
+  }
+
   // -- Task lifecycle -----------------------------------------------
 
   createTask(text, mode, targetSession, designation, meta) {
@@ -638,11 +669,7 @@ class TaskQueue extends EventEmitter {
       this.activeTaskBySession.delete(sessionNum);
       this.dispatchLock.delete(sessionNum);
       this.lastCompletedAt.set(sessionNum, Date.now());
-      // Reset state cache so watcher detects session as idle for next dispatch
-      try {
-        const stateFile = path.join(this.config.cache.stateDir, String(sessionNum));
-        fs.writeFileSync(stateFile, 'idle');
-      } catch {}
+      this._invalidateStateCache(sessionNum);
 
       // [Phase 2 — context-consolidation] TODO: snapshot sessionContext.slackThread
       // into task._completionContext HERE, before clearSessionContext wipes it.
@@ -702,11 +729,7 @@ class TaskQueue extends EventEmitter {
       this.activeTaskBySession.delete(task.assignedTo);
       this.dispatchLock.delete(task.assignedTo);
       this.lastCompletedAt.set(task.assignedTo, Date.now());
-      // Reset state cache so watcher detects session as idle for next dispatch
-      try {
-        const stateFile = path.join(this.config.cache.stateDir, String(task.assignedTo));
-        fs.writeFileSync(stateFile, 'idle');
-      } catch {}
+      this._invalidateStateCache(task.assignedTo);
       // [Phase 2 — context-consolidation] TODO: same snapshot pattern as
       // completeTask — capture sessionContext.slackThread into task._completionContext
       // before clearing. See completeTask for details and plan ref.
