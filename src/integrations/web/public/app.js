@@ -5395,14 +5395,53 @@
   });
 
   // ── Auto-grow textareas ────────────────────────
+  // Grow with the content, but never past the element's own max-height (40vh
+  // for the composers, 50vh for the task dialog). Past that cap the box scrolls
+  // internally — and collapsing to height:'auto' to re-measure discards the
+  // browser's "keep the caret visible" scroll, so the lines you are still
+  // typing sit below the visible box with no way to reach them: the panel
+  // around it never scrolls either. Re-apply the scroll after resizing.
   function autoGrow(el) {
+    const maxH = parseFloat(getComputedStyle(el).maxHeight);
+    const caretAtEnd = el.selectionStart === el.value.length && el.selectionEnd === el.value.length;
+    const prevScroll = el.scrollTop;
     el.style.height = 'auto';
-    el.style.height = el.scrollHeight + 'px';
+    el.style.height = (maxH > 0 ? Math.min(el.scrollHeight, maxH) : el.scrollHeight) + 'px';
+    if (el.scrollHeight > el.clientHeight) el.scrollTop = caretAtEnd ? el.scrollHeight : prevScroll;
   }
-  [msgInput, document.getElementById('task-dialog-text')].forEach(el => {
-    if (!el) return;
-    el.addEventListener('input', () => autoGrow(el));
-  });
+  // Every pixel the composer grows is a pixel taken from the terminal above it.
+  // xterm keeps whatever row count it was last fitted to and #terminal-wrap is
+  // overflow:hidden, so those rows — the live tail among them — are cut off,
+  // unreachable until something unrelated (a window resize, a tab switch) calls
+  // fit again. Refit when the pane's height actually moved: a handful of times
+  // per message rather than once per keystroke.
+  function growAndRefit(el, paneId, refit) {
+    const pane = document.getElementById(paneId);
+    const before = pane ? pane.clientHeight : 0;
+    autoGrow(el);
+    if (pane && pane.clientHeight !== before) requestAnimationFrame(refit);
+  }
+  // Refitting moves the viewport, so a reader who was at the tail stays at the
+  // tail — and a reader who had scrolled back into history is left where they
+  // were rather than being yanked forward.
+  function refitSessionTerminal() {
+    if (!term || !fitAddon) return;
+    const buf = term.buffer.active;
+    const atTail = buf.viewportY >= buf.baseY;
+    fitTerminal();
+    if (atTail) term.scrollToBottom();
+  }
+  function refitTasksTerminal() {
+    if (!tasksSessionTerm || !tasksSessionFit) return;
+    const buf = tasksSessionTerm.buffer.active;
+    const atTail = buf.viewportY >= buf.baseY;
+    fitTasksTerminal();
+    if (atTail) tasksSessionTerm.scrollToBottom();
+  }
+  msgInput.addEventListener('input', () => growAndRefit(msgInput, 'terminal-wrap', refitSessionTerminal));
+  // The task dialog floats over the page — it takes its height from nothing.
+  const taskDialogText = document.getElementById('task-dialog-text');
+  if (taskDialogText) taskDialogText.addEventListener('input', () => autoGrow(taskDialogText));
 
   // ── Key buttons + restart ───────────────────────
   $$('.key-btn').forEach(btn => {
@@ -6598,7 +6637,7 @@
   const tsModeToggle = document.getElementById('ts-mode-toggle');
   var tsMsgInput = document.getElementById('ts-msg-input');
   const tsSendBtn = document.getElementById('ts-send-btn');
-  tsMsgInput.addEventListener('input', () => autoGrow(tsMsgInput));
+  tsMsgInput.addEventListener('input', () => growAndRefit(tsMsgInput, 'tasks-session-terminal', refitTasksTerminal));
 
   // ── Image drag-drop / paste upload ───────────────────
   const attachmentStrip = document.getElementById('attachment-strip');
