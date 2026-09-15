@@ -11,8 +11,12 @@ const {
   INITIAL_TASK_STATUSES,
   ACTIVE_TASK_STATUSES,
   TASK_TRANSITIONS,
+  SessionState,
+  SESSION_STATES,
   ApprovalStatus,
   APPROVAL_STATUSES,
+  isSessionState,
+  assertSessionState,
   isTaskStatus,
   isActiveTaskStatus,
   assertTaskStatus,
@@ -23,6 +27,21 @@ const log = require('../../src/core/log');
 
 const repoRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const read = (rel) => fs.readFileSync(path.join(repoRoot, rel), 'utf8');
+
+/**
+ * Source with comment-only lines removed, so the guards below read code rather
+ * than prose. A comment explaining why `lastState` was wrong must not register
+ * as someone still reading `lastState`. Trailing comments stay on their line,
+ * so a violation cannot hide behind one.
+ */
+const codeOnly = (rel) =>
+  read(rel)
+    .split('\n')
+    .filter((line) => {
+      const t = line.trim();
+      return t && !t.startsWith('//') && !t.startsWith('*') && !t.startsWith('/*');
+    })
+    .join('\n');
 
 describe('task vocabulary', () => {
   describe('the enum', () => {
@@ -55,6 +74,44 @@ describe('task vocabulary', () => {
       // is how a comparison ends up never matching.
       expect(APPROVAL_STATUSES).toContain(ApprovalStatus.PENDING);
       for (const approval of APPROVAL_STATUSES) expect(isTaskStatus(approval)).toBe(false);
+    });
+  });
+
+  describe('session state', () => {
+    it('is frozen and has no duplicates', () => {
+      expect(Object.isFrozen(SessionState)).toBe(true);
+      expect(SESSION_STATES).toEqual([...new Set(SESSION_STATES)]);
+    });
+
+    it('is exactly idle, working, off', () => {
+      expect([...SESSION_STATES].sort()).toEqual(['idle', 'off', 'working']);
+    });
+
+    it('has no "waiting" member', () => {
+      // Two call sites in the voice integration compared against 'waiting'.
+      // A session waiting on an approval is still `idle` to the detector; the
+      // watcher tracks waiting separately, in its detectedWaiting set.
+      expect(isSessionState('waiting')).toBe(false);
+      expect(() => assertSessionState('waiting')).toThrow(/Invalid session state: "waiting"/);
+    });
+
+    it('recognises exactly its own values', () => {
+      for (const state of SESSION_STATES) expect(isSessionState(state)).toBe(true);
+      for (const notState of ['waiting', 'blocked', 'error', 'closed', '', null, undefined, 0]) {
+        expect(isSessionState(notState)).toBe(false);
+      }
+    });
+
+    it('does not overlap task status', () => {
+      for (const state of SESSION_STATES) expect(isTaskStatus(state)).toBe(false);
+      for (const status of TASK_STATUSES) expect(isSessionState(status)).toBe(false);
+    });
+
+    it('names the legal values when it throws', () => {
+      expect(() => assertSessionState('nope')).toThrow(/idle, working, off/);
+      expect(() => assertSessionState('nope', 'state for session 4')).toThrow(
+        /Invalid state for session 4/,
+      );
     });
   });
 
@@ -214,7 +271,7 @@ describe('task vocabulary', () => {
 
     for (const file of GUARDED) {
       it(`${file} compares against constants`, () => {
-        const hits = [...read(file).matchAll(pattern)].map((m) => m[0]);
+        const hits = [...codeOnly(file).matchAll(pattern)].map((m) => m[0]);
         expect(hits).toEqual([]);
       });
 
@@ -226,6 +283,60 @@ describe('task vocabulary', () => {
         expect(hits).toEqual([]);
       });
     }
+
+    // The same guard for session state. 'waiting' is in the list because two
+    // call sites compared against it and nothing has ever produced it.
+    const STATE_GUARDED = [
+      'src/core/tmux.js',
+      'src/core/pm.js',
+      'src/core/taskqueue.js',
+      'src/core/relay.js',
+      'src/core/watcher.js',
+      'src/integrations/web/ws-handlers.js',
+      'src/integrations/telegram/commands.js',
+      // The voice integration is deliberately absent: it still compares against
+      // the state 'waiting', which nothing produces. That is a live bug with a
+      // behaviour change attached, so it is fixed in its own PR, and these two
+      // files join this list there.
+    ];
+    const statePattern = new RegExp(
+      `\\b(?:\\w+\\.)?(?:state|currState|currentState|prevState)\\s*[!=]==\\s*'(?:${[
+        ...SESSION_STATES,
+        'waiting',
+      ].join('|')})'`,
+      'g',
+    );
+
+    for (const file of STATE_GUARDED) {
+      it(`${file} compares session state against constants`, () => {
+        const hits = [...codeOnly(file).matchAll(statePattern)].map((m) => m[0]);
+        expect(hits).toEqual([]);
+      });
+    }
+
+    // A `switch (state)` dispatches on the vocabulary exactly as `===` does, but
+    // its case labels are a different syntactic shape and the comparison guard
+    // above cannot see them. telegram/commands.js was in STATE_GUARDED and still
+    // carried `case 'idle':` for exactly that reason — guarded file, unguarded
+    // shape. Same blind spot the lint rule in #347 has, since it matches
+    // BinaryExpression nodes and a case label is not one.
+    const stateCasePattern = new RegExp(
+      `\\bcase\\s+'(?:${[...SESSION_STATES, 'waiting'].join('|')})'\\s*:`,
+      'g',
+    );
+
+    for (const file of STATE_GUARDED) {
+      it(`${file} switches on session-state constants, not case literals`, () => {
+        const hits = [...codeOnly(file).matchAll(stateCasePattern)].map((m) => m[0]);
+        expect(hits).toEqual([]);
+      });
+    }
+
+    it('detectState returns constants, not literals', () => {
+      const src = read('src/core/tmux.js');
+      expect([...src.matchAll(/return '(?:idle|working|off)'/g)].map((m) => m[0])).toEqual([]);
+      expect(src).toContain("require('./vocab')");
+    });
 
     it('taskqueue.js routes every lifecycle write through transitionTask', () => {
       const src = read('src/core/taskqueue.js');

@@ -14,7 +14,7 @@ const { cloneOrReuse } = require('./git-utils');
 const tqUsers = require('./tq-users');
 const tqFeatures = require('./tq-features');
 const sessionLinks = require('./session-links');
-const { TaskStatus, ApprovalStatus, transitionTask } = require('./vocab');
+const { SessionState, TaskStatus, ApprovalStatus, transitionTask } = require('./vocab');
 
 const STATE_FILE = path.join(__dirname, '..', '..', '.hive-state.json');
 
@@ -141,7 +141,11 @@ class TaskQueue extends EventEmitter {
         for (const [num, taskId] of this.activeTaskBySession) {
           const s = sessions.find((s) => s.num === num);
           const task = this.tasks.get(taskId);
-          if (s && s.state === 'idle' && (!task || task.status !== TaskStatus.DISPATCHED)) {
+          if (
+            s &&
+            s.state === SessionState.IDLE &&
+            (!task || task.status !== TaskStatus.DISPATCHED)
+          ) {
             staleCount++;
             log.info(
               `[reconcile] S:${num} is idle with stale task mapping (task=${taskId}, status=${task?.status}), clearing lock`,
@@ -979,7 +983,7 @@ class TaskQueue extends EventEmitter {
 
       // First: retry queued manual tasks with a targetSession
       // For targeted tasks, dispatch if the session has no active task — don't require
-      // fleet state === 'idle' since the state file can be stale
+      // fleet state === SessionState.IDLE since the state file can be stale
       const manualTargeted = Array.from(this.tasks.values()).filter(
         (t) => t.status === TaskStatus.QUEUED && t.mode === 'manual' && t.targetSession,
       );
@@ -1100,14 +1104,14 @@ class TaskQueue extends EventEmitter {
         });
         const hasIdle = matching.some(
           (s) =>
-            s.state === 'idle' &&
+            s.state === SessionState.IDLE &&
             this.autoSessions.has(s.num) &&
             !this.dispatchLock.has(s.num) &&
             !this.activeTaskBySession.has(s.num),
         );
         const hasBooting = matching.some(
           (s) =>
-            s.state !== 'idle' &&
+            s.state !== SessionState.IDLE &&
             this.autoSessions.has(s.num) &&
             !this.activeTaskBySession.has(s.num),
         );
@@ -1528,11 +1532,11 @@ class TaskQueue extends EventEmitter {
     if (specificSessions && specificSessions.length) {
       targets = sessions.filter((s) => specificSessions.includes(s.num));
     } else if (target === 'idle') {
-      targets = sessions.filter((s) => s.state === 'idle');
+      targets = sessions.filter((s) => s.state === SessionState.IDLE);
     } else if (target === 'working') {
-      targets = sessions.filter((s) => s.state === 'working');
+      targets = sessions.filter((s) => s.state === SessionState.WORKING);
     } else {
-      targets = sessions.filter((s) => s.state !== 'off');
+      targets = sessions.filter((s) => s.state !== SessionState.OFF);
     }
 
     let sent = 0,

@@ -1,5 +1,6 @@
 /**
- * The words hive's task queue uses, and the rules about them.
+ * The words hive uses for task status and session state, and the rules about
+ * them.
  *
  * Task status was 17 bare string literals spread across 11 files — `'queued'`
  * and `'dispatched'` alone account for ~90 comparison sites. Nothing enumerated
@@ -110,6 +111,27 @@ const TASK_TRANSITIONS = Object.freeze({
   [TaskStatus.CANCELLED]: Object.freeze([TaskStatus.CANCELLED]),
 });
 
+/**
+ * What a tmux session's Claude pane is doing.
+ *
+ * Produced by tmux.detectState() from a pane capture, cached per session in
+ * `config.cache.stateDir`, and consumed by the watcher, the task queue, the
+ * relay, the dashboard and the bots.
+ *
+ * There is no 'waiting' member, though two call sites in the voice integration
+ * looked for one. A session waiting on an approval or a question is still
+ * `idle` to the detector; the watcher tracks that separately in its
+ * `detectedWaiting` set, because it is a fact about the pane's *content*, not
+ * about whether Claude is running.
+ */
+const SessionState = Object.freeze({
+  IDLE: 'idle', // Claude is running and sitting at the prompt
+  WORKING: 'working', // Claude is mid-turn
+  OFF: 'off', // no Claude in the pane
+});
+
+const SESSION_STATES = Object.freeze(Object.values(SessionState));
+
 /** Status of a completion awaiting a human, when requireHumanClose is set. */
 const ApprovalStatus = Object.freeze({
   PENDING: 'pending',
@@ -148,6 +170,40 @@ function transitionTask(task, next) {
 
 function isTaskStatus(value) {
   return TASK_STATUSES.includes(value);
+}
+
+function isSessionState(value) {
+  return SESSION_STATES.includes(value);
+}
+
+/**
+ * Throw if `value` is not a session state.
+ *
+ * ⚠️ Nothing calls this today, and the description it used to carry — that it
+ * guards states entering hive from outside the process, namely the state cache
+ * an external daemon may write (see docs/setup-guide.md) — described an
+ * intention rather than the code. `fleet.readState` is that boundary and does
+ * not validate; it trims the file and returns it.
+ *
+ * Wiring this in as-is would be wrong, which is why it is not wired in: it
+ * THROWS, and the writer is an optional shell daemon hive does not control, so
+ * a daemon writing garbage would take down a poll rather than degrade. The
+ * boundary check that belongs there is `isSessionState` plus a fall back to
+ * live detection — the same "do not trust the cache" direction #345 took when
+ * it stopped hive writing to that file at all. That is a behaviour change and
+ * wants its own PR and its own test, not a drive-by in a refactor.
+ *
+ * Kept because the throwing form is the right shape for a genuine
+ * programming-error boundary, and `assertTaskStatus` next to it has callers.
+ */
+function assertSessionState(value, context = 'session state') {
+  if (!isSessionState(value)) {
+    throw new Error(
+      `Invalid ${context}: ${JSON.stringify(value)}. ` +
+        `Expected one of: ${SESSION_STATES.join(', ')}`,
+    );
+  }
+  return value;
 }
 
 function isActiveTaskStatus(value) {
@@ -191,8 +247,12 @@ module.exports = {
   INITIAL_TASK_STATUSES,
   ACTIVE_TASK_STATUSES,
   TASK_TRANSITIONS,
+  SessionState,
+  SESSION_STATES,
   ApprovalStatus,
   APPROVAL_STATUSES,
+  isSessionState,
+  assertSessionState,
   isTaskStatus,
   isActiveTaskStatus,
   assertTaskStatus,

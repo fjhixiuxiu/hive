@@ -1,5 +1,6 @@
 const tmux = require('./tmux');
 const log = require('./log');
+const { SessionState } = require('./vocab');
 
 /**
  * Capture the visible pane and extract Claude's response content,
@@ -143,10 +144,10 @@ async function ask(config, node, sessionName, message, callbacks = {}) {
   // "gdGi" before whatever the user typed next.
   const beforeContent = await node.capturePane(paneTarget, { lines: 3 });
   const currentState = tmux.detectState(beforeContent, config);
-  if (currentState === 'off') {
+  if (currentState === SessionState.OFF) {
     return { success: false, error: 'Claude is not running in this session.' };
   }
-  if (currentState === 'working' && !force) {
+  if (currentState === SessionState.WORKING && !force) {
     return { success: false, error: "Session is busy. Use /peek to see what it's doing." };
   }
 
@@ -202,7 +203,11 @@ async function ask(config, node, sessionName, message, callbacks = {}) {
         const state = tmux.detectState(tail, config);
 
         // Stream update if enough time has passed
-        if (onStream && state === 'working' && Date.now() - lastStreamAt >= streamInterval) {
+        if (
+          onStream &&
+          state === SessionState.WORKING &&
+          Date.now() - lastStreamAt >= streamInterval
+        ) {
           const content = await captureResponse(node, paneTarget, config);
           if (content && content !== lastStreamContent) {
             lastStreamContent = content;
@@ -211,7 +216,7 @@ async function ask(config, node, sessionName, message, callbacks = {}) {
           }
         }
 
-        if (state === 'idle') {
+        if (state === SessionState.IDLE) {
           if (!idleDetectedAt) {
             idleDetectedAt = Date.now();
             return;
@@ -261,10 +266,10 @@ async function tell(config, node, sessionName, message, { vimMode } = {}) {
   while (true) {
     const tail = await node.capturePane(paneTarget, { lines: 3 });
     const state = tmux.detectState(tail, config);
-    if (state === 'off') {
+    if (state === SessionState.OFF) {
       return { success: false, error: 'Claude is not running in this session.' };
     }
-    if (state === 'idle') {
+    if (state === SessionState.IDLE) {
       if (!sawWorking) break; // idle from the start → no settle needed
       if (++consecutiveIdle >= 2) break; // 2 consecutive idle reads → settled
     } else {

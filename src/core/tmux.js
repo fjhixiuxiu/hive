@@ -1,6 +1,7 @@
 const { exec: cpExec } = require('child_process');
 const { promisify } = require('util');
 const { writeFileSync, unlinkSync, existsSync: fsExistsSync } = require('fs');
+const { SessionState } = require('./vocab');
 const execAsync = promisify(cpExec);
 
 /**
@@ -393,8 +394,8 @@ function detectState(paneContent, config) {
 
   // If idle but a visible checklist has failures, Claude stopped mid-task.
   // Report as 'working' so hive doesn't auto-complete the task.
-  if (state === 'idle' && hasFailedChecklist(lines)) {
-    return 'working';
+  if (state === SessionState.IDLE && hasFailedChecklist(lines)) {
+    return SessionState.WORKING;
   }
 
   return state;
@@ -417,7 +418,7 @@ function _classifyState(lines, config) {
       const raw = lines[i];
       if (!raw.trim()) continue;
       for (const pat of INTERACTIVE_PATTERNS) {
-        if (pat.test(raw)) return 'idle';
+        if (pat.test(raw)) return SessionState.IDLE;
       }
     }
   }
@@ -429,7 +430,7 @@ function _classifyState(lines, config) {
   // Check for active Claude status (Doodling…, Doing…, Churning...) before idle.
   // When Claude is working, the ❯ prompt is visible but not interactive.
   for (const line of checkLines) {
-    if (ACTIVE_STATUS_RE.test(line)) return 'working';
+    if (ACTIVE_STATUS_RE.test(line)) return SessionState.WORKING;
   }
 
   // Scan upward from the bottom of the check region
@@ -442,10 +443,10 @@ function _classifyState(lines, config) {
 
     // Check raw line (catches Unicode like ❯)
     for (const pat of config.idlePatterns) {
-      if (pat.test(raw)) return 'idle';
+      if (pat.test(raw)) return SessionState.IDLE;
     }
     for (const pat of config.offPatterns) {
-      if (pat.test(raw)) return 'off';
+      if (pat.test(raw)) return SessionState.OFF;
     }
 
     // Strip non-printable for ASCII-based checks
@@ -453,18 +454,18 @@ function _classifyState(lines, config) {
     if (!clean) continue; // Unicode-only non-separator line
 
     for (const pat of config.idlePatterns) {
-      if (pat.test(clean)) return 'idle';
+      if (pat.test(clean)) return SessionState.IDLE;
     }
     for (const pat of config.offPatterns) {
-      if (pat.test(clean)) return 'off';
+      if (pat.test(clean)) return SessionState.OFF;
     }
 
     // Real content that isn't idle/off → working
-    if (separatorIdx < 0) return 'off'; // No TUI separator → Claude not running
-    return 'working';
+    if (separatorIdx < 0) return SessionState.OFF; // No TUI separator → Claude not running
+    return SessionState.WORKING;
   }
 
-  return 'off';
+  return SessionState.OFF;
 }
 
 /**

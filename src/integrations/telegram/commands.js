@@ -1,6 +1,7 @@
 const fleet = require('../../core/fleet');
 const relay = require('../../core/relay');
 const tmux = require('../../core/tmux');
+const { SessionState } = require('../../core/vocab');
 
 // -- Formatting helpers -------------------------------------------------
 
@@ -187,11 +188,11 @@ function applyInlineFormatting(line) {
 
 function stateTag(state) {
   switch (state) {
-    case 'idle':
+    case SessionState.IDLE:
       return '[IDLE]';
-    case 'working':
+    case SessionState.WORKING:
       return '[WORK]';
-    case 'off':
+    case SessionState.OFF:
       return '[ OFF]';
     default:
       return '[  ? ]';
@@ -288,16 +289,18 @@ async function status(config, send, router) {
   }
 
   lines.push('\u2550'.repeat(42));
-  const idle = sessions.filter((s) => s.state === 'idle').length;
-  const work = sessions.filter((s) => s.state === 'working').length;
-  const off = sessions.filter((s) => s.state === 'off').length;
+  const idle = sessions.filter((s) => s.state === SessionState.IDLE).length;
+  const work = sessions.filter((s) => s.state === SessionState.WORKING).length;
+  const off = sessions.filter((s) => s.state === SessionState.OFF).length;
   lines.push(`${idle} idle  ${work} working  ${off} off`);
 
   send(`<pre>${lines.join('\n')}</pre>`, HTML);
 }
 
 async function idle(config, send, router) {
-  const sessions = (await fleet.getFleetStatus(config, router)).filter((s) => s.state === 'idle');
+  const sessions = (await fleet.getFleetStatus(config, router)).filter(
+    (s) => s.state === SessionState.IDLE,
+  );
   if (sessions.length === 0) {
     send('<pre>No idle sessions.</pre>', HTML);
     return;
@@ -316,7 +319,7 @@ async function idle(config, send, router) {
 
 async function working(config, send, router) {
   const sessions = (await fleet.getFleetStatus(config, router)).filter(
-    (s) => s.state === 'working',
+    (s) => s.state === SessionState.WORKING,
   );
   if (sessions.length === 0) {
     send('<pre>No sessions currently working.</pre>', HTML);

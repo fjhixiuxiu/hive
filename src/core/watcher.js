@@ -2,6 +2,7 @@ const EventEmitter = require('events');
 const fleet = require('./fleet');
 const tmux = require('./tmux');
 const log = require('./log');
+const { SessionState } = require('./vocab');
 
 // Lines that look like Claude presenting choices to the user
 const OPTION_PATTERN = /^[-\u2013\u2022]\s+.{5,}/;
@@ -345,7 +346,7 @@ class Watcher extends EventEmitter {
       // After restart, Claude doesn't auto-resume work, so sessions with
       // dispatched tasks are just sitting idle. They need a real working→idle
       // cycle before completion fires.
-      if (s.state === 'idle') this.notifiedIdle.add(s.num);
+      if (s.state === SessionState.IDLE) this.notifiedIdle.add(s.num);
       if (s.pr) this.prevCI.set(s.num, s.pr.ciResult);
       if (s.branch) this.prevBranch.set(s.num, s.branch);
     }
@@ -400,7 +401,7 @@ class Watcher extends EventEmitter {
       // Track sessions that have been observed working at least once.
       // Require 2 consecutive working polls to avoid false positives from
       // momentary state detection glitches.
-      if (currState === 'working') {
+      if (currState === SessionState.WORKING) {
         const wc = (this._pendingWorking.get(s.num) || 0) + 1;
         if (wc >= 2) {
           this.seenWorking.add(s.num);
@@ -436,7 +437,11 @@ class Watcher extends EventEmitter {
       // to avoid false positives from brief idle flickers between tool calls.
       // Also skip if session is waiting for user answer (approval or question).
       // Only notify for sessions that have been seen working at least once.
-      if (currState === 'idle' && !this.notifiedIdle.has(s.num) && this.seenWorking.has(s.num)) {
+      if (
+        currState === SessionState.IDLE &&
+        !this.notifiedIdle.has(s.num) &&
+        this.seenWorking.has(s.num)
+      ) {
         if (this.detectedWaiting.has(s.num)) {
           // Session is waiting for user answer — do NOT count toward idle
           this.pendingIdle.delete(s.num);
@@ -488,13 +493,13 @@ class Watcher extends EventEmitter {
       }
 
       // Clear pending/notified flags when session leaves idle
-      if (currState !== 'idle') {
+      if (currState !== SessionState.IDLE) {
         this.notifiedIdle.delete(s.num);
         this.pendingIdle.delete(s.num);
       }
 
       // State transition: idle/off -> working
-      if (prevState !== 'working' && currState === 'working') {
+      if (prevState !== SessionState.WORKING && currState === SessionState.WORKING) {
         this.sessionActivity.set(s.num, Date.now());
         this.emit('session:working', { session: s, name: s.name, num: s.num });
       }
@@ -551,7 +556,7 @@ class Watcher extends EventEmitter {
       // Clear waiting flag when session starts working. (The error-retry budget is
       // cleared only on *confirmed* working above, so a brief retry-induced flicker
       // doesn't reset the exponential backoff.)
-      if (currState === 'working' && prevState !== 'working') {
+      if (currState === SessionState.WORKING && prevState !== SessionState.WORKING) {
         this.detectedWaiting.delete(s.num);
       }
     }
@@ -737,7 +742,7 @@ class Watcher extends EventEmitter {
     for (const s of sessions) {
       if (this.detectedWaiting.has(s.num)) continue;
       // Only check working sessions — idle sessions are at the prompt, not asking questions
-      if (s.state !== 'working') continue;
+      if (s.state !== SessionState.WORKING) continue;
 
       const node = this.router.nodeFor(s.name);
       if (!node) continue;

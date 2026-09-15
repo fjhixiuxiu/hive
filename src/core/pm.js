@@ -6,7 +6,7 @@ const cron = require('node-cron');
 const log = require('./log');
 const sessionManager = require('./session-manager');
 const pmSources = require('./pm-sources');
-const { TaskStatus, isActiveTaskStatus, transitionTask } = require('./vocab');
+const { SessionState, TaskStatus, isActiveTaskStatus, transitionTask } = require('./vocab');
 
 const KB_FILE = path.join(process.cwd(), '.hive-knowledge.json');
 
@@ -769,7 +769,7 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
     const sessions = await fleet.getFleetStatus(this.taskQueue.config, this.taskQueue.router);
     const idle = sessions.find(
       (s) =>
-        s.state === 'idle' &&
+        s.state === SessionState.IDLE &&
         this.taskQueue.autoSessions.has(s.num) &&
         !this.taskQueue.dispatchLock.has(s.num) &&
         !this.taskQueue.activeTaskBySession.has(s.num) &&
@@ -1111,7 +1111,9 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
 
     // Get fleet status once for all tasks
     const sessions = await fleet.getFleetStatus(this.taskQueue.config, this.taskQueue.router);
-    const idleSet = new Set(sessions.filter((s) => s.state === 'idle').map((s) => s.num));
+    const idleSet = new Set(
+      sessions.filter((s) => s.state === SessionState.IDLE).map((s) => s.num),
+    );
 
     for (const task of activeTasks) {
       // Only nudge idle sessions — don't interrupt active work

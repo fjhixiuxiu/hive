@@ -13,7 +13,7 @@ const log = require('../../core/log');
 const prStatus = require('../../core/pr-status');
 const plansStore = require('../../core/plans-store');
 const sessionLinks = require('../../core/session-links');
-const { TaskStatus, isActiveTaskStatus } = require('../../core/vocab');
+const { SessionState, TaskStatus, isActiveTaskStatus } = require('../../core/vocab');
 const {
   HIVE_CONSOLE_SESSION,
   ghExecEnv,
@@ -558,7 +558,7 @@ function createMessageHandler(deps) {
         // Check if Claude is actually running — if off, just start it
         const content = await node.capturePane(paneTarget, { lines: 3 });
         const currentState = tmux.detectState(content, config);
-        if (currentState === 'off') {
+        if (currentState === SessionState.OFF) {
           await node.exec(`tmux send-keys -t "${paneTarget}" -l 'claude --continue'`);
           await node.exec(`tmux send-keys -t "${paneTarget}" Enter`);
           fleet.invalidateCache();
@@ -1045,7 +1045,7 @@ function createMessageHandler(deps) {
                   taskText: t.text,
                   status: t.status,
                   assignedTo: t.assignedTo,
-                  isWorking: s ? s.state === 'working' : false,
+                  isWorking: s ? s.state === SessionState.WORKING : false,
                   reason: 'pr',
                   prs: prResults,
                 });
@@ -1067,7 +1067,7 @@ function createMessageHandler(deps) {
                 taskText: t.text,
                 status: t.status,
                 assignedTo: t.assignedTo,
-                isWorking: s ? s.state === 'working' : false,
+                isWorking: s ? s.state === SessionState.WORKING : false,
                 reason: 'slack-inactive',
                 inactiveDays: inactiveFor,
                 prs: [],
@@ -1088,7 +1088,7 @@ function createMessageHandler(deps) {
                 taskText: t.text,
                 status: t.status,
                 assignedTo: t.assignedTo,
-                isWorking: s ? s.state === 'working' : false,
+                isWorking: s ? s.state === SessionState.WORKING : false,
                 reason: 'inactive',
                 inactiveDays: inactiveFor,
                 prs: [],
@@ -1242,11 +1242,11 @@ function createMessageHandler(deps) {
         if (msg.sessions && msg.sessions.length) {
           targets = sessions.filter((s) => msg.sessions.includes(s.num));
         } else if (msg.target === 'idle') {
-          targets = sessions.filter((s) => s.state === 'idle');
+          targets = sessions.filter((s) => s.state === SessionState.IDLE);
         } else if (msg.target === 'working') {
-          targets = sessions.filter((s) => s.state === 'working');
+          targets = sessions.filter((s) => s.state === SessionState.WORKING);
         } else {
-          targets = sessions.filter((s) => s.state !== 'off');
+          targets = sessions.filter((s) => s.state !== SessionState.OFF);
         }
         let sent = 0,
           failed = 0;
