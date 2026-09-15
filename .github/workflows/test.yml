@@ -1,0 +1,44 @@
+name: test
+
+# hive had no CI. The only gate was .githooks/pre-commit, which runs `npm test`
+# locally — but it only exists for people who have run `npm run prepare`, and
+# `--no-verify` skips it (which resolving a merge conflict routinely requires).
+# So the suite, including every guard test that exists to stop the codebase
+# drifting, was advisory. This makes it a gate.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# A new push supersedes the run in flight for the same ref; no reason to pay for
+# results nobody will read.
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 18 is what the fleet develops on; 20 is what cloud/scripts/init.sh
+        # installs on the EC2 host. Testing both is how we find out when those
+        # two stop agreeing, rather than finding out on deploy.
+        node: ['18', '20']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm test
