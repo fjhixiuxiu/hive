@@ -132,7 +132,11 @@ describe('state cache invalidation', () => {
       node.capturePane = vi.fn().mockResolvedValue(workingPane);
       node.fileExists = vi.fn().mockResolvedValue(false);
       node.readFile = vi.fn(async (f) => {
-        try { return fs.readFileSync(f, 'utf8'); } catch { return null; }
+        try {
+          return fs.readFileSync(f, 'utf8');
+        } catch {
+          return null;
+        }
       });
 
       const session = await fleet.getSession(config, node, '2-branch', 'local');
@@ -152,12 +156,16 @@ describe('state cache invalidation', () => {
       node.capturePane = vi.fn().mockResolvedValue(workingPane);
       node.fileExists = vi.fn().mockResolvedValue(false);
       node.readFile = vi.fn(async (f) => {
-        try { return fs.readFileSync(f, 'utf8'); } catch { return null; }
+        try {
+          return fs.readFileSync(f, 'utf8');
+        } catch {
+          return null;
+        }
       });
 
       const session = await fleet.getSession(config, node, '2-branch', 'local');
 
-      expect(session.state).toBe('idle');       // despite a working pane
+      expect(session.state).toBe('idle'); // despite a working pane
       expect(node.capturePane).not.toHaveBeenCalled();
     });
   });

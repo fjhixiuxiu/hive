@@ -37,7 +37,9 @@ function liftGrowAndRefit(getComputedStyle, document, requestAnimationFrame) {
   const m = source.match(/function growAndRefit\(el, paneId, refit\) \{[\s\S]*?\n {2}\}/);
   if (!m) throw new Error('could not find growAndRefit in app.js');
   return new Function(
-    'getComputedStyle', 'document', 'requestAnimationFrame',
+    'getComputedStyle',
+    'document',
+    'requestAnimationFrame',
     `${autoGrowSource()}\n${m[0]}\nreturn growAndRefit;`,
   )(getComputedStyle, document, requestAnimationFrame);
 }
@@ -70,7 +72,9 @@ function makeTextarea({ maxHeight, lineHeight = 20 }) {
   });
   Object.defineProperty(el, 'scrollTop', {
     get: () => Math.min(el._scrollTop, maxScroll()),
-    set: (v) => { el._scrollTop = Math.max(0, Math.min(v, maxScroll())); },
+    set: (v) => {
+      el._scrollTop = Math.max(0, Math.min(v, maxScroll()));
+    },
   });
   el.maxScroll = maxScroll;
   // The caret line is visible when it sits inside the scrolled window.
@@ -175,7 +179,11 @@ describe('composer auto-grow', () => {
 describe('composer auto-grow refits the pane above it', () => {
   // The flex column in one line: whatever the composer takes, the pane loses.
   function makePane(el, total) {
-    return { get clientHeight() { return total - el.clientHeight; } };
+    return {
+      get clientHeight() {
+        return total - el.clientHeight;
+      },
+    };
   }
 
   function harness({ maxHeight = 400, total = 800, paneId = 'terminal-wrap' } = {}) {
@@ -188,16 +196,28 @@ describe('composer auto-grow refits the pane above it', () => {
     const growAndRefit = liftGrowAndRefit(
       computedStyle,
       { getElementById: (id) => (id === paneId ? pane : null) },
-      (cb) => { frames.push(cb); },          // held, not run: rAF is not synchronous
+      (cb) => {
+        frames.push(cb);
+      }, // held, not run: rAF is not synchronous
     );
-    return { el, pane, frames, growAndRefit, runFrames: () => { frames.splice(0).forEach((cb) => cb()); } };
+    return {
+      el,
+      pane,
+      frames,
+      growAndRefit,
+      runFrames: () => {
+        frames.splice(0).forEach((cb) => cb());
+      },
+    };
   }
 
   it('refits the pane the composer just took height from', () => {
     const h = harness();
     let refits = 0;
     h.el.typeAtEnd(lines(40));
-    h.growAndRefit(h.el, 'terminal-wrap', () => { refits++; });
+    h.growAndRefit(h.el, 'terminal-wrap', () => {
+      refits++;
+    });
     h.runFrames();
     expect(refits, 'the pane shrank and was never told').toBe(1);
   });
@@ -211,7 +231,9 @@ describe('composer auto-grow refits the pane above it', () => {
     h.runFrames();
     let refits = 0;
     h.el.typeAtEnd('x');
-    h.growAndRefit(h.el, 'terminal-wrap', () => { refits++; });
+    h.growAndRefit(h.el, 'terminal-wrap', () => {
+      refits++;
+    });
     h.runFrames();
     expect(refits).toBe(0);
   });
@@ -225,7 +247,9 @@ describe('composer auto-grow refits the pane above it', () => {
     let refits = 0;
     h.el.value = '';
     h.el.selectionStart = h.el.selectionEnd = 0;
-    h.growAndRefit(h.el, 'terminal-wrap', () => { refits++; });
+    h.growAndRefit(h.el, 'terminal-wrap', () => {
+      refits++;
+    });
     h.runFrames();
     expect(refits).toBe(1);
   });
@@ -235,7 +259,9 @@ describe('composer auto-grow refits the pane above it', () => {
     const h = harness();
     let refits = 0;
     h.el.typeAtEnd(lines(40));
-    h.growAndRefit(h.el, 'no-such-pane', () => { refits++; });
+    h.growAndRefit(h.el, 'no-such-pane', () => {
+      refits++;
+    });
     h.runFrames();
     expect(refits).toBe(0);
     expect(h.el.style.height).toBe('400px');
@@ -248,8 +274,10 @@ describe('composer auto-grow refits the pane above it', () => {
     const h = harness();
     h.el.typeAtEnd(lines(40));
     let paneAtRefit = null;
-    h.growAndRefit(h.el, 'terminal-wrap', () => { paneAtRefit = h.pane.clientHeight; });
+    h.growAndRefit(h.el, 'terminal-wrap', () => {
+      paneAtRefit = h.pane.clientHeight;
+    });
     h.runFrames();
-    expect(paneAtRefit).toBe(400);   // 800 total - the 400px cap
+    expect(paneAtRefit).toBe(400); // 800 total - the 400px cap
   });
 });
