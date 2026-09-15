@@ -1742,6 +1742,17 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   border-radius: 6px; margin-bottom: 6px;
 }
 .desig-def-row .desig-def-name { font-weight: 700; min-width: 80px; }
+/* Session cap: live count over the cap, so the badge reads as pressure rather
+   than as configuration. Turns orange only when the lane is full — the state
+   in which hive has stopped auto-spawning for it. */
+.desig-def-row .desig-def-cap {
+  font-size: var(--fs-sm); font-weight: 600; font-family: monospace;
+  color: var(--dim); background: var(--bg3); border: 1px solid transparent;
+  padding: 1px 7px; border-radius: 10px; white-space: nowrap; flex-shrink: 0;
+}
+.desig-def-row .desig-def-cap.full { color: var(--orange); border-color: var(--orange); }
+/* A cap of 0 is a policy rather than a count, so it reads as words, not digits. */
+.desig-def-row .desig-def-cap.none { font-family: inherit; color: var(--orange); border-color: var(--orange); }
 /* ── Fleet group headers ── */
 .fleet-group-header { font-size: var(--fs-sm); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; padding: 12px 4px 4px; grid-column: 1 / -1; }
 /* ── Fleet toolbar ── */

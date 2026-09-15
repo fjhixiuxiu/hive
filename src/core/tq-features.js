@@ -155,14 +155,26 @@ function getDesignationDefs() {
   return Array.from(this.designationDefs.values());
 }
 
-function setDesignationDef(name, { agentFiles, description, color }) {
+function setDesignationDef(name, { agentFiles, description, color, sessionCap }) {
   if (!name) return null;
+  // This rebuilds the def from scratch, so every field a caller omits is lost.
+  // sessionCap is the one field an operator sets that an agent never sends —
+  // the PM export tells sessions to call designationDef:set with name,
+  // description, colour and agentFiles — so carry it over when it is absent
+  // rather than letting a routine update silently uncap the lane. Pass null to
+  // clear it deliberately.
+  const existing = this.designationDefs.get(name);
+  const cap = sessionCap === undefined ? existing && existing.sessionCap : sessionCap;
   const def = {
     name,
     agentFiles: Array.isArray(agentFiles) ? agentFiles : [],
     description: description || '',
     color: color || 'orange',
   };
+  // Only a usable cap is stored, so a def never carries a value that compares
+  // false against every count and looks configured while capping nothing.
+  const n = parseInt(cap);
+  if (!isNaN(n) && n >= 0) def.sessionCap = n;
   this.designationDefs.set(name, def);
   this._saveState();
   this.emit('designationDefs:changed', this.getDesignationDefs());

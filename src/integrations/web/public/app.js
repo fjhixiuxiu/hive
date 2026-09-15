@@ -9988,8 +9988,19 @@
       const row = document.createElement('div'); row.className = 'desig-def-row';
       const fileCount = def.agentFiles ? def.agentFiles.length : 0;
       const ddc = DESIG_COLORS[def.color] || (def.color && def.color.startsWith('#') ? { fg: def.color, bg: def.color + '26' } : DESIG_COLORS.orange);
+      // Live pressure rather than the configured number alone: the count is
+      // what says whether the lane is about to stop auto-spawning. Counted the
+      // same way the server counts — every session carrying the designation,
+      // whoever started it. The badge decision lives in designation-cap.js so
+      // it can be tested; null means show nothing, which is what an uncapped
+      // designation gets.
+      const live = fleetData.filter(s => designations[s.num] === def.name).length;
+      const cap = designationCapBadge(def.sessionCap, live);
+      const capBadge = cap
+        ? `<span class="desig-def-cap${cap.policy ? ' none' : ''}${cap.full ? ' full' : ''}" title="${esc(cap.title)}">${esc(cap.text)}</span>`
+        : '';
       row.innerHTML = `
-        <span class="desig-def-name" style="color:${ddc.fg}">${esc(def.name)}</span>
+        <span class="desig-def-name" style="color:${ddc.fg}">${esc(def.name)}</span>${capBadge}
         <span class="desig-def-files">${fileCount} agent file${fileCount !== 1 ? 's' : ''}${def.description ? ' — ' + esc(def.description) : ''}</span>
         <span class="desig-def-actions">
           <button class="edit-def">Edit</button>
@@ -10012,6 +10023,37 @@
   document.getElementById('desig-def-cancel').addEventListener('click', closeDesigDefDialog);
   document.getElementById('desig-def-dialog').addEventListener('click', (e) => { if (e.target.id === 'desig-def-dialog') closeDesigDefDialog(); });
 
+  // The picker's labels already distinguish "No limit" from "Never
+  // auto-spawn"; the hint restates the consequence of the current choice, which
+  // is what people actually read before pressing Save. The error tone is
+  // unreachable from the picker and kept only so the mapping is total.
+  const CAP_HINT_TONES = { dim: 'var(--dim)', warn: 'var(--orange)', error: 'var(--red)' };
+
+  function renderDesigDefCapHint() {
+    const hint = document.getElementById('desig-def-session-cap-hint');
+    if (!hint) return;
+    const { text, tone } = designationCapHint(document.getElementById('desig-def-session-cap').value);
+    hint.style.color = CAP_HINT_TONES[tone] || CAP_HINT_TONES.dim;
+    hint.textContent = text;
+  }
+
+  document.getElementById('desig-def-session-cap').addEventListener('change', renderDesigDefCapHint);
+
+  // Rebuilt per open: spawnSlotMax can change between dialogs, and the saved
+  // cap has to be offered even when it sits outside the current range.
+  function renderDesigDefCapOptions(current) {
+    const sel = document.getElementById('desig-def-session-cap');
+    if (!sel) return;
+    sel.innerHTML = '';
+    for (const { value, label } of designationCapOptions(spawnSlotMax, current)) {
+      const opt = document.createElement('option');
+      opt.value = value;
+      opt.textContent = label;
+      sel.appendChild(opt);
+    }
+    sel.value = Number.isInteger(current) ? String(current) : '';
+  }
+
   function openDesigDefDialog(def) {
     editingDesigDef = def;
     const nameInput = document.getElementById('desig-def-name');
@@ -10023,6 +10065,9 @@
       nameInput.value = def.name;
       nameInput.disabled = false;
       descInput.value = def.description || '';
+      // Must round-trip: the dialog always sends this field, so a value that
+      // failed to load here would be saved back as "no cap".
+      renderDesigDefCapOptions(def.sessionCap);
       desigDefSelectedFiles = [...(def.agentFiles || [])];
       desigDefSelectedColor = def.color || 'orange';
     } else {
@@ -10030,9 +10075,11 @@
       nameInput.value = '';
       nameInput.disabled = false;
       descInput.value = '';
+      renderDesigDefCapOptions(null);
       desigDefSelectedFiles = [];
       desigDefSelectedColor = 'orange';
     }
+    renderDesigDefCapHint();
     renderDesigDefColorSwatches();
     renderDesigDefChips();
     renderDesigDefFilePicker();
@@ -10126,8 +10173,14 @@
     const name = document.getElementById('desig-def-name').value.trim();
     if (!name) { showToast('Error', 'Name required', 'error'); return; }
     const description = document.getElementById('desig-def-description').value.trim();
+    // "No limit" travels as null rather than being omitted: the server
+    // preserves an ABSENT sessionCap so an agent's routine def update cannot
+    // uncap a lane, which would otherwise make the setting impossible to clear.
+    // No validation needed — the picker cannot produce a value that needs it.
+    const capRaw = document.getElementById('desig-def-session-cap').value;
+    const sessionCap = capRaw === '' ? null : parseInt(capRaw, 10);
     if (ws && ws.readyState === 1) {
-      const payload = { type: 'designationDef:update', name, agentFiles: desigDefSelectedFiles, description, color: desigDefSelectedColor };
+      const payload = { type: 'designationDef:update', name, agentFiles: desigDefSelectedFiles, description, color: desigDefSelectedColor, sessionCap };
       if (editingDesigDef && editingDesigDef.name !== name) {
         payload.oldName = editingDesigDef.name;
       }

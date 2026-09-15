@@ -1314,6 +1314,7 @@ function createMessageHandler(deps) {
           agentFiles: msg.agentFiles,
           description: msg.description,
           color: msg.color,
+          sessionCap: msg.sessionCap,
         });
         break;
       }
@@ -1337,6 +1338,7 @@ function createMessageHandler(deps) {
           agentFiles: msg.agentFiles,
           description: msg.description,
           color: msg.color,
+          sessionCap: msg.sessionCap,
         });
         break;
       }

@@ -1582,6 +1582,11 @@
         <option value="">+ Add agent file...</option>
       </select>
     </div>
+    <div class="task-dialog-field">
+      <label class="task-dialog-label">Session cap <span style="color:var(--dim);font-weight:400">(optional)</span></label>
+      <select class="task-dialog-select" id="desig-def-session-cap" style="width:100%"></select>
+      <span id="desig-def-session-cap-hint" style="font-size:11px;color:var(--dim);margin-top:4px;display:block"></span>
+    </div>
     <div class="dialog-actions">
       <button class="dialog-btn primary" id="desig-def-save">Save</button>
       <button class="dialog-btn" id="desig-def-cancel">Cancel</button>
@@ -1901,6 +1906,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-web-links@0.11.0/lib/addon-web-links.min.js"></script>
 <script src="/primary-action.js?v={{V}}"></script>
 <script src="/plan-sanitize.js?v={{V}}"></script>
+<script src="/designation-cap.js?v={{V}}"></script>
 <script src="/session-links.js?v={{V}}"></script>
 <script src="/app.js?v={{V}}"></script>
 </body>

@@ -87,9 +87,13 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     try {
       // Hash every asset that index.html cache-busts with ?v={{V}} so editing
       // any one of them changes the version.
-      const publicAssets = ['app.js', 'styles.css', 'primary-action.js', 'plan-sanitize.js'].map(
-        (f) => fs.statSync(path.join(PUBLIC_DIR, f)).mtimeMs,
-      );
+      const publicAssets = [
+        'app.js',
+        'styles.css',
+        'primary-action.js',
+        'plan-sanitize.js',
+        'designation-cap.js',
+      ].map((f) => fs.statSync(path.join(PUBLIC_DIR, f)).mtimeMs);
       publicAssets.push(fs.statSync(SESSION_LINKS_JS).mtimeMs);
       return String(Math.floor(publicAssets.reduce((a, b) => a + b, 0)));
     } catch {

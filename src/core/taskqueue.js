@@ -1106,6 +1106,32 @@ class TaskQueue extends EventEmitter {
         );
         if (hasIdle || hasBooting) continue;
 
+        // A designation cap is a ceiling on what hive spawns for itself, not on
+        // how many sessions of a kind may exist. Sessions added by hand count
+        // toward it — the lane really is that full — but nothing here blocks
+        // anyone from adding them, and no other path reads the cap.
+        //
+        // It lives on the designation's own definition rather than in a map
+        // keyed by name: renameDesignationDef carries the def object across and
+        // removeDesignationDef deletes it, so the cap follows a rename and dies
+        // with the designation. A second name-keyed store is the one neither
+        // function would have updated.
+        //
+        // Undesignated work is uncapped: "no designation" is not a lane.
+        if (desig) {
+          const def = this.designationDefs.get(desig);
+          const desigCap = def && def.sessionCap;
+          if (Number.isInteger(desigCap)) {
+            const live = this._countDesignationSessions(sessions, desig);
+            if (live >= desigCap) {
+              log.info(
+                `[auto-dispatch] Designation "${desig}" at session cap (${live}/${desigCap}) — not spawning for ${tasks.length} queued task(s)`,
+              );
+              continue;
+            }
+          }
+        }
+
         try {
           const slots = await this.getAvailableSlots();
           if (slots.length === 0) {
@@ -1199,6 +1225,13 @@ class TaskQueue extends EventEmitter {
       const dir = this.getRepoDir(s.num) || this.config.sessions.repoDir(s.num);
       return TaskQueue.repoBaseName(dir) === repoName;
     }).length;
+  }
+
+  // Count live sessions carrying a designation. Manual sessions count: the cap
+  // describes how many sessions of this kind should exist, and it is only ever
+  // enforced against hive's own spawning.
+  _countDesignationSessions(sessions, desig) {
+    return sessions.filter((s) => this.designations.get(s.num) === desig).length;
   }
 
   // Get/set repo session caps
@@ -1683,7 +1716,15 @@ class TaskQueue extends EventEmitter {
       }
       if (Array.isArray(data.designationDefs)) {
         for (const def of data.designationDefs) {
-          if (def.name) this.designationDefs.set(def.name, def);
+          if (!def.name) continue;
+          // Same rule the write path applies. State gets hand-edited, and a cap
+          // written as "5" would load as a string: Number.isInteger is false for
+          // it, so the cap would enforce nothing and show no badge, silently.
+          // Validating only on write leaves that hole open on every restart.
+          const n = parseInt(def.sessionCap);
+          if (!isNaN(n) && n >= 0) def.sessionCap = n;
+          else delete def.sessionCap;
+          this.designationDefs.set(def.name, def);
         }
       }
       if (Array.isArray(data.agentRoots)) {
