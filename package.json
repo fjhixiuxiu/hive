@@ -12,7 +12,8 @@
     "dev": "node --watch src/index.js",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "pretest": "npm run format:check",
+    "lint": "eslint .",
+    "pretest": "npm run format:check && npm run lint",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
@@ -48,6 +49,7 @@
   },
   "devDependencies": {
     "@vitest/coverage-v8": "^1.6.1",
+    "eslint": "^9.39.5",
     "jsdom": "^26.1.0",
     "prettier": "^3.9.6",
     "vitest": "^1.6.1"

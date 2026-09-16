@@ -427,6 +427,10 @@ async function getCheckDetails(owner, repo, sha, token) {
     if (checksRes.status === 200 && checksRes.data && Array.isArray(checksRes.data.check_runs)) {
       for (const c of checksRes.data.check_runs) {
         let state;
+        // 'completed' here is GitHub's check-run status, not hive's task
+        // status. Different vocabulary, same word — it must not be folded into
+        // TaskStatus, so the rule is suppressed rather than satisfied.
+        // eslint-disable-next-line no-restricted-syntax -- GitHub check-run status
         if (c.status === 'completed') state = normaliseState(c.conclusion);
         else state = 'pending'; // queued or in_progress
         let durationMs = null;

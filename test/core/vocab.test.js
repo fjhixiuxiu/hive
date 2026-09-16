@@ -250,9 +250,13 @@ describe('task vocabulary', () => {
     });
   });
 
-  // The drift guard. Constants only help while people use them, and the way
-  // this decays is one more `=== 'queued'` at a time.
-  describe('server modules use the vocabulary, not bare literals', () => {
+  // Bare-literal comparisons are caught by the lint rule in eslint.config.js,
+  // not here. That matters: this used to be a hand-maintained list of files to
+  // scan, which goes stale the moment somebody adds a module — the new file is
+  // unguarded and nothing says so. The lint rule has no list.
+  //
+  // What stays here is what a selector cannot express.
+  describe('the codebase uses the vocabulary', () => {
     const GUARDED = [
       'src/core/taskqueue.js',
       'src/core/pm.js',
@@ -263,18 +267,8 @@ describe('task vocabulary', () => {
       'src/integrations/voice/standup.js',
       'src/integrations/web/ws-handlers.js',
     ];
-    // Every word hive has ever compared a task status against, including the
-    // two that were never real: 'done' (mcp:complete_task) and 'in-progress'
-    // (a Nectar status, checked against hive tasks in the PM).
-    const LITERALS = [...TASK_STATUSES, 'done', 'in-progress'];
-    const pattern = new RegExp(`\\.status\\s*[!=]==\\s*'(${LITERALS.join('|')})'`, 'g');
 
     for (const file of GUARDED) {
-      it(`${file} compares against constants`, () => {
-        const hits = [...codeOnly(file).matchAll(pattern)].map((m) => m[0]);
-        expect(hits).toEqual([]);
-      });
-
       it(`${file} never assigns task.status directly`, () => {
         // vocab.transitionTask owns the only assignment in the codebase.
         const hits = [...read(file).matchAll(/^.*\btask\.status\s*=\s*(?!==).*$/gm)].map((m) =>
@@ -284,8 +278,6 @@ describe('task vocabulary', () => {
       });
     }
 
-    // The same guard for session state. 'waiting' is in the list because two
-    // call sites compared against it and nothing has ever produced it.
     const STATE_GUARDED = [
       'src/core/tmux.js',
       'src/core/pm.js',
@@ -297,20 +289,6 @@ describe('task vocabulary', () => {
       'src/integrations/voice/standup.js',
       'src/integrations/voice/index.js',
     ];
-    const statePattern = new RegExp(
-      `\\b(?:\\w+\\.)?(?:state|currState|currentState|prevState)\\s*[!=]==\\s*'(?:${[
-        ...SESSION_STATES,
-        'waiting',
-      ].join('|')})'`,
-      'g',
-    );
-
-    for (const file of STATE_GUARDED) {
-      it(`${file} compares session state against constants`, () => {
-        const hits = [...codeOnly(file).matchAll(statePattern)].map((m) => m[0]);
-        expect(hits).toEqual([]);
-      });
-    }
 
     // A `switch (state)` dispatches on the vocabulary exactly as `===` does, but
     // its case labels are a different syntactic shape and the comparison guard
@@ -358,6 +336,125 @@ describe('task vocabulary', () => {
       const assignments = [...read('src/core/vocab.js').matchAll(/\btask\.status\s*=\s*(?!==)/g)];
       expect(assignments).toHaveLength(1);
       expect(read('src/core/vocab.js')).toContain('assertTaskStatus(next,');
+    });
+  });
+
+  // The lint rule hardcodes the words it bans, because an ESLint selector is a
+  // string and cannot import an enum. That is a second statement of the
+  // vocabulary — exactly the thing this whole effort exists to catch — so it is
+  // checked against the first.
+  describe('the lint rule bans exactly the vocabulary', () => {
+    const config = require('../../eslint.config.js');
+    const block = config.find((c) => c.rules && c.rules['no-restricted-syntax']);
+    const entries = block.rules['no-restricted-syntax'].slice(1);
+
+    // Both selector shapes carry a word list: `Literal[value=…]` for comparisons,
+    // and `SwitchCase[test.value=…]` for case labels. Parsing only the first would
+    // leave the switch selectors outside this parity check — a statement of the
+    // vocabulary this test exists to catch, invisible to it.
+    const WORD_LIST = /(?:Literal\[value|SwitchCase\[test\.value)=\/\^\(([^)]+)\)\$\/\]/;
+    const bannedWords = new Set();
+    for (const entry of entries) {
+      const m = entry.selector.match(WORD_LIST);
+      if (m) for (const w of m[1].split('|')) bannedWords.add(w);
+    }
+
+    it('has a parseable set of restricted selectors', () => {
+      expect(entries.length).toBeGreaterThan(0);
+      expect(bannedWords.size).toBeGreaterThan(0);
+    });
+
+    it('parses a word list out of every selector, switch cases included', () => {
+      // A selector the parser cannot read is one whose words escape the parity
+      // checks below entirely.
+      const unparsed = entries.filter((e) => !WORD_LIST.test(e.selector)).map((e) => e.selector);
+      expect(unparsed).toEqual([]);
+      expect(entries.some((e) => e.selector.includes('SwitchCase'))).toBe(true);
+    });
+
+    it('bans every task status', () => {
+      const missing = TASK_STATUSES.filter((s) => !bannedWords.has(s));
+      expect(missing).toEqual([]);
+    });
+
+    it('bans every session state', () => {
+      const missing = SESSION_STATES.filter((s) => !bannedWords.has(s));
+      expect(missing).toEqual([]);
+    });
+
+    it('bans the words that were never produced, so they cannot return', () => {
+      for (const dead of ['done', 'in-progress', 'waiting']) {
+        expect(bannedWords.has(dead), dead).toBe(true);
+        // And they are still not vocabulary.
+        expect(isTaskStatus(dead) || isSessionState(dead)).toBe(false);
+      }
+    });
+
+    it('bans nothing that is not one of those', () => {
+      const known = new Set([
+        ...TASK_STATUSES,
+        ...SESSION_STATES,
+        'done',
+        'in-progress',
+        'waiting',
+      ]);
+      const extra = [...bannedWords].filter((w) => !known.has(w));
+      expect(extra).toEqual([]);
+    });
+  });
+
+  // The parity checks above prove the config names the right WORDS. They cannot
+  // prove the selectors match the right SYNTAX — a selector with a perfect word
+  // list and a wrong node type bans nothing. So these run the real linter over
+  // planted code. Review flagged `switch` case labels as uncaught by the
+  // BinaryExpression-only rule; the shape then shipped in telegram/commands.js.
+  describe('the lint rule catches case labels, not just comparisons', () => {
+    const { ESLint } = require('eslint');
+    // Lint as a non-test file: the config turns the rule off under test/**.
+    const lint = async (code) => {
+      const eslint = new ESLint({ cwd: repoRoot });
+      const [result] = await eslint.lintText(code, { filePath: 'src/_vocab_probe.js' });
+      return result.messages.filter((m) => m.ruleId === 'no-restricted-syntax');
+    };
+
+    it('flags a switch on a session-state identifier — the shape that shipped', async () => {
+      const hits = await lint(`function t(state) { switch (state) { case 'idle': return 1; } }`);
+      expect(hits).toHaveLength(1);
+      expect(hits[0].message).toMatch(/Compare against the constant/);
+    });
+
+    it('flags a switch on a .status property', async () => {
+      const hits = await lint(
+        `function t(task) { switch (task.status) { case 'queued': return 1; } }`,
+      );
+      expect(hits).toHaveLength(1);
+    });
+
+    it('gives a never-produced word its own message in a case label', async () => {
+      const hits = await lint(`function t(state) { switch (state) { case 'waiting': return 1; } }`);
+      expect(hits).toHaveLength(1);
+      expect(hits[0].message).toMatch(/never been produced/);
+    });
+
+    it('leaves a foreign vocabulary alone — pr.state is not a session state', async () => {
+      expect(
+        await lint(`function t(pr) { switch (pr.state) { case 'closed': return 1; } }`),
+      ).toEqual([]);
+    });
+
+    it('leaves an unrelated property alone even when the word matches', async () => {
+      expect(await lint(`function t(x) { switch (x.kind) { case 'queued': return 1; } }`)).toEqual(
+        [],
+      );
+    });
+
+    it('accepts the constant form', async () => {
+      expect(
+        await lint(
+          `const { SessionState } = require('./vocab');\n` +
+            `function t(state) { switch (state) { case SessionState.IDLE: return 1; } }`,
+        ),
+      ).toEqual([]);
     });
   });
 
