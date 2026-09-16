@@ -1057,16 +1057,21 @@ class TaskQueue extends EventEmitter {
         }
       }
 
-      // Auto-create session for queued tasks. Two paths qualify:
-      //  - The task's source PM has autoCreate enabled (the original #285 path).
-      //  - The global autoCreateForManualTasks setting is on AND the task has no
-      //    targetSession. Catches both dashboard-typed tasks (no PM) and PM
-      //    manual-triage tasks (source PM, but no autoCreate of its own) — both
-      //    cases would otherwise sit in the queue indefinitely.
+      // Auto-create session for queued tasks. Source-PM intent wins; the
+      // global toggle is only a fallback for tasks that have no source PM.
+      //
+      //  - PM with autoCreate=true → spawn (the original #285 path).
+      //  - PM with autoCreate=false → NEVER spawn, regardless of global toggle.
+      //    Those PMs are manual-review queues by design (e.g. "Human Reviews")
+      //    and the global toggle must not silently override the PM owner's
+      //    intent — that's how an EVV-targeted toggle ended up spinning up
+      //    five "Code Review" sessions for the Human Reviews backlog.
+      //  - No source PM (dashboard-typed, etc.) + no targetSession + global
+      //    toggle on → spawn. This is the catch-all path the toggle exists for.
       const autoCreateTasks = queuedTasks.filter((t) => {
         if (t.status !== TaskStatus.QUEUED) return false;
         const pm = this._getSourcePm(t);
-        if (pm && pm.autoCreate) return true;
+        if (pm) return !!pm.autoCreate;
         if (this.autoCreateForManualTasks && !t.targetSession) return true;
         return false;
       });
@@ -1092,6 +1097,15 @@ class TaskQueue extends EventEmitter {
         byDesigMode.get(key).tasks.push(t);
       }
 
+      // Track slots claimed *within this _tryAutoDispatch invocation*. Fleet
+      // state is queried fresh in getAvailableSlots(), but a session created
+      // milliseconds ago isn't yet visible to fleet — so a second iteration
+      // would re-pick the same slot, the second createSession would no-op
+      // (tmux tolerates duplicate -d -s), and `designations.set(num, desig)`
+      // would run twice with the LAST writer winning. That's the bug that
+      // tagged the EVV/dashboard spawns with "Code Review" — the Code Review
+      // iteration came second and clobbered the undesignated one's slot.
+      const claimedThisRound = new Set();
       for (const [, { desig, matchMode, tasks }] of byDesigMode) {
         // Check if there's already an idle or booting session for this designation.
         // In flexible mode, undesignated sessions count as potential hosts.
@@ -1161,7 +1175,17 @@ class TaskQueue extends EventEmitter {
             );
             continue;
           }
-          const num = usable[0];
+          // ...nor one an earlier task in this same round already claimed.
+          // getAvailableSlots() reads the fleet, which does not yet show a
+          // session we decided to create moments ago, so without this every
+          // task in the round targets the same slot.
+          const num = usable.find((s) => !claimedThisRound.has(s));
+          if (num == null) {
+            log.info(
+              `[auto-dispatch] every usable slot (${usable.slice(0, 5).join(', ')}) was already claimed this round — cannot spawn`,
+            );
+            continue;
+          }
           const repoDir = this.config.sessions.repoDir(num);
           const repoName = TaskQueue.repoBaseName(repoDir);
           const cap = this.repoSessionCaps.get(repoName);
@@ -1171,6 +1195,7 @@ class TaskQueue extends EventEmitter {
             );
             continue;
           }
+          claimedThisRound.add(num);
           const size = this.config.tmux?.defaultSize || { cols: 200, rows: 50 };
           const prefix = this.config.sessions?.namePrefix || '';
           const sessionName = `${prefix}${num}`;
