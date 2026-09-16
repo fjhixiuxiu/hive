@@ -566,6 +566,18 @@ class Watcher extends EventEmitter {
     for (const num of this.sessionActivity.keys()) {
       if (!currentNums.has(num)) this.sessionActivity.delete(num);
     }
+    // detectedWaiting needs the same sweep, and until this PR nobody could see
+    // that it lacked one. Its two existing exits both require the session to
+    // still BE there — it clears when a session starts working, or when a
+    // retryable error shows it is not really awaiting a human. A session that
+    // is waiting and then killed hits neither, so it sat in the set forever.
+    //
+    // That leak was invisible while the standup swallowed the set entirely.
+    // Now that it reports the real count, a stale entry becomes a session
+    // announced as blocked hours after it stopped existing.
+    for (const num of this.detectedWaiting) {
+      if (!currentNums.has(num)) this.detectedWaiting.delete(num);
+    }
 
     // Emit poll event with all session states for task completion checks
     this.emit('poll', sessions);

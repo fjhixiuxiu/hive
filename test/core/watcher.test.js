@@ -947,3 +947,67 @@ describe('Watcher', () => {
     });
   });
 });
+
+describe('Watcher — stale detectedWaiting cleanup', () => {
+  // detectedWaiting's two existing exits both require the session to still BE
+  // there: it clears when a session starts working, and when a retryable error
+  // shows it is not really awaiting a human. A session that is waiting and then
+  // killed hits neither, so it used to sit in the set forever.
+  //
+  // Invisible while the standup swallowed the set. #344 makes the standup report
+  // the real count, which turns the leak into a session announced as blocked
+  // hours after it stopped existing — so the sweep belongs with that change.
+  let watcher, router, fleetSpy;
+
+  beforeEach(() => {
+    fleetSpy = vi.spyOn(fleet, 'getFleetStatus').mockResolvedValue([]);
+    vi.spyOn(fleet, 'peekSession').mockResolvedValue('');
+    vi.spyOn(log, 'info').mockImplementation(() => {});
+    vi.spyOn(log, 'error').mockImplementation(() => {});
+    router = {
+      nodeFor: vi.fn().mockReturnValue(createMockNode()),
+      listAllSessions: vi.fn().mockResolvedValue([]),
+    };
+    watcher = new Watcher(createMockConfig({ watcher: { interval: 1000 } }), router);
+  });
+
+  afterEach(() => {
+    if (watcher) watcher.stop();
+    vi.restoreAllMocks();
+  });
+
+  const sess = (num, state = 'idle') => ({ num, name: `${num}-session`, state, pr: null });
+
+  it('drops a waiting session that has left the fleet, and keeps one that has not', async () => {
+    watcher.detectedWaiting.add(3);
+    watcher.detectedWaiting.add(7);
+    watcher.seenWorking.add(3);
+    watcher.seenWorking.add(7);
+
+    // Session 7 is gone; 3 is still here and still waiting.
+    fleetSpy.mockResolvedValue([sess(3)]);
+    await watcher._poll();
+
+    expect([...watcher.detectedWaiting].sort()).toEqual([3]);
+  });
+
+  it('leaves the set alone when every waiting session is still present', async () => {
+    watcher.detectedWaiting.add(3);
+    watcher.detectedWaiting.add(7);
+    watcher.seenWorking.add(3);
+    watcher.seenWorking.add(7);
+
+    fleetSpy.mockResolvedValue([sess(3), sess(7)]);
+    await watcher._poll();
+
+    expect([...watcher.detectedWaiting].sort()).toEqual([3, 7]);
+  });
+
+  it('empties the set when the whole fleet is gone', async () => {
+    watcher.detectedWaiting.add(3);
+    fleetSpy.mockResolvedValue([]);
+    await watcher._poll();
+
+    expect(watcher.detectedWaiting.size).toBe(0);
+  });
+});

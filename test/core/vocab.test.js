@@ -294,10 +294,8 @@ describe('task vocabulary', () => {
       'src/core/watcher.js',
       'src/integrations/web/ws-handlers.js',
       'src/integrations/telegram/commands.js',
-      // The voice integration is deliberately absent: it still compares against
-      // the state 'waiting', which nothing produces. That is a live bug with a
-      // behaviour change attached, so it is fixed in its own PR, and these two
-      // files join this list there.
+      'src/integrations/voice/standup.js',
+      'src/integrations/voice/index.js',
     ];
     const statePattern = new RegExp(
       `\\b(?:\\w+\\.)?(?:state|currState|currentState|prevState)\\s*[!=]==\\s*'(?:${[
@@ -331,6 +329,14 @@ describe('task vocabulary', () => {
         expect(hits).toEqual([]);
       });
     }
+    it('nothing reads watcher.lastState, which does not exist', () => {
+      // The watcher's map is prevStates. Reading lastState returned undefined
+      // forever, and optional chaining made it silent.
+      for (const file of STATE_GUARDED) {
+        expect(codeOnly(file), file).not.toContain('lastState');
+      }
+      expect(read('src/core/watcher.js')).toContain('this.prevStates');
+    });
 
     it('detectState returns constants, not literals', () => {
       const src = read('src/core/tmux.js');

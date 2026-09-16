@@ -327,12 +327,9 @@ class VoiceAgent extends EventEmitter {
       );
       const active = tasks.filter((t) => t.status === TaskStatus.DISPATCHED);
       const queued = tasks.filter((t) => t.status === TaskStatus.QUEUED);
-      let blocked = 0;
-      if (this.watcher?.lastState) {
-        for (const [, state] of this.watcher.lastState) {
-          if (state === 'waiting') blocked++;
-        }
-      }
+      // See standup.js: this read a map the watcher does not have, for a state
+      // nothing produces. detectedWaiting is where waiting sessions live.
+      const blocked = this.watcher?.detectedWaiting?.size ?? 0;
       fleetContext = `\n[Fleet: ${active.length} active, ${queued.length} queued, ${completed.length} completed today, ${blocked} blocked]`;
     }
 

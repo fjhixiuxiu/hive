@@ -28,16 +28,12 @@ class StandupReport {
 
     const queued = tasks.filter((t) => t.status === TaskStatus.QUEUED);
 
-    // Get blocked sessions
-    let blocked = [];
-    if (watcher && watcher.sessionActivity) {
-      for (const [num, activity] of watcher.sessionActivity) {
-        const state = watcher.lastState?.get(num);
-        if (state === 'waiting') {
-          blocked.push(num);
-        }
-      }
-    }
+    // Sessions waiting on a human. This read `watcher.lastState` — a map the
+    // watcher does not have, it is called prevStates — for the state 'waiting',
+    // which nothing produces: a session waiting on an approval is still `idle`
+    // to the detector. Two independent reasons it always reported none blocked.
+    // The watcher tracks these in detectedWaiting.
+    const blocked = watcher?.detectedWaiting ? [...watcher.detectedWaiting] : [];
 
     log.info(
       `[standup] Fleet: ${completed.length} completed, ${active.length} active, ${queued.length} queued, ${blocked.length} blocked`,
