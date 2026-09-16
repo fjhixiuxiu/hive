@@ -166,7 +166,9 @@ function createMessageHandler(deps) {
         const { name, nodeId } = found;
         const node = router.getNode(nodeId);
         const paneTarget = tmux.paneTarget(name, config.sessions.claudePane);
-        const { content: peekContent, cols: peekCols } = await capturePaneAnsi(node, paneTarget);
+        const { content: peekContent, cols: peekCols } = await capturePaneAnsi(node, paneTarget, {
+          history: true,
+        });
         ws.send(
           JSON.stringify({
             type: 'terminal:data',
@@ -193,7 +195,9 @@ function createMessageHandler(deps) {
             if (!node) return;
             const paneTarget = tmux.paneTarget(s.name, config.sessions.claudePane);
             try {
-              const { content: searchContent } = await capturePaneAnsi(node, paneTarget);
+              const { content: searchContent } = await capturePaneAnsi(node, paneTarget, {
+                history: true,
+              });
               const plain = searchContent.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
               if (plain.toLowerCase().includes(queryLower)) {
                 // Extract matching lines for context
@@ -268,6 +272,14 @@ function createMessageHandler(deps) {
       case 'terminal:subscribe': {
         const isConsole = String(msg.session) === 'hive-console';
         const isCard = msg.card === true;
+        // Stop the previous subscription NOW, before the awaits below — not
+        // redundant with the clear after them, though it looks it. That later
+        // clear is what prevents a leaked poller; this one is about timing.
+        // Between here and the `set` sit `resolveSession` and `capturePaneAnsi`,
+        // and without this the old session's interval keeps firing through that
+        // whole window, painting session A's output into a client already showing
+        // session B. Deleting it passes every leak test and fails
+        // "stops the previous session polling as soon as a switch begins".
         if (isCard) {
           // Card terminals: keyed by session:pane, multiple per connection
         } else if (isConsole) {
@@ -290,8 +302,13 @@ function createMessageHandler(deps) {
             ? msg.pane
             : config.sessions.claudePane;
         const paneTarget = tmux.paneTarget(name, subPaneIdx);
-        // Send immediately
-        const { content: subContent, cols: subCols } = await capturePaneAnsi(node, paneTarget);
+        // First paint carries scrollback so the client has history to scroll
+        // back through; every poll after this one is visible-pane only.
+        const {
+          content: subContent,
+          cols: subCols,
+          rows: subRows,
+        } = await capturePaneAnsi(node, paneTarget, { history: true });
         ws.send(
           JSON.stringify({
             type: 'terminal:data',
@@ -299,11 +316,13 @@ function createMessageHandler(deps) {
             pane: subPaneIdx,
             content: subContent,
             cols: subCols,
+            rows: subRows,
+            full: true,
             card: isCard,
           }),
         );
         // Poll every 2s — only send when content actually changed
-        let lastSentContent = subContent;
+        let lastSentContent = null;
         let lastSentCols = subCols;
         const sub = {
           interval: null,
@@ -322,10 +341,11 @@ function createMessageHandler(deps) {
             return;
           }
           try {
-            const { content: pollContent, cols: pollCols } = await capturePaneAnsi(
-              node,
-              paneTarget,
-            );
+            const {
+              content: pollContent,
+              cols: pollCols,
+              rows: pollRows,
+            } = await capturePaneAnsi(node, paneTarget);
             if (sub.cancelled) return;
             if (pollContent === lastSentContent && pollCols === lastSentCols) return;
             lastSentContent = pollContent;
@@ -337,6 +357,7 @@ function createMessageHandler(deps) {
                 pane: subPaneIdx,
                 content: pollContent,
                 cols: pollCols,
+                rows: pollRows,
                 card: isCard,
               }),
             );
@@ -344,13 +365,22 @@ function createMessageHandler(deps) {
             // Node may have disconnected
           }
         }, 2000);
+        // Clear again, now that the awaits are done. The clear at the top of
+        // this case runs before `resolveSession`/`capturePaneAnsi`, so two
+        // subscribes racing on the same socket both saw an empty map, both
+        // built an interval, and the second `set` dropped the first one's
+        // handle without clearing it — leaking a poller that captured a pane
+        // every 2s until the socket closed. openSession sends two subscribes
+        // (switchTab + its own rAF), so this leaked on every session open.
         if (isCard) {
           clearCardSub(ws, subKey); // replace if already exists
           if (!cardTermSubs.has(ws)) cardTermSubs.set(ws, new Map());
           cardTermSubs.get(ws).set(subKey, sub);
         } else if (isConsole) {
+          clearConsoleSub(ws);
           consoleSubs.set(ws, sub);
         } else {
+          clearTermSub(ws);
           termSubs.set(ws, sub);
         }
         break;

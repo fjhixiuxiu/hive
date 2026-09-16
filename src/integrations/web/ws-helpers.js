@@ -226,14 +226,32 @@ function discoverCommands(config) {
 
 // ── Terminal capture ────────────────────────────────────
 
-async function capturePaneAnsi(node, target) {
+/**
+ * Capture a tmux pane as ANSI text.
+ *
+ * `history: true` pulls 500 lines of scrollback and is used only for the first
+ * paint after a client subscribes — it is what gives the dashboard terminal
+ * something to scroll back through. Live polls capture the visible pane only.
+ *
+ * Replaying the 500-line window on every 2s poll was ~70KB per message, and
+ * because the client repaints by writing the whole capture, every poll pushed
+ * ~500 lines into xterm's scrollback: the buffer hit its 5000-line cap within
+ * a minute and then churned, holding nothing but repeated snapshots of the
+ * same screen. Visible-only polls are ~8KB and leave the buffer alone.
+ */
+async function capturePaneAnsi(node, target, opts = {}) {
+  const range = opts.history ? '-S -500 ' : '';
   const content =
-    (await node.exec(`tmux capture-pane -e -p -S -500 -t "${target}" 2>/dev/null`)) || '';
-  const colsStr = await node.exec(
-    `tmux display-message -p -t "${target}" "#{pane_width}" 2>/dev/null`,
+    (await node.exec(`tmux capture-pane -e -p ${range}-t "${target}" 2>/dev/null`)) || '';
+  const geom = await node.exec(
+    `tmux display-message -p -t "${target}" "#{pane_width} #{pane_height}" 2>/dev/null`,
   );
+  const [colsStr, rowsStr] = String(geom || '')
+    .trim()
+    .split(/\s+/);
   const cols = parseInt(colsStr) || 0;
-  return { content, cols };
+  const rows = parseInt(rowsStr) || 0;
+  return { content, cols, rows };
 }
 
 /**

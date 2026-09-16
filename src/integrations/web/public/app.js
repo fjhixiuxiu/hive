@@ -1,6 +1,32 @@
 (function() {
   'use strict';
 
+  // ── WebGL renderer (main session terminal only) ──
+  //
+  // xterm's default DOM renderer rebuilds spans for every changed row; WebGL
+  // draws to a canvas instead. Deliberately NOT applied to the fleet grid's
+  // card terminals: browsers cap live WebGL contexts (~16 in Chrome, shared
+  // across every tab) and evict the oldest when you exceed it, so giving each
+  // of ~21 cards its own context would blank them out — a worse bug than the
+  // one this fixes. One context for the session you are actually reading.
+  //
+  // Context loss still happens (GPU reset, too many contexts elsewhere in the
+  // browser). Disposing the addon on loss drops xterm back to the DOM
+  // renderer, which is slower but always draws.
+  function attachWebglRenderer(terminal) {
+    if (typeof WebglAddon === 'undefined' || !WebglAddon.WebglAddon) return null;
+    try {
+      const addon = new WebglAddon.WebglAddon();
+      addon.onContextLoss(() => {
+        try { addon.dispose(); } catch (_) {}
+      });
+      terminal.loadAddon(addon);
+      return addon;
+    } catch (_) {
+      return null;  // no WebGL available — DOM renderer stays
+    }
+  }
+
   // ── Clipboard: enable Cmd+C / Ctrl+C copy from xterm terminals ──
   function enableTerminalCopy(terminal) {
     terminal.attachCustomKeyEventHandler((e) => {
@@ -228,6 +254,7 @@
   let tsActiveTab = 'terminal'; // 'terminal' or 'git'
   let tsCommands = []; // cached slash commands for tasks cmd-bar
   let paneCols = 0;    // last known tmux pane cols for main session terminal
+  let paneRows = 0;    // last known tmux pane rows — live repaints anchor to this
   let tsPaneCols = 0;  // last known tmux pane cols for tasks session terminal
   let designations = {};  // { num: string }
   let designationDefs = []; // [{ name, agentFiles, description, color }]
@@ -912,8 +939,11 @@
     // shutdown + restart buttons are inside fleet-panel, no toggle needed
     if (tab === 'session-panel' && term && fitAddon && activeSessionTab === 'terminal') {
       requestAnimationFrame(() => fitTerminal());
-      // Re-subscribe in case tasks panel took over the subscription (preserve active pane)
-      if (currentSession) {
+      // Re-subscribe in case tasks panel took over the subscription (preserve active pane).
+      // openSession calls switchTab and then subscribes itself, so skip here when
+      // it is mid-open — two subscribes for one session open is what leaked a
+      // poller per open (see the race note in ws-handlers terminal:subscribe).
+      if (currentSession && !openingSession) {
         const resubscribe = () => {
           if (!ws || ws.readyState !== 1 || !currentSession) return;
           const m = { type: 'terminal:subscribe', session: currentSession };
@@ -1193,9 +1223,10 @@
           const paneOk = !(typeof msg.pane === 'number' && activePane !== null && msg.pane !== activePane);
           if (paneOk) {
             if (msg.cols && msg.cols > 0) { paneCols = msg.cols; if (msg.cols !== term.cols) term.resize(msg.cols, term.rows); }
+            if (msg.rows && msg.rows > 0) paneRows = msg.rows;
             if (msg.content !== lastContent) {
-              if (userScrolledUp) { pendingContent = msg.content; }
-              else { writeTerminalContent(msg.content); }
+              if (userScrolledUp) { pendingContent = msg.content; pendingFull = msg.full === true; }
+              else { writeTerminalContent(msg.content, msg.full === true); }
             }
           }
         }
@@ -2511,7 +2542,10 @@
 
   // ── Session detail view ───────────────────────────
   var userScrolledUp = false;
+  var openingSession = false;  // true while openSession drives switchTab, which would otherwise double-subscribe
+  var bufferBaseline = null;  // buffer length after the last paint that was allowed to grow it
   var pendingContent = null;
+  var pendingFull = false;  // was the deferred content a scrollback-bearing first paint?
   var lastContent = '';
 
   function openSession(s, fromRoute) {
@@ -2581,14 +2615,26 @@
       term.loadAddon(new WebLinksAddon.WebLinksAddon((e, uri) => window.open(uri, '_blank')));
       enableTerminalCopy(term);
       term.open(termWrap);
+      attachWebglRenderer(term);
       term.element.addEventListener('wheel', () => { setTimeout(checkScrollPosition, 50); });
       let touchStartY = 0;
       term.element.addEventListener('touchstart', (e) => { touchStartY = e.touches[0].clientY; }, { passive: true });
       term.element.addEventListener('touchend', (e) => { const dy = touchStartY - (e.changedTouches[0] || {}).clientY; if (Math.abs(dy) > 20) { setTimeout(checkScrollPosition, 150); setTimeout(checkScrollPosition, 500); } });
     }
 
-    // Show session panel
+    // Show session panel.
+    //
+    // This set/call/reset only works while switchTab READS `openingSession`
+    // synchronously — it does, at the `!openingSession` guard before its
+    // resubscribe. Note switchTab is not free of deferral: it schedules
+    // `fitTerminal` in a requestAnimationFrame. That is harmless because the flag
+    // is not read there. Move the guard (or the resubscribe call) into any
+    // deferred callback — rAF, setTimeout, an await — and it runs after the reset
+    // below, reads `false`, subscribes a second time, and the per-open poller leak
+    // comes back with nothing to flag it.
+    openingSession = true;
     switchTab('session-panel', fromRoute);
+    openingSession = false;
     if (!fromRoute) pushHash();
     requestAnimationFrame(() => {
       fitTerminal();
@@ -2617,24 +2663,86 @@
     const linesFromBottom = buf.baseY - buf.viewportY;
     if (linesFromBottom <= 3 && userScrolledUp) {
       userScrolledUp = false; scrollIndicator(false);
-      if (pendingContent !== null) { writeTerminalContent(pendingContent); pendingContent = null; }
+      if (pendingContent !== null) { writeTerminalContent(pendingContent, pendingFull); pendingContent = null; pendingFull = false; }
     } else if (linesFromBottom > 3) { userScrolledUp = true; scrollIndicator(true); }
   }
 
   var _termWriteRAF = null;
-  function writeTerminalContent(content) {
+  // Build the escape + payload for a live repaint.
+  //
+  // `\x1b[H\x1b[J` homes the cursor and erases the screen, but it does NOT touch
+  // scrollback — so writing more lines than the viewport holds scrolls the excess
+  // up into the buffer on every update. That is what filled xterm's 5000-line
+  // scrollback with repeated snapshots of one screen within a minute. Writing
+  // exactly one screenful with no trailing newline repaints in place instead.
+  //
+  // Getting the vertical position right needs two more things, and getting
+  // either wrong shifts the whole screen a row or two the first time a poll
+  // lands — which reads as the terminal scrolling on its own a couple of
+  // seconds after you open a session:
+  //
+  //   - tmux trims the pane's blank tail, so a 50-row pane can come back as 48
+  //     lines (and as 50 a moment later). Only the pane height says where the
+  //     content actually sits, so pad back to it rather than trusting the count.
+  //   - when the terminal is TALLER than the pane, the rows above the pane hold
+  //     real scrollback from the history paint. A visible-only capture cannot
+  //     supply those, so anchor the repaint below them and leave them alone
+  //     instead of erasing them to blank.
+  //
+  // Measured over 36 pane/size combinations: anchoring naively jumped in 27,
+  // this jumps in none.
+  function livePaint(content, termRows, paneRows) {
+    const lines = content.split('\n');
+    // the trailing-newline artifact only — never the pane's own blank rows
+    if (lines.length && lines[lines.length - 1] === '') lines.pop();
+    const pr = paneRows > 0 ? paneRows : lines.length;
+    while (lines.length < pr) lines.push('');
+    if (lines.length > pr) lines.splice(0, lines.length - pr);
+    if (termRows >= pr) {
+      const startRow = termRows - pr + 1;
+      return '\x1b[' + startRow + ';1H\x1b[J' + lines.join('\n');
+    }
+    return '\x1b[H\x1b[J' + lines.slice(-termRows).join('\n');
+  }
+
+  function writeTerminalContent(content, full) {
     if (!term) return;
     lastContent = content; writingContent = true;
+    // `full` marks the first paint after subscribing, which carries scrollback
+    // and is meant to land in the buffer. Live polls repaint in place.
+    const payload = full
+      ? '\x1b[H\x1b[J' + content
+      : livePaint(content, term.rows, paneRows);
     // Coalesce rapid updates — only the last content wins
     if (_termWriteRAF) cancelAnimationFrame(_termWriteRAF);
     _termWriteRAF = requestAnimationFrame(() => {
       _termWriteRAF = null;
-      term.write('\x1b[H\x1b[J' + content, () => {
+      term.write(payload, () => {
         term.scrollToBottom();
+        enforceBufferCeiling(full);
         writingContent = false;
         if (readingMode) document.getElementById('reading-content').textContent = extractTerminalText();
       });
     });
+  }
+
+  // A live repaint is supposed to land inside the viewport and leave scrollback
+  // alone. It does — but only while every captured line fits in term.cols. A
+  // line wider than the terminal wraps, each wrap costs an extra row, the
+  // payload then overflows the viewport and the excess scrolls into the buffer:
+  // measured at 44 lines per poll, which refills the 5000-line scrollback in
+  // about three minutes. tmux never emits a line wider than the pane and the
+  // data handler resizes to the pane before writing, so this should not happen
+  // — but "should not" is what the old code assumed too. Cap it instead: if a
+  // repaint grew the buffer, drop the stale scrollback rather than let it climb.
+  function enforceBufferCeiling(full) {
+    if (!term) return;
+    const len = term.buffer.active.length;
+    if (full || bufferBaseline === null) { bufferBaseline = len; return; }
+    if (len > bufferBaseline + term.rows) {
+      term.clear();
+      bufferBaseline = term.buffer.active.length;
+    }
   }
 
   // ── Pane tabs (multi-pane terminal viewer) ───────
@@ -3574,10 +3682,19 @@
   });
 
   // Fit terminal to container, but use pane cols if wider (prevents ANSI line wrapping artifacts)
+  // tmux is the single authority on column count.
+  //
+  // This used to widen to the pane only when the pane was wider than the fit,
+  // while the terminal:data handler resized to the pane width in BOTH
+  // directions. On a window wider than the pane the two fought: every sidebar
+  // toggle, tab switch or window resize snapped to the fit width, and the next
+  // poll (<=2s later) snapped back to the pane width — each resize reflowing
+  // the whole scrollback. Following tmux unconditionally costs some unused
+  // width on a wide window and buys a terminal that stops resizing itself.
   function fitTerminal() {
     if (!term || !fitAddon) return;
     fitAddon.fit();
-    if (paneCols > 0 && paneCols > term.cols) term.resize(paneCols, term.rows);
+    if (paneCols > 0 && paneCols !== term.cols) term.resize(paneCols, term.rows);
   }
   function fitTasksTerminal() {
     if (!tasksSessionTerm || !tasksSessionFit) return;
@@ -3920,7 +4037,7 @@
       el = document.createElement('div'); el.id = 'scroll-pause';
       el.setAttribute('data-tooltip', 'Scroll to bottom');
       el.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>';
-      el.addEventListener('click', () => { userScrolledUp = false; scrollIndicator(false); if (term) term.scrollToBottom(); if (pendingContent !== null) { writeTerminalContent(pendingContent); pendingContent = null; } });
+      el.addEventListener('click', () => { userScrolledUp = false; scrollIndicator(false); if (term) term.scrollToBottom(); if (pendingContent !== null) { writeTerminalContent(pendingContent, pendingFull); pendingContent = null; pendingFull = false; } });
       termWrap.appendChild(el);
     } else if (!show && el) { el.remove(); }
   }
