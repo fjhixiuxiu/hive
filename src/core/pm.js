@@ -733,7 +733,7 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
       pm.designation,
       { source: `pm:${pm.name}`, requireHumanClose: !!pm.requireHumanClose },
     );
-    this._seedChecklist(pm, task);
+    this.seedChecklist(pm, task);
     pm.tasksCreated++;
     pm.lastPoll = Date.now();
     pm.lastError = null;
@@ -781,7 +781,7 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
         source: `pm:${pm.name}`,
         requireHumanClose: !!pm.requireHumanClose,
       });
-      this._seedChecklist(pm, task);
+      this.seedChecklist(pm, task);
       pm.tasksCreated++;
       this.taskQueue.pushFeed(
         'task',
@@ -793,7 +793,7 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
         source: `pm:${pm.name}`,
         requireHumanClose: !!pm.requireHumanClose,
       });
-      this._seedChecklist(pm, task);
+      this.seedChecklist(pm, task);
       pm.tasksCreated++;
       this.taskQueue.pushFeed('task', null, `PM "${pm.name}" queued ${command} (no idle session)`);
     }
@@ -838,7 +838,7 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
             pm.designation,
             { source: `pm:${pm.name}` },
           );
-          this._seedChecklist(pm, task);
+          this.seedChecklist(pm, task);
           pm.tasksCreated++;
           this.taskQueue.pushFeed('task', null, `PM "${pm.name}" created task from script output`);
         }
@@ -964,7 +964,7 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
           meta,
         );
         task.sourceKey = issue.key;
-        this._seedChecklist(pm, task);
+        this.seedChecklist(pm, task);
 
         // React on GitHub PR when queued (replaces verbose comment)
         if (pm.source.type === 'github-prs' || pm.source.type === 'github-re-reviews') {

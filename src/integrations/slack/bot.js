@@ -598,7 +598,7 @@ function createSlackBot(taskQueue, config, router, pmManager) {
     // Seed checklist from PM if configured
     try {
       if (slackPm && slackPm.checklistTemplate && pmManager) {
-        pmManager._seedChecklist(slackPm, task);
+        pmManager.seedChecklist(slackPm, task);
       }
 
       // Track PM stats

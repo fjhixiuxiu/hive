@@ -293,6 +293,7 @@
   let repoCaps = {}; // repoBaseName -> max sessions
   let spawnSlotMin = 1;
   let spawnBaseDir = '~/ai-dev';
+  let githubRepo = '';    // config.github.repo — what a bare #N in Track resolves against
   let spawnSlotMax = 32;
   let spawnedAgentsList = [];
   let spawningSessions = new Map(); // num → { name } for in-flight spawns
@@ -1147,6 +1148,7 @@
       case 'config':
         linkTemplates = msg.links || {};
         if (msg.spawnBaseDir) spawnBaseDir = msg.spawnBaseDir;
+        githubRepo = msg.githubRepo || '';
         if (msg.title) document.title = msg.title;
         if (msg.hiveName) {
           document.getElementById('sidebar-logo').innerHTML =
@@ -1587,6 +1589,7 @@
           if (tasksViewMode === 'board') renderTaskBoard();
         }
         if (tasksViewMode === 'board') populateBoardPmSelect();
+        updateTaskPmSelector();
         if (loadingActive) completeLoadingStage('pms', (msg.pms || []).length + ' active');
         break;
       }
@@ -6327,6 +6330,8 @@
     const titleInputEl = document.getElementById('task-dialog-title');
     const desigEl = document.getElementById('task-dialog-designation');
     const assigneeEl = document.getElementById('task-dialog-assignee');
+    const pmEl = document.getElementById('task-dialog-pm');
+    const trackEl = document.getElementById('task-dialog-track');
     const headingEl = document.getElementById('task-dialog-heading');
     const saveBtn = document.getElementById('task-dialog-save');
 
@@ -6359,6 +6364,18 @@
       manualTarget = null;
       document.getElementById('task-dialog-require-human-close').checked = true; // manual default
     }
+    // Like Queue position, PM and Track exist only on the create path, and for
+    // the same reason: changing either on a live task re-parents it mid-flight
+    // — a dispatched task would start answering to a different PM's completion
+    // conditions because someone fixed a typo. Both are cleared even when
+    // hidden, so a value left over from the last create is never resent.
+    updateTaskPmSelector();
+    pmEl.value = '';
+    trackEl.value = '';
+    renderTaskPmHint();
+    renderTaskTrackHint();
+    document.getElementById('task-dialog-pm-field').style.display = taskId ? 'none' : '';
+    document.getElementById('task-dialog-track-field').style.display = taskId ? 'none' : '';
     // Editing never moves a task — that would make saving a typo fix silently
     // reprioritise work. The control only exists on the create path.
     taskQueueMode = 'back';
@@ -6379,6 +6396,15 @@
     if (!text || !ws || ws.readyState !== 1) return;
     if (taskMode === 'manual' && !manualTarget) { showToast('Select session', 'Tap an idle session number', 'error'); return; }
     const desig = document.getElementById('task-dialog-designation').value || undefined;
+    const pmName = editingTaskId ? '' : document.getElementById('task-dialog-pm').value;
+    const track = editingTaskId ? '' : document.getElementById('task-dialog-track').value.trim();
+    // The server refuses an unparseable Track too, but it refuses by not
+    // creating the task — and by then the draft has been cleared and a
+    // "Task created" toast has already shown. Stop here instead.
+    const parsedTrack = window.SessionLinks.parseTrack(track, githubRepo);
+    if (parsedTrack.kind === 'invalid') { showToast('Check Track', parsedTrack.reason, 'error'); return; }
+    const trackMismatch = editingTaskId ? null : window.SessionLinks.trackMismatch(currentTaskPm(), parsedTrack);
+    if (trackMismatch) { showToast('Check Track', trackMismatch, 'error'); return; }
 
     const requireHumanClose = document.getElementById('task-dialog-require-human-close').checked;
     const assignee = document.getElementById('task-dialog-assignee').value || null;
@@ -6395,7 +6421,9 @@
         const n = parseInt(document.getElementById('task-dialog-queue-number').value, 10);
         if (Number.isFinite(n) && n > 0) queuePosition = n;
       }
-      ws.send(JSON.stringify({ type: 'task:create', text, title, mode: taskMode, targetSession: taskMode === 'manual' ? manualTarget : undefined, designation: desig, requireHumanClose, assignee, queuePosition }));
+      // pm/track left undefined when unused, so a task created without either
+      // sends the message it has always sent.
+      ws.send(JSON.stringify({ type: 'task:create', text, title, mode: taskMode, targetSession: taskMode === 'manual' ? manualTarget : undefined, designation: desig, requireHumanClose, assignee, queuePosition, pm: pmName || undefined, track: track || undefined }));
       clearDraft(TASK_DRAFT_KEY);
       showToast('Task created', toastSnippet, 'success');
     }
@@ -6404,6 +6432,21 @@
   });
   document.getElementById('task-dialog-cancel').addEventListener('click', () => { taskDialog.classList.remove('visible'); editingTaskId = null; });
   document.getElementById('task-dialog-text').addEventListener('input', (e) => { if (!editingTaskId) saveDraft(TASK_DRAFT_KEY, e.target.value); });
+  document.getElementById('task-dialog-track').addEventListener('input', renderTaskTrackHint);
+  document.getElementById('task-dialog-pm').addEventListener('change', () => {
+    renderTaskPmHint();
+    // The Track hint reads the PM too — a mismatch appears and disappears by
+    // changing either control, so both have to re-render both.
+    renderTaskTrackHint();
+    // Default the designation from the PM. Only a PM that has one overwrites,
+    // and it stays editable — picking a PM is meant to get the lane right by
+    // construction, not to take the choice away.
+    const pm = currentTaskPm();
+    if (pm && pm.designation) {
+      const desigEl = document.getElementById('task-dialog-designation');
+      if ([...desigEl.options].some(o => o.value === pm.designation)) desigEl.value = pm.designation;
+    }
+  });
   const submitTaskDialogOnCmdEnter = (e) => {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); document.getElementById('task-dialog-save').click(); }
   };
@@ -10004,6 +10047,63 @@
     sel.innerHTML = '<option value="">Any</option>';
     for (const d of desigNames) {
       sel.innerHTML += `<option value="${esc(d)}"${d === cur ? ' selected' : ''}>${esc(d)}</option>`;
+    }
+  }
+
+  // Options are PM *names*, not ids: task.source stores `pm:<name>` and
+  // _getSourcePm matches on it, so the name is the identity the server needs.
+  function updateTaskPmSelector() {
+    const sel = document.getElementById('task-dialog-pm');
+    if (!sel) return;
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">(none)</option>';
+    for (const pm of pmList) {
+      sel.innerHTML += `<option value="${esc(pm.name)}"${pm.name === cur ? ' selected' : ''}>${esc(pm.name)}</option>`;
+    }
+    // A PM deleted or renamed out from under an open dialog leaves nothing
+    // selected, which is (none) — the same as never having picked one.
+    if (sel.value !== cur) renderTaskPmHint();
+  }
+
+  function currentTaskPm() {
+    const sel = document.getElementById('task-dialog-pm');
+    const name = sel ? sel.value : '';
+    return name ? pmList.find(p => p.name === name) || null : null;
+  }
+
+  function renderTaskPmHint() {
+    const hintEl = document.getElementById('task-dialog-pm-hint');
+    if (!hintEl) return;
+    const pm = currentTaskPm();
+    if (!pm) {
+      hintEl.textContent = 'No PM — the task is routed by its designation alone.';
+      return;
+    }
+    const bits = [];
+    bits.push(pm.designation ? `routes as ${pm.designation}` : 'no designation of its own');
+    if (pm.autoCreate) bits.push('can auto-create a session');
+    if (pm.requireHumanClose) bits.push('needs human close');
+    hintEl.textContent = `Inherits ${pm.name}: ${bits.join(', ')}.`;
+  }
+
+  function renderTaskTrackHint() {
+    const inputEl = document.getElementById('task-dialog-track');
+    const hintEl = document.getElementById('task-dialog-track-hint');
+    if (!inputEl || !hintEl) return;
+    const pm = currentTaskPm();
+    const parsed = window.SessionLinks.parseTrack(inputEl.value, githubRepo);
+    const mismatch = window.SessionLinks.trackMismatch(pm, parsed);
+    // The field asks for what this PM can actually read, before you type it.
+    const copy = window.SessionLinks.trackFieldCopy(pm);
+    inputEl.placeholder = copy.placeholder;
+    hintEl.style.color = '';
+    if (parsed.kind === 'none') {
+      hintEl.textContent = copy.emptyHint;
+    } else if (parsed.kind === 'invalid' || mismatch) {
+      hintEl.style.color = 'var(--red)';
+      hintEl.textContent = mismatch || parsed.reason;
+    } else {
+      hintEl.textContent = `Tracking ${parsed.sourceKey}`;
     }
   }
 

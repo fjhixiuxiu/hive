@@ -79,6 +79,21 @@ describe('buildConfigMessage', () => {
     expect(msg.hiveName).toBe('');
   });
 
+  it('propagates config.github.repo as githubRepo', () => {
+    // The task dialog's Track field resolves a bare `#N` against this, and
+    // shows what it resolved to before you save.
+    const msg = buildConfigMessage(makeConfig({ github: { repo: 'nukulb/hive' } }));
+    expect(msg.githubRepo).toBe('nukulb/hive');
+  });
+
+  it('defaults githubRepo to empty string when no github config exists', () => {
+    expect(buildConfigMessage({ sessions: {} }).githubRepo).toBe('');
+  });
+
+  it('defaults githubRepo to empty string when github config has no repo', () => {
+    expect(buildConfigMessage(makeConfig({ github: {} })).githubRepo).toBe('');
+  });
+
   it('does not mutate the input config', () => {
     const config = makeConfig();
     const snapshot = JSON.parse(JSON.stringify(config));

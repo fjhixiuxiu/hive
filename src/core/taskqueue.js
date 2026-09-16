@@ -243,6 +243,10 @@ class TaskQueue extends EventEmitter {
       completedAt: null,
       result: null,
       source: (meta && meta.source) || null, // e.g. 'ci-fail', 'review-changes'
+      // The identity a PM's continue/completion conditions key on. The poll
+      // loop assigns this after the call (pm.js) because it already holds the
+      // issue; a caller outside a poll loop passes it in here instead.
+      sourceKey: (meta && meta.sourceKey) || null,
       // [Phase 1 — context-consolidation] sourcePR kept for back-compat.
       // Phase 2 will remove this field; PR is already tracked live via fleet
       // (s.pr) and in sessionContext.pr. Plan marks this LOW RISK but requires

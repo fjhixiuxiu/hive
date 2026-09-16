@@ -305,7 +305,7 @@ function createGithubBot(taskQueue, config, router, pmManager) {
     // Seed checklist
     if (pm && pm.checklistTemplate && pmManager) {
       try {
-        pmManager._seedChecklist(pm, task);
+        pmManager.seedChecklist(pm, task);
       } catch {}
     }
 

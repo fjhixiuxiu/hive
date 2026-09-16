@@ -265,6 +265,10 @@ function buildConfigMessage(config) {
     spawnBaseDir: config.sessions.repoBase || process.env.HIVE_REPO_DIR || '~/ai-dev',
     hiveName: config.sessions?.hiveName || '',
     title: process.env.HIVE_TITLE || '',
+    // The repo a bare `#N` resolves against. The task dialog's Track field
+    // shows the reference it resolved to before you save, and it cannot do
+    // that for `#N` without knowing this.
+    githubRepo: (config.github && config.github.repo) || '',
   };
 }
 

@@ -767,6 +767,36 @@ function createMessageHandler(deps) {
         // Manual tasks default to requireHumanClose: true unless explicitly unchecked
         const requireHumanClose =
           msg.requireHumanClose !== undefined ? msg.requireHumanClose : msg.mode === 'manual';
+        // A dashboard task can join a PM. `source` is the whole mechanism:
+        // _getSourcePm resolves it for routing, and both condition sets filter
+        // on it — a task created here used to get source: null, and that one
+        // null is what excluded hand-added work from every PM behaviour.
+        const pmName = typeof msg.pm === 'string' ? msg.pm.trim() : '';
+        const sourcePm =
+          pmName && pmManager ? pmManager.getAll().find((p) => p.name === pmName) || null : null;
+        if (pmName && !sourcePm) {
+          ws.send(
+            JSON.stringify({ type: 'error', message: `No project manager named "${pmName}"` }),
+          );
+          break;
+        }
+        // Track is the per-task opt-in to the PM's PR machinery: both condition
+        // sets also require sourceKey, so leaving it blank joins the PM for
+        // routing and priority and nothing else. An unparseable value is
+        // refused rather than dropped — dropping it would read as "attached"
+        // and then never nudge.
+        const track = sessionLinks.parseTrack(msg.track, config.github && config.github.repo);
+        if (track.kind === 'invalid') {
+          ws.send(JSON.stringify({ type: 'error', message: `Track: ${track.reason}` }));
+          break;
+        }
+        // A Track the chosen PM's conditions can never read is decoration —
+        // it reads as attached and behaves as nothing. See trackMismatch.
+        const mismatch = sessionLinks.trackMismatch(sourcePm, track);
+        if (mismatch) {
+          ws.send(JSON.stringify({ type: 'error', message: `Track: ${mismatch}` }));
+          break;
+        }
         const task = taskQueue.createTask(msg.text, msg.mode, msg.targetSession, msg.designation, {
           createdBy: user?.login || null,
           requireHumanClose,
@@ -775,8 +805,21 @@ function createMessageHandler(deps) {
           // Absent means the back of the queue, which is where set() puts a new
           // task anyway — so a client that never sends this behaves as before.
           queuePosition: msg.queuePosition != null ? msg.queuePosition : null,
+          source: sourcePm ? `pm:${sourcePm.name}` : undefined,
+          sourceKey: track.sourceKey,
+          actionContext: track.actionContext,
+          pr: track.prNumber,
         });
-        ws.send(JSON.stringify({ type: 'task:created', task }));
+        // Seed the PM's checklist exactly as its own poll loop would. No
+        // template is configured today, so this is inert until one is.
+        //
+        // Deliberately NOT writing pm.seenKeys: dedupe already suppresses the
+        // PM's own duplicate and expires on its own, where a seen key would
+        // permanently stop that PM ever creating this task itself.
+        if (sourcePm) pmManager.seedChecklist(sourcePm, task);
+        ws.send(
+          JSON.stringify({ type: 'task:created', task: decorateTaskActions(task, pmManager) }),
+        );
         break;
       }
 

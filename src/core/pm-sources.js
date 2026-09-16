@@ -795,7 +795,7 @@ async function _hasAnyApprovedReview(repo, prNumber) {
 
 // ── Checklist seeding ───────────────────────────────────
 
-function _seedChecklist(pm, task) {
+function seedChecklist(pm, task) {
   if (!pm.checklistTemplate || !task) return;
   const tpl = this.taskQueue.checklistTemplates.get(pm.checklistTemplate);
   if (!tpl || !tpl.items || !tpl.items.length) return;
@@ -929,7 +929,7 @@ module.exports = {
   _fetchNectar,
   _claimNectarTask,
   // Helpers
-  _seedChecklist,
+  seedChecklist,
   enrichTaskText,
   _buildFullText,
 };

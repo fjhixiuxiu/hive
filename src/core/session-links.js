@@ -7,6 +7,9 @@
 //      `setSessionContext` so downstream code always reads a canonical URL.
 //   2. `parsePrList` / `parseJiraList` / `renderChips` — parse a canonical
 //      (comma-separated) string into short-labelled chip data and render it.
+//   3. `parseTrack` — resolve one hand-typed reference (the task dialog's
+//      "Track" field) into the `sourceKey` + `actionContext` a PM keys its
+//      condition sets on.
 //
 // UMD module: exports for Node (`ws-handlers`, `tq-features`, vitest); attaches
 // to `window.SessionLinks` for the browser (served via /session-links.js).
@@ -225,6 +228,199 @@
     return prs[0];
   }
 
+  // ── Track field (task dialog) ───────────────────────────
+  //
+  // Resolve one hand-typed reference into the identity a PM keys its condition
+  // sets on: `task.sourceKey`, plus the `actionContext` the PR action buttons
+  // and the 👀/🚀/🎉 reactions read.
+  //
+  // Both `_checkContinueConditions` and `_checkCompletions` filter on
+  // `t.sourceKey`, so a task whose Track is blank belongs to its PM for routing
+  // and priority and no PR machinery touches it. That makes this field the
+  // per-task opt-in — which is why 'none' is a first-class answer here and not
+  // an error.
+  //
+  // A PR key must carry its owner. `repo#N` with no default repo resolves to
+  // nothing GitHub can be asked about, so it is rejected rather than stored as
+  // a key that would 404 on the first reaction attempt.
+  var TRACK_JIRA_LOOSE = /^([A-Za-z][A-Za-z0-9]+-\d+)$/;
+
+  function parseTrack(input, defaultRepo) {
+    if (typeof input !== 'string') return { kind: 'none' };
+    var t = input.trim();
+    if (!t) return { kind: 'none' };
+
+    // A link has to be the whole field, for the same reason a JIRA key does
+    // below: PR_URL_RE and JIRA_URL_RE are unanchored (parseJiraList and the
+    // PR chips need that), so they would pull a key out of a sentence.
+    if (/https?:\/\//i.test(t) && !/^https?:\/\/\S+$/i.test(t)) {
+      return { kind: 'invalid', reason: 'Paste just the link, without other text' };
+    }
+
+    // PR first. canonicalizePrRef resolves #N and repo#N against defaultRepo
+    // and hands back a URL; parseOnePr reads owner and number back out of it.
+    // Unparseable tokens come back unchanged, so parseOnePr is also what
+    // decides "this was not a PR at all".
+    var pr = parseOnePr(canonicalizePrRef(t, defaultRepo));
+    if (pr && pr.owner) {
+      var num = parseInt(pr.prNumber, 10);
+      return {
+        kind: 'pr',
+        sourceKey: pr.ownerRepo + '#' + num,
+        actionContext: { type: 'github-pr', repo: pr.ownerRepo, prNumber: num },
+        prNumber: num,
+        url: pr.url || 'https://github.com/' + pr.ownerRepo + '/pull/' + num,
+        label: pr.label,
+      };
+    }
+    if (pr) {
+      return {
+        kind: 'invalid',
+        reason: 'Needs an owner — write it as owner/' + pr.repo + '#' + pr.prNumber,
+      };
+    }
+    // A bare number only fails here when there is no default repo to hang it on,
+    // so say that rather than "not a PR" — the input shape was fine.
+    if (PR_HASH_NUM_RE.test(t) || JUST_NUM_RE.test(t)) {
+      return { kind: 'invalid', reason: 'No default repo configured — write it as owner/repo#N' };
+    }
+
+    // JIRA. The whole field has to be one key or one browse URL: a key found
+    // inside prose is a mention, not a tracking identity, and parseJiraList
+    // would happily return it.
+    var jiraUrl = JIRA_URL_RE.exec(t);
+    var key = jiraUrl ? jiraUrl[1] : TRACK_JIRA_LOOSE.test(t) ? t.toUpperCase() : null;
+    if (key) {
+      return {
+        kind: 'jira',
+        sourceKey: key,
+        actionContext: null,
+        url: jiraUrl ? t : DEFAULT_JIRA_BASE + key,
+        label: key,
+      };
+    }
+
+    return { kind: 'invalid', reason: 'Not a PR or JIRA reference' };
+  }
+
+  // Which Track kind each PM condition type actually keys on. This is the
+  // complete set — completion has github-pr-state + jira-status, continue has
+  // github-pr-changes + jira-status, and nothing else reads task.sourceKey.
+  //
+  // It lives here, next to parseTrack, because it answers the same question
+  // from the other end: parseTrack says what shape a reference is, this says
+  // what shape a consumer can read. Splitting them would put the two halves of
+  // one decision in two files, and the browser needs both.
+  var CONDITION_TRACK_KIND = {
+    'github-pr-state': 'pr',
+    'github-pr-changes': 'pr',
+    'jira-status': 'jira',
+  };
+
+  // The Track kinds a PM's conditions can act on. Empty means the PM has no
+  // conditions at all, so there is nothing for a Track to contradict.
+  function trackKindsForPm(pm) {
+    var seen = {};
+    var out = [];
+    var sets = [(pm && pm.completionConditions) || [], (pm && pm.continueConditions) || []];
+    for (var i = 0; i < sets.length; i++) {
+      for (var j = 0; j < sets[i].length; j++) {
+        var kind = CONDITION_TRACK_KIND[sets[i][j] && sets[i][j].type];
+        if (kind && !seen[kind]) {
+          seen[kind] = 1;
+          out.push(kind);
+        }
+      }
+    }
+    return out;
+  }
+
+  // What the chosen PM would actually DO with a Track, as the field's own copy.
+  //
+  // The field is static today: same placeholder and same "optional" line
+  // whichever PM you picked, so the only way to learn that Human Reviews wants
+  // a PR is to type a JIRA key and get told off. The PM already determines the
+  // answer — trackKindsForPm computes it — so the field can say what it wants
+  // before you type, and say what a blank one costs.
+  //
+  // The copy lives here rather than in app.js because app.js has no test
+  // harness, and "the branch nobody could reach" is where this dialog's
+  // display bugs have lived before.
+  function trackFieldCopy(pm) {
+    var kinds = trackKindsForPm(pm);
+    var name = (pm && pm.name) || '';
+    var closes = ((pm && pm.completionConditions) || []).some(function (c) {
+      return c && CONDITION_TRACK_KIND[c.type];
+    });
+    var nudges = ((pm && pm.continueConditions) || []).some(function (c) {
+      return c && CONDITION_TRACK_KIND[c.type];
+    });
+
+    // Either no PM, or one that reads both kinds — nothing to narrow to.
+    if (kinds.length !== 1) {
+      return {
+        placeholder: 'PR URL, owner/repo#N, #N, or a JIRA key (optional)',
+        emptyHint: 'Optional. Blank means no PR or issue is watched for this task.',
+      };
+    }
+
+    var isPr = kinds[0] === 'pr';
+    var acts = closes && nudges ? 'nudges and closes' : nudges ? 'nudges' : 'closes';
+    var from = isPr ? 'their PR' : 'their JIRA status';
+    return {
+      placeholder: isPr
+        ? 'PR URL, owner/repo#N, or #N (optional)'
+        : 'JIRA key, e.g. DEV-1234 (optional)',
+      // Named rather than blocked: a task with no key is a task that asked for
+      // no automation, which is a real thing to want. A task with the WRONG key
+      // asked for automation it will never get, and that is the one refused.
+      emptyHint:
+        'Optional. ' +
+        name +
+        ' ' +
+        acts +
+        ' tasks from ' +
+        from +
+        ' — with none, that will not happen for this task.',
+    };
+  }
+
+  // Refuse a Track the chosen PM can never read.
+  //
+  // Before the picker, sourceKey was only ever set by the poll loop that knew
+  // its own source type, so the shapes matched by construction. The picker is
+  // the first place a person can pair a JIRA key with a PM that watches pull
+  // requests — and neither direction fails loudly:
+  //
+  //   JIRA key + github-pr-* → _parsePRFromKey returns null, the condition
+  //     `continue`s, and the task silently never fires. Forever.
+  //   PR key + jira-status  → builds /rest/api/3/issue/owner/repo#N, which
+  //     404s into a caught log.error on every single poll. Also forever.
+  //
+  // Both read as "attached" and behave as nothing, which is the shape this
+  // codebase already decided is worse than an absent feature. Returns null
+  // when the pairing is fine, or the reason it is not.
+  function trackMismatch(pm, track) {
+    if (!track || (track.kind !== 'pr' && track.kind !== 'jira')) return null;
+    var kinds = trackKindsForPm(pm);
+    if (!kinds.length || kinds.indexOf(track.kind) >= 0) return null;
+    var name = (pm && pm.name) || 'That PM';
+    var watches = kinds.indexOf('pr') >= 0 ? 'pull requests' : 'JIRA issues';
+    var got = track.kind === 'pr' ? 'a pull request' : 'a JIRA key';
+    return (
+      name +
+      ' watches ' +
+      watches +
+      ', so tracking ' +
+      got +
+      ' (' +
+      track.sourceKey +
+      ') would never fire. Track ' +
+      (kinds.indexOf('pr') >= 0 ? 'a PR' : 'a JIRA issue') +
+      ', or clear this field.'
+    );
+  }
+
   var api = {
     canonicalizePrRef: canonicalizePrRef,
     canonicalizePrField: canonicalizePrField,
@@ -232,6 +428,10 @@
     parseJiraList: parseJiraList,
     renderChips: renderChips,
     primaryPr: primaryPr,
+    parseTrack: parseTrack,
+    trackKindsForPm: trackKindsForPm,
+    trackMismatch: trackMismatch,
+    trackFieldCopy: trackFieldCopy,
     isSafeUrl: isSafeUrl,
     DEFAULT_JIRA_BASE: DEFAULT_JIRA_BASE,
   };

@@ -1494,6 +1494,11 @@
 <div class="dialog-overlay" id="task-dialog">
   <div class="dialog" style="max-width:560px">
     <div class="dialog-title" id="task-dialog-heading">Create Task</div>
+    <!-- Two more fields is what tipped this dialog past a phone screen: .dialog
+         caps itself at the viewport but does not scroll, so the actions row was
+         clipped and Create became unreachable. .dialog-scroll already existed
+         for this and had no users. -->
+    <div class="dialog-scroll">
     <div class="task-dialog-field">
       <label class="task-dialog-label">Title</label>
       <input class="task-dialog-input" id="task-dialog-title" type="text" maxlength="200" placeholder="Short title shown on the kanban board (optional)" autocomplete="off">
@@ -1505,6 +1510,17 @@
     <div class="task-dialog-field">
       <label class="task-dialog-label">Assignee</label>
       <select class="task-dialog-select" id="task-dialog-assignee"><option value="">Unassigned</option></select>
+    </div>
+    <div class="task-dialog-field" id="task-dialog-pm-field">
+      <label class="task-dialog-label">Project Manager</label>
+      <select class="task-dialog-select" id="task-dialog-pm"><option value="">(none)</option></select>
+      <span class="task-dialog-hint" id="task-dialog-pm-hint"></span>
+    </div>
+    <div class="task-dialog-field" id="task-dialog-track-field">
+      <label class="task-dialog-label">Track</label>
+      <input class="task-dialog-input" id="task-dialog-track" type="text" maxlength="300"
+             placeholder="PR URL, owner/repo#N, #N, or a JIRA key (optional)" autocomplete="off">
+      <span class="task-dialog-hint" id="task-dialog-track-hint"></span>
     </div>
     <div class="task-dialog-field">
       <label class="task-dialog-label">Designation</label>
@@ -1532,6 +1548,7 @@
     <div class="task-dialog-field" style="flex-direction:row; align-items:center; gap:8px;">
       <input type="checkbox" id="task-dialog-require-human-close" checked>
       <label for="task-dialog-require-human-close" style="font-size:13px; color:var(--text-secondary);">Require human approval to close</label>
+    </div>
     </div>
     <div class="dialog-actions">
       <button class="dialog-btn primary" id="task-dialog-save">Create</button>

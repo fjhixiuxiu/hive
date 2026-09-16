@@ -1180,9 +1180,9 @@ describe('PM helpers: enrichTaskText', () => {
   });
 });
 
-// ── _seedChecklist ──────────────────────────────────────
+// ── seedChecklist ──────────────────────────────────────
 
-describe('PM helpers: _seedChecklist', () => {
+describe('PM helpers: seedChecklist', () => {
   let pm, taskQueue;
 
   beforeEach(() => {
@@ -1198,13 +1198,13 @@ describe('PM helpers: _seedChecklist', () => {
 
   it('does nothing when no checklistTemplate', () => {
     const task = { id: '1' };
-    pm._seedChecklist({}, task);
+    pm.seedChecklist({}, task);
     expect(task.checklist).toBeUndefined();
   });
 
   it('does nothing when template not found', () => {
     const task = { id: '1' };
-    pm._seedChecklist({ checklistTemplate: 'nonexistent' }, task);
+    pm.seedChecklist({ checklistTemplate: 'nonexistent' }, task);
     expect(task.checklist).toBeUndefined();
   });
 
@@ -1213,7 +1213,7 @@ describe('PM helpers: _seedChecklist', () => {
       items: ['Step 1', 'Step 2', 'Step 3'],
     });
     const task = { id: '1' };
-    pm._seedChecklist({ checklistTemplate: 'tpl1' }, task);
+    pm.seedChecklist({ checklistTemplate: 'tpl1' }, task);
 
     expect(task.checklist).toHaveLength(3);
     expect(task.checklist[0].text).toBe('Step 1');
@@ -1229,7 +1229,7 @@ describe('PM helpers: _seedChecklist', () => {
     taskQueue.on('task:updated', emitSpy);
 
     const task = { id: '1' };
-    pm._seedChecklist({ checklistTemplate: 'tpl1' }, task);
+    pm.seedChecklist({ checklistTemplate: 'tpl1' }, task);
     expect(emitSpy).toHaveBeenCalledWith(task);
     expect(taskQueue._saveState).toHaveBeenCalled();
   });
