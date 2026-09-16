@@ -128,6 +128,16 @@ async function createSession(name, repoDir, layout = {}, size = {}) {
           `tmux socket recovery did not restore a reachable server (probe: ${after})`,
         );
       }
+    } else if (servers.length === 1) {
+      // One server, socket gone (the socketPresent case threw above), and
+      // SIGUSR1 failed. The server may still be alive and holding sessions, so
+      // spawning would replace the socket and strand them — the failure this
+      // guard exists to prevent. Back off; callers retry on the next cycle.
+      throw new Error(
+        `failed to signal stranded tmux server ${servers[0].pid} to recreate its socket ` +
+          `— refusing to create session "${sessionName}" because starting a server now ` +
+          `would replace the socket and strand the running fleet`,
+      );
     }
     // servers.length === 0 → genuinely no server; creating one is correct.
   }

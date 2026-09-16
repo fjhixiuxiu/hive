@@ -239,7 +239,11 @@ function parseServerList(psOutput) {
   if (!psOutput) return [];
   const servers = [];
   for (const line of psOutput.split('\n')) {
-    const m = line.trim().match(/^(\d+)\s+(\d+)\s+(\d+)\s+(tmux\b.*)$/);
+    // argv[0] is whatever the caller exec'd: `tmux` from $PATH, or a resolved
+    // path like /opt/homebrew/bin/tmux. Both are the same server, and missing
+    // the path form would make listServers report zero — which the NO_SERVER
+    // branch reads as "safe to spawn", the exact action the guard prevents.
+    const m = line.trim().match(/^(\d+)\s+(\d+)\s+(\d+)\s+((?:\S*\/)?tmux\b.*)$/);
     if (!m) continue;
     const [, pid, pgid, ppid, args] = m;
     // tmux daemonises its server with setsid, so the server leads its own

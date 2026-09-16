@@ -128,6 +128,32 @@ describe('parseServerList', () => {
     expect(tmux.parseServerList(out).map((s) => s.pid)).toEqual([333]);
   });
 
+  it('finds a server started by absolute path, not just the bare name', () => {
+    // `ps -o args=` echoes argv[0] verbatim, so a server started as
+    // /opt/homebrew/bin/tmux reports the resolved path. An anchor requiring the
+    // bare name missed it, listServers returned 0, and the NO_SERVER branch read
+    // that as "no server exists" — then spawned over the live one.
+    const out = [
+      '27258 27258     1 /opt/homebrew/bin/tmux new-session -d -s 1',
+      '77665 77665     1 /usr/local/bin/tmux new-session -d -s 10',
+    ].join('\n');
+    expect(tmux.parseServerList(out).map((s) => s.pid)).toEqual([27258, 77665]);
+  });
+
+  it('still excludes path-launched clients and explicit-socket servers', () => {
+    const out = [
+      '111 110   110 /opt/homebrew/bin/tmux list-sessions',
+      '222 222     1 /opt/homebrew/bin/tmux -L probe new-session -d -s t1',
+      '333 333     1 /opt/homebrew/bin/tmux new-session -d -s 1',
+    ].join('\n');
+    expect(tmux.parseServerList(out).map((s) => s.pid)).toEqual([333]);
+  });
+
+  it('does not match a process whose name merely ends in tmux', () => {
+    const out = ['444 444     1 /usr/bin/not-tmux new-session -d -s 1'].join('\n');
+    expect(tmux.parseServerList(out)).toEqual([]);
+  });
+
   it('returns empty when ps produced nothing', () => {
     expect(tmux.parseServerList(null)).toEqual([]);
     expect(tmux.parseServerList('')).toEqual([]);
@@ -278,6 +304,35 @@ describe('createSession spawn guard', () => {
       /did not restore a reachable server/,
     );
     expect(newSessionCalls()).toHaveLength(0);
+  });
+
+  it('refuses when SIGUSR1 to the one stranded server failed', async () => {
+    // One server, socket gone, and the signal threw — so we never learned
+    // whether it is still holding sessions. Every other NO_SERVER shape is
+    // handled above; this one used to fall through to `new-session`, which is
+    // exactly the socket replacement the guard exists to prevent.
+    probeSpy.mockResolvedValue(P.NO_SERVER);
+    reviveSpy.mockResolvedValue({
+      revived: false,
+      servers: [{ pid: 27258, args: 'tmux new-session' }],
+      socketPresent: false,
+    });
+
+    await expect(sessionManager.createSession('7', '/repo', {}, {})).rejects.toThrow(
+      /failed to signal stranded tmux server 27258/,
+    );
+    expect(newSessionCalls()).toHaveLength(0);
+  });
+
+  it('still spawns when there is genuinely no server to strand', async () => {
+    // The one NO_SERVER shape that must keep spawning: nothing is running, so
+    // starting a server cannot displace anyone. Guards the new throw above from
+    // widening into the healthy cold-start path.
+    probeSpy.mockResolvedValue(P.NO_SERVER);
+    reviveSpy.mockResolvedValue({ revived: false, servers: [], socketPresent: false });
+
+    await sessionManager.createSession('7', '/repo', {}, {});
+    expect(newSessionCalls()).toHaveLength(1);
   });
 });
 
