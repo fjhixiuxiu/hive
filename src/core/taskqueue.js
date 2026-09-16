@@ -919,7 +919,12 @@ class TaskQueue extends EventEmitter {
     // The dispatch cooldown. Left behind, it is charged to whoever lands in
     // this slot next — a brand new session made to sit out its first 15s.
     this.lastCompletedAt.delete(num);
-    this.designations.delete(num);
+    // Same defect as the auto-create path: a raw Map write that no client hears
+    // about. It reads as the milder of the two — the chip belongs to a session
+    // that just vanished — right up until a new session lands in the freed
+    // slot, which is exactly what auto-create does next. Then the stale
+    // designation is rendered against somebody else's session.
+    const hadDesignation = this.designations.delete(num);
     // Plan, PR, JIRA, branch. Completing a task already clears these; killing
     // the session was the one exit that did not, so the next session in the
     // slot woke up holding a dead session's PR. Park reads exactly these
@@ -938,6 +943,7 @@ class TaskQueue extends EventEmitter {
       }
     }
     this._saveState();
+    if (hadDesignation) this.emit('designations:changed', this.getDesignations());
   }
 
   _handleSessionIdle(num, preview, paneCols) {
@@ -1226,8 +1232,27 @@ class TaskQueue extends EventEmitter {
             );
           }
           this.autoSessions.add(num);
-          if (desig) this.designations.set(num, desig);
-          this._saveState();
+          // setDesignation, not designations.set. The raw Map write stores the
+          // designation correctly and tells nobody: a client only ever learns a
+          // designation from a 'designations:changed' emit, and this path had
+          // none. So a session auto-created INTO a lane rendered as
+          // undesignated until the next reconnect, and the obvious operator fix
+          // — setting the designation by hand, to the value it already held —
+          // worked only because going through this accessor is what emits.
+          //
+          // Safe to call from inside the dispatch loop: setDesignation ends in
+          // _tryAutoDispatch, which returns immediately on the _autoDispatching
+          // re-entrancy guard we are currently holding.
+          //
+          // Persisting: setDesignation already saves, and the autoSessions.add
+          // above has happened by then, so a designated auto-create is fully
+          // written by that one call. An UNDESIGNATED one never reaches
+          // setDesignation, so this else is the only thing that writes its
+          // autoSessions entry. Collapsing to an unconditional single save — or
+          // dropping this line as a redundant write — would lose that, and hive
+          // would forget after a restart that it had auto-created the session.
+          if (desig) this.setDesignation(num, desig);
+          else this._saveState();
           this.pushFeed('state', num, `Auto-created session ${num} for ${desigLabel} task`);
         } catch (err) {
           log.error(`[auto-dispatch] Failed to auto-create session: ${err.message}`);
