@@ -1,8 +1,34 @@
+import crypto from 'crypto';
 import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
 
 const require = createRequire(import.meta.url);
 const { setupPath } = require('../../src/integrations/web/ws-helpers.js');
+
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+
+// The stores hive persists inside the repo checkout. The suite runs in that same
+// checkout — the pre-commit hook runs it wherever you commit, including a
+// directory a fleet is running from — so a test that touches one of these is
+// changing a real hive's state.
+const STORES = ['.hive-state.json', '.hive-knowledge.json', '.hive-meetings.json', '.hive-plans'];
+
+function fingerprint(p) {
+  if (!fs.existsSync(p)) return 'absent';
+  if (fs.statSync(p).isDirectory()) {
+    return fs
+      .readdirSync(p)
+      .sort()
+      .map((name) => `${name}=${fingerprint(path.join(p, name))}`)
+      .join(',');
+  }
+  return crypto.createHash('sha1').update(fs.readFileSync(p)).digest('hex');
+}
+
+const snapshot = () =>
+  Object.fromEntries(STORES.map((s) => [s, fingerprint(path.join(REPO_ROOT, s))]));
 
 // Own the `.hive-setup.json` sentinel for the whole run.
 //
@@ -20,20 +46,35 @@ const { setupPath } = require('../../src/integrations/web/ws-helpers.js');
 //
 // Creating it once here, before any worker starts, removes the race. Suites keep
 // their own create-if-missing guards; those now no-op and never own the delete.
+//
+// It also fails the run when a test changed one of the STORES. A test that builds
+// a TaskQueue without stubbing fs reads the developer's .hive-state.json and saves
+// its own tasks back into it, and nothing else in the suite would notice.
 export default function setup() {
   let created = false;
   if (!fs.existsSync(setupPath)) {
     fs.writeFileSync(setupPath, '{}');
     created = true;
   }
-  // Only clean up what we made — a real dev environment's setup file must survive.
+  const before = snapshot();
+
   return () => {
+    // Only clean up what we made — a real dev environment's setup file must survive.
     if (created) {
       try {
         fs.unlinkSync(setupPath);
       } catch {
         /* already gone */
       }
+    }
+    const after = snapshot();
+    const changed = STORES.filter((s) => before[s] !== after[s]);
+    if (changed.length) {
+      throw new Error(
+        `The test run changed ${changed.join(', ')} in ${REPO_ROOT} — a real hive's ` +
+          "stores. A test wrote to one instead of a stub or a temp dir; stub fs for the store's " +
+          'path, as the other TaskQueue suites do.',
+      );
     }
   };
 }

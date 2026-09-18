@@ -14,6 +14,16 @@ const sessionManagerModule = require('../../src/core/session-manager');
 const TaskQueue = require('../../src/core/taskqueue');
 const NodeRouter = require('../../src/core/node-router');
 
+// Where TaskQueue persists itself — derived the way taskqueue.js derives it, which
+// is the checkout's real .hive-state.json.
+const QUEUE_STATE_FILE = path.join(
+  path.dirname(require.resolve('../../src/core/taskqueue')),
+  '..',
+  '..',
+  '.hive-state.json',
+);
+const isQueueState = (p) => String(p).startsWith(QUEUE_STATE_FILE); // includes the .tmp it renames from
+
 /**
  * The session state cache, and the session that reported idle forever.
  *
@@ -42,6 +52,26 @@ describe('state cache invalidation', () => {
     vi.spyOn(logModule, 'info').mockImplementation(() => {});
     vi.spyOn(logModule, 'error').mockImplementation(() => {});
     vi.spyOn(sessionManagerModule, 'createSession').mockRejectedValue(new Error('no tmux in test'));
+
+    // The session state files under stateDir are what this suite is about, so fs
+    // stays real for them. The queue's own state file is not: left real, every
+    // run loaded the developer's .hive-state.json and saved seven tasks back into
+    // it. Stubbed here as the other TaskQueue suites do, but only for that path.
+    const realReadFileSync = fs.readFileSync;
+    const realWriteFileSync = fs.writeFileSync;
+    const realRenameSync = fs.renameSync;
+    vi.spyOn(fs, 'readFileSync').mockImplementation((p, ...rest) => {
+      if (isQueueState(p)) throw Object.assign(new Error('ENOENT (stubbed)'), { code: 'ENOENT' });
+      return realReadFileSync.call(fs, p, ...rest);
+    });
+    vi.spyOn(fs, 'writeFileSync').mockImplementation((p, ...rest) => {
+      if (isQueueState(p)) return undefined;
+      return realWriteFileSync.call(fs, p, ...rest);
+    });
+    vi.spyOn(fs, 'renameSync').mockImplementation((from, to) => {
+      if (isQueueState(to)) return undefined;
+      return realRenameSync.call(fs, from, to);
+    });
 
     config = createMockConfig({ cache: { stateDir } });
     watcher = createMockWatcher();
