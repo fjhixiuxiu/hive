@@ -4985,8 +4985,12 @@
         const err = await r.json().catch(() => ({}));
         throw new Error(err.error || r.statusText);
       }
+      // Name the session in the toast: the one thing that makes a mis-routed
+      // send obvious at the moment it happens rather than hours later.
+      const body = await r.json().catch(() => ({}));
       await refreshPlanRefComments(planId);
-      showToast('Sent to Claude', `${drafts.length} comment(s) delivered`, 'success');
+      const target = body.session != null ? `S${body.session}` : 'Claude';
+      showToast(`Sent to ${target}`, `${drafts.length} comment(s) delivered`, 'success');
     } catch (err) {
       alert('Send failed: ' + err.message);
       // Restore button state via a re-render

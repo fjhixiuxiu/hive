@@ -219,20 +219,30 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
   // -- Plans feature (interactive HTML plan review) -------------------------
   app.get('/api/plans', (req, res) => {
     const filter = {};
-    if (req.query.session != null) filter.sessionNum = Number(req.query.session);
     if (req.query.status) filter.status = req.query.status;
-    const plans = plansStore.listPlans(filter);
+    let plans = plansStore.listPlans(filter);
     // Enrich with the originating task's status so the "Select stale" client
     // can flag plans whose source task is completed/cancelled (terminal) —
     // those are stale regardless of age. Plans with no sourceTaskId fall
     // back to the 30-day rule client-side.
     if (taskQueue) {
       for (const p of plans) {
+        // Same owner-vs-publisher distinction as GET /api/plans/:planId, so the
+        // index and the editor never disagree about which session has a plan.
+        p.publishedBySessionId = p.sessionId ?? null;
+        p.sessionId = resolvePlanOwner(p.id, p);
         if (p.sourceTaskId == null) continue;
         const t =
           taskQueue.tasks.get(p.sourceTaskId) || taskQueue.tasks.get(String(p.sourceTaskId));
         p.sourceTaskStatus = t ? t.status : 'missing';
       }
+    }
+    // ?session= matches the owner each row reports, not the publisher —
+    // listPlans' own sessionNum filter reads meta.sessionId, so a plan handed
+    // on to S12 would be missing from S12's list while labelled S12 elsewhere.
+    if (req.query.session != null) {
+      const wanted = Number(req.query.session);
+      plans = plans.filter((p) => p.sessionId === wanted);
     }
     res.json({ plans });
   });
@@ -241,8 +251,12 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     const plan = plansStore.getPlan(req.params.planId);
     if (!plan) return res.status(404).json({ error: 'Plan not found' });
     const html = plansStore.getPlanHtml(req.params.planId);
+    // sessionId is the *owner* (where the Send button relays to), which is not
+    // always the publisher — the editor's session chip has to agree with it.
     res.json({
       ...plan.meta,
+      sessionId: resolvePlanOwner(req.params.planId, plan.meta),
+      publishedBySessionId: plan.meta.sessionId ?? null,
       currentVersion: plan.currentVersion,
       openCommentCount: plansStore.countOpenComments(html),
     });
@@ -315,14 +329,42 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     res.json({ comment: updated });
   });
 
-  // Send all draft comments on a plan to the originating session via tmux relay.
-  // Flips each comment's status from draft → open after the message lands.
+  // Which session currently owns a plan — i.e. who should receive its comments?
+  //
+  // meta.sessionId records who *published* v1, and plans get handed on: the
+  // PR-watch PM seeds a plan's planRef into the next task's context seed, so
+  // the session doing the work is often one that never published a version.
+  // The live pin in session context is therefore the truth, and meta is only
+  // the fallback for a plan no session currently has pinned.
+  function resolvePlanOwner(planId, meta) {
+    const publisher = meta && meta.sessionId != null ? Number(meta.sessionId) : null;
+    if (!taskQueue) return publisher;
+    const pinned = [];
+    const contexts = taskQueue.getAllSessionContexts() || {};
+    for (const [num, ctx] of Object.entries(contexts)) {
+      if (ctx && ctx.planRef && ctx.planRef.planId === planId) pinned.push(Number(num));
+    }
+    if (!pinned.length) return publisher;
+    // Publisher still has it pinned — nothing has moved, so don't second-guess it.
+    if (publisher != null && pinned.includes(publisher)) return publisher;
+    pinned.sort((a, b) => a - b);
+    if (pinned.length > 1) {
+      log.warn(
+        `[plans] plan ${planId} is pinned by sessions ${pinned.join(', ')} — routing to ${pinned[0]}`,
+      );
+    }
+    return pinned[0];
+  }
+
+  // Send all draft comments on a plan to the session that owns it via tmux
+  // relay. Flips each comment's status from draft → open after the message
+  // lands.
   app.post('/api/plans/:planId/send', async (req, res) => {
     const plan = plansStore.getPlan(req.params.planId);
     if (!plan) return res.status(404).json({ error: 'Plan not found' });
-    const sessionNum = plan.meta.sessionId;
+    const sessionNum = resolvePlanOwner(req.params.planId, plan.meta);
     if (sessionNum == null) {
-      return res.status(400).json({ error: 'Plan has no originating session — cannot send' });
+      return res.status(400).json({ error: 'Plan has no owning session — cannot send' });
     }
 
     const drafts = plansStore.getComments(req.params.planId).filter((c) => c.status === 'draft');

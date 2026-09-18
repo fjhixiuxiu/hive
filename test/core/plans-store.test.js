@@ -85,6 +85,25 @@ describe('plans-store', () => {
       expect(v2.title).toBe('Original');
     });
 
+    it('moves sessionId to the republishing session', () => {
+      // Plans get handed on (a PR-watch handoff seeds the planRef into the next
+      // session). If ownership stayed with whoever published v1, the dashboard
+      // would keep labelling the plan with a session that no longer has it.
+      const v1 = plansStore.publishPlan({ sessionNum: 10, html: SAMPLE_HTML, title: 'Paystubs' });
+      plansStore.publishPlan({ planId: v1.planId, sessionNum: 12, html: '<p>v2</p>' });
+
+      const meta = JSON.parse(fs.readFileSync(path.join(tmpDir, v1.planId, 'meta.json'), 'utf8'));
+      expect(meta.sessionId).toBe(12);
+    });
+
+    it('keeps sessionId when a republish names no session', () => {
+      const v1 = plansStore.publishPlan({ sessionNum: 10, html: SAMPLE_HTML, title: 'Paystubs' });
+      plansStore.publishPlan({ planId: v1.planId, html: '<p>v2</p>' });
+
+      const meta = JSON.parse(fs.readFileSync(path.join(tmpDir, v1.planId, 'meta.json'), 'utf8'));
+      expect(meta.sessionId).toBe(10);
+    });
+
     it('throws when html is missing', () => {
       expect(() => plansStore.publishPlan({ sessionNum: 1 })).toThrow(/html is required/);
     });

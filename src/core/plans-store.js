@@ -239,6 +239,10 @@ function resolveComment(planId, commentId, reason) {
 // sourceTaskId is stamped on creation only — republishing leaves it alone, so
 // a plan stays bound to the task it was *started for* even if the session
 // has since moved on.
+// sessionId is the opposite — it follows the republisher. A plan outlives the
+// session that wrote v1 (a PR-watch handoff seeds the planRef into whichever
+// session picks the work up next), and a stale sessionId makes the dashboard
+// label the plan with a session that no longer owns it.
 // Returns { planId, version, openCommentCount, title }.
 function publishPlan({ planId, sessionNum, html, title, sourceTaskId }) {
   ensureDir();
@@ -255,6 +259,7 @@ function publishPlan({ planId, sessionNum, html, title, sourceTaskId }) {
     meta.currentVersion = version;
     meta.updatedAt = new Date().toISOString();
     if (title) meta.title = title;
+    if (sessionNum != null) meta.sessionId = Number(sessionNum);
   } else {
     planId = newPlanId();
     version = 1;

@@ -175,7 +175,7 @@ This makes plans the default for any "design this", "plan this", or "think throu
 | `GET /api/plans/:planId/comments`                       | Comments for current version                                                              |
 | `POST /api/plans/:planId/comments`                      | Add a draft comment `{ sectionId, text }`                                                 |
 | `PATCH /api/plans/:planId/comments/:commentId`          | Update comment status                                                                     |
-| `POST /api/plans/:planId/send`                          | Send all draft comments to the originating session (`relay.tell`); flips drafts → open    |
+| `POST /api/plans/:planId/send`                          | Send all draft comments to the owning session (`relay.tell`); flips drafts → open         |
 | `POST /api/plans/:planId/archive`                       | Archive (clears `planRef` from any session pointing to this plan)                         |
 | `POST /api/plans/:planId/unarchive`                     | Restore to open status                                                                    |
 
@@ -243,7 +243,9 @@ reply with text.
 [c3 §mcp-tools] do we need hive_resolve_comment if patches auto-resolve?
 ```
 
-Resolves the originating session via the existing `fleet`/`router`, calls `relay.tell` (the same path used by manual user input from the dashboard). On success, flips every sent comment from `draft` → `open` and re-broadcasts.
+Resolves the **owning** session, then finds it via the existing `fleet`/`router` and calls `relay.tell` (the same path used by manual user input from the dashboard). On success, flips every sent comment from `draft` → `open`, re-broadcasts, and answers `{ sent, session }` so the toast can name where the comments went.
+
+The owner is whichever session currently pins the plan (`sessionContext.planRef.planId`) — the same pin `hive_reply_to_comment` reads, so the session that receives the comments is the one that can answer them. `meta.sessionId` (the last session to publish a version) is only the fallback when nobody pins it. If the publisher still pins it, it wins; if several other sessions do, the lowest-numbered one wins and a warning names them all. `GET /api/plans` and `GET /api/plans/:planId` report that owner as `sessionId` (and filter `?session=` by it), with the publisher kept as `publishedBySessionId`.
 
 ### Comment replies (`hive_reply_to_comment` / `hive_resolve_comment`)
 
@@ -288,5 +290,5 @@ test/
 ## Open questions / future work
 
 - **Auto-archive after N days idle** — currently manual only; defer until clutter is real
-- **Multi-session plans** — a plan is currently 1:1 with its originating session; no shared plans for now
+- **Multi-session plans** — a plan has one owner at a time (see _Send-to-Claude relay_); no shared plans for now
 - **Markdown in comments** — currently raw text; render markdown in comment threads

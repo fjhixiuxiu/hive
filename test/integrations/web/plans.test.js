@@ -175,6 +175,33 @@ describe('mcp:publish_plan handler', () => {
     expect(ctx.contexts.get(5).planRef.version).toBe(2);
   });
 
+  it('hands ownership to a session that republishes a plan it was handed', async () => {
+    // S10 publishes; the plan is then pinned into S12's context (a PR-watch
+    // handoff), and S12 republishes. That must bump the SAME plan, and move
+    // meta.sessionId to S12 so the fallback route stops pointing at S10.
+    const ctx = makeDeps();
+    const handler = createMessageHandler(ctx.deps);
+
+    await handler(
+      ctx.ws,
+      { type: 'mcp:publish_plan', _reqId: 1, session: 10, html: SAMPLE_HTML, title: 'v1' },
+      {},
+    );
+    const { planId } = ctx.sent.find((m) => m._reqId === 1);
+    ctx.contexts.set(12, { planRef: { planId, version: 1 } });
+
+    await handler(
+      ctx.ws,
+      { type: 'mcp:publish_plan', _reqId: 2, session: 12, html: '<p>v2</p>' },
+      {},
+    );
+    const second = ctx.sent.find((m) => m._reqId === 2);
+
+    expect(second).toMatchObject({ ok: true, planId, version: 2 });
+    expect(plansStore.getPlan(planId).meta.sessionId).toBe(12);
+    expect(plansStore.getPlan(planId).meta.title).toBe('v1');
+  });
+
   it('rejects empty html', async () => {
     const ctx = makeDeps();
     const handler = createMessageHandler(ctx.deps);
