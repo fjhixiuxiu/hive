@@ -324,6 +324,74 @@ function writeMcpConfig(repoDir, hiveUrl, token, session, tools) {
 }
 
 /**
+ * The hive MCP server's argv from a .mcp.json's text, or null if it has no
+ * hive entry (which includes the file being absent, unreadable or not JSON).
+ *
+ * @param {string|null} text - contents of a .mcp.json
+ * @returns {string[]|null}
+ */
+function hiveArgsFrom(text) {
+  try {
+    const args = JSON.parse(text)?.mcpServers?.hive?.args;
+    return Array.isArray(args) ? args : null;
+  } catch {
+    return null;
+  }
+}
+
+function readFileOrNull(p) {
+  try {
+    return fs.readFileSync(p, 'utf8');
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The `--tools` restriction a repo's deployed hive entry carries, or null when
+ * it has none (mcp:deploy with every tool ticked writes no --tools at all).
+ *
+ * @param {string} repoDir - repo directory path
+ * @returns {string[]|null}
+ */
+function readMcpTools(repoDir) {
+  const args = hiveArgsFrom(readFileOrNull(path.join(repoDir, '.mcp.json')));
+  if (!args) return null;
+  const i = args.indexOf('--tools');
+  return i !== -1 && args[i + 1] ? String(args[i + 1]).split(',') : null;
+}
+
+/**
+ * Give a repo directory its hive MCP entry, but only if it has no .mcp.json at
+ * all.
+ *
+ * The two cases look alike on disk and are not alike at all:
+ *
+ * - A .mcp.json that EXISTS without a hive entry is a decision. Either hive was
+ *   never deployed there, or mcp:remove took the entry out. Re-adding hive would
+ *   undo that behind the operator's back, so the file is left byte for byte.
+ *   An existing hive entry is left alone too — seeding is not a refresh, and a
+ *   rewrite would replace the deployed URL, token and session.
+ * - NO .mcp.json at all, in a directory hive itself just created for a session
+ *   it is spawning, is not a decision. Nobody has had the chance to make one.
+ *   Without this the session comes up with no hive MCP server at all: it runs
+ *   its task and then cannot call hive_get_task or hive_complete_task to report
+ *   it. Callers are responsible for only passing directories they just created.
+ *
+ * @param {string} repoDir - repo directory path
+ * @param {string} hiveUrl - hive WS URL
+ * @param {string} token - auth token
+ * @param {string|number} session - session number
+ * @param {string[]} [tools] - optional list of enabled tool names
+ * @returns {boolean} whether the file was written
+ */
+function seedMcpConfig(repoDir, hiveUrl, token, session, tools) {
+  if (fs.existsSync(path.join(repoDir, '.mcp.json'))) return false;
+  writeMcpConfig(repoDir, hiveUrl, token, session, tools);
+  return true;
+}
+
+/**
  * Remove the hive entry from .mcp.json in a repo directory.
  * Deletes the file entirely if no other MCP servers remain.
  *
@@ -353,5 +421,8 @@ module.exports = {
   createAllSessions,
   destroyAllSessions,
   writeMcpConfig,
+  seedMcpConfig,
+  readMcpTools,
+  hiveArgsFrom,
   removeMcpConfig,
 };

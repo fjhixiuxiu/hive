@@ -41,6 +41,7 @@ class TaskQueue extends EventEmitter {
     this.approvals = new Map(); // id -> Approval
     this.users = new Map(); // login -> { login, name, avatar, permissions, firstSeen }
     this.dispatchLock = new Set(); // session numbers currently being dispatched to
+    this._warnedNoHiveMcp = new Set(); // sessions already warned about a missing hive MCP entry
     this._autoDispatching = false; // re-entrancy guard for _tryAutoDispatch
     this.activeTaskBySession = new Map(); // session num -> task id
     this.lastDispatchedAt = new Map(); // session num -> timestamp of last task dispatch
@@ -823,6 +824,11 @@ class TaskQueue extends EventEmitter {
     );
     this._saveState();
 
+    // Fire-and-forget, after the dispatch is committed: this is a warning, not
+    // a gate. A session with no hive entry still runs the task perfectly well —
+    // it just cannot report it.
+    this._warnIfHiveMcpMissing(node, sessionNum).catch(() => {});
+
     // Fire-and-forget: send the task text to Claude
     // Clear context first so the agent starts fresh.
     //
@@ -889,6 +895,41 @@ class TaskQueue extends EventEmitter {
   }
 
   /**
+   * Say so in the feed when a task is dispatched to a session whose repo has no
+   * hive entry in .mcp.json.
+   *
+   * Today that session fails silently in the most expensive way available: it
+   * reads the task out of the pane, does the work, and then has no
+   * hive_complete_task to close it with. The task sits dispatched, the slot
+   * stays locked, and nothing anywhere says why.
+   *
+   * Cost: one read of one small file per dispatch — not per poll — and only the
+   * first time for a given session, until the entry turns up. node.readFile so
+   * a remote session's repo is read on its own host rather than looked for on
+   * this one.
+   *
+   * @param {object} node - the node that owns the session
+   * @param {number} sessionNum
+   */
+  async _warnIfHiveMcpMissing(node, sessionNum) {
+    const repoDir = this.getRepoDir(sessionNum);
+    const mcpPath = path.join(repoDir, '.mcp.json');
+    const text = await node.readFile(mcpPath);
+    if (sessionManager.hiveArgsFrom(text)) {
+      // Deployed since we last looked — say so again if it goes away again.
+      this._warnedNoHiveMcp.delete(sessionNum);
+      return;
+    }
+    if (this._warnedNoHiveMcp.has(sessionNum)) return;
+    this._warnedNoHiveMcp.add(sessionNum);
+    const detail =
+      `Session ${sessionNum} cannot call hive_get_task or hive_complete_task — ` +
+      `no hive MCP entry in ${mcpPath}. Deploy MCP from Settings.`;
+    log.warn(`[dispatch] ${detail}`);
+    this.pushFeed('state', sessionNum, detail);
+  }
+
+  /**
    * Clean up all TaskQueue state for a killed session.
    * Fails active task, removes dispatch lock and spawned agent tracking.
    *
@@ -916,6 +957,9 @@ class TaskQueue extends EventEmitter {
     }
     this.activeTaskBySession.delete(num);
     this.dispatchLock.delete(num);
+    // The slot is free: whatever lands in it next is a different repo as far as
+    // this warning is concerned, and deserves to be told the same thing.
+    this._warnedNoHiveMcp.delete(num);
     this.spawnedAgents.delete(num);
     this.autoSessions.delete(num);
     this.manualSessions.delete(num);
@@ -1211,6 +1255,10 @@ class TaskQueue extends EventEmitter {
           const sessionName = `${prefix}${num}`;
           const desigLabel = desig || 'undesignated';
           log.info(`[auto-dispatch] No idle ${desigLabel} session — creating session ${num}`);
+          // Same read-before-create as spawnSession: createSession mkdir -p's
+          // repoDir, so after it every directory exists and nothing can tell a
+          // brand-new one from one the operator has had all along.
+          const repoExisted = fs.existsSync(repoDir);
           const spawn = await sessionManager.createSession(
             sessionName,
             repoDir,
@@ -1221,6 +1269,8 @@ class TaskQueue extends EventEmitter {
             },
             size,
           );
+          // Before startClaude below: Claude reads .mcp.json once, at startup.
+          if (!repoExisted) this._seedMcpConfig(repoDir, num, sessions);
           // Same guard as spawnSession: getAvailableSlots reads a cached fleet,
           // so a slot can be taken between the read and here. Typing `claude`
           // into a pane that already runs one stacks a second REPL on it.
@@ -1405,6 +1455,68 @@ class TaskQueue extends EventEmitter {
     return this.config.sessions.repoDir(num);
   }
 
+  /**
+   * Write the hive MCP config into a repo directory hive has just created for a
+   * session it is starting.
+   *
+   * Without it the session comes up with no hive MCP server at all — observed
+   * live: a session spawned into a fresh repos/a1 listed 7 MCP servers and no
+   * hive, and the directory had no .mcp.json whatsoever. It ran its task and
+   * then had no hive_get_task to read it or hive_complete_task to close it.
+   *
+   * Only ever called with a directory this spawn created. seedMcpConfig refuses
+   * to touch a .mcp.json that already exists, so a repo the operator deployed
+   * to, ran mcp:remove on, or that carried its own file in the clone, is left
+   * exactly as it is.
+   *
+   * The URL, token and session are the ones mcp:deploy writes; --tools is
+   * inherited from whichever fleet repo already has a restriction, so a spawned
+   * session is handed the same tool set as the fleet it joins rather than the
+   * full one. Best-effort: a session that starts without a config is still a
+   * working session, so a failure is logged and never fails the spawn.
+   *
+   * @param {string} repoDir - the newly created repo directory
+   * @param {number} num - session slot
+   * @param {Array<{num: number}>} [fleetSessions] - live fleet, for --tools
+   */
+  _seedMcpConfig(repoDir, num, fleetSessions) {
+    try {
+      const hiveUrl = `ws://127.0.0.1:${process.env.WEB_PORT || 3000}`;
+      const token = process.env.WEB_TOKEN || '';
+      const tools = this._deployedMcpTools(fleetSessions);
+      const wrote = sessionManager.seedMcpConfig(repoDir, hiveUrl, token, num, tools);
+      if (wrote) {
+        log.info(
+          `[mcp] S:${num} seeded hive MCP config → ${path.join(repoDir, '.mcp.json')}` +
+            (tools ? ` (tools: ${tools.join(', ')})` : ''),
+        );
+      } else {
+        log.info(`[mcp] S:${num} ${repoDir} already has a .mcp.json — leaving it alone`);
+      }
+    } catch (err) {
+      log.warn(`[mcp] S:${num} could not write MCP config: ${err.message}`);
+    }
+  }
+
+  /**
+   * The --tools restriction the fleet was deployed with, read from the first
+   * live session whose repo carries one. Undefined means no restriction, which
+   * is what mcp:deploy writes when every tool is ticked.
+   *
+   * Runs once per spawn, over the fleet list the caller already has.
+   */
+  _deployedMcpTools(fleetSessions) {
+    for (const s of fleetSessions || []) {
+      try {
+        const tools = sessionManager.readMcpTools(this.getRepoDir(s.num));
+        if (tools) return tools;
+      } catch {
+        // A repo we cannot read tells us nothing; try the next one.
+      }
+    }
+    return undefined;
+  }
+
   async spawnSession({ num, baseDir, name, gitUrl } = {}) {
     if (!name) throw new Error('Agent name is required');
     log.info(
@@ -1437,8 +1549,18 @@ class TaskQueue extends EventEmitter {
     const repoDir = path.join(baseDir, `${name}${num}`);
     log.info(`[spawn] repoDir=${repoDir}`);
 
+    // Read BEFORE the clone: afterwards every repoDir exists, and this is the
+    // only moment that tells "a directory hive is about to create" apart from
+    // "a directory the operator already has". Only the first may be seeded with
+    // an MCP config — see _seedMcpConfig.
+    const repoExisted = fs.existsSync(repoDir);
+
     // Clone or create directory
     await cloneOrReuse(gitUrl, repoDir);
+
+    // Before startClaude: Claude reads .mcp.json once, at startup, so a config
+    // written after it launches reaches nothing until the next restart.
+    if (!repoExisted) this._seedMcpConfig(repoDir, num, sessions);
 
     // Start tmux session via session-manager (no tmuxinator dependency)
     const size = this.config.tmux?.defaultSize || { cols: 200, rows: 50 };
