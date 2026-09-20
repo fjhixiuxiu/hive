@@ -124,6 +124,11 @@ describe('multi-pane terminal viewer', () => {
 
       const paneMsg = findSent(ws, 'terminal:panes');
 
+      // list-panes without -s takes a target-window: the exact-match window form
+      // ("=name:") so a window named like the session can't be listed instead.
+      const listCall = node.exec.mock.calls.find(([cmd]) => cmd.includes('list-panes'));
+      expect(listCall[0]).toContain('tmux list-panes -t "=6-DEV-123:" ');
+
       expect(paneMsg).toBeTruthy();
       expect(paneMsg.session).toBe(6);
       expect(paneMsg.panes).toHaveLength(3);

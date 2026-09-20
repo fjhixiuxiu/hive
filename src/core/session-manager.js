@@ -152,7 +152,7 @@ async function createSession(name, repoDir, layout = {}, size = {}) {
 
   // 2. Split panes
   if (panes >= 2) {
-    await tmux.exec(`tmux split-window -h -t "${tmux.sessionTarget(sessionName)}" -c "${repoDir}"`);
+    await tmux.exec(`tmux split-window -h -t "${tmux.windowTarget(sessionName)}" -c "${repoDir}"`);
   }
   if (panes >= 3) {
     await tmux.exec(`tmux split-window -v -t "${tmux.paneTarget(sessionName, 2)}" -c "${repoDir}"`);
@@ -160,7 +160,7 @@ async function createSession(name, repoDir, layout = {}, size = {}) {
 
   // 3. Apply layout
   if (panes >= 2) {
-    await tmux.exec(`tmux select-layout -t "${tmux.sessionTarget(sessionName)}" ${tmuxLayout}`);
+    await tmux.exec(`tmux select-layout -t "${tmux.windowTarget(sessionName)}" ${tmuxLayout}`);
   }
 
   // 4. Resize Claude pane (pane .1) to desired width

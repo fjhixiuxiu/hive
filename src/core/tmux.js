@@ -161,11 +161,36 @@ async function sendKeys(target, keys, enter = true) {
  * auto-dispatcher into an endless "create session 3" loop, let killSession("3")
  * kill "30", and leaked keystrokes into the wrong session's pane.
  *
+ * `=name` is only valid where tmux expects a *target-session* (has-session,
+ * kill-session). Commands that take a target-window or target-pane need
+ * windowTarget / paneTarget instead — see windowTarget for what goes wrong.
+ *
  * @param {string|number} name - session name
  * @returns {string} e.g. "=3"
  */
 function sessionTarget(name) {
   return `=${name}`;
+}
+
+/**
+ * Build an exact-match tmux window target ("=<session>:" — the session's
+ * current window). Use for commands whose -t is a target-window or target-pane
+ * but that should act on the session as a whole: split-window, select-layout,
+ * list-panes (without -s), resize-window.
+ *
+ * A bare "=name" is not a window target. Measured on tmux 3.6a:
+ *   - split-window / select-layout -t =name  → "can't find pane: =name" (exit 1),
+ *     which exec swallowed, so createSession left every session with ONE pane.
+ *   - list-panes / resize-window -t =name     → exit 0, but tmux tries it as a
+ *     window NAME in the current session before trying sessions, so it can act
+ *     on a different session's window that happens to be named "name".
+ * The trailing colon makes it unambiguously "session =name, current window".
+ *
+ * @param {string|number} name - session name
+ * @returns {string} e.g. "=3:"
+ */
+function windowTarget(name) {
+  return `=${name}:`;
 }
 
 /**
@@ -577,6 +602,7 @@ module.exports = {
   capturePane,
   sendKeys,
   sessionTarget,
+  windowTarget,
   paneTarget,
   hasSession,
   detectState,

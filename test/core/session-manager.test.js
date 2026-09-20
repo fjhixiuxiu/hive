@@ -94,7 +94,11 @@ describe('createSession', () => {
     await sessionManager.createSession('2', '/repo', { panes: 3 }, { cols: 200, rows: 50 });
 
     const calls = execSpy.mock.calls.map((c) => c[0]);
-    expect(calls).toContainEqual('tmux split-window -h -t "=2" -c "/repo"');
+    // split-window and select-layout take a target-pane/target-window, not a
+    // target-session. tmux 3.6a rejects a bare "=2" there ("can't find pane: =2")
+    // and exec swallows the error, so every session came up with ONE pane. The
+    // trailing colon makes it the exact-match window form.
+    expect(calls).toContainEqual('tmux split-window -h -t "=2:" -c "/repo"');
     expect(calls).toContainEqual('tmux split-window -v -t "=2:.2" -c "/repo"');
   });
 
@@ -102,7 +106,18 @@ describe('createSession', () => {
     await sessionManager.createSession('3', '/repo', { panes: 3 }, { cols: 200, rows: 50 });
 
     const calls = execSpy.mock.calls.map((c) => c[0]);
-    expect(calls).toContainEqual('tmux select-layout -t "=3" main-vertical');
+    expect(calls).toContainEqual('tmux select-layout -t "=3:" main-vertical');
+  });
+
+  it('never hands a bare session target to a window/pane command', async () => {
+    await sessionManager.createSession('3', '/repo', { panes: 3 }, { cols: 200, rows: 50 });
+
+    const calls = execSpy.mock.calls.map((c) => c[0]);
+    const windowOrPaneCmds = calls.filter((c) => !/tmux (new-session|has-session)/.test(c));
+    expect(windowOrPaneCmds.length).toBeGreaterThan(0);
+    for (const cmd of windowOrPaneCmds) {
+      expect(cmd, cmd).not.toMatch(/-t "=[^":]+"/);
+    }
   });
 
   it('resizes Claude pane to 50% of cols', async () => {
@@ -136,7 +151,8 @@ describe('createSession', () => {
     await sessionManager.createSession('7', '/repo', { panes: 2 }, { cols: 200, rows: 50 });
 
     const calls = execSpy.mock.calls.map((c) => c[0]);
-    expect(calls).toContainEqual('tmux split-window -h -t "=7" -c "/repo"');
+    expect(calls).toContainEqual('tmux split-window -h -t "=7:" -c "/repo"');
+    expect(calls).toContainEqual('tmux select-layout -t "=7:" main-vertical');
     // No vertical split
     expect(calls).not.toContainEqual(expect.stringContaining('split-window -v'));
   });

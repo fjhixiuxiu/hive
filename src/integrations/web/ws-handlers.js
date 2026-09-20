@@ -233,7 +233,7 @@ function createMessageHandler(deps) {
         const node = router.getNode(nodeId);
         try {
           const raw = await node.exec(
-            `tmux list-panes -t "${tmux.sessionTarget(name)}" -F '#{pane_index}|#{pane_current_command}' 2>/dev/null`,
+            `tmux list-panes -t "${tmux.windowTarget(name)}" -F '#{pane_index}|#{pane_current_command}' 2>/dev/null`,
           );
           const panes = (raw || '')
             .trim()
@@ -402,7 +402,7 @@ function createMessageHandler(deps) {
           // window size). resize-window sets the window size directly, which
           // sizes the single pane to match.
           await sub.node.exec(
-            `tmux resize-window -t "${tmux.sessionTarget(sub.name)}" -x ${msg.cols} -y ${msg.rows} 2>/dev/null`,
+            `tmux resize-window -t "${tmux.windowTarget(sub.name)}" -x ${msg.cols} -y ${msg.rows} 2>/dev/null`,
           );
         } else {
           const resizeTarget = tmux.paneTarget(sub.name, config.sessions.claudePane);

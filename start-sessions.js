@@ -145,7 +145,9 @@ if (require.main === module) {
       // Force a full-width window size — headless sessions default to 80x24
       // since no terminal client ever attaches. Without this, Claude output
       // wraps at 40 columns and becomes unreadable.
-      execSync(`tmux resize-window -t "=${name}" -x 311 -y 54 2>/dev/null || true`);
+      // Window form ("=N:"): resize-window takes a target-window, and a bare
+      // "=N" is tried as a window *named* N before the session N.
+      execSync(`tmux resize-window -t "=${name}:" -x 311 -y 54 2>/dev/null || true`);
     } catch (err) {
       console.error(`Failed to start session ${n}: ${err.message}`);
     }
