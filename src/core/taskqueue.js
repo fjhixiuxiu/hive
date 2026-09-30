@@ -839,7 +839,14 @@ class TaskQueue extends EventEmitter {
     // Claude Code crashes. Observed on S:34 on 2026-04-15.
     // See: ~/dev/agents/hive/clear-paste-race-plan.md
     const sendTask = async () => {
-      await relay.ask(this.config, node, sessionName, '/clear', { vimMode: this.vimMode });
+      const cleared = await relay.ask(this.config, node, sessionName, '/clear', {
+        vimMode: this.vimMode,
+      });
+      // The relay refused to type into the pane at all (a startup dialog, or a
+      // shell where Claude should be). Every step below sends keys too, so stop
+      // here and let the refusal fail the task with its reason. Any other /clear
+      // outcome carries on exactly as before.
+      if (cleared && cleared.refused) return cleared;
 
       // Defense-in-depth: relay.ask returns success when the session is idle,
       // but if the Enter after `/clear` was lost (vim-mode paste race), the
@@ -850,7 +857,13 @@ class TaskQueue extends EventEmitter {
       try {
         const paneTarget = tmux.paneTarget(sessionName, this.config.sessions.claudePane);
         const tail = await node.capturePane(paneTarget, { lines: 8 });
-        if (tail && /\/clear\s*$/m.test(tail)) {
+        // A bare Enter into anything but Claude runs whatever sits on its
+        // command line — a shell's, or a REPL's.
+        if (
+          tail &&
+          /\/clear\s*$/m.test(tail) &&
+          !(await relay.nonClaudeProgram(node, paneTarget))
+        ) {
           log.warn(`[dispatch] /clear unsubmitted on S:${sessionNum}, sending safety Enter`);
           await node.exec(`tmux send-keys -t "${paneTarget}" Enter`);
           await new Promise((r) => setTimeout(r, 1500));

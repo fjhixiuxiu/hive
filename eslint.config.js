@@ -32,7 +32,7 @@
 // The words hive's own vocabularies own. Kept in sync with src/core/vocab.js by
 // test/core/vocab.test.js, which fails if this list and the enums disagree.
 const TASK_STATUSES = ['queued', 'dispatched', 'snoozed', 'completed', 'failed', 'cancelled'];
-const SESSION_STATES = ['idle', 'working', 'off'];
+const SESSION_STATES = ['idle', 'working', 'off', 'blocked'];
 
 // Words that were compared against but have never been produced anywhere in
 // hive. These are not vocabulary — they are the bugs themselves, kept here so

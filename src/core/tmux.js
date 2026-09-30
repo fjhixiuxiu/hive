@@ -384,7 +384,7 @@ function isSeparator(line) {
  *
  * @param {string} paneContent - raw pane capture text
  * @param {object} config - hive config with idlePatterns/offPatterns
- * @returns {'idle'|'working'|'off'}
+ * @returns {'idle'|'working'|'off'|'blocked'}
  */
 // Interactive prompt patterns safe to check below the separator.
 // These only appear in permission/choice prompts, never in the status bar.
@@ -394,6 +394,20 @@ const INTERACTIVE_PATTERNS = [
   /Esc to cancel/,
   /Enter to select/,
   /^\s*❯/,
+];
+
+// Claude Code startup gates: the folder-trust dialog, the bypass-permissions
+// warning and the managed-settings approval. They render as a menu below a
+// separator with `❯` and "Esc to cancel", so INTERACTIVE_PATTERNS alone reads
+// them as idle. What sets them apart is an *option* that exits Claude — "No,
+// exit" is the default highlight on all three, so one Enter from hive ends the
+// session and leaves bash in the pane. The in-session permission menus offer
+// "No" and "No, and tell Claude…", never exit. Anchored to option-line shape
+// (optional ❯ and "N. ") so prose that merely contains the words does not match.
+// Strings verified against the Claude Code 2.1.274 binary.
+const STARTUP_GATE_PATTERNS = [
+  /^\s*(?:❯\s*)?(?:\d+\.\s+)?No, exit\b/,
+  /^\s*(?:❯\s*)?(?:\d+\.\s+)?Yes, I trust (?:this folder|these settings)\b/,
 ];
 
 // Active Claude status indicators — the ❯ prompt is visible but not usable.
@@ -438,6 +452,17 @@ function _classifyState(lines, config) {
       separatorIdx = i;
       break;
     }
+  }
+
+  // A startup gate is checked before the idle patterns, which it also matches.
+  // Only the region a menu occupies is scanned — below the bottom-most
+  // separator, or the whole capture when there is none — so a dialog that was
+  // accepted and now sits above a live prompt no longer counts. The dialog text
+  // also survives Claude exiting (it stays on screen above the shell prompt),
+  // which keeps the pane blocked rather than idle until it scrolls away.
+  const gateRegion = separatorIdx >= 0 ? lines.slice(separatorIdx + 1) : lines;
+  if (gateRegion.some((line) => STARTUP_GATE_PATTERNS.some((pat) => pat.test(line)))) {
+    return SessionState.BLOCKED;
   }
 
   // Check below separator for interactive prompts (permission/choice menus).

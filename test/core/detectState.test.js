@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { createRequire } from 'module';
+import { readFileSync } from 'fs';
+import { dirname, join } from 'path';
+import { fileURLToPath } from 'url';
 
 const require = createRequire(import.meta.url);
 
@@ -14,6 +17,8 @@ const config = {
 import * as tmuxMod from '../../src/core/tmux.js';
 const tmux = tmuxMod.default || tmuxMod;
 const { detectState } = tmux;
+
+const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), 'fixtures');
 
 // Helper to join lines into pane content
 const pane = (...lines) => lines.join('\n');
@@ -444,5 +449,104 @@ describe('detectState — production config', () => {
       '  Model: Opus 4.6 | Ctx: 55.0%',
     );
     expect(detectState(content, config)).toBe('working');
+  });
+});
+
+// -- Startup gates (folder trust, bypass permissions) -------------------------
+//
+// The fixtures are the real pane capture from the live test that found this:
+// an auto-created session in a new repo dir sat on Claude Code's folder-trust
+// dialog, detectState called it idle (`❯` and `Esc to cancel` below the
+// separator are both idle patterns), dispatch sent `/clear` + Enter, Enter chose
+// the highlighted "No, exit", and the task text was pasted into bash.
+//
+//   trust-dialog-at-dispatch.txt  the pane as dispatch saw it (dialog up)
+//   trust-dialog-after-exit.txt   the same pane after Claude exited: the dialog
+//                                 text is still below the separator, with bash
+//                                 prompts and "command not found" under it
+describe('detectState — startup gates', () => {
+  const fixture = (name) => readFileSync(join(FIXTURES, name), 'utf8').replace(/\n+$/, '');
+
+  it('reads the real folder-trust dialog as blocked, not idle', () => {
+    expect(detectState(fixture('trust-dialog-at-dispatch.txt'), config)).toBe('blocked');
+  });
+
+  it('keeps reading it as blocked after Claude exited and bash owns the pane', () => {
+    // This is the capture relay.tell saw before pasting the task: stale
+    // "❯ No, exit" below the separator kept it idle while bash ran the text.
+    expect(detectState(fixture('trust-dialog-after-exit.txt'), config)).toBe('blocked');
+  });
+
+  it('reads the bypass-permissions warning as blocked', () => {
+    const content = pane(
+      SEP,
+      ' WARNING: Claude Code running in Bypass Permissions mode',
+      '',
+      ' In Bypass Permissions mode, Claude Code will not ask for your approval before running potentially dangerous commands.',
+      '',
+      ' ❯ 1. No, exit',
+      '   2. Yes, I accept',
+      '',
+      ' Enter to confirm · Esc to cancel',
+    );
+    expect(detectState(content, config)).toBe('blocked');
+  });
+
+  it('reads the trust dialog as blocked even with "Yes" highlighted', () => {
+    const content = pane(
+      SEP,
+      ' Accessing workspace:',
+      '',
+      '   No, exit',
+      ' ❯ Yes, I trust this folder',
+      '',
+      ' Enter to confirm · Esc to cancel',
+    );
+    expect(detectState(content, config)).toBe('blocked');
+  });
+
+  it('reads the managed-settings approval as blocked', () => {
+    const content = pane(
+      SEP,
+      ' Managed settings require approval',
+      '',
+      ' ❯ Yes, I trust these settings',
+      '   No, exit Claude Code',
+      '',
+      ' Enter to confirm · Esc to cancel',
+    );
+    expect(detectState(content, config)).toBe('blocked');
+  });
+
+  it('does not read a permission prompt that mentions exiting as blocked', () => {
+    // Only an *option line* offering exit is a gate. Prose that says "exit"
+    // and the in-session approval menus stay idle.
+    const content = pane(
+      SEP,
+      ' Bash command',
+      '',
+      '   git commit -m "No, exit early when the queue is empty"',
+      '',
+      ' Do you want to proceed?',
+      ' ❯ 1. Yes',
+      '   2. No, and tell Claude what to do differently (esc)',
+      '',
+      ' Esc to cancel',
+    );
+    expect(detectState(content, config)).toBe('idle');
+  });
+
+  it('does not read a trust dialog left above the live prompt as blocked', () => {
+    // Accepting trust starts the TUI below the old dialog. Only what is under
+    // the bottom-most separator decides the state.
+    const content = pane(
+      ' ❯ No, exit',
+      '   Yes, I trust this folder',
+      SEP,
+      '❯ ',
+      SEP,
+      '  ? for shortcuts',
+    );
+    expect(detectState(content, config)).toBe('idle');
   });
 });

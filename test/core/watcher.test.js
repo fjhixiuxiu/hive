@@ -81,6 +81,50 @@ describe('Watcher', () => {
       expect(spy).toHaveBeenCalledTimes(1);
     });
 
+    it('emits session:blocked once when a session lands on a startup dialog', async () => {
+      // Nothing in hive moves a session off a folder-trust dialog, and nothing
+      // should: the announcement is the only way a person finds out.
+      const spy = vi.fn();
+      vi.spyOn(log, 'warn').mockImplementation(() => {});
+      watcher = new Watcher(config, router);
+      watcher.on('session:blocked', spy);
+
+      fleetSpy.mockResolvedValue([makeSession(6, 'idle')]);
+      await watcher._seed();
+
+      fleetSpy.mockResolvedValue([makeSession(6, 'blocked')]);
+      for (let i = 0; i < 3; i++) await watcher._poll();
+
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(spy).toHaveBeenCalledWith(expect.objectContaining({ num: 6 }));
+    });
+
+    it('announces a session that was already blocked when hive started', async () => {
+      const spy = vi.fn();
+      vi.spyOn(log, 'warn').mockImplementation(() => {});
+      watcher = new Watcher(config, router);
+      watcher.on('session:blocked', spy);
+
+      fleetSpy.mockResolvedValue([makeSession(6, 'blocked')]);
+      await watcher._seed();
+      for (let i = 0; i < 3; i++) await watcher._poll();
+
+      expect(spy).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not count a blocked session toward idle', async () => {
+      const idleSpy = vi.fn();
+      vi.spyOn(log, 'warn').mockImplementation(() => {});
+      watcher = new Watcher(config, router);
+      watcher.on('session:idle', idleSpy);
+      watcher.seenWorking.add(6);
+
+      fleetSpy.mockResolvedValue([makeSession(6, 'blocked')]);
+      for (let i = 0; i < 10; i++) await watcher._poll();
+
+      expect(idleSpy).not.toHaveBeenCalled();
+    });
+
     it('does NOT emit idle on startup', async () => {
       const spy = vi.fn();
       watcher = new Watcher(config, router);
@@ -201,6 +245,38 @@ describe('Watcher', () => {
 
       expect(retrySpy).toHaveBeenCalledWith(expect.objectContaining({ num: 6, retryCount: 1 }));
       expect(mockNode.sendKeys).toHaveBeenCalledWith(expect.stringContaining('6'), 'retry', true);
+    });
+
+    it("does not type retry into a shell left under a dead session's API error", async () => {
+      // Claude died on the error; bash owns the pane and the error text is
+      // still on screen. `retry` + Enter would run as a shell command on every
+      // backoff tick.
+      const retrySpy = vi.fn();
+      const warn = vi.spyOn(log, 'warn').mockImplementation(() => {});
+      watcher = new Watcher(config, router);
+      watcher.on('session:error-retry', retrySpy);
+
+      const mockNode = createMockNode();
+      mockNode.capturePane.mockResolvedValue('  ⎿  API Error: 500 {"type":"error"}\njeff$ ');
+      mockNode.exec.mockImplementation(async (cmd) => {
+        if (cmd.includes('#{pane_current_command}')) return 'bash|/dev/ttys042';
+        if (cmd.startsWith('ps ')) return 'Ss+  -bash';
+        return '';
+      });
+      router.nodeFor.mockReturnValue(mockNode);
+      watcher.errorRetries.set(6, { count: 2, lastRetryAt: 1 });
+      watcher.seenWorking.add(6);
+      watcher.prevStates.set(6, 'idle');
+
+      fleetSpy.mockResolvedValue([makeSession(6, 'idle')]);
+      for (let i = 0; i < 3; i++) await watcher._poll();
+
+      expect(mockNode.sendKeys).not.toHaveBeenCalled();
+      expect(retrySpy).not.toHaveBeenCalled();
+      // The budget is not spent on a retry that was never sent, and the reason
+      // is logged once rather than on every poll.
+      expect(watcher.errorRetries.get(6).count).toBe(2);
+      expect(warn.mock.calls.filter(([m]) => /running bash, not Claude/.test(m))).toHaveLength(1);
     });
 
     it('does not retry when no API error present', async () => {

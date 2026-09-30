@@ -155,6 +155,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 /* ── Hive logo variants ─────────────── */
 .hive-logo polygon { stroke: currentColor; }
 .hive-logo.logo-purple polygon { stroke: var(--purple); }
+.hive-logo.logo-red polygon { stroke: var(--red); }
 .hive-logo.logo-green polygon { stroke: var(--green); filter: drop-shadow(0 0 3px rgba(74, 222, 128, 0.5)); }
 .hive-logo.logo-animated polygon {
   stroke: var(--purple); stroke-width: 2;
@@ -411,6 +412,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 }
 .card-ci.pass { color: var(--green); background: rgba(80,250,123,0.12); }
 .card-ci.fail { color: var(--red); background: rgba(255,85,85,0.12); }
+.card-blocked { color: var(--red); background: rgba(255,85,85,0.12); font-weight: 600; padding: 0 5px; border-radius: 3px; white-space: nowrap; }
 .card-ci.pending { color: var(--dim); }
 .card-review {
   font-size: var(--fs-xs); font-weight: 700; padding: 0 4px; border-radius: 3px; white-space: nowrap;
@@ -1525,6 +1527,7 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .mini-fleet-box.s-idle { background:rgba(80,250,123,0.2); color:var(--green); }
 .mini-fleet-box.s-working { background:rgba(241,250,140,0.2); color:var(--yellow); }
 .mini-fleet-box.s-off { background:rgba(98,114,164,0.15); color:var(--dim); }
+.mini-fleet-box.s-blocked { background:rgba(255,85,85,0.18); color:var(--red); }
 .mini-fleet-box.current { border-color:var(--purple); }
 .mini-fleet-sep { width:1px; min-width:1px; height:20px; background:var(--bg3); flex-shrink:0; align-self:center; margin:0 4px; }
 .mini-fleet-label { font-size:9px; color:var(--dim); align-self:center; padding:0 4px; white-space:nowrap; flex-shrink:0; }

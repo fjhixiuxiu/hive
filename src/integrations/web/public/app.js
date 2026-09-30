@@ -2074,11 +2074,19 @@
 
   function fleetHexSvg(state, size) {
     const sz = size || 20;
-    const cls = state === 'working' ? 'logo-animated' : state === 'idle' ? 'logo-green' : 'logo-purple';
+    const cls = state === 'working' ? 'logo-animated' : state === 'idle' ? 'logo-green' : state === 'blocked' ? 'logo-red' : 'logo-purple';
     return `<svg class="hive-logo ${cls}" width="${sz}" height="${sz}" viewBox="0 0 100 100"><g transform="translate(50,50)" fill="none" stroke-width="2"><polygon points="0,-12 10.4,-6 10.4,6 0,12 -10.4,6 -10.4,-6"/><polygon points="0,-33 10.4,-27 10.4,-15 0,-9 -10.4,-15 -10.4,-27"/><polygon points="18,-22.5 28.4,-16.5 28.4,-4.5 18,1.5 7.6,-4.5 7.6,-16.5"/><polygon points="18,1.5 28.4,7.5 28.4,19.5 18,25.5 7.6,19.5 7.6,7.5"/><polygon points="0,12 10.4,18 10.4,30 0,36 -10.4,30 -10.4,18"/><polygon points="-18,1.5 -7.6,7.5 -7.6,19.5 -18,25.5 -28.4,19.5 -28.4,7.5"/><polygon points="-18,-22.5 -7.6,-16.5 -7.6,-4.5 -18,1.5 -28.4,-4.5 -28.4,-16.5"/></g></svg>`;
   }
 
   // ── Shared card helpers ──────────────────────────
+  // A session on a Claude Code startup dialog (folder trust, permissions mode)
+  // waits for a person indefinitely — hive will not answer it or send it tasks —
+  // so the card says so in words rather than only by hex colour.
+  function cardBlockedHtml(state) {
+    if (state !== 'blocked') return '';
+    return '<span class="card-blocked" data-tooltip="Claude Code is waiting on a startup dialog (folder trust or permissions mode). hive will not answer it or send it tasks. Open the session and choose.">Needs you: startup dialog</span>';
+  }
+
   function cardGitHtml(git) {
     if (!git) return '';
     const parts = [];
@@ -2121,7 +2129,7 @@
     const { pr: prStr, ci: ciStr, review: revStr } = cardPrHtml(s.pr);
 
     // Build meta row: git stats, PR#, CI, review, activity
-    let metaParts = '';
+    let metaParts = cardBlockedHtml(s.state);
     if (gitStr) metaParts += `<span class="card-git">${gitStr}</span>`;
     if (prStr) metaParts += `<span class="card-pr">${prStr}</span>`;
     if (ciStr) metaParts += ciStr;
@@ -2195,7 +2203,7 @@
     const gitStr = cardGitHtml(s.git || {});
     const { pr: prStr, ci: ciStr, review: revStr } = cardPrHtml(s.pr);
     const activityHtml = s.lastActivity ? `<span class="card-activity">${timeAgo(s.lastActivity)}</span>` : '';
-    let metaParts = '';
+    let metaParts = cardBlockedHtml(s.state);
     if (gitStr) metaParts += `<span class="card-git">${gitStr}</span>`;
     if (prStr) metaParts += `<span class="card-pr">${prStr}</span>`;
     if (ciStr) metaParts += ciStr;
@@ -2303,7 +2311,7 @@
       const gitStr = cardGitHtml(s.git || {});
       const { pr: prStr, ci: ciStr, review: revStr } = cardPrHtml(s.pr);
       const activityHtml = s.lastActivity ? `<span class="card-activity">${timeAgo(s.lastActivity)}</span>` : '';
-      let metaParts = '';
+      let metaParts = cardBlockedHtml(s.state);
       if (gitStr) metaParts += `<span class="card-git">${gitStr}</span>`;
       if (prStr) metaParts += `<span class="card-pr">${prStr}</span>`;
       if (ciStr) metaParts += ciStr;
@@ -2357,7 +2365,7 @@
       if (dc) tr.style.borderLeft = `3px solid ${dc.fg}`;
 
       const branch = shortBranch(s.branch);
-      const stateColor = s.state === 'working' ? 'var(--green)' : s.state === 'idle' ? 'var(--purple)' : 'var(--dim)';
+      const stateColor = s.state === 'working' ? 'var(--green)' : s.state === 'idle' ? 'var(--purple)' : s.state === 'blocked' ? 'var(--red)' : 'var(--dim)';
       const gitStr = cardGitHtml(s.git);
       const { pr: prStr, ci: ciStr, review: revStr } = cardPrHtml(s.pr);
       const preview = s.preview ? esc(s.preview.substring(0, 50)) : '';
@@ -4285,6 +4293,7 @@
     box.className = 'mini-fleet-box';
     if (s.state === 'idle') box.classList.add('s-idle');
     else if (s.state === 'working') box.classList.add('s-working');
+    else if (s.state === 'blocked') box.classList.add('s-blocked');
     else box.classList.add('s-off');
     if (String(s.num) === currentSession) box.classList.add('current');
     box.textContent = s.num;
@@ -11747,6 +11756,7 @@
   function handleNotify(msg) {
     switch (msg.event) {
       case 'session:idle': showToast(`Session ${msg.session} idle`, msg.name, 'idle'); nativeNotify(`Session ${msg.session} finished`, msg.name); break;
+      case 'session:blocked': showToast(`Session ${msg.session} needs you`, 'Claude Code is waiting on a startup dialog (folder trust or permissions mode). hive will not answer it.', 'warning'); nativeNotify(`Session ${msg.session} needs you`, 'Claude Code startup dialog (folder trust or permissions mode)'); break;
       case 'ci:changed': { const cls = msg.to === 'SUCCESS' ? 'ci-pass' : msg.to === 'FAILURE' ? 'ci-fail' : ''; showToast(`CI ${msg.to}`, `Session ${msg.session} PR#${msg.pr}`, cls); nativeNotify(`CI ${msg.to}`, `Session ${msg.session} PR#${msg.pr}: ${msg.from} -> ${msg.to}`); break; }
     }
   }

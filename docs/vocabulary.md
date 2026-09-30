@@ -61,7 +61,8 @@ guard tests already covered.
 - `TaskStatus` — the six statuses a task can hold
 - `TASK_TRANSITIONS` — which moves are legal, and `transitionTask()`, the only
   assignment to `task.status` in the codebase
-- `SessionState` — `idle` / `working` / `off`
+- `SessionState` — `idle` / `working` / `off` / `blocked` (`blocked` is a Claude
+  Code startup dialog such as folder trust; hive never types into one)
 - `ApprovalStatus` — `pending` / `approved` / `denied`
 
 See [task-state-machine.md](./task-state-machine.md) for the transitions and the

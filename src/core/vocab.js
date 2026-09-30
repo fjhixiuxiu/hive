@@ -123,11 +123,23 @@ const TASK_TRANSITIONS = Object.freeze({
  * `idle` to the detector; the watcher tracks that separately in its
  * `detectedWaiting` set, because it is a fact about the pane's *content*, not
  * about whether Claude is running.
+ *
+ * `blocked` is different in kind from an approval, which is why it is a state
+ * and not another entry in that set. It is a Claude Code *startup gate*: the
+ * folder-trust dialog, the bypass-permissions warning, the managed-settings
+ * approval. Every one of them highlights "No, exit" by default, so a single
+ * Enter from hive terminates Claude and leaves a shell in the pane. None of the
+ * other three states is safe to report: `idle` gets it dispatched to (that is
+ * the incident this state exists for — the task text ran in bash), `working`
+ * gets it pasted into once relay.tell's settle budget runs out, and `off` gets
+ * `claude --continue` typed into it by the Start button. Only a human answers
+ * these; hive sends a blocked pane nothing.
  */
 const SessionState = Object.freeze({
   IDLE: 'idle', // Claude is running and sitting at the prompt
   WORKING: 'working', // Claude is mid-turn
   OFF: 'off', // no Claude in the pane
+  BLOCKED: 'blocked', // Claude is parked on a startup gate only a human may answer
 });
 
 const SESSION_STATES = Object.freeze(Object.values(SessionState));

@@ -1,6 +1,7 @@
 const EventEmitter = require('events');
 const fleet = require('./fleet');
 const tmux = require('./tmux');
+const relay = require('./relay');
 const log = require('./log');
 const { SessionState } = require('./vocab');
 
@@ -14,6 +15,7 @@ const NUMBERED_OPTION_PATTERN = /^\d+[.)]\s+.{5,}/;
  * Events:
  *   'session:idle'          - { session, name, num }  -- Claude finished working
  *   'session:working'       - { session, name, num }  -- Claude started working
+ *   'session:blocked'       - { session, name, num }  -- Claude is on a startup dialog (e.g. folder trust)
  *   'ci:changed'            - { session, name, num, from, to, pr }  -- CI result changed
  *   'review:changed'        - { session, name, num, from, to, pr }  -- PR review changed
  *   'approval:requested'    - { session, name, num, prompt }  -- Claude needs permission
@@ -234,6 +236,7 @@ class Watcher extends EventEmitter {
     this.prevReview = new Map(); // num -> review status string
     this.prevBranch = new Map(); // num -> branch name
     this.detectedWaiting = new Set(); // session nums waiting for user (approvals or questions)
+    this._retryIntoNonClaudeWarned = new Set(); // session nums whose API-error retry hit a non-Claude pane
     this.sessionActivity = new Map(); // num -> timestamp of last meaningful activity
     this.errorRetries = new Map(); // num -> { count, lastRetryAt }
     // Auto-retry of transient API errors types "retry" into the session on its own.
@@ -341,7 +344,10 @@ class Watcher extends EventEmitter {
   async _seed() {
     const sessions = await fleet.getFleetStatus(this.config, this.router);
     for (const s of sessions) {
-      this.prevStates.set(s.num, s.state);
+      // A session already blocked when hive starts is not seeded, so the first
+      // poll announces it: nobody may have seen it before the restart, and
+      // unlike idle it never resolves by itself.
+      if (s.state !== SessionState.BLOCKED) this.prevStates.set(s.num, s.state);
       // Mark all idle sessions as notified — no idle notifications on startup.
       // After restart, Claude doesn't auto-resume work, so sessions with
       // dispatched tasks are just sitting idle. They need a real working→idle
@@ -496,6 +502,16 @@ class Watcher extends EventEmitter {
       if (currState !== SessionState.IDLE) {
         this.notifiedIdle.delete(s.num);
         this.pendingIdle.delete(s.num);
+      }
+
+      // State transition: -> blocked. Announced once per arrival, because it is
+      // the one state nothing in hive will ever move a session out of: the
+      // dialog waits for a person, and hive deliberately does not answer it.
+      if (prevState !== SessionState.BLOCKED && currState === SessionState.BLOCKED) {
+        log.warn(
+          `[watcher] session ${s.num}: blocked on a Claude Code startup dialog — waiting for a person`,
+        );
+        this.emit('session:blocked', { session: s, name: s.name, num: s.num });
       }
 
       // State transition: idle/off -> working
@@ -718,6 +734,22 @@ class Watcher extends EventEmitter {
       });
       return true;
     }
+
+    // The error text outlives the process: a Claude that died on an API error
+    // leaves it on screen above a shell prompt, and `retry` + Enter would then
+    // run as a command on every backoff tick. Warn once per stranded pane, not
+    // once per poll.
+    const program = await relay.nonClaudeProgram(node, paneTarget);
+    if (program) {
+      if (!this._retryIntoNonClaudeWarned.has(s.num)) {
+        this._retryIntoNonClaudeWarned.add(s.num);
+        log.warn(
+          `[watcher] session ${s.num}: API error text on screen but the pane is running ${program}, not Claude — not sending retry`,
+        );
+      }
+      return false;
+    }
+    this._retryIntoNonClaudeWarned.delete(s.num);
 
     // Send retry now
     retry.count++;

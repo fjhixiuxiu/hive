@@ -1,0 +1,27 @@
+
+The default interactive shell is now zsh.
+To update your account to use zsh, please run `chsh -s /bin/zsh`.
+For more details, please visit https://support.apple.com/kb/HT208050.
+Admins-MacBook-Pro-2:2 jeffheifetz$ cd /private/tmp/claude-502/-Users-jeffheifetz-Coding-hive32/94336728-badd-411f-aab8-bc3f9f8c6f6f/scratchpad/livetest/repos/2
+Admins-MacBook-Pro-2:2 jeffheifetz$ claude
+Permission allow rule (/Users/jeffheifetz/.claude/settings.json): Write(/Users/jeffheifetz/Coding/**) is not matched by file permission checks — only Edit(path) rules are. Use Edit(/Users/jeffheifetz/Coding/**) instead (Edit rules cover all file-editing tools).
+Permission allow rule (/Users/jeffheifetz/.claude/settings.json): Write(/tmp/**) is not matched by file permission checks — only Edit(path) rules are. Use Edit(/tmp/**) instead (Edit rules cover all file-editing tools).
+Permission allow rule (/Users/jeffheifetz/.claude/settings.json): Write(/private/tmp/**) is not matched by file permission checks — only Edit(path) rules are. Use Edit(/private/tmp/**) instead (Edit rules cover all file-editing tools).
+Permission allow rule (/Users/jeffheifetz/.claude/settings.json): Write(/Users/jeffheifetz/.claude/**) is not matched by file permission checks — only Edit(path) rules are. Use Edit(/Users/jeffheifetz/.claude/**) instead (Edit rules cover all file-editing tools).
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Accessing workspace:
+
+ /private/tmp/claude-502/-Users-jeffheifetz-Coding-hive32/94336728-badd-411f-aab8-bc3f9f8c6f6f/scratchpad/livetest/repos/2
+
+ Quick safety check: Is this a project you created or one you trust? (Like your own code, a well-known open source project, or work from your team). If not, take a moment to review what's in this
+ folder first.
+
+ Claude Code'll be able to read, edit, and execute files here.
+
+ Security guide
+
+ ❯ No, exit
+   Yes, I trust this folder
+
+ Enter to confirm · Esc to cancel

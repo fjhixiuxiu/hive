@@ -1234,6 +1234,20 @@ function createWebServer(config, watcher, taskQueue, pmManager, router) {
     }
   });
 
+  watcher.on('session:blocked', ({ name, num }) => {
+    broadcast({ type: 'notify', event: 'session:blocked', session: num, name });
+    broadcastFleetStatus().catch(() => {});
+    if (taskQueue) {
+      // Never answered on the person's behalf: trusting a folder is their
+      // security decision, and "No, exit" is the default a stray Enter picks.
+      taskQueue.pushFeed(
+        'state',
+        num,
+        `⚠️ Session ${num} is waiting on a Claude Code startup dialog (folder trust or permissions mode). hive will not answer it or send it tasks — open the session and choose.`,
+      );
+    }
+  });
+
   watcher.on('ci:changed', ({ name, num, from, to, pr }) => {
     broadcast({ type: 'notify', event: 'ci:changed', session: num, name, from, to, pr });
     broadcastFleetStatus().catch(() => {});

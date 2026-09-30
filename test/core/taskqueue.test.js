@@ -1036,6 +1036,50 @@ describe('TaskQueue', () => {
     });
   });
 
+  describe('dispatch into a pane that is not running Claude', () => {
+    // End to end through the REAL relay (the top-level spies are restored):
+    // the incident was a session whose detection said idle while bash owned
+    // the pane. Dispatch pasted `/clear`, then the whole task, into the shell.
+    function bashPaneNode() {
+      const node = createMockNode();
+      node.capturePane.mockResolvedValue('Admins-MacBook-Pro-2:2 jeffheifetz$ ');
+      node.exec.mockImplementation(async (cmd) => {
+        if (cmd.includes('#{pane_current_command}')) return 'bash|/dev/ttys042';
+        if (cmd.startsWith('ps ')) return 'Ss+  -bash';
+        return '';
+      });
+      return node;
+    }
+
+    it('fails the task with the reason and sends the pane no keys', async () => {
+      vi.useRealTimers();
+      relayModule.ask.mockRestore();
+      relayModule.tell.mockRestore();
+      vi.spyOn(logModule, 'warn').mockImplementation(() => {});
+
+      const node = bashPaneNode();
+      router = new NodeRouter();
+      router.addNode(node);
+      tq = new TaskQueue(config, watcher, router);
+      // The mock config's idle pattern /\$\s*$/ reads a bash prompt as idle —
+      // exactly the misread the guard must survive.
+      fleetModule.findSession.mockResolvedValue({ name: '2', nodeId: 'local' });
+
+      const task = tq.createTask('echo SHOULD-NOT-RUN', 'manual', 2, null);
+      // Settle on whichever comes first: a refusal, or a key reaching the pane.
+      await vi.waitFor(
+        () => expect(task.status === 'failed' || node.sendKeys.mock.calls.length > 0).toBe(true),
+        { timeout: 4000 },
+      );
+
+      expect(node.sendKeys.mock.calls).toEqual([]);
+      expect(task.status).toBe('failed');
+      // failTask records the reason as the task's result.
+      expect(task.result).toMatch(/running bash, not Claude Code/);
+      expect(node.exec.mock.calls.filter(([cmd]) => cmd.includes('send-keys'))).toEqual([]);
+    });
+  });
+
   describe('approvals', () => {
     it('creates approval', () => {
       const a = tq.createApproval(6, 'Proceed?');

@@ -194,6 +194,8 @@ function stateTag(state) {
       return '[WORK]';
     case SessionState.OFF:
       return '[ OFF]';
+    case SessionState.BLOCKED:
+      return '[BLKD]';
     default:
       return '[  ? ]';
   }
@@ -292,7 +294,9 @@ async function status(config, send, router) {
   const idle = sessions.filter((s) => s.state === SessionState.IDLE).length;
   const work = sessions.filter((s) => s.state === SessionState.WORKING).length;
   const off = sessions.filter((s) => s.state === SessionState.OFF).length;
-  lines.push(`${idle} idle  ${work} working  ${off} off`);
+  const blocked = sessions.filter((s) => s.state === SessionState.BLOCKED).length;
+  // Shown only when present, so a fleet with nothing blocked reads as before.
+  lines.push(`${idle} idle  ${work} working  ${off} off${blocked ? `  ${blocked} blocked` : ''}`);
 
   send(`<pre>${lines.join('\n')}</pre>`, HTML);
 }

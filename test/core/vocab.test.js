@@ -83,8 +83,8 @@ describe('task vocabulary', () => {
       expect(SESSION_STATES).toEqual([...new Set(SESSION_STATES)]);
     });
 
-    it('is exactly idle, working, off', () => {
-      expect([...SESSION_STATES].sort()).toEqual(['idle', 'off', 'working']);
+    it('is exactly idle, working, off, blocked', () => {
+      expect([...SESSION_STATES].sort()).toEqual(['blocked', 'idle', 'off', 'working']);
     });
 
     it('has no "waiting" member', () => {
@@ -97,7 +97,7 @@ describe('task vocabulary', () => {
 
     it('recognises exactly its own values', () => {
       for (const state of SESSION_STATES) expect(isSessionState(state)).toBe(true);
-      for (const notState of ['waiting', 'blocked', 'error', 'closed', '', null, undefined, 0]) {
+      for (const notState of ['waiting', 'error', 'closed', '', null, undefined, 0]) {
         expect(isSessionState(notState)).toBe(false);
       }
     });
@@ -108,7 +108,7 @@ describe('task vocabulary', () => {
     });
 
     it('names the legal values when it throws', () => {
-      expect(() => assertSessionState('nope')).toThrow(/idle, working, off/);
+      expect(() => assertSessionState('nope')).toThrow(/idle, working, off, blocked/);
       expect(() => assertSessionState('nope', 'state for session 4')).toThrow(
         /Invalid state for session 4/,
       );
