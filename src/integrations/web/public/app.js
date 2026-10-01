@@ -168,6 +168,86 @@
     inputEl.value = loadDraft(sessionDraftKey(panel, sessionNum));
     markDraftOwner(inputEl, sessionNum);
   }
+
+  // Every edit hive makes to a composer's text goes through here, so the
+  // browser's own undo (Cmd/Ctrl+Z, and redo) can take it back. Assigning .value
+  // wipes the textarea's undo history — a failed-send restore did exactly that to
+  // a half-typed message and left nothing to undo to. execCommand('insertText')
+  // is the one edit a page can make that lands on that history; it needs focus,
+  // so focus is borrowed and handed back. Opening a session deliberately still
+  // assigns .value (restoreDraftOnOpen): undo must never reach back into another
+  // session's text.
+  function setComposerText(el, text) {
+    if (!el || el.value === text) return;
+    const prev = document.activeElement;
+    if (prev !== el) el.focus({ preventScroll: true });
+    el.select();
+    const ok = text
+      ? document.execCommand('insertText', false, text)
+      : document.execCommand('delete', false);
+    if (!ok || el.value !== text) el.value = text;
+    if (prev === el) return;
+    if (prev && prev !== document.body && typeof prev.focus === 'function') prev.focus({ preventScroll: true });
+    else el.blur();
+  }
+
+  // ── Sends in flight ──────────────────────────────
+  // A send's result arrives seconds or minutes later, by which time the box may
+  // be showing another session or holding something new. Each send is remembered
+  // by id with the session and box it came from, and the result can only ever act
+  // on that session. One shared "last sent message" was how a timed-out S:19
+  // prompt was written over the draft being typed for S:20.
+  const pendingSends = new Map();
+  let sendSeq = 0;
+  function trackSend(session, message, input) {
+    const id = `send-${Date.now().toString(36)}-${++sendSeq}`;
+    pendingSends.set(id, { session: String(session), message, input: input || null });
+    return id;
+  }
+  function takeSend(id) {
+    const p = id ? pendingSends.get(id) : undefined;
+    if (p) pendingSends.delete(id);
+    return p || null;
+  }
+
+  // The server said this text never reached its session. It goes back to that
+  // session only: into its box if the box is showing it and empty, else into its
+  // saved draft if it has none. Anywhere else it would overwrite something, so it
+  // goes nowhere — it is still in that session's Up-arrow history.
+  // Returns where it went: 'box', 'draft', or null.
+  function restoreUnsent(p) {
+    if (!p || !p.message) return null;
+    if (p.input && draftOwnerMatches(p.input, p.session) && !p.input.value.trim()) {
+      setComposerText(p.input, p.message);
+      return 'box';
+    }
+    const key = sessionDraftKey(null, p.session);
+    if (!loadDraft(key).trim()) {
+      saveDraft(key, p.message);
+      return 'draft';
+    }
+    return null;
+  }
+
+  // ask:done / tell:done. A timeout is not a lost message: the relay pasted it
+  // and pressed Enter, then gave up waiting for the reply (delivered: true), so
+  // nothing is written anywhere. Only delivered === false puts text back, and an
+  // answer with no id (a slash command, a plan comment, an older server) never
+  // touches a composer at all.
+  function settleSend(msg, verb) {
+    const p = takeSend(msg.id);
+    if (msg.success) return;
+    if (msg.delivered === true) {
+      showToast(`Session ${msg.session} still working`, msg.error || 'Delivered — no reply yet', 'info');
+      return;
+    }
+    const where = msg.delivered === false ? restoreUnsent(p) : null;
+    const note = where === 'box' ? ' Your message is back in the box.'
+      : where === 'draft' ? ` Your message is saved as session ${msg.session}'s draft.`
+      : p && msg.delivered === false ? ' Your message is in that session\'s history (Up arrow).'
+      : '';
+    showToast(`Session ${msg.session}: ${verb} failed`, (msg.error || `${verb} failed`) + note, 'error');
+  }
   const TASK_DRAFT_KEY = 'hive-draft:task-dialog';
   let fleetData = [];
   let linkTemplates = {};
@@ -1295,24 +1375,16 @@
           if (!msg.success) showToast('Console', msg.error || 'Failed', 'error');
           break;
         }
-        askPending = false; msgInput.disabled = false; sendBtn.disabled = false; msgInput.focus();
-        if (tsPendingSession && String(msg.session) === tsPendingSession) {
-          tsPendingSession = null;
-          if (!msg.success) { showToast('Failed', msg.error || 'Ask failed', 'error'); tsMsgInput.value = tsLastSentMessage; }
-        } else {
-          if (msg.success) { const dur = msg.duration ? `${Math.round(msg.duration / 1000)}s` : ''; showToast('Done', `Session ${msg.session} responded ${dur}`, 'success'); }
-          else { showToast('Error', msg.error || 'Ask failed', 'error'); msgInput.value = lastSentMessage; }
-        }
+        // No focus() here: a reply landing while you type in another box must
+        // not pull your keystrokes into the fleet composer.
+        askPending = false; msgInput.disabled = false; sendBtn.disabled = false;
+        if (msg.success) { const dur = msg.duration ? `${Math.round(msg.duration / 1000)}s` : ''; showToast('Done', `Session ${msg.session} responded ${dur}`, 'success'); }
+        settleSend(msg, 'Ask');
         break;
       case 'tell:done':
         if (String(msg.session) === 'hive-console') break;
-        if (tsPendingSession && String(msg.session) === tsPendingSession) {
-          tsPendingSession = null;
-          if (!msg.success) { showToast('Failed', msg.error || 'Tell failed', 'error'); tsMsgInput.value = tsLastSentMessage; }
-        } else {
-          if (msg.success) showToast('Sent', `Message sent to session ${msg.session}`, 'success');
-          else { showToast('Error', msg.error || 'Tell failed', 'error'); msgInput.value = lastSentMessage; }
-        }
+        if (msg.success) showToast('Sent', `Message sent to session ${msg.session}`, 'success');
+        settleSend(msg, 'Tell');
         break;
       case 'console:status':
         consoleAvailable = !!msg.available;
@@ -3674,9 +3746,9 @@
         e.stopPropagation();
         // Fill the correct input based on which panel is active
         if (activeTab === 'session-panel') {
-          msgInput.value = m; msgInput.focus();
+          setComposerText(msgInput, m); msgInput.focus();
         } else if (activeTab === 'tasks-panel') {
-          tsMsgInput.value = m; tsMsgInput.focus();
+          setComposerText(tsMsgInput, m); tsMsgInput.focus();
         }
         closeHistoryPopover();
       });
@@ -3886,7 +3958,7 @@
     pushMsgHistory('hive-console', text);
     consoleHistoryIdx = -1;
     consoleHistoryDraft = '';
-    input.value = '';
+    setComposerText(input, '');
   }
 
   let consoleHistoryIdx = -1;
@@ -4017,13 +4089,13 @@
       e.preventDefault();
       if (consoleHistoryIdx === -1) consoleHistoryDraft = input.value;
       if (consoleHistoryIdx < h.length - 1) consoleHistoryIdx++;
-      input.value = h[h.length - 1 - consoleHistoryIdx];
+      setComposerText(input, h[h.length - 1 - consoleHistoryIdx]);
     } else if (e.key === 'ArrowDown') {
       if (input.value.indexOf('\n', input.selectionStart) !== -1) return;
       if (consoleHistoryIdx <= -1) return;
       e.preventDefault();
       consoleHistoryIdx--;
-      input.value = consoleHistoryIdx === -1 ? consoleHistoryDraft : h[h.length - 1 - consoleHistoryIdx];
+      setComposerText(input, consoleHistoryIdx === -1 ? consoleHistoryDraft : h[h.length - 1 - consoleHistoryIdx]);
     }
   });
   // Keyboard shortcut: Escape to close (only when input not focused)
@@ -4068,8 +4140,11 @@
       panel.classList.remove('reading-mode');
     }
     closeAllCommentsDrawers();
+    stashDraftOnSwitch(msgInput, 'fleet', currentSession);
     currentSession = null;
-    askPending = false; msgInput.disabled = false; sendBtn.disabled = false; msgInput.value = '';
+    askPending = false; msgInput.disabled = false; sendBtn.disabled = false;
+    msgInput.value = ''; // session boundary: the text is stashed above, and undo must not carry it into the next session
+    markDraftOwner(msgInput, null);
     switchTab(previousTab); // switchTab pushes hash
   }
 
@@ -5860,7 +5935,6 @@
     modeToggle.className = mode === 'tell' ? 'tell' : '';
   });
 
-  let lastSentMessage = '';
   const lastSentTime = {}; // session num → Date
   try { const saved = JSON.parse(localStorage.getItem('hive_last_sent_time') || '{}'); for (const [k, v] of Object.entries(saved)) lastSentTime[k] = new Date(v); } catch(e) {}
   function sendMessage() {
@@ -5876,21 +5950,21 @@
       message = text ? `${prefix}\n\n${text}` : `${prefix}\n\nLook at the attached screenshot.`;
       clearAttachments(attachedImages, attachmentStrip);
     }
-    lastSentMessage = message;
+    const id = trackSend(currentSession, message, msgInput);
     // If on a non-Claude pane, always send as tell with pane index (shell command)
     const isShellPane = (activePane !== null && activePane !== claudePaneIdx);
     if (isShellPane) {
-      ws.send(JSON.stringify({ type: 'tell', session: currentSession, message, pane: activePane }));
+      ws.send(JSON.stringify({ type: 'tell', session: currentSession, message, pane: activePane, id }));
     } else if (mode === 'ask') {
-      ws.send(JSON.stringify({ type: 'ask', session: currentSession, message }));
+      ws.send(JSON.stringify({ type: 'ask', session: currentSession, message, id }));
     }
-    else { ws.send(JSON.stringify({ type: 'tell', session: currentSession, message })); }
+    else { ws.send(JSON.stringify({ type: 'tell', session: currentSession, message, id })); }
     lastSentTime[currentSession] = new Date();
     localStorage.setItem('hive_last_sent_time', JSON.stringify(lastSentTime));
     pushMsgHistory(currentSession, text);
     msgHistoryIdx = -1;
     msgHistoryDraft = '';
-    msgInput.value = '';
+    setComposerText(msgInput, '');
     msgInput.style.height = 'auto';
     if (currentSession) clearDraft(sessionDraftKey('fleet', currentSession));
     updateSessionStatusLine();
@@ -5918,14 +5992,14 @@
       e.preventDefault();
       if (msgHistoryIdx === -1) msgHistoryDraft = msgInput.value;
       if (msgHistoryIdx < h.length - 1) msgHistoryIdx++;
-      msgInput.value = h[h.length - 1 - msgHistoryIdx];
+      setComposerText(msgInput, h[h.length - 1 - msgHistoryIdx]);
     } else if (e.key === 'ArrowDown') {
       // Only trigger history when cursor is on the last line
       if (msgInput.value.indexOf('\n', msgInput.selectionStart) !== -1) return;
       if (msgHistoryIdx <= -1) return;
       e.preventDefault();
       msgHistoryIdx--;
-      msgInput.value = msgHistoryIdx === -1 ? msgHistoryDraft : h[h.length - 1 - msgHistoryIdx];
+      setComposerText(msgInput, msgHistoryIdx === -1 ? msgHistoryDraft : h[h.length - 1 - msgHistoryIdx]);
     }
   });
 
@@ -5983,7 +6057,7 @@
   quickTarget.addEventListener('click', () => {
     quickSessions.clear();
     updateQuickBar();
-    quickInput.value = '';
+    setComposerText(quickInput, '');
     grid.querySelectorAll('.card, .fleet-row').forEach(c => c.style.outline = '');
     grid.querySelectorAll('.card-focused').forEach(c => c.classList.remove('card-focused'));
   });
@@ -6033,7 +6107,7 @@
     ).join('');
     popup.querySelectorAll('.history-popup-item').forEach((btn, i) => {
       btn.addEventListener('click', () => {
-        inputEl.value = items[i];
+        setComposerText(inputEl, items[i]);
         inputEl.focus();
         popup.classList.remove('open');
       });
@@ -6046,8 +6120,11 @@
     if (!text || !quickSessions.size || !ws || ws.readyState !== 1) return;
     const nums = [...quickSessions];
     for (const session of nums) {
-      if (quickSendMode === 'ask') { ws.send(JSON.stringify({ type: 'ask', session, message: text })); }
-      else { ws.send(JSON.stringify({ type: 'tell', session, message: text })); }
+      // No box: the quick bar may target many sessions, so unsent text can only
+      // go to each session's own draft.
+      const id = trackSend(session, text, null);
+      if (quickSendMode === 'ask') { ws.send(JSON.stringify({ type: 'ask', session, message: text, id })); }
+      else { ws.send(JSON.stringify({ type: 'tell', session, message: text, id })); }
       pushMsgHistory(session, text);
     }
     if (nums.length === 1) {
@@ -6057,7 +6134,7 @@
     }
     msgHistoryIdx = -1;
     msgHistoryDraft = '';
-    quickInput.value = '';
+    setComposerText(quickInput, '');
     const historyKey = quickSessions.size === 1 ? [...quickSessions][0] : null;
     updateHistoryPill('quick-history-wrap', historyKey);
   }
@@ -6074,12 +6151,12 @@
       e.preventDefault();
       if (msgHistoryIdx === -1) msgHistoryDraft = quickInput.value;
       if (msgHistoryIdx < h.length - 1) msgHistoryIdx++;
-      quickInput.value = h[h.length - 1 - msgHistoryIdx];
+      setComposerText(quickInput, h[h.length - 1 - msgHistoryIdx]);
     } else if (e.key === 'ArrowDown') {
       if (msgHistoryIdx <= -1) return;
       e.preventDefault();
       msgHistoryIdx--;
-      quickInput.value = msgHistoryIdx === -1 ? msgHistoryDraft : h[h.length - 1 - msgHistoryIdx];
+      setComposerText(quickInput, msgHistoryIdx === -1 ? msgHistoryDraft : h[h.length - 1 - msgHistoryIdx]);
     }
   });
 
@@ -6911,9 +6988,6 @@
     tsModeToggle.classList.toggle('tell', tasksSessionMode === 'tell');
   });
 
-  var tsLastSentMessage = '';
-  var tsPendingSession = null; // track which session the tasks panel sent to
-
   function sendTasksMessage() {
     const text = tsMsgInput.value.trim();
     const hasImages = tsAttachedImages.length > 0;
@@ -6925,18 +6999,17 @@
       message = text ? `${prefix}\n\n${text}` : `${prefix}\n\nLook at the attached screenshot.`;
       clearAttachments(tsAttachedImages, tsAttachmentStrip);
     }
-    tsLastSentMessage = text;
-    tsPendingSession = tasksSessionNum;
+    const id = trackSend(tasksSessionNum, message, tsMsgInput);
     const tsIsShellPane = (tsActivePane !== null && tsActivePane !== tsClaudePaneIdx);
     if (tsIsShellPane) {
-      ws.send(JSON.stringify({ type: 'tell', session: tasksSessionNum, message, pane: tsActivePane }));
+      ws.send(JSON.stringify({ type: 'tell', session: tasksSessionNum, message, pane: tsActivePane, id }));
     } else {
-      ws.send(JSON.stringify({ type: tasksSessionMode, session: tasksSessionNum, message }));
+      ws.send(JSON.stringify({ type: tasksSessionMode, session: tasksSessionNum, message, id }));
     }
     pushMsgHistory(tasksSessionNum, text);
     msgHistoryIdx = -1;
     msgHistoryDraft = '';
-    tsMsgInput.value = '';
+    setComposerText(tsMsgInput, '');
     tsMsgInput.style.height = 'auto';
     if (tasksSessionNum) clearDraft(sessionDraftKey('tasks', tasksSessionNum));
     updateTasksStatusLine();
@@ -6958,13 +7031,13 @@
       e.preventDefault();
       if (msgHistoryIdx === -1) msgHistoryDraft = tsMsgInput.value;
       if (msgHistoryIdx < h.length - 1) msgHistoryIdx++;
-      tsMsgInput.value = h[h.length - 1 - msgHistoryIdx];
+      setComposerText(tsMsgInput, h[h.length - 1 - msgHistoryIdx]);
     } else if (e.key === 'ArrowDown') {
       if (tsMsgInput.value.indexOf('\n', tsMsgInput.selectionStart) !== -1) return;
       if (msgHistoryIdx <= -1) return;
       e.preventDefault();
       msgHistoryIdx--;
-      tsMsgInput.value = msgHistoryIdx === -1 ? msgHistoryDraft : h[h.length - 1 - msgHistoryIdx];
+      setComposerText(tsMsgInput, msgHistoryIdx === -1 ? msgHistoryDraft : h[h.length - 1 - msgHistoryIdx]);
     }
   });
 
@@ -8818,15 +8891,16 @@
     }
     const isShellPane = (tdActivePane !== null && tdActivePane !== tdClaudePaneIdx);
     const msgType = taskDetailMode === 'ask' ? 'ask' : 'tell';
+    const id = trackSend(taskDetailSession, message, input);
     if (isShellPane) {
-      ws.send(JSON.stringify({ type: 'tell', session: taskDetailSession, message, pane: tdActivePane }));
+      ws.send(JSON.stringify({ type: 'tell', session: taskDetailSession, message, pane: tdActivePane, id }));
     } else {
-      ws.send(JSON.stringify({ type: msgType, session: taskDetailSession, message }));
+      ws.send(JSON.stringify({ type: msgType, session: taskDetailSession, message, id }));
     }
     pushMsgHistory(taskDetailSession, text);
     tdHistoryIdx = -1;
     tdHistoryDraft = '';
-    input.value = '';
+    setComposerText(input, '');
     if (taskDetailSession) clearDraft(sessionDraftKey('task-detail', taskDetailSession));
     showToast('Sent', `${msgType === 'ask' ? 'Asked' : 'Told'} session ${taskDetailSession}`, 'success');
   }
@@ -8850,14 +8924,14 @@
       e.preventDefault();
       if (tdHistoryIdx === -1) tdHistoryDraft = input.value;
       if (tdHistoryIdx < h.length - 1) tdHistoryIdx++;
-      input.value = h[h.length - 1 - tdHistoryIdx];
+      setComposerText(input, h[h.length - 1 - tdHistoryIdx]);
     } else if (e.key === 'ArrowDown') {
       const afterCursor = input.value.substring(input.selectionEnd);
       if (afterCursor.includes('\n')) return; // not on last line
       if (tdHistoryIdx <= -1) return;
       e.preventDefault();
       tdHistoryIdx--;
-      input.value = tdHistoryIdx === -1 ? tdHistoryDraft : h[h.length - 1 - tdHistoryIdx];
+      setComposerText(input, tdHistoryIdx === -1 ? tdHistoryDraft : h[h.length - 1 - tdHistoryIdx]);
     }
   });
 

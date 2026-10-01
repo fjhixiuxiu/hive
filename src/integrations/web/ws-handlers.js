@@ -451,7 +451,9 @@ function createMessageHandler(deps) {
               JSON.stringify({
                 type: 'ask:done',
                 session: msg.session,
+                id: msg.id,
                 success: result.success,
+                delivered: result.success || result.delivered === true,
                 response: result.response,
                 error: result.error,
                 duration: result.duration,
@@ -465,6 +467,7 @@ function createMessageHandler(deps) {
                 JSON.stringify({
                   type: 'ask:done',
                   session: msg.session,
+                  id: msg.id,
                   success: false,
                   error: err.message,
                 }),
@@ -491,7 +494,15 @@ function createMessageHandler(deps) {
           try {
             await node.sendKeys(shellTarget, msg.message, true);
             if (ws.readyState === 1)
-              ws.send(JSON.stringify({ type: 'tell:done', session: msg.session, success: true }));
+              ws.send(
+                JSON.stringify({
+                  type: 'tell:done',
+                  session: msg.session,
+                  id: msg.id,
+                  success: true,
+                  delivered: true,
+                }),
+              );
           } catch (err) {
             log.error('tell (shell pane) error:', err);
             if (ws.readyState === 1)
@@ -499,6 +510,7 @@ function createMessageHandler(deps) {
                 JSON.stringify({
                   type: 'tell:done',
                   session: msg.session,
+                  id: msg.id,
                   success: false,
                   error: err.message,
                 }),
@@ -514,7 +526,9 @@ function createMessageHandler(deps) {
               JSON.stringify({
                 type: 'tell:done',
                 session: msg.session,
+                id: msg.id,
                 success: result.success,
+                delivered: result.success || result.delivered === true,
                 error: result.error,
               }),
             );
@@ -526,6 +540,7 @@ function createMessageHandler(deps) {
                 JSON.stringify({
                   type: 'tell:done',
                   session: msg.session,
+                  id: msg.id,
                   success: false,
                   error: err.message,
                 }),

@@ -86,6 +86,8 @@ describe('relay', () => {
       const result = await resultPromise;
       expect(result.success).toBe(false);
       expect(result.error).toContain('Timed out');
+      // The paste and Enter already happened — only the reply is missing.
+      expect(result.delivered).toBe(true);
     });
 
     it('with force=true bypasses busy check', async () => {

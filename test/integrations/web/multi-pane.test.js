@@ -498,4 +498,70 @@ describe('multi-pane terminal viewer', () => {
       expect(node.sendKeys).not.toHaveBeenCalled();
     });
   });
+
+  // =====================================================================
+  // ask/tell results name their send and say whether the text got there
+  // =====================================================================
+  //
+  // The dashboard used to answer every failure by writing its one remembered
+  // "last sent message" into whatever composer was on screen. A timeout — text
+  // delivered, reply late — put an S:19 prompt over the draft being typed for
+  // S:20. The result now carries the send's id (so the client acts on that send's
+  // session only) and `delivered` (so a timeout writes nothing at all).
+
+  describe('send results', () => {
+    it('ask timeout: echoes the id and reports the text as delivered', async () => {
+      relay.ask.mockResolvedValue({
+        success: false,
+        delivered: true,
+        error: 'Timed out after 300s.',
+      });
+      ws.emit('message', JSON.stringify({ type: 'ask', session: 19, message: 'hi', id: 'send-a' }));
+      await vi.advanceTimersByTimeAsync(50);
+
+      const done = findSent(ws, 'ask:done');
+      expect(done).toMatchObject({ session: 19, id: 'send-a', success: false, delivered: true });
+    });
+
+    it('ask refused before the paste: reports the text as not delivered', async () => {
+      relay.ask.mockResolvedValue({
+        success: false,
+        error: 'Claude is not running in this session.',
+      });
+      ws.emit('message', JSON.stringify({ type: 'ask', session: 19, message: 'hi', id: 'send-b' }));
+      await vi.advanceTimersByTimeAsync(50);
+
+      expect(findSent(ws, 'ask:done')).toMatchObject({ id: 'send-b', delivered: false });
+    });
+
+    it('ask that threw: delivery unknown, so no delivered flag (client restores nothing)', async () => {
+      relay.ask.mockRejectedValue(new Error('boom'));
+      ws.emit('message', JSON.stringify({ type: 'ask', session: 19, message: 'hi', id: 'send-c' }));
+      await vi.advanceTimersByTimeAsync(50);
+
+      const done = findSent(ws, 'ask:done');
+      expect(done).toMatchObject({ id: 'send-c', success: false });
+      expect(done).not.toHaveProperty('delivered');
+    });
+
+    it('tell: echoes the id and reports delivery for success and pre-paste failure', async () => {
+      ws.emit('message', JSON.stringify({ type: 'tell', session: 6, message: 'a', id: 'send-d' }));
+      await vi.advanceTimersByTimeAsync(50);
+      expect(findSent(ws, 'tell:done')).toMatchObject({
+        id: 'send-d',
+        success: true,
+        delivered: true,
+      });
+
+      ws.send.mockClear();
+      relay.tell.mockResolvedValue({ success: false, error: 'Paste did not land' });
+      ws.emit('message', JSON.stringify({ type: 'tell', session: 6, message: 'b', id: 'send-e' }));
+      await vi.advanceTimersByTimeAsync(50);
+      expect(findSent(ws, 'tell:done')).toMatchObject({
+        id: 'send-e',
+        success: false,
+        delivered: false,
+      });
+    });
+  });
 });

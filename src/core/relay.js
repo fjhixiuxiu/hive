@@ -338,8 +338,11 @@ async function ask(config, node, sessionName, message, callbacks = {}) {
             const content = await captureResponse(node, paneTarget, config);
             if (content) onStream(content, true);
           }
+          // Past the Enter: the message is in the session, only the reply is
+          // missing. Every failure returned before the Enter never reached it.
           resolve({
             success: false,
+            delivered: true,
             error: `Timed out after ${Math.round(timeout / 1000)}s. Claude may still be working. Use /peek to check.`,
             duration: elapsed,
           });
