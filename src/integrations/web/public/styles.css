@@ -3607,11 +3607,13 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
   #scroll-pause, .scroll-pause-btn { bottom: 12px; }
 
   /* Keys bar: hidden by default, shown as fixed popover above the
-     status+input bars when ⌨ Keys is tapped */
+     status+input bars when ⌨ Keys is tapped. keys-popover.js sets
+     --keys-popover-bottom from the status line's real position — the
+     composer grows as you type, so no fixed offset clears the toggle. */
   #keys-bar {
     display: none !important;
     position: fixed;
-    bottom: 80px;
+    bottom: var(--keys-popover-bottom, 80px);
     left: 0; right: 0;
     z-index: 30;
     background: var(--bg2);

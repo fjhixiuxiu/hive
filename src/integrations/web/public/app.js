@@ -12607,15 +12607,20 @@
     const statusLine = document.getElementById('session-status-line');
     const keysBar = document.getElementById('keys-bar');
     if (statusLine && keysBar) {
+      const keysPopover = wireKeysPopover({
+        keysBar,
+        anchor: statusLine,
+        watch: [statusLine, document.getElementById('input-bar')],
+        getToggle: () => document.getElementById('mobile-keys-toggle'),
+      });
       function ensureKeysToggle() {
         if (document.getElementById('mobile-keys-toggle')) return;
         const kt = document.createElement('button');
         kt.id = 'mobile-keys-toggle';
         kt.textContent = '\u2328 Keys';
-        kt.addEventListener('click', () => {
-          const open = keysBar.classList.toggle('mobile-open');
-          kt.classList.toggle('active', open);
-        });
+        // A re-rendered status line re-creates the toggle; keep it lit if the popover is open.
+        kt.classList.toggle('active', keysBar.classList.contains('mobile-open'));
+        kt.addEventListener('click', keysPopover.toggle);
         statusLine.prepend(kt);
       }
       ensureKeysToggle();
