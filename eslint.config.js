@@ -136,6 +136,10 @@ module.exports = [
       'node_modules/**',
       'coverage/**',
       '.playwright-mcp/**',
+      // Gitignored, so prettier already skips it, but flat-config eslint does not
+      // read .gitignore. Agent worktrees under .claude/worktrees/ are whole
+      // checkouts of other branches, and linting them fails every commit here.
+      '.claude/**',
       // Browser code with no module system — it cannot require() vocab.js, so
       // it cannot obey these rules yet. Sharing the vocabulary with the client
       // is a client/server contract problem and wants its own change.
