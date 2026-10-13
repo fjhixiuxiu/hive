@@ -160,3 +160,108 @@ describe('stripGlobalScopeLeaks', () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// scopePlanStylesToHost — published plans render in a shadow root.
+//
+// A shadow root has no document root, so a plan's `:root { --line; --panel }`
+// palette matched nothing: every var() it fed was invalid, table borders
+// vanished and SVG boxes filled with var(--panel) painted solid black (seen on
+// the DEV-51756 plan in a 240px session sidebar). The shadow styles force a
+// white page, so the plan's dark-scheme palette has to stay off once :root can
+// apply at all.
+// ---------------------------------------------------------------------------
+
+const { scopePlanStylesToHost } = require('../../../src/integrations/web/public/plan-sanitize.js');
+
+describe('scopePlanStylesToHost', () => {
+  const PLAN = `<style>
+:root { --fg:#1b1f24; --panel:#f6f8fa; --line:#d0d7de; }
+@media (prefers-color-scheme: dark) { :root { --fg:#e6edf3; --panel:#161b22; } }
+th, td { border: 1px solid var(--line); }
+</style>
+<h1>Plan</h1>
+<p>The palette lives on <code>:root</code> in the page.</p>`;
+
+  it('moves the :root palette onto :host so the shadow tree inherits it', () => {
+    const out = scopePlanStylesToHost(PLAN);
+    expect(out).toContain(':host { --fg:#1b1f24; --panel:#f6f8fa; --line:#d0d7de; }');
+    expect(out).not.toMatch(/<style[\s\S]*:root[\s\S]*<\/style>/);
+  });
+
+  it('switches off the dark-scheme palette, since the page is forced white', () => {
+    const out = scopePlanStylesToHost(PLAN);
+    expect(out).toContain('@media not all { :host { --fg:#e6edf3;');
+    expect(out).not.toMatch(/prefers-color-scheme\s*:\s*dark/);
+  });
+
+  it('matches the dark-scheme query however it is spaced or cased', () => {
+    const out = scopePlanStylesToHost(
+      '<style>@media ( Prefers-Color-Scheme:DARK ) { :root { --fg: #fff } }</style>',
+    );
+    expect(out).toBe('<style>@media not all { :host { --fg: #fff } }</style>');
+  });
+
+  it('leaves :root in the plan text alone — only <style> contents are rewritten', () => {
+    const out = scopePlanStylesToHost(PLAN);
+    expect(out).toContain('<p>The palette lives on <code>:root</code> in the page.</p>');
+  });
+
+  it('rewrites every <style> block, not just the first', () => {
+    const out = scopePlanStylesToHost(
+      '<style>:root{a:1}</style><p>x</p><style media="all">:root{b:2}</style>',
+    );
+    expect(out).toBe('<style>:host{a:1}</style><p>x</p><style media="all">:host{b:2}</style>');
+  });
+
+  it('is a no-op on a plan with no palette, and passes null through', () => {
+    expect(scopePlanStylesToHost('<h1>Plan</h1>')).toBe('<h1>Plan</h1>');
+    expect(scopePlanStylesToHost(null)).toBe(null);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The tests above prove scopePlanStylesToHost; these prove the sidebar uses it.
+// Removing the call in mountPlanShadow left every web test green. mountPlanShadow
+// is lifted from app.js and mounts into a real jsdom shadow root.
+// ---------------------------------------------------------------------------
+
+describe('mountPlanShadow scopes the plan palette to the shadow host', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const PUBLIC = path.resolve(__dirname, '../../../src/integrations/web/public');
+  const appSource = fs.readFileSync(path.join(PUBLIC, 'app.js'), 'utf8');
+
+  function liftMountPlanShadow() {
+    const m = appSource.match(/function mountPlanShadow\(planHtml, planId\) \{[\s\S]*?\n {2}\}/);
+    if (!m) throw new Error('could not find mountPlanShadow in app.js');
+    return new Function(
+      'document',
+      'window',
+      'planRefShadowStyles',
+      'injectSectionMarkers',
+      `${m[0]}\nreturn mountPlanShadow;`,
+    )(
+      document,
+      { scopePlanStylesToHost },
+      () => '',
+      () => {},
+    );
+  }
+
+  it('mounts the plan with its :root palette moved onto :host', () => {
+    document.body.innerHTML = '<div class="plan-ref-shadow-host"></div>';
+    liftMountPlanShadow()('<style>:root { --line:#d0d7de; }</style><h1>Plan</h1>', 'p1');
+    const css = document
+      .querySelector('.plan-ref-shadow-host')
+      .shadowRoot.querySelector('style').textContent;
+    expect(css).toBe(':host { --line:#d0d7de; }');
+  });
+
+  it('loads plan-sanitize.js before app.js, so the global exists when a plan mounts', () => {
+    const html = fs.readFileSync(path.join(PUBLIC, 'index.html'), 'utf8');
+    const sanitize = html.indexOf('<script src="/plan-sanitize.js');
+    expect(sanitize).toBeGreaterThan(-1);
+    expect(sanitize).toBeLessThan(html.indexOf('<script src="/app.js'));
+  });
+});

@@ -281,3 +281,111 @@ describe('composer auto-grow refits the pane above it', () => {
     expect(paneAtRefit).toBe(400); // 800 total - the 400px cap
   });
 });
+
+// ---------------------------------------------------------------------------
+// Everything else that resizes the pane.
+//
+// growAndRefit only hears the composer's input events. sendMessage empties the
+// composer by setting height:'auto' directly — no input event — so after every
+// multi-line send the pane grew back while xterm kept its typing-time rows:
+// measured in the live dashboard, pane 608px with xterm stuck at 525px, a blank
+// band under the output. refitOnResize watches the pane itself.
+// ---------------------------------------------------------------------------
+
+describe('the terminal pane refits on any resize', () => {
+  function harness() {
+    const pane = { clientWidth: 1000, clientHeight: 600 };
+    let observed = null;
+    let fire = null;
+    class FakeResizeObserver {
+      constructor(cb) {
+        fire = cb;
+      }
+      observe(el) {
+        observed = el;
+      }
+    }
+    const frames = [];
+    const m = source.match(/function refitOnResize\(paneId, refit\) \{[\s\S]*?\n {2}\}/);
+    if (!m) throw new Error('could not find refitOnResize in app.js');
+    const refitOnResize = new Function(
+      'document',
+      'ResizeObserver',
+      'requestAnimationFrame',
+      `${m[0]}\nreturn refitOnResize;`,
+    )(
+      { getElementById: (id) => (id === 'terminal-wrap' ? pane : null) },
+      FakeResizeObserver,
+      (cb) => frames.push(cb),
+    );
+    let refits = 0;
+    refitOnResize('terminal-wrap', () => refits++);
+    return {
+      pane,
+      observed: () => observed,
+      resize: (w, h) => {
+        pane.clientWidth = w;
+        pane.clientHeight = h;
+        fire();
+        frames.splice(0).forEach((cb) => cb());
+      },
+      refits: () => refits,
+    };
+  }
+
+  it('observes the pane it was given', () => {
+    const h = harness();
+    expect(h.observed()).toBe(h.pane);
+  });
+
+  it('refits when the pane grows back after a send empties the composer', () => {
+    const h = harness();
+    h.resize(1000, 525); // composer grown while typing
+    h.resize(1000, 608); // sendMessage: value='' + height:'auto', no input event
+    expect(h.refits()).toBe(2);
+  });
+
+  it('does not refit when the size did not change', () => {
+    const h = harness();
+    h.resize(1000, 525);
+    h.resize(1000, 525);
+    expect(h.refits()).toBe(1);
+  });
+
+  it('does not fit a hidden pane, and does not refit when it reappears unchanged', () => {
+    const h = harness();
+    h.resize(1000, 525);
+    h.resize(0, 0); // tab switched away: display:none
+    h.resize(1000, 525);
+    expect(h.refits()).toBe(1);
+  });
+
+  it('is a no-op for a pane that is not in the page', () => {
+    const m = source.match(/function refitOnResize\(paneId, refit\) \{[\s\S]*?\n {2}\}/);
+    const refitOnResize = new Function(
+      'document',
+      'ResizeObserver',
+      'requestAnimationFrame',
+      `${m[0]}\nreturn refitOnResize;`,
+    )({ getElementById: () => null }, class {}, () => {});
+    expect(() => refitOnResize('nope', () => {})).not.toThrow();
+  });
+
+  // The tests above prove the function; this proves it is switched on. Deleting
+  // both calls left every web test green, and a missing pane id is a silent
+  // no-op by design — so the ids are checked against the page as well.
+  it('is wired to both terminals that sit above an auto-growing composer', () => {
+    const html = fs.readFileSync(
+      path.resolve(__dirname, '../../../src/integrations/web/public/index.html'),
+      'utf8',
+    );
+    for (const [paneId, refit] of [
+      ['terminal-wrap', 'refitSessionTerminal'],
+      ['tasks-session-terminal', 'refitTasksTerminal'],
+    ]) {
+      const call = `refitOnResize('${paneId}', ${refit});`;
+      expect(source.includes(`\n  ${call}`), `app.js never calls ${call}`).toBe(true);
+      expect(html).toContain(`id="${paneId}"`);
+    }
+  });
+});

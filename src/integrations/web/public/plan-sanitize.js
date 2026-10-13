@@ -37,11 +37,34 @@
     }
   }
 
-  var api = { stripGlobalScopeLeaks: stripGlobalScopeLeaks };
+  // Published plans (mountPlanShadow) render inside a shadow root, which has no
+  // document root — so a plan's `:root { --line: …; --panel: … }` palette
+  // matches nothing there. Every var() it feeds is then invalid: table borders
+  // vanish and SVG boxes filled with var(--panel) paint solid black. Move those
+  // rules onto :host, where the shadow tree inherits them.
+  //
+  // The shadow styles force a white page regardless of theme, so a plan's
+  // `@media (prefers-color-scheme: dark)` palette (light text) would be
+  // unreadable there once it can apply. `not all` switches that block off.
+  //
+  // Only <style> contents are rewritten: a plan whose prose or code samples
+  // mention `:root` must render them as written.
+  function scopePlanStylesToHost(html) {
+    if (html == null) return html;
+    return String(html).replace(/(<style\b[^>]*>)([\s\S]*?)(<\/style>)/gi, function (_, open, css, close) {
+      var scoped = css
+        .replace(/@media\s*\(\s*prefers-color-scheme\s*:\s*dark\s*\)/gi, '@media not all')
+        .replace(/:root\b/g, ':host');
+      return open + scoped + close;
+    });
+  }
+
+  var api = { stripGlobalScopeLeaks: stripGlobalScopeLeaks, scopePlanStylesToHost: scopePlanStylesToHost };
 
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = api;
   } else {
     root.stripGlobalScopeLeaks = stripGlobalScopeLeaks;
+    root.scopePlanStylesToHost = scopePlanStylesToHost;
   }
 })(typeof globalThis !== 'undefined' ? globalThis : this);

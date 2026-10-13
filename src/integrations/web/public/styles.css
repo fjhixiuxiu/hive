@@ -762,7 +762,9 @@ html, body { height: 100%; background: var(--bg); color: var(--fg); font-family:
 .plan-ref-subtab.has-drafts .count-badge { background: rgba(210,153,34,0.25); color: var(--yellow); }
 .plan-ref-tab-body { flex: 1; min-height: 0; overflow-y: auto; }
 .plan-ref-tab-body[hidden] { display: none !important; }
-.plan-ref-html { background: var(--bg); padding: 8px 40px 24px; }
+/* Narrow gutter: the sidebar can be dragged down to 160px, and 40px a side left
+   a 240px sidebar a 139px page. The plan's own inset is on its :host. */
+.plan-ref-html { background: var(--bg); padding: 8px 8px 16px; }
 .plan-ref-html > div { /* the shadow host element */
   display: block; width: 100%;
   background: #ffffff; border-radius: 6px;

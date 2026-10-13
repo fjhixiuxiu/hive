@@ -4864,7 +4864,10 @@
       // Strip <script> so embedded code (e.g. the hive-comments JSON island)
       // can't execute in the shadow root. Plan content is user-published —
       // not arbitrary, but defense-in-depth is cheap.
-      const sanitized = planHtml.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '');
+      let sanitized = planHtml.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '');
+      // The plan's :root palette means nothing in a shadow root (plan-sanitize.js).
+      // Guard in case the script failed to load, as renderMarkdown does.
+      if (window.scopePlanStylesToHost) sanitized = window.scopePlanStylesToHost(sanitized);
       root.innerHTML = sanitized + planRefShadowStyles();
       injectSectionMarkers(root, planId);
     }
@@ -4887,12 +4890,23 @@
     // Layered on top of whatever the plan brings. Forces a readable light
     // background so plans authored for either theme look fine in the dark
     // dashboard, and styles the comment markers we inject.
+    //
+    // A shadow root has no <html> or <body>, so a body rule matches nothing
+    // here: the inset lives on :host. (The plan's own :root palette is moved
+    // onto :host by scopePlanStylesToHost before it is mounted.)
+    //
+    // Tables size to their content and scroll sideways when that is wider than
+    // the sidebar. Squeezing them to 100% with table-layout:fixed gave each
+    // column an equal slice — 27px apiece in a 240px sidebar — and the headers,
+    // which had no break rule, overprinted each other. Cells wrap only at word
+    // boundaries so a column is never narrower than its longest word.
     return `<style>
       :host, html, body { background: #ffffff !important; color: #1a1a1a !important; }
-      body { font: 14px/1.6 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important; margin: 0 !important; padding: 24px 36px !important; max-width: none !important; overflow-wrap: break-word !important; word-wrap: break-word !important; }
-      code, pre, a, td { overflow-wrap: anywhere !important; word-break: break-word !important; }
+      :host { font: 14px/1.6 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important; padding: 16px 20px !important; overflow-wrap: break-word !important; }
+      code, pre, a { overflow-wrap: anywhere !important; word-break: break-word !important; }
       pre { white-space: pre-wrap !important; }
-      table { table-layout: fixed; width: 100%; }
+      table { display: block !important; overflow-x: auto; width: max-content !important; max-width: 100% !important; table-layout: auto !important; border-collapse: collapse; }
+      th, td, th *, td * { overflow-wrap: normal !important; word-break: normal !important; }
       section[data-id] { position: relative; padding-right: 30px; }
       .hive-marker {
         position: absolute; top: 4px; right: 2px;
@@ -5647,6 +5661,27 @@
     if (atTail) tasksSessionTerm.scrollToBottom();
   }
   msgInput.addEventListener('input', () => growAndRefit(msgInput, 'terminal-wrap', refitSessionTerminal));
+  // growAndRefit only hears the composer's own input events. Everything else that
+  // moves the pane's height did not refit: sendMessage empties the composer by
+  // setting height:'auto' directly, so after every multi-line send the pane grew
+  // back while xterm kept the rows it had while you typed — a blank band under
+  // the output (measured: pane 608px, xterm 525px) until something unrelated
+  // refitted it. Watch the pane instead of enumerating what can resize it. Both
+  // panes are flex:1 / min-height:0 / overflow:hidden, so a refit cannot feed
+  // back into their size. A hidden pane (0×0) has nothing to fit.
+  function refitOnResize(paneId, refit) {
+    const pane = document.getElementById(paneId);
+    if (!pane || typeof ResizeObserver === 'undefined') return;
+    let last = '';
+    new ResizeObserver(() => {
+      const w = pane.clientWidth, h = pane.clientHeight;
+      if (!w || !h || `${w}x${h}` === last) return;
+      last = `${w}x${h}`;
+      requestAnimationFrame(refit);
+    }).observe(pane);
+  }
+  refitOnResize('terminal-wrap', refitSessionTerminal);
+  refitOnResize('tasks-session-terminal', refitTasksTerminal);
   // The task dialog floats over the page — it takes its height from nothing.
   const taskDialogText = document.getElementById('task-dialog-text');
   if (taskDialogText) taskDialogText.addEventListener('input', () => autoGrow(taskDialogText));
