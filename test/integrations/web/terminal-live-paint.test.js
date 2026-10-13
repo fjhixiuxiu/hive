@@ -296,3 +296,237 @@ describe('enforceBufferCeiling — scrollback cannot climb on live repaints', ()
     expect(term.buffer.active.length).toBe(550);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Scroll-up history resync, for all three session terminals.
+//
+// Live polls capture the visible pane only, so lines that scroll off it between
+// polls never reached xterm's scrollback. Reproduced in @xterm/headless against
+// the real repaint code:
+//   - session view: the buffer jumped from `line 20` to `line 38` — the history
+//     from when the session was opened, then the current screen, spliced.
+//   - tasks panel / task detail (sized to their panel, not the pane): shorter
+//     than the pane, every poll stacked another copy of the screen into
+//     scrollback — 80 duplicated lines after five polls; taller, the same
+//     splice as the session view.
+// ---------------------------------------------------------------------------
+
+function fakeTerm({ baseY = 500, viewportY = 500 } = {}) {
+  const t = {
+    cols: 200,
+    rows: 50,
+    writes: [],
+    buffer: { active: { baseY, viewportY } },
+    write: vi.fn((payload, cb) => {
+      t.writes.push(payload);
+      cb();
+    }),
+    scrollToBottom: vi.fn(() => {
+      t.buffer.active.viewportY = t.buffer.active.baseY;
+    }),
+    scrollToLine: vi.fn((y) => {
+      t.buffer.active.viewportY = y;
+    }),
+  };
+  return t;
+}
+const fakeWs = () => ({ readyState: 1, send: vi.fn() });
+
+/**
+ * Each terminal's resync + writer, lifted from app.js into a closure that
+ * rebuilds the state they read. `term`/`ws`/`scrolledUp` are wired per terminal.
+ */
+const TERMINALS = [
+  {
+    name: 'session view',
+    resync: 'resyncTerminalHistory',
+    write: 'writeTerminalContent',
+    state: `let term = null, ws = null, currentSession = null, activePane = null, paneRows = 0;
+      let userScrolledUp = false, writingContent = false, lastContent = '', readingMode = false;
+      let _termWriteRAF = null;
+      const enforceBufferCeiling = () => {};
+      const livePaint = (c) => 'LIVE:' + c;`,
+    wire: `(t, w, session, pane, up) => { term = t; ws = w; currentSession = session; activePane = pane; userScrolledUp = up; }`,
+    // The session view repaints live polls in place; the panel-sized ones replace the buffer.
+    livePrefix: 'LIVE:',
+    subscribeExtra: { cols: 200, rows: 50 },
+  },
+  {
+    name: 'tasks panel',
+    resync: 'tsResyncHistory',
+    write: 'writeTasksSessionContent',
+    state: `let tasksSessionTerm = null, ws = null, tasksSessionNum = null, tsActivePane = null;
+      let tsUserScrolledUp = false, tsWriting = false, tsLastContent = '', _tsWriteRAF = null;
+      const ensureTasksSessionTerm = () => {};`,
+    wire: `(t, w, session, pane, up) => { tasksSessionTerm = t; ws = w; tasksSessionNum = session; tsActivePane = pane; tsUserScrolledUp = up; }`,
+    livePrefix: '\x1b[3J\x1b[H\x1b[J',
+    subscribeExtra: {},
+  },
+  {
+    name: 'task detail',
+    resync: 'tdResyncHistory',
+    write: 'writeTaskDetailContent',
+    state: `let taskDetailTerm = null, ws = null, taskDetailSession = null, tdActivePane = null;
+      let taskDetailScrolledUp = false, taskDetailWriting = false, taskDetailLastContent = '', _tdWriteRAF = null;`,
+    wire: `(t, w, session, pane, up) => { taskDetailTerm = t; ws = w; taskDetailSession = session; tdActivePane = pane; taskDetailScrolledUp = up; }`,
+    livePrefix: '\x1b[3J\x1b[H\x1b[J',
+    subscribeExtra: {},
+  },
+];
+
+/** The resync flag declaration sits just above each resync function. */
+function extractFlag(name) {
+  const m = source.match(
+    new RegExp(`var (\\w+HistoryFresh|historyFresh) = false;\\s*function ${name}\\(`),
+  );
+  if (!m) throw new Error(`history flag for ${name} not found`);
+  return `let ${m[1]} = false;`;
+}
+
+describe.each(TERMINALS)('$name — scroll-up history resync', (T) => {
+  let h;
+
+  beforeEach(() => {
+    h = new Function(`
+      ${T.state}
+      ${extractFlag(T.resync)}
+      const requestAnimationFrame = (fn) => { fn(); return 1; };
+      const cancelAnimationFrame = () => {};
+      ${extractFunction(source, T.resync)}
+      ${extractFunction(source, T.write)}
+      return { wire: ${T.wire}, resync: ${T.resync}, write: ${T.write} };
+    `)();
+  });
+
+  it('asks for a fresh history capture on a scroll-up', () => {
+    const ws = fakeWs();
+    h.wire(fakeTerm(), ws, '20', 1, false);
+
+    h.resync();
+
+    expect(ws.send).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(ws.send.mock.calls[0][0])).toEqual({
+      type: 'terminal:subscribe',
+      session: '20',
+      pane: 1,
+      ...T.subscribeExtra,
+    });
+  });
+
+  it('a run of wheel ticks costs one capture', () => {
+    const ws = fakeWs();
+    h.wire(fakeTerm(), ws, '20', null, false);
+
+    for (let tick = 0; tick < 5; tick++) h.resync();
+
+    expect(ws.send).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(ws.send.mock.calls[0][0])).not.toHaveProperty('pane');
+  });
+
+  it('a full paint satisfies it, and a live paint makes the history stale again', () => {
+    const ws = fakeWs();
+    h.wire(fakeTerm(), ws, '20', null, false);
+
+    h.write('history', true);
+    h.resync();
+    expect(ws.send).not.toHaveBeenCalled();
+
+    h.write('screen', false);
+    h.resync();
+    expect(ws.send).toHaveBeenCalledTimes(1);
+  });
+
+  it('asks nothing when there is no live session behind the terminal', () => {
+    // The tasks panel shows saved snapshots with the session cleared; a resync
+    // would subscribe the live pane over the snapshot.
+    const ws = fakeWs();
+    h.wire(fakeTerm(), ws, null, null, false);
+
+    h.resync();
+
+    expect(ws.send).not.toHaveBeenCalled();
+  });
+
+  it('a full paint replaces scrollback instead of stacking a second copy', () => {
+    const term = fakeTerm();
+    h.wire(term, fakeWs(), '20', null, false);
+
+    h.write('history', true);
+
+    expect(term.writes[0]).toBe('\x1b[3J\x1b[H\x1b[Jhistory');
+  });
+
+  it('writes a live paint the way this terminal needs', () => {
+    const term = fakeTerm();
+    h.wire(term, fakeWs(), '20', null, false);
+
+    h.write('screen', false);
+
+    expect(term.writes[0]).toBe(`${T.livePrefix}screen`);
+  });
+
+  it('keeps a scrolled-up reader the same distance from the bottom', () => {
+    const term = fakeTerm({ baseY: 500, viewportY: 470 });
+    term.write = vi.fn((payload, cb) => {
+      term.buffer.active.baseY = 520; // the resync filled in the missing lines
+      cb();
+    });
+    h.wire(term, fakeWs(), '20', null, true);
+
+    h.write('history', true);
+
+    expect(term.scrollToBottom).not.toHaveBeenCalled();
+    expect(term.scrollToLine).toHaveBeenCalledWith(490);
+  });
+
+  it('follows the bottom when the reader was not scrolled up', () => {
+    const term = fakeTerm();
+    h.wire(term, fakeWs(), '20', null, false);
+
+    h.write('history', true);
+
+    expect(term.scrollToBottom).toHaveBeenCalled();
+    expect(term.scrollToLine).not.toHaveBeenCalled();
+  });
+});
+
+describe('scroll-up gestures drive the resync', () => {
+  // A position check cannot fire when the buffer holds too little scrollback to
+  // move 3 lines — after a clear, or in a tasks-panel terminal after a live paint —
+  // so the request has to come from the gesture itself.
+  it.each([
+    ['term', 'resyncTerminalHistory', 'touchStartY'],
+    ['tasksSessionTerm', 'tsResyncHistory', 'tsTouchStartY'],
+    ['taskDetailTerm', 'tdResyncHistory', 'tdTouchStartY'],
+  ])('%s requests history on wheel-up and on a downward swipe', (termVar, resync, touchVar) => {
+    const wheel = source.match(
+      new RegExp(`${termVar}\\.element\\.addEventListener\\('wheel', \\(e\\) => \\{[^\\n]*`),
+    );
+    expect(wheel?.[0]).toContain(`if (e.deltaY < 0) ${resync}()`);
+
+    const touchStart = source.indexOf(`${touchVar} - (e.changedTouches[0] || {}).clientY`);
+    expect(touchStart).toBeGreaterThan(-1);
+    expect(source.slice(touchStart, touchStart + 200)).toContain(`if (dy < -20) ${resync}()`);
+  });
+});
+
+describe('terminal:data — a full paint lands even while the reader is scrolled up', () => {
+  // It is the resync the scroll-up asked for; deferring it like a live poll
+  // would hold the stale history on screen until the reader scrolled back down.
+  const handler = source.slice(
+    source.indexOf("case 'terminal:data':"),
+    source.indexOf('// Console (Session 0) terminal data'),
+  );
+
+  it.each([
+    ['session view', 'writeTerminalContent(msg.content, true)'],
+    ['tasks panel', 'writeTasksSessionContent(msg.content, true)'],
+    ['task detail', 'writeTaskDetailContent(msg.content, true)'],
+  ])('%s', (_name, call) => {
+    const at = handler.indexOf(call);
+    expect(at).toBeGreaterThan(-1);
+    // The full-paint branch comes before, and outside, the scrolled-up deferral.
+    const branch = handler.slice(handler.lastIndexOf('msg.full === true', at), at);
+    expect(branch).not.toMatch(/ScrolledUp|scrolledUp/);
+  });
+});

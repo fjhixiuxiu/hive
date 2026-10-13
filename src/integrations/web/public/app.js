@@ -1306,9 +1306,12 @@
           if (paneOk) {
             if (msg.cols && msg.cols > 0) { paneCols = msg.cols; if (msg.cols !== term.cols) term.resize(msg.cols, term.rows); }
             if (msg.rows && msg.rows > 0) paneRows = msg.rows;
-            if (msg.content !== lastContent) {
-              if (userScrolledUp) { pendingContent = msg.content; pendingFull = msg.full === true; }
-              else { writeTerminalContent(msg.content, msg.full === true); }
+            // A full paint is written even while scrolled up — it is the history
+            // resync that scrolling up asked for, and it is newer than anything pending.
+            if (msg.full === true) { pendingContent = null; writeTerminalContent(msg.content, true); }
+            else if (msg.content !== lastContent) {
+              if (userScrolledUp) { pendingContent = msg.content; }
+              else { writeTerminalContent(msg.content, false); }
             }
           }
         }
@@ -1316,21 +1319,26 @@
           const paneOk = !(typeof msg.pane === 'number' && tsActivePane !== null && msg.pane !== tsActivePane);
           if (paneOk) {
             if (msg.cols && msg.cols > 0) { tsPaneCols = msg.cols; if (msg.cols !== tasksSessionTerm.cols) tasksSessionTerm.resize(msg.cols, tasksSessionTerm.rows); }
-            if (msg.content !== tsLastContent) {
+            // A full paint is written even while scrolled up — see the session view above.
+            if (msg.full === true) { tsPendingContent = null; writeTasksSessionContent(msg.content, true); }
+            else if (msg.content !== tsLastContent) {
               if (tsUserScrolledUp) { tsPendingContent = msg.content; }
-              else { writeTasksSessionContent(msg.content); }
+              else { writeTasksSessionContent(msg.content, false); }
             }
           }
         }
         // Task detail slide-out terminal
         if (taskDetailTerm && taskDetailSession && String(msg.session) === taskDetailSession) {
           const tdPaneOk = !(typeof msg.pane === 'number' && tdActivePane !== null && msg.pane !== tdActivePane);
-          if (tdPaneOk && msg.content !== taskDetailLastContent) {
-            if (msg.cols && msg.cols > 0 && msg.cols !== taskDetailTerm.cols) taskDetailTerm.resize(msg.cols, taskDetailTerm.rows);
+          if (tdPaneOk && msg.cols && msg.cols > 0 && msg.cols !== taskDetailTerm.cols) taskDetailTerm.resize(msg.cols, taskDetailTerm.rows);
+          if (tdPaneOk && msg.full === true) {
+            taskDetailPending = null;
+            writeTaskDetailContent(msg.content, true);
+          } else if (tdPaneOk && msg.content !== taskDetailLastContent) {
             if (taskDetailScrolledUp) {
               taskDetailPending = msg.content;
             } else {
-              writeTaskDetailContent(msg.content);
+              writeTaskDetailContent(msg.content, false);
             }
           }
         }
@@ -2628,7 +2636,6 @@
   var openingSession = false;  // true while openSession drives switchTab, which would otherwise double-subscribe
   var bufferBaseline = null;  // buffer length after the last paint that was allowed to grow it
   var pendingContent = null;
-  var pendingFull = false;  // was the deferred content a scrollback-bearing first paint?
   var lastContent = '';
 
   function openSession(s, fromRoute) {
@@ -2699,10 +2706,10 @@
       enableTerminalCopy(term);
       term.open(termWrap);
       attachWebglRenderer(term);
-      term.element.addEventListener('wheel', () => { setTimeout(checkScrollPosition, 50); });
+      term.element.addEventListener('wheel', (e) => { if (e.deltaY < 0) resyncTerminalHistory(); setTimeout(checkScrollPosition, 50); });
       let touchStartY = 0;
       term.element.addEventListener('touchstart', (e) => { touchStartY = e.touches[0].clientY; }, { passive: true });
-      term.element.addEventListener('touchend', (e) => { const dy = touchStartY - (e.changedTouches[0] || {}).clientY; if (Math.abs(dy) > 20) { setTimeout(checkScrollPosition, 150); setTimeout(checkScrollPosition, 500); } });
+      term.element.addEventListener('touchend', (e) => { const dy = touchStartY - (e.changedTouches[0] || {}).clientY; if (dy < -20) resyncTerminalHistory(); if (Math.abs(dy) > 20) { setTimeout(checkScrollPosition, 150); setTimeout(checkScrollPosition, 500); } });
     }
 
     // Show session panel.
@@ -2746,8 +2753,30 @@
     const linesFromBottom = buf.baseY - buf.viewportY;
     if (linesFromBottom <= 3 && userScrolledUp) {
       userScrolledUp = false; scrollIndicator(false);
-      if (pendingContent !== null) { writeTerminalContent(pendingContent, pendingFull); pendingContent = null; pendingFull = false; }
+      if (pendingContent !== null) { writeTerminalContent(pendingContent); pendingContent = null; }
     } else if (linesFromBottom > 3) { userScrolledUp = true; scrollIndicator(true); }
+  }
+
+  // Live polls capture the visible pane only, so a line that scrolls off the top
+  // of the tmux pane between polls never reaches xterm's scrollback. The buffer
+  // then holds the history from when the session was opened and the current
+  // screen, with everything in between missing: scrolling up shows old and new
+  // output spliced together mid-screen. Fetch a fresh history capture on the
+  // scroll-up gesture, which is the only time scrollback is read.
+  //
+  // It keys off the gesture, not the scroll position: when the buffer holds
+  // little or no scrollback (a fresh clear, a tasks-panel terminal after a
+  // live paint) the view cannot move more than 3 lines, and a position check would
+  // never ask for the history that would let it. `*HistoryFresh` holds off
+  // repeat requests until a live paint makes the history stale again, so a
+  // run of wheel ticks costs one capture.
+  var historyFresh = false;
+  function resyncTerminalHistory() {
+    if (historyFresh || !term || !ws || ws.readyState !== 1 || !currentSession) return;
+    historyFresh = true;
+    const m = { type: 'terminal:subscribe', session: currentSession, cols: term.cols, rows: term.rows };
+    if (activePane !== null) m.pane = activePane;
+    ws.send(JSON.stringify(m));
   }
 
   var _termWriteRAF = null;
@@ -2790,18 +2819,25 @@
 
   function writeTerminalContent(content, full) {
     if (!term) return;
-    lastContent = content; writingContent = true;
+    lastContent = content; writingContent = true; historyFresh = full === true;
     // `full` marks the first paint after subscribing, which carries scrollback
-    // and is meant to land in the buffer. Live polls repaint in place.
+    // and is meant to land in the buffer. It replaces the buffer (`\x1b[3J`
+    // erases scrollback) — a resubscribe otherwise stacks a second copy of the
+    // history on top of the first. Live polls repaint in place.
     const payload = full
-      ? '\x1b[H\x1b[J' + content
+      ? '\x1b[3J\x1b[H\x1b[J' + content
       : livePaint(content, term.rows, paneRows);
     // Coalesce rapid updates — only the last content wins
     if (_termWriteRAF) cancelAnimationFrame(_termWriteRAF);
     _termWriteRAF = requestAnimationFrame(() => {
       _termWriteRAF = null;
+      // A history resync lands while the user is scrolled up: keep them the
+      // same distance from the bottom instead of yanking them down.
+      const buf = term.buffer.active;
+      const keepFromBottom = userScrolledUp ? buf.baseY - buf.viewportY : 0;
       term.write(payload, () => {
-        term.scrollToBottom();
+        if (keepFromBottom > 0) term.scrollToLine(Math.max(0, term.buffer.active.baseY - keepFromBottom));
+        else term.scrollToBottom();
         enforceBufferCeiling(full);
         writingContent = false;
         if (readingMode) document.getElementById('reading-content').textContent = extractTerminalText();
@@ -4120,7 +4156,7 @@
       el = document.createElement('div'); el.id = 'scroll-pause';
       el.setAttribute('data-tooltip', 'Scroll to bottom');
       el.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>';
-      el.addEventListener('click', () => { userScrolledUp = false; scrollIndicator(false); if (term) term.scrollToBottom(); if (pendingContent !== null) { writeTerminalContent(pendingContent, pendingFull); pendingContent = null; pendingFull = false; } });
+      el.addEventListener('click', () => { userScrolledUp = false; scrollIndicator(false); if (term) term.scrollToBottom(); if (pendingContent !== null) { writeTerminalContent(pendingContent); pendingContent = null; } });
       termWrap.appendChild(el);
     } else if (!show && el) { el.remove(); }
   }
@@ -6636,10 +6672,10 @@
     enableTerminalCopy(tasksSessionTerm);
     tasksSessionTerm.open(container);
     // Wire scroll-pause detection
-    tasksSessionTerm.element.addEventListener('wheel', () => { setTimeout(tsCheckScroll, 50); });
+    tasksSessionTerm.element.addEventListener('wheel', (e) => { if (e.deltaY < 0) tsResyncHistory(); setTimeout(tsCheckScroll, 50); });
     let tsTouchStartY = 0;
     tasksSessionTerm.element.addEventListener('touchstart', (e) => { tsTouchStartY = e.touches[0].clientY; }, { passive: true });
-    tasksSessionTerm.element.addEventListener('touchend', (e) => { const dy = tsTouchStartY - (e.changedTouches[0] || {}).clientY; if (Math.abs(dy) > 20) { setTimeout(tsCheckScroll, 150); setTimeout(tsCheckScroll, 500); } });
+    tasksSessionTerm.element.addEventListener('touchend', (e) => { const dy = tsTouchStartY - (e.changedTouches[0] || {}).clientY; if (dy < -20) tsResyncHistory(); if (Math.abs(dy) > 20) { setTimeout(tsCheckScroll, 150); setTimeout(tsCheckScroll, 500); } });
     requestAnimationFrame(() => fitTasksTerminal());
   }
 
@@ -6666,15 +6702,36 @@
     } else if (!show && el) { el.remove(); }
   }
 
+  // Same history resync as the session view — see resyncTerminalHistory.
+  var tsHistoryFresh = false;
+  function tsResyncHistory() {
+    if (tsHistoryFresh || !tasksSessionTerm || !ws || ws.readyState !== 1 || !tasksSessionNum) return;
+    tsHistoryFresh = true;
+    const m = { type: 'terminal:subscribe', session: tasksSessionNum };
+    if (tsActivePane !== null) m.pane = tsActivePane;
+    ws.send(JSON.stringify(m));
+  }
+
+  // This terminal's height is the panel's, not the pane's, and every write used
+  // to be `\x1b[H\x1b[J` + the capture. Shorter than the pane, each 2s live poll
+  // overflowed and stacked another copy of the screen into scrollback
+  // (measured: 80 duplicated lines after five polls); taller, lines that scrolled
+  // off the pane between polls never arrived and the history spliced old output
+  // onto new. Every write therefore replaces the buffer — a live poll leaves
+  // only the current screen, and the history comes back from tsResyncHistory
+  // when the user scrolls up.
   var _tsWriteRAF = null;
-  function writeTasksSessionContent(content) {
+  function writeTasksSessionContent(content, full) {
     ensureTasksSessionTerm();
-    tsLastContent = content; tsWriting = true;
+    tsLastContent = content; tsWriting = true; tsHistoryFresh = full === true;
     if (_tsWriteRAF) cancelAnimationFrame(_tsWriteRAF);
     _tsWriteRAF = requestAnimationFrame(() => {
       _tsWriteRAF = null;
-      tasksSessionTerm.write('\x1b[H\x1b[J' + content, () => {
-        tasksSessionTerm.scrollToBottom();
+      const buf = tasksSessionTerm.buffer.active;
+      const keepFromBottom = tsUserScrolledUp ? buf.baseY - buf.viewportY : 0;
+      tasksSessionTerm.write('\x1b[3J\x1b[H\x1b[J' + content, () => {
+        if (keepFromBottom > 0) tasksSessionTerm.scrollToLine(Math.max(0, tasksSessionTerm.buffer.active.baseY - keepFromBottom));
+        else tasksSessionTerm.scrollToBottom();
         tsWriting = false;
       });
     });
@@ -6871,11 +6928,13 @@
   function showTaskSnapshotContent(taskId, content, cols) {
     ensureTasksSessionTerm();
     if (!content) {
-      tasksSessionTerm.write('\x1b[H\x1b[J\r\n  No snapshot saved for this task\r\n');
+      tasksSessionTerm.write('\x1b[3J\x1b[H\x1b[J\r\n  No snapshot saved for this task\r\n');
       return;
     }
     if (cols && cols > 0) { tsPaneCols = cols; if (cols !== tasksSessionTerm.cols) tasksSessionTerm.resize(cols, tasksSessionTerm.rows); }
-    tasksSessionTerm.write('\x1b[H\x1b[J' + content);
+    // `\x1b[3J` drops the live session's scrollback, which would otherwise sit
+    // above the snapshot and read as part of it.
+    tasksSessionTerm.write('\x1b[3J\x1b[H\x1b[J' + content);
     requestAnimationFrame(() => tasksSessionTerm.scrollToBottom());
   }
 
@@ -8340,11 +8399,12 @@
       taskDetailScrolledUp = false;
       taskDetailPending = null;
       // Scroll lock: detect user scrolling up
-      taskDetailTerm.element.addEventListener('wheel', () => { setTimeout(checkTaskDetailScroll, 50); });
+      taskDetailTerm.element.addEventListener('wheel', (e) => { if (e.deltaY < 0) tdResyncHistory(); setTimeout(checkTaskDetailScroll, 50); });
       let tdTouchStartY = 0;
       taskDetailTerm.element.addEventListener('touchstart', (e) => { tdTouchStartY = e.touches[0].clientY; }, { passive: true });
       taskDetailTerm.element.addEventListener('touchend', (e) => {
         const dy = tdTouchStartY - (e.changedTouches[0] || {}).clientY;
+        if (dy < -20) tdResyncHistory();
         if (Math.abs(dy) > 20) { setTimeout(checkTaskDetailScroll, 150); setTimeout(checkTaskDetailScroll, 500); }
       });
       // Save the outgoing session's draft before repointing the panel. The input
@@ -8676,16 +8736,32 @@
     }
   }
 
+  // Same history resync as the session view — see resyncTerminalHistory.
+  var tdHistoryFresh = false;
+  function tdResyncHistory() {
+    if (tdHistoryFresh || !taskDetailTerm || !ws || ws.readyState !== 1 || !taskDetailSession) return;
+    tdHistoryFresh = true;
+    const m = { type: 'terminal:subscribe', session: taskDetailSession };
+    if (tdActivePane !== null) m.pane = tdActivePane;
+    ws.send(JSON.stringify(m));
+  }
+
+  // Sized to its panel like the tasks-panel terminal, so every write replaces
+  // the buffer for the same reason — see writeTasksSessionContent.
   var _tdWriteRAF = null;
-  function writeTaskDetailContent(content) {
+  function writeTaskDetailContent(content, full) {
     if (!taskDetailTerm) return;
     taskDetailLastContent = content;
     taskDetailWriting = true;
+    tdHistoryFresh = full === true;
     if (_tdWriteRAF) cancelAnimationFrame(_tdWriteRAF);
     _tdWriteRAF = requestAnimationFrame(() => {
       _tdWriteRAF = null;
-      taskDetailTerm.write('\x1b[H\x1b[J' + content, () => {
-        taskDetailTerm.scrollToBottom();
+      const buf = taskDetailTerm.buffer.active;
+      const keepFromBottom = taskDetailScrolledUp ? buf.baseY - buf.viewportY : 0;
+      taskDetailTerm.write('\x1b[3J\x1b[H\x1b[J' + content, () => {
+        if (keepFromBottom > 0) taskDetailTerm.scrollToLine(Math.max(0, taskDetailTerm.buffer.active.baseY - keepFromBottom));
+        else taskDetailTerm.scrollToBottom();
         taskDetailWriting = false;
       });
     });
