@@ -382,6 +382,11 @@ describe('task vocabulary', () => {
       expect(missing).toEqual([]);
     });
 
+    it('bans every approval status', () => {
+      const missing = APPROVAL_STATUSES.filter((s) => !bannedWords.has(s));
+      expect(missing).toEqual([]);
+    });
+
     it('bans the words that were never produced, so they cannot return', () => {
       for (const dead of ['done', 'in-progress', 'waiting']) {
         expect(bannedWords.has(dead), dead).toBe(true);
@@ -394,6 +399,7 @@ describe('task vocabulary', () => {
       const known = new Set([
         ...TASK_STATUSES,
         ...SESSION_STATES,
+        ...APPROVAL_STATUSES,
         'done',
         'in-progress',
         'waiting',
@@ -446,6 +452,26 @@ describe('task vocabulary', () => {
       expect(await lint(`function t(x) { switch (x.kind) { case 'queued': return 1; } }`)).toEqual(
         [],
       );
+    });
+
+    it('flags an approval status compared as a string, and leaves a CI state alone', async () => {
+      const hits = await lint(`function t(a) { return a.status === 'pending'; }`);
+      expect(hits).toHaveLength(1);
+      expect(hits[0].message).toMatch(/ApprovalStatus/);
+      // pr-status.js reads CI states off a local, not a .status property.
+      expect(await lint(`function t(v) { return v === 'pending'; }`)).toEqual([]);
+    });
+
+    it('flags an approval status once it has been copied into a local', async () => {
+      const compared = await lint(
+        `function t(a) { const status = a.status; return status === 'denied'; }`,
+      );
+      expect(compared).toHaveLength(1);
+      expect(compared[0].message).toMatch(/ApprovalStatus/);
+      const switched = await lint(
+        `function t(a) { const status = a.status; switch (status) { case 'approved': return 1; } }`,
+      );
+      expect(switched).toHaveLength(1);
     });
 
     it('accepts the constant form', async () => {

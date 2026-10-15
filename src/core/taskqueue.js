@@ -997,8 +997,8 @@ class TaskQueue extends EventEmitter {
     // back instead of a new approval being raised, and the dashboard shows the
     // dead session's prompt to the live session standing in its place.
     for (const approval of this.approvals.values()) {
-      if (approval.session === num && approval.status === 'pending') {
-        approval.status = 'denied';
+      if (approval.session === num && approval.status === ApprovalStatus.PENDING) {
+        approval.status = ApprovalStatus.DENIED;
         approval.resolvedAt = Date.now();
         this.emit('approval:resolved', approval);
       }
@@ -1760,7 +1760,7 @@ class TaskQueue extends EventEmitter {
   createApproval(sessionNum, prompt) {
     // Don't create duplicate pending approvals for the same session
     for (const a of this.approvals.values()) {
-      if (a.session === sessionNum && a.status === 'pending') return a;
+      if (a.session === sessionNum && a.status === ApprovalStatus.PENDING) return a;
     }
 
     const approval = {
@@ -1779,9 +1779,9 @@ class TaskQueue extends EventEmitter {
 
   async resolveApproval(approvalId, approved) {
     const approval = this.approvals.get(approvalId);
-    if (!approval || approval.status !== 'pending') return null;
+    if (!approval || approval.status !== ApprovalStatus.PENDING) return null;
 
-    approval.status = approved ? 'approved' : 'denied';
+    approval.status = approved ? ApprovalStatus.APPROVED : ApprovalStatus.DENIED;
     approval.resolvedAt = Date.now();
 
     // Send y or n key to the session
@@ -1806,7 +1806,7 @@ class TaskQueue extends EventEmitter {
   }
 
   getPendingApprovals() {
-    return Array.from(this.approvals.values()).filter((a) => a.status === 'pending');
+    return Array.from(this.approvals.values()).filter((a) => a.status === ApprovalStatus.PENDING);
   }
 
   // -- Feed ---------------------------------------------------------

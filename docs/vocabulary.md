@@ -63,7 +63,10 @@ guard tests already covered.
   assignment to `task.status` in the codebase
 - `SessionState` — `idle` / `working` / `off` / `blocked` (`blocked` is a Claude
   Code startup dialog such as folder trust; hive never types into one)
-- `ApprovalStatus` — `pending` / `approved` / `denied`
+- `ApprovalStatus` — `pending` / `approved` / `denied`. The lint rule bans these
+  on `.status` and on a local named `status` / `state`, like the other two.
+  `pending` is also a CI state, but `pr-status.js` reads it off `v`, so the two
+  don't meet.
 
 See [task-state-machine.md](./task-state-machine.md) for the transitions and the
 plan for tightening their enforcement.

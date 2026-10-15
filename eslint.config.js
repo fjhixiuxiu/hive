@@ -33,6 +33,11 @@
 // test/core/vocab.test.js, which fails if this list and the enums disagree.
 const TASK_STATUSES = ['queued', 'dispatched', 'snoozed', 'completed', 'failed', 'cancelled'];
 const SESSION_STATES = ['idle', 'working', 'off', 'blocked'];
+// 'pending' is also a CI state, but pr-status.js reads it off `v`, which is not
+// in STATE_IDENTIFIERS, so the two don't meet. CI code that names its variable
+// `state` or `status` will trip this and needs a disable comment, as the GitHub
+// check-run vocabulary in pr-status.js already has.
+const APPROVAL_STATUSES = ['pending', 'approved', 'denied'];
 
 // Words that were compared against but have never been produced anywhere in
 // hive. These are not vocabulary — they are the bugs themselves, kept here so
@@ -99,8 +104,8 @@ function onSwitchIdentifier(words) {
 }
 
 const VOCAB_MESSAGE =
-  'Compare against the constant, not the string. Import { TaskStatus } or ' +
-  '{ SessionState } from src/core/vocab.js. A mistyped constant crashes on the ' +
+  'Compare against the constant, not the string. Import { TaskStatus }, ' +
+  '{ SessionState } or { ApprovalStatus } from src/core/vocab.js. A mistyped constant crashes on the ' +
   'line that made it; a mistyped literal is a branch that silently never runs.';
 
 const DEAD_MESSAGE =
@@ -114,10 +119,12 @@ const restricted = [
   ...[
     ...onProperty('status', TASK_STATUSES),
     ...onProperty('state', SESSION_STATES),
-    ...onIdentifier([...TASK_STATUSES, ...SESSION_STATES]),
+    ...onProperty('status', APPROVAL_STATUSES),
+    ...onIdentifier([...TASK_STATUSES, ...SESSION_STATES, ...APPROVAL_STATUSES]),
     onSwitchProperty('status', TASK_STATUSES),
     onSwitchProperty('state', SESSION_STATES),
-    ...onSwitchIdentifier([...TASK_STATUSES, ...SESSION_STATES]),
+    onSwitchProperty('status', APPROVAL_STATUSES),
+    ...onSwitchIdentifier([...TASK_STATUSES, ...SESSION_STATES, ...APPROVAL_STATUSES]),
   ].map((selector) => ({ selector, message: VOCAB_MESSAGE })),
 
   ...[
