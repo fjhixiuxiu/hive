@@ -498,9 +498,11 @@ class Watcher extends EventEmitter {
         }
       }
 
-      // Clear pending/notified flags when session leaves idle
+      // Any non-idle poll breaks the run of idle polls, but only work re-arms the
+      // idle announcement: a session that reads off or blocked for a poll and
+      // comes back to the same prompt has finished nothing new.
       if (currState !== SessionState.IDLE) {
-        this.notifiedIdle.delete(s.num);
+        if (currState === SessionState.WORKING) this.notifiedIdle.delete(s.num);
         this.pendingIdle.delete(s.num);
       }
 

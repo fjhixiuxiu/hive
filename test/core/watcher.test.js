@@ -81,6 +81,52 @@ describe('Watcher', () => {
       expect(spy).toHaveBeenCalledTimes(1);
     });
 
+    describe('a session that was announced idle and briefly reads as something else', () => {
+      async function announcedIdle(spy) {
+        watcher = new Watcher(config, router);
+        watcher.on('session:idle', spy);
+        fleetSpy.mockResolvedValue([makeSession(6, 'idle')]);
+        await watcher._seed();
+        fleetSpy.mockResolvedValue([makeSession(6, 'working')]);
+        await watcher._poll();
+        await watcher._poll();
+        fleetSpy.mockResolvedValue([makeSession(6, 'idle')]);
+        for (let i = 0; i < 5; i++) await watcher._poll();
+        expect(spy).toHaveBeenCalledTimes(1);
+      }
+
+      it.each(['off', 'blocked'])(
+        'is not announced idle again after a %s poll with no work between',
+        async (between) => {
+          const spy = vi.fn();
+          vi.spyOn(log, 'warn').mockImplementation(() => {});
+          await announcedIdle(spy);
+
+          fleetSpy.mockResolvedValue([makeSession(6, between)]);
+          await watcher._poll();
+          fleetSpy.mockResolvedValue([makeSession(6, 'idle')]);
+          for (let i = 0; i < 10; i++) await watcher._poll();
+
+          expect(spy).toHaveBeenCalledTimes(1);
+        },
+      );
+
+      it('is announced again once it has worked again', async () => {
+        const spy = vi.fn();
+        vi.spyOn(log, 'warn').mockImplementation(() => {});
+        await announcedIdle(spy);
+
+        fleetSpy.mockResolvedValue([makeSession(6, 'off')]);
+        await watcher._poll();
+        fleetSpy.mockResolvedValue([makeSession(6, 'working')]);
+        await watcher._poll();
+        fleetSpy.mockResolvedValue([makeSession(6, 'idle')]);
+        for (let i = 0; i < 5; i++) await watcher._poll();
+
+        expect(spy).toHaveBeenCalledTimes(2);
+      });
+    });
+
     it('emits session:blocked once when a session lands on a startup dialog', async () => {
       // Nothing in hive moves a session off a folder-trust dialog, and nothing
       // should: the announcement is the only way a person finds out.
