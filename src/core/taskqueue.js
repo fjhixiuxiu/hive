@@ -1173,6 +1173,28 @@ class TaskQueue extends EventEmitter {
       // tagged the EVV/dashboard spawns with "Code Review" — the Code Review
       // iteration came second and clobbered the undesignated one's slot.
       const claimedThisRound = new Set();
+
+      // The fleet as this round has left it: the snapshot plus every slot the
+      // round has claimed.
+      //
+      // Both caps below — designation and repo — count live sessions, and
+      // `sessions` is a snapshot taken once at the top of this function and
+      // never refreshed. Counting out of it directly, every lane tests the same
+      // starting count, so a cap is enforced once per round rather than once per
+      // spawn: with N lanes wanting a session, a lane or repo one under its cap
+      // admits N.
+      //
+      // Slots, not per-repo or per-designation tallies, so each cap attributes a
+      // spawn exactly as it attributes a live session — by the slot's repo dir,
+      // and by the designation the spawn was stamped with (setDesignation runs
+      // before the next lane counts). A claimed slot counts even when
+      // createSession finds it already live: the snapshot did not hold it
+      // either. One the snapshot does hold is not counted twice.
+      const snapshotNums = new Set(sessions.map((s) => s.num));
+      const roundFleet = () =>
+        sessions.concat(
+          [...claimedThisRound].filter((num) => !snapshotNums.has(num)).map((num) => ({ num })),
+        );
       for (const [, { desig, matchMode, tasks }] of byDesigMode) {
         // Check if there's already an idle or booting session for this designation.
         // In flexible mode, undesignated sessions count as potential hosts.
@@ -1198,6 +1220,9 @@ class TaskQueue extends EventEmitter {
         );
         if (hasIdle || hasBooting) continue;
 
+        // Once per lane: nothing is claimed between the two cap checks below.
+        const fleet = roundFleet();
+
         // A designation cap is a ceiling on what hive spawns for itself, not on
         // how many sessions of a kind may exist. Sessions added by hand count
         // toward it — the lane really is that full — but nothing here blocks
@@ -1214,7 +1239,7 @@ class TaskQueue extends EventEmitter {
           const def = this.designationDefs.get(desig);
           const desigCap = def && def.sessionCap;
           if (Number.isInteger(desigCap)) {
-            const live = this._countDesignationSessions(sessions, desig);
+            const live = this._countDesignationSessions(fleet, desig);
             if (live >= desigCap) {
               log.info(
                 `[auto-dispatch] Designation "${desig}" at session cap (${live}/${desigCap}) — not spawning for ${tasks.length} queued task(s)`,
@@ -1256,9 +1281,10 @@ class TaskQueue extends EventEmitter {
           const repoDir = this.config.sessions.repoDir(num);
           const repoName = TaskQueue.repoBaseName(repoDir);
           const cap = this.repoSessionCaps.get(repoName);
-          if (cap !== undefined && this._countRepoSessions(sessions, repoName) >= cap) {
+          const liveRepo = this._countRepoSessions(fleet, repoName);
+          if (cap !== undefined && liveRepo >= cap) {
             log.info(
-              `[auto-dispatch] Repo "${repoName}" at session cap (${cap}) — skipping auto-create`,
+              `[auto-dispatch] Repo "${repoName}" at session cap (${liveRepo}/${cap}) — skipping auto-create`,
             );
             continue;
           }
