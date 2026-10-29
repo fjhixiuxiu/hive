@@ -1,19 +1,16 @@
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
-
-const require = createRequire(import.meta.url);
-const { setupPath } = require('../../src/integrations/web/ws-helpers.js');
-
-const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-
 // The stores hive persists inside the repo checkout. The suite runs in that same
 // checkout — the pre-commit hook runs it wherever you commit, including a
 // directory a fleet is running from — so a test that touches one of these is
-// changing a real hive's state.
-const STORES = ['.hive-state.json', '.hive-knowledge.json', '.hive-meetings.json', '.hive-plans'];
+// changing a real hive's state. Shared with store-guard.setup.js, which refuses
+// such a write as it happens and names the test; this is the backstop.
+import { REPO_ROOT, STORES } from './store-guard.js';
+
+const require = createRequire(import.meta.url);
+const { setupPath } = require('../../src/integrations/web/ws-helpers.js');
 
 function fingerprint(p) {
   if (!fs.existsSync(p)) return 'absent';
