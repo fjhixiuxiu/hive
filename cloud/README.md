@@ -110,6 +110,33 @@ SSH: `ssh hive-qa`
 | TF Workspace  | `qa` (uses `qa.tfvars`)                                          |
 | HIVE_TITLE    | `Viv QA Hive`                                                    |
 
+### Desk Hive (`desk` workspace)
+
+URL: `https://desk-hive.vivtechnologies.com`
+SSH: `ssh hive-desk`
+
+Per-assignee hive for manual work — each session has an assignee so people can filter to their own. First PM is manual PR review; intended to also host personal/ad-hoc tasks.
+
+| Resource      | ID / ARN                                                         |
+| ------------- | ---------------------------------------------------------------- |
+| EC2 Instance  | `i-017b2a2bc5b9d340c`                                            |
+| Public IP     | `3.82.109.111`                                                   |
+| Private IP    | `10.0.3.228`                                                     |
+| VPC           | `vpc-02651295c24f8bc7f` (Jenkins)                                |
+| Subnet        | `subnet-0d5dee6be35a20916` (`internal-tools-1a`, us-east-1a)     |
+| ALB           | `desk-hive-alb-113856330.us-east-1.elb.amazonaws.com`            |
+| ALB Subnets   | `subnet-0d5dee6be35a20916` (1a), `subnet-094867cafbdcc387d` (1b) |
+| Target Group  | `desk-hive-tg`                                                   |
+| ALB SG        | `sg-0a4b1b92b2abd21f6` (`desk-hive-alb-sg`)                      |
+| EC2 SG        | `sg-032558890b8a012bc` (`desk-hive-ec2-sg`)                      |
+| Office SSH SG | `sg-043c84f65239ea620` (`toronto-office-jenkins-ssh`)            |
+| Fleet SG      | `sg-0eccb5c1f5c931f9c` (`hive-fleet-sg`, Jenkins VPC)            |
+| IAM Role      | `desk-hive-ec2-role`                                             |
+| IAM Profile   | `desk-hive-ec2-profile`                                          |
+| Secret        | `hive/desk-env`                                                  |
+| TF Workspace  | `desk` (uses `desk.tfvars`)                                      |
+| HIVE_TITLE    | `Viv Desk Hive`                                                  |
+
 ### Shared Resources (across all hives)
 
 | Resource        | ID / ARN                                                                              | Purpose                                                       |
@@ -215,7 +242,7 @@ tofu apply -var-file=qa.tfvars
 
 5. **Configure DNS** in GoDaddy: create CNAME `<hive-name>-hive.vivtechnologies.com` → the new ALB DNS from `tofu output`.
 
-6. **Add the GitHub OAuth callback URL** to the existing OAuth App (one app supports multiple callbacks).
+6. **Create a dedicated GitHub OAuth App** for the new hive (each hive has its own — the `GITHUB_CLIENT_ID`/`SECRET` differ per hive, they are NOT shared). In the `mavencare` org's OAuth Apps, set Homepage `https://<hive-name>-hive.vivtechnologies.com` and Authorization callback `https://<hive-name>-hive.vivtechnologies.com/auth/github/callback`, then put the Client ID + secret into the `hive/<hive-name>-env` secret.
 
 7. **Add the new EC2's public IP to the `viv-internal-tools-ips` prefix list** (`pl-00a38e5148e01f014`) so it can reach Jenkins:
 
@@ -225,7 +252,9 @@ tofu apply -var-file=qa.tfvars
      --add-entries "Cidr=<new-public-ip>/32,Description=<hive-name>-hive"
    ```
 
-8. **SSH in and verify** via the instance public IP.
+8. **Create the two CloudWatch alarms** (`<hive-name>-hive-instance-unreachable` and `<hive-name>-hive-not-serving`) wired to SNS `arn:aws:sns:us-east-1:140947722076:hive-oom-alerts`, matching the existing hives. Substitute the new EC2 `InstanceId`, the target-group dimension (`targetgroup/<name>-tg/<arn-tail>`), and the ALB dimension (`app/<name>-alb/<arn-tail>`). The full `put-metric-alarm` template lives in the hive-agent instructions / dev-ops runbook.
+
+9. **SSH in and verify** via the instance public IP.
 
 ## Operations
 
@@ -248,6 +277,13 @@ ssh -i ~/.ssh/jenkins.pem ubuntu@54.166.91.211
 ```bash
 ssh hive-qa                               # alias for ubuntu@54.88.43.156
 ssh -i ~/.ssh/jenkins.pem ubuntu@54.88.43.156
+```
+
+### Desk Hive
+
+```bash
+ssh hive-desk                             # alias for ubuntu@3.82.109.111
+ssh -i ~/.ssh/jenkins.pem ubuntu@3.82.109.111
 ```
 
 ### Common Operations
@@ -303,3 +339,4 @@ DNS is managed in **GoDaddy** (not Route 53). The wildcard ACM cert `*.vivtechno
 | `review-hive.vivtechnologies.com`  | `hive-alb-356434589.us-east-1.elb.amazonaws.com`          |
 | `support-hive.vivtechnologies.com` | `support-hive-alb-2018772839.us-east-1.elb.amazonaws.com` |
 | `qa-hive.vivtechnologies.com`      | `qa-hive-alb-210948200.us-east-1.elb.amazonaws.com`       |
+| `desk-hive.vivtechnologies.com`    | `desk-hive-alb-113856330.us-east-1.elb.amazonaws.com`     |
