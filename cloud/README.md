@@ -256,6 +256,22 @@ tofu apply -var-file=qa.tfvars
 
 9. **SSH in and verify** via the instance public IP.
 
+---
+
+The instance boots from the **review-hive snapshot AMI**, which is a point-in-time copy: the app is behind `main`, the systemd auto-updater and `hive-config` may be missing, and it carries review-hive's inherited Slack credentials. Steps 10–15 bring a fresh box to parity and wire the per-hive config. None of this is in Terraform — it's one-time, on-box. (See also the `hive-config` repo README for the host-config layout.)
+
+10. **Remediate the stale snapshot.** On the box: `cd ~/hive && git pull --ff-only && npm install` (the app can be well behind `main`); install the `hive-update.{service,timer}` units if absent (`systemctl enable --now hive-update.timer`); and if git auth fails, refresh the credential store from the working token in `~/hive/.env` (`HIVE_REPO_TOKEN`). Restart with `./start-hive.sh --no-sessions --restart` (never `pkill` by name).
+
+11. **Add the hive to `hive-config`, then install it on the box.** In the `mavencare/hive-config` repo, create `hosts/<hive-name>-hive/` (`CLAUDE.md`, and as needed `agents/`, `pms/`, `skills/`) plus a `hosts/ip-<private-ip-dashed>` symlink → `<hive-name>-hive` (e.g. `ip-10-0-3-228 -> desk-hive`). `scripts/sync.sh` keys off `$(hostname)`, which is the IP-based name like `ip-10-0-3-228`, so the symlink is what maps the box to its named host dir. Then on the box: `git clone https://github.com/mavencare/hive-config.git ~/hive-config && bash ~/hive-config/scripts/install.sh` (generates `~/CLAUDE.md`, symlinks skills, installs the 5-min sync cron).
+
+12. **Register the agent roots** — easy to miss, and the symptom is "no agent files show up for this hive." A fresh hive boots with `agentRoots: []` in `~/hive/.hive-state.json`, so the dashboard scans nothing even after `hive-config` syncs. In the hive UI → **Agents tab**, add `~/hive-config/hosts/<hostname>/agents` (and `~/hive-config/common/agents` if it exists). Confirm the server log shows `Scanned N agent files from 1 root(s)`.
+
+13. **Clone the `webplatform` reference copy** (for PR-review hives): `git clone https://github.com/mavencare/webplatform.git ~/viv/webplatform`. This is the read-only base that review sessions `gh pr checkout` from; the snapshot usually doesn't include it, and without it every review does a cold full clone. `~/viv/` is strictly read-only — work happens in clones/worktrees elsewhere.
+
+14. **Give the hive its own Slack identity** (recommended — otherwise it posts as the inherited snapshot bot). The box's `~/hive/.env` uses `SLACK_BOT_TOKEN` (`xoxb-…`) and `SLACK_APP_TOKEN` (`xapp-…`), neither of which is on the Slack app's "App Credentials" page. Create a Slack app, then grab the **Bot User OAuth Token** (`xoxb-…`, OAuth & Permissions → after _Install to Workspace_; needs `chat:write`, `users:read`) and an **App-Level Token** (`xapp-…`, Basic Information → App-Level Tokens, scope `connections:write` for Socket Mode). Put **both** into the `hive/<hive-name>-env` secret (so they survive re-provision) **and** `~/hive/.env`, then `./start-hive.sh --no-sessions --restart`. Verify with Slack `auth.test` (the log prints the bot user ID on reconnect), and invite the bot to any channel it posts to.
+
+15. **Create the designation(s) and PM in the dashboard** from the scanned agent files. A hive PM = a **designation** (the role — `hosts/<hive>/agents/<name>.md`) plus a **PM instruction** (the actions — `hosts/<hive>/pms/<name>.instructions.md`, pasted into the PM's `instructions` field). The agent file being _scanned_ only makes it selectable; the designation and PM are created in the UI.
+
 ## Operations
 
 ### Review Hive
