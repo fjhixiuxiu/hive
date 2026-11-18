@@ -10053,6 +10053,9 @@
     { name: 'hive_set_working_dir', desc: 'Tell hive which git repo you are working in (e.g. a worktree)' },
     { name: 'hive_create_task', desc: 'Create a new task in the hive queue for another session to pick up' },
     { name: 'hive_reply_thread', desc: 'Reply to the Slack thread associated with your current task' },
+    { name: 'hive_publish_plan', desc: 'Publish a plan/design as a versioned HTML artifact to the dashboard' },
+    { name: 'hive_reply_to_comment', desc: 'Reply to a comment on your published plan (optionally patching a section)' },
+    { name: 'hive_resolve_comment', desc: 'Resolve a comment on your published plan' },
   ];
 
   function renderMcpTools(enabledTools) {
