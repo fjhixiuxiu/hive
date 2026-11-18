@@ -10056,6 +10056,7 @@
     { name: 'hive_publish_plan', desc: 'Publish a plan/design as a versioned HTML artifact to the dashboard' },
     { name: 'hive_reply_to_comment', desc: 'Reply to a comment on your published plan (optionally patching a section)' },
     { name: 'hive_resolve_comment', desc: 'Resolve a comment on your published plan' },
+    { name: 'hive_set_assignee', desc: "Set your current task's assignee to a hive user (by login or name)" },
   ];
 
   function renderMcpTools(enabledTools) {

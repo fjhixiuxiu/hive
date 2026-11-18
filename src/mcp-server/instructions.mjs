@@ -80,6 +80,7 @@ export const ALL_TOOLS = [
   'hive_publish_plan',
   'hive_reply_to_comment',
   'hive_resolve_comment',
+  'hive_set_assignee',
 ];
 
 /**
