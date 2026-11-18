@@ -506,6 +506,38 @@ if (has('hive_publish_plan')) {
   );
 }
 
+// Tool: hive_set_assignee
+if (has('hive_set_assignee')) {
+  server.tool(
+    'hive_set_assignee',
+    "Set the assignee of your current task to one of the users registered in hive. Pass the user's login (preferred) or display name. Pass an empty string to unassign. The assignee is matched against hive's known users; an unknown value is rejected and the valid users are listed back to you.",
+    {
+      assignee: z
+        .string()
+        .describe(
+          'The hive user to assign to — their login (e.g. "nukulb") or display name. Empty string ("") unassigns the task.',
+        ),
+    },
+    async ({ assignee }) => {
+      try {
+        const resp = await sendRequest('mcp:set_assignee', { assignee });
+        if (resp.ok) {
+          const text = resp.assignee
+            ? `Assigned to ${resp.assignee}${resp.name && resp.name !== resp.assignee ? ` (${resp.name})` : ''}`
+            : 'Task unassigned';
+          return { content: [{ type: 'text', text }] };
+        }
+        return {
+          content: [{ type: 'text', text: resp.error || 'Failed to set assignee' }],
+          isError: true,
+        };
+      } catch (err) {
+        return { content: [{ type: 'text', text: `Error: ${err.message}` }], isError: true };
+      }
+    },
+  );
+}
+
 // Tool: hive_reply_to_comment
 if (has('hive_reply_to_comment')) {
   server.tool(

@@ -3222,6 +3222,84 @@ function createMessageHandler(deps) {
         break;
       }
 
+      case 'mcp:set_assignee': {
+        if (!taskQueue) {
+          ws.send(JSON.stringify({ _reqId: msg._reqId, ok: false, error: 'No task queue' }));
+          break;
+        }
+        if (typeof msg.assignee !== 'string') {
+          ws.send(
+            JSON.stringify({
+              _reqId: msg._reqId,
+              ok: false,
+              error: 'assignee must be a string (empty string to unassign)',
+            }),
+          );
+          break;
+        }
+        const sessionNum = resolveSessionNum(msg.session);
+        if (sessionNum == null) {
+          ws.send(
+            JSON.stringify({
+              _reqId: msg._reqId,
+              ok: false,
+              error: `Cannot resolve session "${msg.session}" to a fleet number`,
+            }),
+          );
+          break;
+        }
+        const task = activeTaskFor(sessionNum);
+        if (!task) {
+          ws.send(
+            JSON.stringify({
+              _reqId: msg._reqId,
+              ok: false,
+              error: 'No active task on this session to assign',
+            }),
+          );
+          break;
+        }
+        const raw = msg.assignee.trim();
+        let resolvedLogin = null;
+        let resolvedName = null;
+        if (raw !== '') {
+          const users = taskQueue.getUsersList ? taskQueue.getUsersList() : [];
+          const lower = raw.toLowerCase();
+          const match =
+            users.find((u) => (u.login || '').toLowerCase() === lower) ||
+            users.find((u) => (u.name || '').toLowerCase() === lower);
+          if (!match) {
+            const known = users
+              .map((u) => (u.name && u.name !== u.login ? `${u.login} (${u.name})` : u.login))
+              .join(', ');
+            ws.send(
+              JSON.stringify({
+                _reqId: msg._reqId,
+                ok: false,
+                error: `Unknown hive user "${raw}". Known users: ${known || '(none)'}`,
+              }),
+            );
+            break;
+          }
+          resolvedLogin = match.login;
+          resolvedName = match.name || match.login;
+        }
+        const updated = taskQueue.updateTask(task.id, { assignee: resolvedLogin });
+        if (updated) broadcast({ type: 'task:updated', task: updated });
+        log.info(
+          `[mcp] set_assignee S:${sessionNum} task ${task.id} → ${resolvedLogin || '(unassigned)'}`,
+        );
+        ws.send(
+          JSON.stringify({
+            _reqId: msg._reqId,
+            ok: true,
+            assignee: resolvedLogin,
+            name: resolvedName,
+          }),
+        );
+        break;
+      }
+
       case 'mcp:get_sessions': {
         const sessions = await fleet.getFleetStatus(config, router);
         const summary = sessions.map((s) => ({
