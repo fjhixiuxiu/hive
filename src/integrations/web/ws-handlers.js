@@ -67,6 +67,34 @@ function createMessageHandler(deps) {
   const workingDirOverrides = new Map();
 
   /**
+   * Capture the pane of the session that worked a task (colors + 500 lines of
+   * scrollback) and attach it to the task as its completion snapshot for the
+   * completed-task view. Runs detached: capture-pane + display-message can
+   * take 10–30s on a busy tmux server, so callers must NOT await this on a
+   * request path — kick it off as close to completion time as possible so it
+   * grabs the agent's final screen before the next dispatch /clear.
+   */
+  function captureCompletionSnapshot(task) {
+    if (!task || task.assignedTo == null) return;
+    (async () => {
+      try {
+        const found = await fleet.findSession(config, router, task.assignedTo);
+        if (!found) return;
+        const node = router.getNode(found.nodeId);
+        const paneTarget = `${found.name}:.${config.sessions.claudePane}`;
+        const snap = await node.exec(`tmux capture-pane -e -p -S -500 -t "${paneTarget}" 2>/dev/null`) || null;
+        const colsStr = await node.exec(`tmux display-message -p -t "${paneTarget}" "#{pane_width}" 2>/dev/null`);
+        if (snap) {
+          task.snapshot = snap;
+          task.snapshotCols = parseInt(colsStr) || 0;
+          taskQueue._saveState();
+          broadcast({ type: 'task:updated', task: decorateTaskActions(task, taskQueue._pmManager) });
+        }
+      } catch {}
+    })();
+  }
+
+  /**
    * Resolve the effective repo directory for a session.
    * Checks working dir overrides first, then falls back to config.sessions.repoDir.
    */
@@ -974,33 +1002,7 @@ function createMessageHandler(deps) {
           { force: true },
         );
         if (task && task !== 'pending') broadcast({ type: 'task:completed', task });
-        if (task && task !== 'pending' && task.assignedTo) {
-          (async () => {
-            try {
-              const found = await fleet.findSession(config, router, task.assignedTo);
-              if (!found) return;
-              const node = router.getNode(found.nodeId);
-              const paneTarget = tmux.paneTarget(found.name, config.sessions.claudePane);
-              const snap =
-                (await node.exec(
-                  `tmux capture-pane -e -p -S -500 -t "${paneTarget}" 2>/dev/null`,
-                )) || null;
-              const colsStr = await node.exec(
-                `tmux display-message -p -t "${paneTarget}" "#{pane_width}" 2>/dev/null`,
-              );
-              const snapCols = parseInt(colsStr) || 0;
-              if (snap) {
-                task.snapshot = snap;
-                task.snapshotCols = snapCols;
-                taskQueue._saveState();
-                broadcast({
-                  type: 'task:updated',
-                  task: decorateTaskActions(task, taskQueue._pmManager),
-                });
-              }
-            } catch {}
-          })();
-        }
+        if (task && task !== 'pending') captureCompletionSnapshot(task);
         break;
       }
 
@@ -2870,6 +2872,10 @@ function createMessageHandler(deps) {
           break;
         }
         const result = taskQueue.completeTask(taskId, msg.summary || 'Completed via MCP');
+        // MCP completions are how fleet sessions self-complete — without this,
+        // completed tasks never get a terminal snapshot (the snapshot view in
+        // the dashboard rendered blank for every MCP-completed task).
+        if (result && result !== 'pending') captureCompletionSnapshot(result);
         if (result === 'pending') {
           const pendingTask = taskQueue.tasks.get(taskId);
           broadcast({ type: 'task:pending-complete', task: pendingTask });
