@@ -919,24 +919,48 @@ describe('PM source: _fetchReReviews', () => {
     expect(result).toEqual([]);
   });
 
-  it('marks _alreadyQueued when active task exists for PR', async () => {
-    // Add an active task with the PR reference
-    taskQueue.tasks.set('existing', {
-      id: 'existing',
-      status: 'dispatched',
-      text: 'org/repo#10 review',
-    });
-
-    pm._httpRequest = vi
+  function reReviewHttp() {
+    return vi
       .fn()
       .mockResolvedValueOnce([
         { number: 10, title: 'PR', draft: false, updated_at: '2026-03-07T11:00:00Z' },
       ])
       .mockResolvedValueOnce([{ id: 700, body: 'ready for review', user: { login: 'dev1' } }]);
+  }
+
+  it('marks _alreadyQueued when a task for the PR is still in the queue', async () => {
+    taskQueue.tasks.set('existing', {
+      id: 'existing',
+      status: 'queued',
+      text: 'org/repo#10 review',
+    });
+    pm._httpRequest = reReviewHttp();
 
     const result = await pm._fetchReReviews({ repo: 'org/repo', reviewer: 'alice' }, '1');
     expect(result).toHaveLength(1);
     expect(result[0]._alreadyQueued).toBe(true);
+  });
+
+  it('does NOT mark _alreadyQueued once the task has dispatched', async () => {
+    // A dispatched task has left the queue. Per the fleet rule, a fresh trigger
+    // is then allowed to enqueue the next review.
+    taskQueue.tasks.set('existing', {
+      id: 'existing',
+      status: 'dispatched',
+      text: 'org/repo#10 review',
+    });
+    pm._httpRequest = reReviewHttp();
+
+    const result = await pm._fetchReReviews({ repo: 'org/repo', reviewer: 'alice' }, '1');
+    expect(result).toHaveLength(1);
+    expect(result[0]._alreadyQueued).toBeUndefined();
+  });
+
+  it('carries a PR-scoped _dedupeKey so the comment id does not defeat dedupe', async () => {
+    pm._httpRequest = reReviewHttp();
+    const result = await pm._fetchReReviews({ repo: 'org/repo', reviewer: 'alice' }, '1');
+    expect(result[0].key).toBe('re-review-org/repo#10-700');
+    expect(result[0]._dedupeKey).toBe('org/repo#10');
   });
 
   it('paginates when >100 open PRs', async () => {
@@ -1068,6 +1092,62 @@ describe('PM helpers: _hasActiveTaskForPR', () => {
   it('returns false when no matching task', () => {
     taskQueue.tasks.set('1', { id: '1', status: 'queued', text: 'something else' });
     expect(pm._hasActiveTaskForPR('org/repo', 55)).toBe(false);
+  });
+
+  it('matches on actionContext when taskFormat keeps repo#N out of the text', () => {
+    // A PM whose taskFormat is "/review-pr <url>" produces text that never
+    // contains "org/repo#55". Matching on text alone meant this check always
+    // returned false, so the same PR got queued on every trigger comment.
+    taskQueue.tasks.set('1', {
+      id: '1',
+      status: 'queued',
+      text: '/review-pr https://github.com/org/repo/pull/55',
+      source: 'pm:Human Reviews',
+      actionContext: { type: 'github-pr', repo: 'org/repo', prNumber: 55 },
+    });
+    expect(pm._hasActiveTaskForPR('org/repo', 55, 'Human Reviews')).toBe(true);
+  });
+
+  it('does not match a different PR from the same repo via actionContext', () => {
+    taskQueue.tasks.set('1', {
+      id: '1',
+      status: 'queued',
+      text: '/review-pr https://github.com/org/repo/pull/55',
+      actionContext: { type: 'github-pr', repo: 'org/repo', prNumber: 55 },
+    });
+    expect(pm._hasActiveTaskForPR('org/repo', 5, null)).toBe(false);
+    expect(pm._hasActiveTaskForPR('other/repo', 55, null)).toBe(false);
+  });
+
+  it('matches a snoozed task — it is still in flight for this PR', () => {
+    taskQueue.tasks.set('1', {
+      id: '1',
+      status: 'snoozed',
+      text: '/review-pr https://github.com/org/repo/pull/55',
+      actionContext: { type: 'github-pr', repo: 'org/repo', prNumber: 55 },
+    });
+    expect(pm._hasActiveTaskForPR('org/repo', 55, null)).toBe(true);
+  });
+
+  it('falls back to sourcePR for tasks with no actionContext, within a PM scope', () => {
+    // sourcePR is a bare number. A PM's source config is single-repo, so the
+    // `pm:<name>` scope supplies the repo the number lacks.
+    taskQueue.tasks.set('1', {
+      id: '1',
+      status: 'queued',
+      text: 'go review it',
+      sourcePR: 55,
+      source: 'pm:Re-reviews',
+    });
+    expect(pm._hasActiveTaskForPR('org/repo', 55, 'Re-reviews')).toBe(true);
+  });
+
+  it('does not fall back to sourcePR when the lookup is unscoped', () => {
+    // Nothing here says which repo PR 55 belongs to, and an unscoped lookup adds
+    // no repo of its own — so matching would let one repo answer for another.
+    // The PR-watch wake path is that caller.
+    taskQueue.tasks.set('1', { id: '1', status: 'queued', text: 'go review it', sourcePR: 55 });
+    expect(pm._hasActiveTaskForPR('org/repo', 55, null)).toBe(false);
   });
 
   it('scopes to the same PM when pmName is provided', () => {

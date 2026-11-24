@@ -11133,7 +11133,10 @@
     }
     // Hide schedule for slack/github-mentions/channel-monitor (no polling); manual supports cron schedule
     const schedField = document.getElementById('pm-form-schedule-field');
-    if (schedField) schedField.style.display = (type === 'slack' || type === 'github-mentions' || type === 'slack-channel-monitor') ? 'none' : '';
+    const nonPolling = type === 'slack' || type === 'github-mentions' || type === 'slack-channel-monitor';
+    if (schedField) schedField.style.display = nonPolling ? 'none' : '';
+    const debounceField = document.getElementById('pm-form-debounce-field');
+    if (debounceField) debounceField.style.display = nonPolling ? 'none' : '';
     // Manual/command/script sources only support cron (no interval polling) — auto-switch to cron tab
     if (type === 'manual' || type === 'command' || type === 'script') {
       document.querySelectorAll('.pm-sched-tab').forEach(t => {
@@ -11300,6 +11303,7 @@
       autoThreshold: parseInt(document.getElementById('pm-form-threshold').value) || 3,
       pollInterval: parseInt(document.getElementById('pm-form-interval').value) || 300000,
       schedule: document.getElementById('pm-form-cron').value.trim() || null,
+      debounceMinutes: Math.max(0, parseInt(document.getElementById('pm-form-debounce').value, 10) || 0),
       slackUserId: document.getElementById('pm-form-slack-user-id').value.trim() || null,
       autoCreate: document.getElementById('pm-form-auto-create').checked,
       forceAutoMode: document.getElementById('pm-form-force-auto').checked,
@@ -11412,6 +11416,7 @@
     document.getElementById('pm-form-threshold').value = pm ? pm.autoThreshold : 3;
     document.getElementById('pm-form-slack-user-id').value = pm ? (pm.slackUserId || '') : '';
     document.getElementById('pm-form-interval').value = pm ? pm.pollInterval : 300000;
+    document.getElementById('pm-form-debounce').value = (pm && pm.debounceMinutes) || 0;
     document.getElementById('pm-form-cron').value = pm ? (pm.schedule || '') : '';
     // Set schedule tab state — for manual/command/script, always show cron-only
     const sourceType = document.getElementById('pm-form-source').value;

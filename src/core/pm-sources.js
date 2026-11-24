@@ -1,7 +1,7 @@
 const https = require('https');
 const http = require('http');
 const log = require('./log');
-const { isActiveTaskStatus } = require('./vocab');
+const { TaskStatus } = require('./vocab');
 
 // Shared keep-alive agents (see src/core/pr-status.js for the FD-leak rationale).
 const httpsKeepAlive = new https.Agent({ keepAlive: true, maxSockets: 4 });
@@ -255,13 +255,102 @@ function _parsePRFromKey(key) {
   return null;
 }
 
-function _hasActiveTaskForPR(repo, number, pmName) {
+// A task is still sitting IN the queue while it is queued or snoozed (a snooze is
+// a deferred queue entry — it comes back). Once it dispatches it has left the
+// queue, so a fresh trigger is allowed to enqueue the next one.
+const IN_QUEUE_STATUSES = new Set([TaskStatus.QUEUED, TaskStatus.SNOOZED]);
+// The wider set, for callers that must not disturb a session already working the
+// PR (the PR-watch wake path).
+//
+// ⚠️ NOT vocab's `ACTIVE_TASK_STATUSES`, which is [queued, dispatched]. This one
+// also counts `snoozed`: a snoozed task is still work in flight for this PR even
+// though it is not dispatched, and waking it would double-book the PR. Named
+// apart from vocab's export deliberately — they mean different things, and this
+// file imports from vocab, so sharing the name would be a trap.
+const PR_IN_FLIGHT_STATUSES = new Set([
+  TaskStatus.QUEUED,
+  TaskStatus.DISPATCHED,
+  TaskStatus.SNOOZED,
+]);
+
+// Identity comes from dedupeKey / actionContext / sourcePR, NOT from the task
+// text: a PM with a taskFormat like "/review-pr https://github.com/{repo}/pull/
+// {prNumber}" produces text that never contains "repo#N", so the old text-only
+// match silently never fired and the same PR was queued again on every trigger
+// comment. Text is kept last as a fallback for tasks created before that fix.
+function _findTaskForPR(repo, number, pmName, statuses) {
   const pattern = `${repo}#${number}`;
   const sourceFilter = pmName ? `pm:${pmName}` : null;
   for (const task of this.taskQueue.tasks.values()) {
-    if (isActiveTaskStatus(task.status) && task.text.includes(pattern)) {
-      if (!sourceFilter || task.source === sourceFilter) return true;
+    if (!statuses.has(task.status)) continue;
+    if (sourceFilter && task.source !== sourceFilter) continue;
+    if (task.dedupeKey && task.dedupeKey === pattern) return task;
+    const ac = task.actionContext;
+    if (ac && ac.type === 'github-pr') {
+      // Authoritative: a PR-sourced task knows its own repo and number.
+      if (ac.repo === repo && Number(ac.prNumber) === Number(number)) return task;
+      continue;
     }
+    // `sourcePR` is a bare number with no repo beside it, so unlike every match
+    // above it cannot tell owner/a#42 from owner/b#42 on its own. `sourceFilter`
+    // supplies the missing half: a PM's source config is single-repo, so scoping
+    // to `pm:<name>` already fixes the repo.
+    //
+    // An UNSCOPED caller (pmName null) gets no such guarantee, so it does not get
+    // this match. The PR-watch wake path is exactly that caller — it asks "is ANY
+    // task live for this PR?" across every PM — and without the gate a live task
+    // for owner/other#42 answered yes for owner/ours#42, the watch recorded a
+    // verdict it never saw, and the parked PR was never woken. Unscoped callers
+    // keep the repo-bearing matches above and the text fallback below, whose
+    // pattern carries `repo#number`.
+    if (sourceFilter && task.sourcePR != null && Number(task.sourcePR) === Number(number))
+      return task;
+    if (_mentionsRef(task.text, pattern)) return task;
+  }
+  return null;
+}
+
+// Does `text` mention `owner/repo#N` as a whole reference? A plain substring
+// search is not enough: "org/repo#4" is inside "org/repo#42", and "org/repo#42"
+// is inside "bigorg/repo#42". The guards reject a digit after the number and a
+// word character before the owner, so neither a longer number nor another owner
+// whose name ends with ours can answer for this PR.
+//
+// A hyphen before the owner is deliberately allowed. A re-review PM with no
+// taskFormat writes "[re-review-org/repo#10-700] …", so the reference follows a
+// hyphen in exactly the legacy text this fallback exists for; the cost is that
+// "my-org/repo#42" still answers for "org/repo#42", as it always has.
+function _mentionsRef(text, pattern) {
+  if (!text) return false;
+  const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(?<![\\w.])${escaped}(?!\\d)`).test(text);
+}
+
+function _hasActiveTaskForPR(repo, number, pmName) {
+  return !!this._findTaskForPR(repo, number, pmName, PR_IN_FLIGHT_STATUSES);
+}
+
+function _hasQueuedTaskForPR(repo, number, pmName) {
+  return !!this._findTaskForPR(repo, number, pmName, IN_QUEUE_STATUSES);
+}
+
+// Generic queue-uniqueness guard: is this PM already holding a queued task for
+// the same underlying item? Applies to every source type — dedupeKey is the PR
+// for PR sources, the issue key otherwise.
+function _hasQueuedDuplicate(pmName, dedupeKey) {
+  // repo#N identities get the richer PR match (actionContext, sourcePR, text),
+  // which also recognizes tasks queued before dedupeKey was recorded.
+  const prMatch = /^(.+)#(\d+)$/.exec(dedupeKey);
+  if (prMatch && this._hasQueuedTaskForPR(prMatch[1], Number(prMatch[2]), pmName)) return true;
+
+  const sourceFilter = `pm:${pmName}`;
+  for (const task of this.taskQueue.tasks.values()) {
+    if (!IN_QUEUE_STATUSES.has(task.status)) continue;
+    if (task.source !== sourceFilter) continue;
+    if (task.dedupeKey && task.dedupeKey === dedupeKey) return true;
+    // Sources whose key IS the identity (jira, github-issues, github-prs) — this
+    // also covers tasks created before dedupeKey existed.
+    if (!task.dedupeKey && task.sourceKey === dedupeKey) return true;
   }
   return false;
 }
@@ -722,13 +811,16 @@ async function _fetchReReviews(source, pmId) {
       // PM (e.g. regular Re-reviews) doesn't swallow a trigger meant for this one
       // (e.g. Urgent Human Review).
       const pmName = this.pms.get(pmId)?.name;
-      if (this._hasActiveTaskForPR(source.repo, pr.number, pmName)) {
+      // Queued (or snoozed) only. A task already dispatched has left the queue —
+      // per the fleet rule, a fresh trigger may enqueue the next one.
+      if (this._hasQueuedTaskForPR(source.repo, pr.number, pmName)) {
         results.push({
           key: `re-review-${source.repo}#${pr.number}-${comment.id}`,
           summary: `Re-review PR #${pr.number}: ${pr.title}`,
           issueType: 'pr',
           storyPoints: null,
           _alreadyQueued: true,
+          _dedupeKey: `${source.repo}#${pr.number}`,
           _repo: source.repo,
           _prNumber: pr.number,
           _commentCreatedAt: comment.created_at,
@@ -741,6 +833,10 @@ async function _fetchReReviews(source, pmId) {
         summary: `Re-review PR #${pr.number}: ${pr.title}`,
         issueType: 'pr',
         storyPoints: null,
+        // Debounce identity is the PR, not the comment. `key` carries the comment
+        // id so every trigger comment is "new" to seenKeys; the debounce window
+        // is what stops the same PR being queued over and over.
+        _dedupeKey: `${source.repo}#${pr.number}`,
         _repo: source.repo,
         _prNumber: pr.number,
         _commentCreatedAt: comment.created_at,
@@ -914,7 +1010,10 @@ module.exports = {
   _commentOnPR,
   _reactOnPR,
   _parsePRFromKey,
+  _findTaskForPR,
   _hasActiveTaskForPR,
+  _hasQueuedTaskForPR,
+  _hasQueuedDuplicate,
   // Source fetchers
   _fetchJira,
   _fetchGithubIssues,

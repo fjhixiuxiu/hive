@@ -1419,6 +1419,11 @@
         <span style="font-size:11px;color:var(--dim);margin-top:4px;display:block;">Standard cron: min hour day month weekday</span>
       </div>
     </div>
+    <div class="pm-form-field" id="pm-form-debounce-field">
+      <label class="pm-form-label">Debounce <span style="color:var(--dim)">(minutes; 0 = off)</span></label>
+      <input class="pm-form-input" id="pm-form-debounce" type="number" min="0" step="5" placeholder="0" autocomplete="off">
+      <span style="font-size:11px;color:var(--dim);margin-top:4px;display:block;">Won't queue a second task for the same PR or issue within this window, however many times it re-triggers. Re-pings still get an 👀 reaction. Useful for re-review PMs, where every new trigger comment is a distinct item.</span>
+    </div>
     <div class="pm-form-field pm-fields-completion" style="display:none">
       <label class="pm-form-label">Completion Conditions</label>
       <div id="pm-form-cc-github" style="display:none">

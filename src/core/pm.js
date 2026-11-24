@@ -63,6 +63,15 @@ function _isDuplicate(text, memory) {
 }
 
 /**
+ * Normalize a debounce window to a non-negative whole number of minutes.
+ * Anything unparseable (null, '', NaN, negative) means "off".
+ */
+function _sanitizeDebounce(value) {
+  const n = Math.floor(Number(value));
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+/**
  * Remove duplicate learnings from a memory array (keeps the later/longer version).
  */
 function _deduplicateMemory(memory) {
@@ -137,8 +146,12 @@ class ProjectManager extends EventEmitter {
       designationMatch: cfg.designationMatch || 'flexible', // 'flexible' = fall back to undesignated sessions, 'strict' = only matching designation
       primaryAction: cfg.primaryAction || { enabled: false }, // { enabled: bool } — opt-in "Open PR/Issue/Thread" button on task cards
       autoArchivePlanOnTaskComplete: !!cfg.autoArchivePlanOnTaskComplete, // when a task from this PM completes, archive its linked plan(s)
+      // Minutes to suppress a repeat task for the same underlying item (same PR,
+      // same issue). 0 = off, preserving the old "queue every trigger" behavior.
+      debounceMinutes: _sanitizeDebounce(cfg.debounceMinutes),
       enabled: false,
       seenKeys: [],
+      dedupeAt: {}, // dedupe identity -> ms timestamp of the last task created for it
       tasksCreated: 0,
       lastPoll: null,
       lastError: null,
@@ -157,12 +170,22 @@ class ProjectManager extends EventEmitter {
       if (
         k === 'id' ||
         k === 'seenKeys' ||
+        k === 'dedupeAt' ||
         k === 'tasksCreated' ||
         k === 'lastPoll' ||
         k === 'lastError' ||
         k === 'memory'
       )
         continue;
+      if (k === 'debounceMinutes') {
+        pm.debounceMinutes = _sanitizeDebounce(v);
+        // The poll only prunes dedupeAt while a window is set, so turning
+        // debounce back off would strand whatever the ledger held until the
+        // next reset(). Nothing reads those entries once the window is 0, so
+        // drop them here rather than carrying dead state across saves.
+        if (pm.debounceMinutes === 0) pm.dedupeAt = {};
+        continue;
+      }
       pm[k] = v;
     }
     // Restart polling if interval changed or was re-enabled
@@ -213,6 +236,7 @@ class ProjectManager extends EventEmitter {
     const pm = this.pms.get(id);
     if (!pm) return;
     pm.seenKeys = [];
+    pm.dedupeAt = {};
     pm.tasksCreated = 0;
     pm.lastPoll = null;
     pm.lastError = null;
@@ -356,6 +380,8 @@ class ProjectManager extends EventEmitter {
       actions: pm.actions,
       autoCreate: pm.autoCreate,
       designationMatch: pm.designationMatch,
+      // The window is config; its dedupeAt ledger is runtime state and stays home.
+      debounceMinutes: pm.debounceMinutes,
       memory: pm.memory || [],
     };
 
@@ -596,8 +622,10 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
         primaryAction: data.primaryAction || { enabled: false },
         designationMatch: data.designationMatch || 'flexible',
         autoArchivePlanOnTaskComplete: !!data.autoArchivePlanOnTaskComplete,
+        debounceMinutes: _sanitizeDebounce(data.debounceMinutes),
         enabled: data.enabled || false,
         seenKeys: Array.isArray(data.seenKeys) ? data.seenKeys : [],
+        dedupeAt: data.dedupeAt && typeof data.dedupeAt === 'object' ? { ...data.dedupeAt } : {},
         tasksCreated: data.tasksCreated || 0,
         lastPoll: data.lastPoll || null,
         lastError: data.lastError || null,
@@ -897,6 +925,20 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
 
       const seenSet = new Set(pm.seenKeys);
       let created = 0;
+      let debounced = 0;
+      let duplicates = 0;
+      // Identities enqueued during THIS poll. The queue check alone can't see
+      // them: an auto-mode task can dispatch the instant it is created, leaving
+      // the queue before the next issue in the same batch is considered.
+      const createdThisPoll = new Set();
+
+      // Debounce window: how long after creating a task for an item this PM
+      // refuses to create another one for that same item. seenKeys can't cover
+      // this — a re-review key carries the trigger comment's id, so every fresh
+      // "@reviewer ready for review" ping is a brand-new key for the same PR.
+      const debounceMs = _sanitizeDebounce(pm.debounceMinutes) * 60000;
+      if (!pm.dedupeAt || typeof pm.dedupeAt !== 'object') pm.dedupeAt = {};
+      const now = Date.now();
 
       for (const issue of issues) {
         if (seenSet.has(issue.key)) continue;
@@ -911,6 +953,43 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
             log.error(`Failed to react on PR #${issue._prNumber}:`, err.message);
           });
           continue;
+        }
+
+        // What "the same item" means. Sources that key per-event (re-reviews key
+        // per comment) supply _dedupeKey so both guards below apply to the PR
+        // itself rather than to the trigger comment.
+        const dedupeKey = issue._dedupeKey || issue.key;
+
+        // Hard rule, not configurable: this PM never holds two queued tasks for
+        // the same item. A task that has already dispatched has left the queue,
+        // so a fresh trigger is free to enqueue the next one.
+        if (createdThisPoll.has(dedupeKey) || this._hasQueuedDuplicate(pm.name, dedupeKey)) {
+          duplicates++;
+          log.info(`[pm] "${pm.name}" skipped ${issue.key} — ${dedupeKey} is already in the queue`);
+          if (issue._repo && issue._prNumber) {
+            this._reactOnPR(issue._repo, issue._prNumber, 'eyes').catch((err) => {
+              log.error(`Failed to react on PR #${issue._prNumber}:`, err.message);
+            });
+          }
+          continue;
+        }
+
+        if (debounceMs > 0) {
+          const lastAt = pm.dedupeAt[dedupeKey];
+          if (lastAt && now - lastAt < debounceMs) {
+            debounced++;
+            const mins = Math.round((debounceMs - (now - lastAt)) / 60000);
+            log.info(
+              `[pm] "${pm.name}" debounced ${dedupeKey} — last task was ${Math.round((now - lastAt) / 60000)}m ago, ${mins}m left in the window`,
+            );
+            // Still acknowledge on GitHub so a re-ping visibly lands somewhere.
+            if (issue._repo && issue._prNumber) {
+              this._reactOnPR(issue._repo, issue._prNumber, 'eyes').catch((err) => {
+                log.error(`Failed to react on PR #${issue._prNumber}:`, err.message);
+              });
+            }
+            continue;
+          }
         }
 
         const mode = this._taskMode(pm, issue);
@@ -964,6 +1043,12 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
           meta,
         );
         task.sourceKey = issue.key;
+        // Stable identity for the queue-uniqueness guard. sourceKey can't serve:
+        // a re-review key carries the trigger comment's id, so it differs on
+        // every ping for the same PR.
+        task.dedupeKey = dedupeKey;
+        createdThisPoll.add(dedupeKey);
+        if (debounceMs > 0) pm.dedupeAt[dedupeKey] = now;
         this.seedChecklist(pm, task);
 
         // React on GitHub PR when queued (replaces verbose comment)
@@ -985,11 +1070,33 @@ PMs are created disabled by default — no need to set \`enabled: false\`.`);
         pm.seenKeys = pm.seenKeys.slice(-5000);
       }
 
+      // Drop debounce entries that can no longer suppress anything. Bounds the
+      // map by the window itself, so it never grows the way seenKeys does.
+      if (debounceMs > 0) {
+        for (const [k, ts] of Object.entries(pm.dedupeAt)) {
+          if (!(now - ts < debounceMs)) delete pm.dedupeAt[k];
+        }
+      }
+
       if (created > 0) {
         this.taskQueue.pushFeed(
           'task',
           null,
           `PM "${pm.name}" created ${created} task${created > 1 ? 's' : ''}`,
+        );
+      }
+      if (duplicates > 0) {
+        this.taskQueue.pushFeed(
+          'task',
+          null,
+          `PM "${pm.name}" skipped ${duplicates} trigger${duplicates > 1 ? 's' : ''} already queued`,
+        );
+      }
+      if (debounced > 0) {
+        this.taskQueue.pushFeed(
+          'task',
+          null,
+          `PM "${pm.name}" debounced ${debounced} repeat${debounced > 1 ? 's' : ''} (${pm.debounceMinutes}m window)`,
         );
       }
 
