@@ -14,6 +14,53 @@ describe('pr-status', () => {
     process.env = originalEnv;
   });
 
+
+  describe('_aggregateCi', () => {
+    it('returns empty state for no pipelines', async () => {
+      const prStatus = await import('../../src/core/pr-status.js');
+      expect(prStatus._aggregateCi([])).toEqual({ result: '', build: '', job: '' });
+    });
+
+    it('failure wins over success and running', async () => {
+      const prStatus = await import('../../src/core/pr-status.js');
+      const out = prStatus._aggregateCi([
+        { result: 'SUCCESS', build: '10', job: 'job/e2e/job' },
+        { result: 'FAILURE', build: '7', job: 'job/server/job' },
+        { result: 'RUNNING', build: '11', job: 'job/other/job' },
+      ]);
+      expect(out.result).toBe('FAILURE');
+      expect(out.job).toBe('job/server/job');
+      expect(out.build).toBe('7');
+    });
+
+    it('running wins over success (still building)', async () => {
+      const prStatus = await import('../../src/core/pr-status.js');
+      const out = prStatus._aggregateCi([
+        { result: 'SUCCESS', build: '10', job: 'a' },
+        { result: 'RUNNING', build: '11', job: 'b' },
+      ]);
+      expect(out.result).toBe('RUNNING');
+    });
+
+    it('all success reports success', async () => {
+      const prStatus = await import('../../src/core/pr-status.js');
+      const out = prStatus._aggregateCi([
+        { result: 'SUCCESS', build: '10', job: 'a' },
+        { result: 'SUCCESS', build: '4', job: 'b' },
+      ]);
+      expect(out.result).toBe('SUCCESS');
+    });
+
+    it('missing pipeline (empty result) loses to a real state', async () => {
+      const prStatus = await import('../../src/core/pr-status.js');
+      const out = prStatus._aggregateCi([
+        { result: '', build: '', job: 'a' },
+        { result: 'UNSTABLE', build: '3', job: 'b' },
+      ]);
+      expect(out.result).toBe('UNSTABLE');
+    });
+  });
+
   describe('getCached', () => {
     it('returns null for uncached branch', async () => {
       const prStatus = await import('../../src/core/pr-status.js');

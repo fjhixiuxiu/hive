@@ -162,7 +162,13 @@ module.exports = {
   },
   jenkins: {
     baseUrl: 'https://jenkins.vivtechnologies.com',
-    jobPath: 'job/webplatform/job', // PR jobs at {baseUrl}/{jobPath}/PR-{prNum}/
+    // PR CI is split across pipelines — status is fetched from every path and
+    // aggregated (worst state wins). PR jobs at {baseUrl}/{path}/PR-{prNum}/.
+    jobPaths: [
+      'job/webplatform-pr-e2e/job',
+      'job/webplatform-pr-server/job',
+    ],
+    // jobPath (single, deprecated) is still honoured as a fallback.
   },
 
   // ── Voice agent ──────────────────────────────────────
@@ -209,7 +215,7 @@ module.exports = {
       setup && setup.githubRepo
         ? `https://github.com/${setup.githubRepo}/pull/\${prNum}`
         : 'https://github.com/mavencare/webplatform/pull/${prNum}',
-    ci: 'https://jenkins.vivtechnologies.com/job/webplatform/job/PR-${prNum}/${ciBuild}/',
+    ci: 'https://jenkins.vivtechnologies.com/${ciJob}/PR-${prNum}/${ciBuild}/',
     jira:
       (process.env.JIRA_BASE_URL || 'https://vivtechnologies.atlassian.net').replace(/\/+$/, '') +
       '/browse/',

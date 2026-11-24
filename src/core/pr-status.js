@@ -182,6 +182,37 @@ async function getJenkinsStatus(baseUrl, jobPath, prNum, user, apiToken) {
   }
 }
 
+// Worst-state-wins ranking for aggregating multiple CI pipelines.
+const CI_RANK = { FAILURE: 5, UNSTABLE: 4, ABORTED: 3, RUNNING: 2, SUCCESS: 1, '': 0 };
+
+/**
+ * Aggregate per-pipeline CI statuses into a single badge state.
+ * Worst state wins: FAILURE > UNSTABLE > ABORTED > RUNNING > SUCCESS > none.
+ * Pure — exposed for unit tests.
+ */
+function aggregateCi(statuses) {
+  let worst = { result: '', build: '', job: '' };
+  for (const s of statuses) {
+    if ((CI_RANK[s.result] || 0) > (CI_RANK[worst.result] || 0)) worst = s;
+  }
+  return worst;
+}
+
+/**
+ * Get aggregated Jenkins CI status across all configured PR pipelines.
+ * Returns { result, build, job } for the pipeline in the worst state,
+ * so badge links point at the run that needs attention.
+ */
+async function getJenkinsStatusMulti(baseUrl, jobPaths, prNum, user, apiToken) {
+  const paths = (Array.isArray(jobPaths) ? jobPaths : [jobPaths]).filter(Boolean);
+  if (!paths.length) return { result: '', build: '', job: '' };
+  const statuses = await Promise.all(paths.map(async (p) => {
+    const s = await getJenkinsStatus(baseUrl, p, prNum, user, apiToken);
+    return { ...s, job: p };
+  }));
+  return aggregateCi(statuses);
+}
+
 /**
  * Fetch PR/CI/review status for a branch.
  *
@@ -252,12 +283,14 @@ async function _fetch(branch, config, githubToken) {
   // Step 2: Get CI + review in parallel
   const jenkinsConfig = config.jenkins || {};
   const [ci, reviewInfo] = await Promise.all([
-    getJenkinsStatus(
+    getJenkinsStatusMulti(
       jenkinsConfig.baseUrl,
-      jenkinsConfig.jobPath,
+      jenkinsConfig.jobPaths || jenkinsConfig.jobPath,
       pr.number,
       process.env.JENKINS_USER,
-      process.env.JENKINS_TOKEN,
+      // JENKINS_API_TOKEN is the documented var (integrations UI, PM sources);
+      // JENKINS_TOKEN kept as legacy fallback.
+      process.env.JENKINS_API_TOKEN || process.env.JENKINS_TOKEN,
     ),
     getReviewStatus(owner, repoName, pr.number, githubToken),
   ]);
@@ -269,6 +302,7 @@ async function _fetch(branch, config, githubToken) {
     prFiles: String(pr.changed_files),
     ciResult: ci.result,
     ciBuild: ci.build,
+    ciJob: ci.job,
     review: reviewInfo.rollup,
     reviewers: reviewInfo.reviewers,
   };
@@ -517,4 +551,5 @@ module.exports = {
   fetchReviewByPR,
   // Internal — exposed for unit tests; matches the `_httpRequest` pattern in pm-sources.js.
   _fetchJSON: fetchJSON,
+  _aggregateCi: aggregateCi,
 };

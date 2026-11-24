@@ -3713,7 +3713,7 @@
 
     // CI chip
     if (s.pr && s.pr.ciResult) {
-      const ciUrl = (linkTemplates.ci && s.pr.ciBuild) ? linkTemplates.ci.replace('${prNum}', s.pr.prNum).replace('${ciBuild}', s.pr.ciBuild) : null;
+      const ciUrl = (linkTemplates.ci && s.pr.ciBuild) ? linkTemplates.ci.replace('${prNum}', s.pr.prNum).replace('${ciBuild}', s.pr.ciBuild).replace('${ciJob}', s.pr.ciJob || '') : null;
       const cls = s.pr.ciResult === 'SUCCESS' ? 'ci-pass' : s.pr.ciResult === 'FAILURE' ? 'ci-fail' : 'ci-run';
       const label = s.pr.ciResult === 'SUCCESS' ? 'CI Passing' : s.pr.ciResult === 'FAILURE' ? 'CI Failed' : 'CI Running';
       if (ciUrl) {
