@@ -164,10 +164,7 @@ module.exports = {
     baseUrl: 'https://jenkins.vivtechnologies.com',
     // PR CI is split across pipelines — status is fetched from every path and
     // aggregated (worst state wins). PR jobs at {baseUrl}/{path}/PR-{prNum}/.
-    jobPaths: [
-      'job/webplatform-pr-e2e/job',
-      'job/webplatform-pr-server/job',
-    ],
+    jobPaths: ['job/webplatform-pr-e2e/job', 'job/webplatform-pr-server/job'],
     // jobPath (single, deprecated) is still honoured as a fallback.
   },
 

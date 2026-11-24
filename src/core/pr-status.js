@@ -206,10 +206,12 @@ function aggregateCi(statuses) {
 async function getJenkinsStatusMulti(baseUrl, jobPaths, prNum, user, apiToken) {
   const paths = (Array.isArray(jobPaths) ? jobPaths : [jobPaths]).filter(Boolean);
   if (!paths.length) return { result: '', build: '', job: '' };
-  const statuses = await Promise.all(paths.map(async (p) => {
-    const s = await getJenkinsStatus(baseUrl, p, prNum, user, apiToken);
-    return { ...s, job: p };
-  }));
+  const statuses = await Promise.all(
+    paths.map(async (p) => {
+      const s = await getJenkinsStatus(baseUrl, p, prNum, user, apiToken);
+      return { ...s, job: p };
+    }),
+  );
   return aggregateCi(statuses);
 }
 

@@ -14,7 +14,6 @@ describe('pr-status', () => {
     process.env = originalEnv;
   });
 
-
   describe('_aggregateCi', () => {
     it('returns empty state for no pipelines', async () => {
       const prStatus = await import('../../src/core/pr-status.js');

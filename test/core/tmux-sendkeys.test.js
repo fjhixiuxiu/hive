@@ -33,7 +33,6 @@ describe('tmux.sendKeys — paste flags (regression)', () => {
     expect(tmuxSrc).toMatch(/tmux paste-buffer\b[^`]*\s-p\b/);
   });
 
-
   it('uses a per-call named buffer (concurrent dispatch cross-paste regression)', () => {
     // The unnamed tmux buffer is a shared stack. Two concurrent dispatches
     // interleave as: load(A), load(B), paste→target1 delivers B (top of

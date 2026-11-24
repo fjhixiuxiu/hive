@@ -82,13 +82,20 @@ function createMessageHandler(deps) {
         if (!found) return;
         const node = router.getNode(found.nodeId);
         const paneTarget = tmux.paneTarget(found.name, config.sessions.claudePane);
-        const snap = await node.exec(`tmux capture-pane -e -p -S -500 -t "${paneTarget}" 2>/dev/null`) || null;
-        const colsStr = await node.exec(`tmux display-message -p -t "${paneTarget}" "#{pane_width}" 2>/dev/null`);
+        const snap =
+          (await node.exec(`tmux capture-pane -e -p -S -500 -t "${paneTarget}" 2>/dev/null`)) ||
+          null;
+        const colsStr = await node.exec(
+          `tmux display-message -p -t "${paneTarget}" "#{pane_width}" 2>/dev/null`,
+        );
         if (snap) {
           task.snapshot = snap;
           task.snapshotCols = parseInt(colsStr) || 0;
           taskQueue._saveState();
-          broadcast({ type: 'task:updated', task: decorateTaskActions(task, taskQueue._pmManager) });
+          broadcast({
+            type: 'task:updated',
+            task: decorateTaskActions(task, taskQueue._pmManager),
+          });
         }
       } catch {}
     })();
