@@ -81,7 +81,7 @@ function createMessageHandler(deps) {
         const found = await fleet.findSession(config, router, task.assignedTo);
         if (!found) return;
         const node = router.getNode(found.nodeId);
-        const paneTarget = `${found.name}:.${config.sessions.claudePane}`;
+        const paneTarget = tmux.paneTarget(found.name, config.sessions.claudePane);
         const snap = await node.exec(`tmux capture-pane -e -p -S -500 -t "${paneTarget}" 2>/dev/null`) || null;
         const colsStr = await node.exec(`tmux display-message -p -t "${paneTarget}" "#{pane_width}" 2>/dev/null`);
         if (snap) {

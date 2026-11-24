@@ -33,6 +33,18 @@ describe('tmux.sendKeys — paste flags (regression)', () => {
     expect(tmuxSrc).toMatch(/tmux paste-buffer\b[^`]*\s-p\b/);
   });
 
+
+  it('uses a per-call named buffer (concurrent dispatch cross-paste regression)', () => {
+    // The unnamed tmux buffer is a shared stack. Two concurrent dispatches
+    // interleave as: load(A), load(B), paste→target1 delivers B (top of
+    // stack), paste→target2 delivers A — the sessions receive each other's
+    // task text. Observed 2026-07-09: tasks dispatched 80ms apart landed
+    // swapped across S1/S2 (branch/PR/terminal all showed the other task).
+    // A per-call -b name pins each paste to its own buffer.
+    expect(tmuxSrc).toMatch(/tmux load-buffer -b /);
+    expect(tmuxSrc).toMatch(/tmux paste-buffer -b /);
+  });
+
   it('preserves embedded newlines in the buffer (only normalizes CRLF, only trims edges)', () => {
     // The trim()-only cleaning step is load-bearing: any \n+ → ' '
     // replacement or split-on-newline would re-introduce the original

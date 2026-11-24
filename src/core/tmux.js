@@ -99,6 +99,10 @@ async function capturePane(target, { lines } = {}) {
  * @param {string} keys - text to send
  * @param {boolean} enter - whether to press Enter after
  */
+// Monotonic counter so concurrent sendKeys calls in the same millisecond
+// still get distinct buffer/tmpfile names.
+let sendKeysSeq = 0;
+
 async function sendKeys(target, keys, enter = true) {
   // Normalize line endings, preserve newlines (paste-buffer handles them natively)
   const cleaned = keys.replace(/\r\n/g, '\n').trim();
@@ -119,11 +123,18 @@ async function sendKeys(target, keys, enter = true) {
     // false in a TUI context unless bracketed paste is on. tmux's -p is a
     // no-op for apps that haven't requested bracketed paste, so it's safe
     // unconditionally.
-    const tmpFile = `/tmp/hive-sendkeys-${process.pid}-${Date.now()}`;
+    // Use a per-call NAMED buffer. The unnamed buffer is a shared stack:
+    // two concurrent dispatches interleave as load(A), load(B), paste→t1
+    // (delivers B), paste→t2 (delivers A) — sessions receive each other's
+    // task text (observed 2026-07-09: two tasks dispatched 80ms apart landed
+    // swapped across two sessions). -b on both commands pins each paste to
+    // its own buffer; -d still deletes it after pasting.
+    const uniq = `${process.pid}-${Date.now()}-${++sendKeysSeq}`;
+    const tmpFile = `/tmp/hive-sendkeys-${uniq}`;
     try {
       writeFileSync(tmpFile, cleaned, 'utf8');
       const r = await exec(
-        `tmux load-buffer "${tmpFile}" && tmux paste-buffer -t "${target}" -d -p`,
+        `tmux load-buffer -b "hive-${uniq}" "${tmpFile}" && tmux paste-buffer -b "hive-${uniq}" -t "${target}" -d -p`,
       );
       if (r === null) {
         throw new Error(`tmux paste failed for target=${target}, len=${cleaned.length}`);
