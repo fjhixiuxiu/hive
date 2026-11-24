@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createMockNode, createMockConfig } from '../helpers/mocks.js';
 
 vi.mock('../../src/core/tmux.js', () => ({
@@ -111,6 +111,102 @@ describe('fleet', () => {
     it('returns null when no ticket found', () => {
       expect(fleet.ticketFromBranch('main')).toBeNull();
       expect(fleet.ticketFromBranch(null)).toBeNull();
+    });
+  });
+
+  describe('git info cache', () => {
+    const config = createMockConfig();
+    const info = (branch) => ({ branch, staged: 0, modified: 0, untracked: 0 });
+
+    function repoNode(id = 'local') {
+      const node = createMockNode(id);
+      node.readFile.mockResolvedValue('idle');
+      node.fileExists.mockResolvedValue(true);
+      node.gitInfo.mockResolvedValue(info('jeff/DEV-1-a'));
+      return node;
+    }
+
+    afterEach(() => vi.useRealTimers());
+
+    it('runs git once per minute per repo, not on every poll', async () => {
+      vi.useFakeTimers({ now: 0 });
+      const node = repoNode();
+      await fleet.getSession(config, node, '6', 'local');
+      vi.setSystemTime(59_000);
+      await fleet.getSession(config, node, '6', 'local');
+      expect(node.gitInfo).toHaveBeenCalledTimes(1);
+      vi.setSystemTime(61_000);
+      await fleet.getSession(config, node, '6', 'local');
+      expect(node.gitInfo).toHaveBeenCalledTimes(2);
+    });
+
+    it('refreshGitInfo re-reads inside the minute, and the next poll shows it', async () => {
+      const node = repoNode();
+      await fleet.getSession(config, node, '6', 'local');
+      node.gitInfo.mockResolvedValue(info('jeff/DEV-2-b'));
+      await fleet.refreshGitInfo(config, node, '6', 'local');
+      expect(node.gitInfo).toHaveBeenCalledTimes(2);
+      expect(node.gitInfo).toHaveBeenLastCalledWith('/home/user/dev/session-6');
+      const s = await fleet.getSession(config, node, '6', 'local');
+      expect(s.branch).toBe('jeff/DEV-2-b');
+      expect(node.gitInfo).toHaveBeenCalledTimes(2);
+    });
+
+    it('refreshGitInfo drops the fleet snapshot so the dashboard sees the new branch', async () => {
+      const node = repoNode();
+      node.listSessions.mockResolvedValue([
+        { name: '6-DEV-1', lastActivity: 1, path: '/home/user/dev/session-6' },
+      ]);
+      const router = new NodeRouter();
+      router.addNode(node);
+      expect((await fleet.getFleetStatus(config, router))[0].branch).toBe('jeff/DEV-1-a');
+      node.gitInfo.mockResolvedValue(info('jeff/DEV-2-b'));
+      await fleet.refreshGitInfo(config, node, '6-DEV-1', 'local');
+      expect((await fleet.getFleetStatus(config, router))[0].branch).toBe('jeff/DEV-2-b');
+    });
+
+    it('refreshGitInfo skips a session with no repo', async () => {
+      const node = repoNode();
+      node.fileExists.mockResolvedValue(false);
+      await fleet.refreshGitInfo(config, node, '6', 'local');
+      await fleet.refreshGitInfo(config, node, 'hive-console', 'local');
+      expect(node.gitInfo).not.toHaveBeenCalled();
+    });
+
+    it('shares one git run between concurrent polls', async () => {
+      const node = repoNode();
+      await Promise.all([
+        fleet.getSession(config, node, '6', 'local'),
+        fleet.getSession(config, node, '6', 'local'),
+      ]);
+      expect(node.gitInfo).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps one entry per node, so the same path on two machines is two repos', async () => {
+      const local = repoNode('local');
+      const remote = repoNode('mini');
+      await fleet.getSession(config, local, '6', 'local');
+      await fleet.getSession(config, remote, '6', 'mini');
+      expect(local.gitInfo).toHaveBeenCalledTimes(1);
+      expect(remote.gitInfo).toHaveBeenCalledTimes(1);
+    });
+
+    it('a failed refresh keeps the last good value instead of caching the failure', async () => {
+      const node = repoNode();
+      await fleet.getSession(config, node, '6', 'local');
+      node.gitInfo.mockRejectedValueOnce(new Error('worker gone'));
+      await expect(fleet.refreshGitInfo(config, node, '6', 'local')).rejects.toThrow('worker gone');
+      const s = await fleet.getSession(config, node, '6', 'local');
+      expect(s.branch).toBe('jeff/DEV-1-a');
+      expect(node.gitInfo).toHaveBeenCalledTimes(2);
+    });
+
+    it('invalidateCache makes the next poll read git again', async () => {
+      const node = repoNode();
+      await fleet.getSession(config, node, '6', 'local');
+      fleet.invalidateCache();
+      await fleet.getSession(config, node, '6', 'local');
+      expect(node.gitInfo).toHaveBeenCalledTimes(2);
     });
   });
 

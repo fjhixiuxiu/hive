@@ -52,6 +52,33 @@ function ticketFromBranch(branch) {
   return m ? m[1] : null;
 }
 
+// `git status` across a 23-repo fleet takes ~5s per round (one repo alone took
+// 2.8s, measured 2026-10-07), so it doesn't run on every 10s poll. The watcher
+// refreshes a session's entry when it goes idle, which is when its branch and
+// changes have most likely moved; anything else shows within the TTL.
+const GIT_INFO_TTL = 60000; // 60s
+const _gitCache = new Map(); // `${nodeId}:${repoDir}` -> { info, ts } | { pending }
+
+function gitInfoFor(node, nodeId, repoDir, { fresh = false } = {}) {
+  const key = `${nodeId || 'local'}:${repoDir}`;
+  const hit = _gitCache.get(key);
+  if (hit && hit.pending) return hit.pending;
+  if (!fresh && hit && Date.now() - hit.ts < GIT_INFO_TTL) return Promise.resolve(hit.info);
+  const pending = node.gitInfo(repoDir).then(
+    (info) => {
+      _gitCache.set(key, { info, ts: Date.now() });
+      return info;
+    },
+    (err) => {
+      if (hit) _gitCache.set(key, hit);
+      else _gitCache.delete(key);
+      throw err;
+    },
+  );
+  _gitCache.set(key, { pending });
+  return pending;
+}
+
 /**
  * Get full status for a single session.
  * @param {object} config - hive config
@@ -75,7 +102,7 @@ async function getSession(config, node, sessionName, nodeId) {
 
   // Git info
   const git = isRepo
-    ? await node.gitInfo(repoDir)
+    ? await gitInfoFor(node, nodeId, repoDir)
     : { branch: '', staged: 0, modified: 0, untracked: 0 };
   const ticket = ticketFromBranch(git.branch);
 
@@ -176,6 +203,23 @@ async function getFleetStatus(config, router) {
 function invalidateCache() {
   _fleetCache.result = null;
   _fleetCache.ts = 0;
+  _gitCache.clear();
+}
+
+/**
+ * Re-read one session's git info now instead of waiting out the TTL. The
+ * watcher calls this when a session goes idle and once at startup.
+ */
+async function refreshGitInfo(config, node, sessionName, nodeId) {
+  const nc = getNodeConfig(config, nodeId);
+  const num = sessionNum(sessionName, nc.sessions.namePrefix);
+  if (!num) return;
+  const repoDir = nc.sessions.repoDir(num);
+  if (!(await node.fileExists(path.join(repoDir, '.git')))) return;
+  await gitInfoFor(node, nodeId, repoDir, { fresh: true });
+  // Drop the 10s fleet snapshot so the next poll shows the new branch.
+  _fleetCache.result = null;
+  _fleetCache.ts = 0;
 }
 
 /**
@@ -230,6 +274,7 @@ module.exports = {
   getSession,
   getFleetStatus,
   invalidateCache,
+  refreshGitInfo,
   peekSession,
   findSession,
 };
