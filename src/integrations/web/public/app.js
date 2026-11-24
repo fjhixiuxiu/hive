@@ -332,7 +332,7 @@
   let tsPendingContent = null;
   let tsLastContent = '';
   let tsActiveTab = 'terminal'; // 'terminal' or 'git'
-  let tsCommands = []; // cached slash commands for tasks cmd-bar
+  let tsCommands = []; // cached slash commands for inline picker
   let paneCols = 0;    // last known tmux pane cols for main session terminal
   let paneRows = 0;    // last known tmux pane rows — live repaints anchor to this
   let tsPaneCols = 0;  // last known tmux pane cols for tasks session terminal
@@ -348,6 +348,138 @@
   let consolePending = null;
   let consoleWriting = false;
   let consoleExpanded = localStorage.getItem('hive_console_expanded') === 'true';
+
+  // ── Slash command picker ────────────────────────
+  // Attaches to an input/textarea; shows a dropdown when user types "/" at start of input.
+  const slashPickers = []; // track all pickers for command list updates
+  function createSlashPicker(inputEl) {
+    const parent = inputEl.parentElement;
+    if (parent) parent.style.position = 'relative';
+    const dropdown = document.createElement('div');
+    dropdown.className = 'slash-picker';
+    if (parent) parent.appendChild(dropdown);
+
+    let activeIdx = 0;
+    let filtered = [];
+    let isOpen = false;
+
+    function render() {
+      dropdown.innerHTML = '';
+      if (!filtered.length) {
+        const hint = document.createElement('div');
+        hint.className = 'slash-picker-hint';
+        hint.textContent = 'No matching commands';
+        dropdown.appendChild(hint);
+        activeIdx = -1;
+        return;
+      }
+      filtered.forEach((cmd, i) => {
+        const row = document.createElement('div');
+        row.className = 'slash-picker-item' + (i === activeIdx ? ' active' : '');
+        const name = document.createElement('span');
+        name.className = 'slash-picker-name';
+        name.textContent = '/' + cmd.name;
+        row.appendChild(name);
+        if (cmd.description) {
+          const desc = document.createElement('span');
+          desc.className = 'slash-picker-desc';
+          desc.textContent = cmd.description;
+          row.appendChild(desc);
+        }
+        row.addEventListener('mousedown', (e) => {
+          e.preventDefault(); // keep focus on input
+          selectCommand(cmd);
+        });
+        row.addEventListener('mouseenter', () => {
+          activeIdx = i;
+          updateActive();
+        });
+        dropdown.appendChild(row);
+      });
+      const hint = document.createElement('div');
+      hint.className = 'slash-picker-hint';
+      hint.textContent = '\u2191\u2193 navigate \u00b7 Enter select \u00b7 Esc dismiss';
+      dropdown.appendChild(hint);
+    }
+
+    function updateActive() {
+      dropdown.querySelectorAll('.slash-picker-item').forEach((el, i) => {
+        el.classList.toggle('active', i === activeIdx);
+      });
+      const activeEl = dropdown.querySelector('.slash-picker-item.active');
+      if (activeEl) activeEl.scrollIntoView({ block: 'nearest' });
+    }
+
+    function selectCommand(cmd) {
+      inputEl.value = '/' + cmd.name + ' ';
+      close();
+      inputEl.focus();
+      // Trigger input event for auto-grow textareas
+      inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+
+    function open(query) {
+      const q = query.toLowerCase();
+      filtered = tsCommands.filter(c => c.name.toLowerCase().includes(q));
+      activeIdx = 0;
+      isOpen = true;
+      render();
+      dropdown.classList.add('open');
+    }
+
+    function close() {
+      isOpen = false;
+      dropdown.classList.remove('open');
+      filtered = [];
+    }
+
+    function getSlashQuery() {
+      const val = inputEl.value;
+      // Only trigger when "/" is the first character and cursor is in the first "word"
+      if (!val.startsWith('/')) return null;
+      // If there's a space, the command is already complete — don't show picker
+      const spaceIdx = val.indexOf(' ');
+      if (spaceIdx !== -1) return null;
+      return val.slice(1); // query after "/"
+    }
+
+    inputEl.addEventListener('input', () => {
+      const q = getSlashQuery();
+      if (q !== null) open(q);
+      else close();
+    });
+
+    inputEl.addEventListener('keydown', (e) => {
+      if (!isOpen) return;
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        if (filtered.length) { activeIdx = (activeIdx + 1) % filtered.length; updateActive(); }
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (filtered.length) { activeIdx = (activeIdx - 1 + filtered.length) % filtered.length; updateActive(); }
+      } else if (e.key === 'Enter') {
+        if (filtered.length && activeIdx >= 0) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          selectCommand(filtered[activeIdx]);
+        }
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        close();
+      } else if (e.key === 'Tab') {
+        if (filtered.length && activeIdx >= 0) {
+          e.preventDefault();
+          selectCommand(filtered[activeIdx]);
+        }
+      }
+    });
+
+    // Close when input loses focus
+    inputEl.addEventListener('blur', () => { setTimeout(close, 150); });
+
+    slashPickers.push({ inputEl, dropdown });
+    return { close };
+  }
 
   // Color map: name → { css var, rgba bg }
   const DESIG_COLORS = {
@@ -783,6 +915,13 @@
     }
   });
 
+  // ── Attach slash pickers to all message inputs ────
+  createSlashPicker(msgInput);
+  createSlashPicker(quickInput);
+  createSlashPicker(document.getElementById('broadcast-input'));
+  createSlashPicker(document.getElementById('ts-msg-input'));
+  createSlashPicker(document.getElementById('task-detail-input'));
+
   // ── WebSocket connection ──────────────────────────
   let reconnectTimer = null;
   let lastMessageTime = 0;  // timestamp of last message received from server
@@ -1123,8 +1262,8 @@
     if (usersPanel) usersPanel.classList.toggle('perm-hidden', !hasPerm('admin'));
 
     // Cmd bar (slash commands)
-    const cmdBar = document.getElementById('cmd-bar');
-    if (cmdBar) cmdBar.classList.toggle('perm-hidden', !hasPerm('send-messages'));
+    const cmdBarPerm = document.getElementById('cmd-bar');
+    if (cmdBarPerm) cmdBarPerm.classList.toggle('perm-hidden', !hasPerm('send-messages'));
   }
 
   // ── Message handling ──────────────────────────────
@@ -6755,7 +6894,7 @@
   function showTsSessionControls(interactive) {
     const termContent = document.getElementById('ts-terminal-content');
     const keysBar = document.getElementById('tasks-session-keys');
-    const cmdBar = document.getElementById('ts-cmd-bar');
+    const tsCmdBar = document.getElementById('ts-cmd-bar');
     const inputBar = document.getElementById('tasks-session-input');
     const tabs = document.getElementById('tasks-session-tabs');
     const openBtn = document.getElementById('ts-open-session');
@@ -6773,13 +6912,13 @@
     tabs.style.display = '';
     if (interactive) {
       keysBar.style.display = '';
-      cmdBar.style.display = '';
+      tsCmdBar.style.display = '';
       inputBar.style.display = '';
       openBtn.style.display = '';
       renderTsCmdBar();
     } else {
       keysBar.style.display = 'none';
-      cmdBar.style.display = 'none';
+      tsCmdBar.style.display = 'none';
       inputBar.style.display = 'none';
       openBtn.style.display = 'none';
     }
@@ -8416,7 +8555,6 @@
       tdActivePane = null; tdSessionPanes = []; tdClaudePaneIdx = null;
       renderPaneTabs('td');
       restoreDraftOnOpen(document.getElementById('task-detail-input'), 'task-detail', taskDetailSession);
-      // Render slash command bar (reuse tsCommands from tasks session)
       renderTaskDetailCmdBar();
       // Subscribe immediately so data starts flowing
       if (ws && ws.readyState === 1) {
@@ -8973,7 +9111,6 @@
   function renderTaskDetailCmdBar() {
     const bar = document.getElementById('task-detail-cmd-bar');
     bar.innerHTML = '';
-    // Reuse tsCommands (slash commands cached from session)
     const cmds = tsCommands.length ? tsCommands : [];
     for (const cmd of cmds) {
       const btn = document.createElement('button'); btn.className = 'cmd-btn'; btn.textContent = '/' + cmd.name;
